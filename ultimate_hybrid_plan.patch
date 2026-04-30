@@ -1,0 +1,797 @@
+diff --git a/plan.md b/plan.md
+index 94a6435..5386d00 100644
+--- a/plan.md
++++ b/plan.md
+@@ -30,6 +30,26 @@ Plus one cross-stage UI surface — the **Activity panel** — which shows the l
+ 
+ The user spends most of their meaningful cognitive effort in **Planning** and **Beads**. The later stages are mostly machine-tending, review, intervention, and quality convergence. The engineering roadmap mirrors that distribution: cockpit + setup first, then plan creation and bead curation, before pouring months into perfect swarm telemetry.
+ 
++
++### 0.1 Hybridization decisions added in this revision
++
++This revision keeps the original architecture's load-bearing choices — the VPS daemon, SSH tunnel by default, origin/VPS/local-clone source-of-truth split, Go daemon, t3code desktop lift, and skill-attached tending jobs — but tightens the execution plan in places where a production team would otherwise lose time later.
++
++The major additions are:
++
++- a concrete transport ladder and desktop `ConnectionManager` finite-state machine;
++- a seed REST/WS/API contract so the daemon is buildable before the full OpenAPI file exists;
++- a daemon process-management contract covering semaphores, cancellation, ring buffers, log persistence, and backpressure;
++- an explicit desktop local-data layer for read-only FTS/search and warm startup, without violating the canonical-source rule;
++- structured ACFS/bootstrap phase parsing with raw-log fallback;
++- plan artifact layout, plan-cost ledger, content-addressed LLM cache, and cost caps;
++- bead curation, polish scoring, graph-performance thresholds, and convergence metrics;
++- worktree-isolated health scans so coverage/complexity jobs do not trample swarm edits;
++- direct-vs-delegated review execution modes;
++- milestone acceptance tests and production smoke checks.
++
++The result should be less hand-wavy at the implementation layer while still preserving the original plan's most important strategic constraint: Hoopoe is a cockpit around the Flywheel, not a replacement engine.
++
+ ---
+ 
+ ## 1. Product principles
+@@ -99,6 +119,28 @@ The pre-script is deterministic Go that does the cheap mechanical reconcile (rea
+ 
+ This rule exists because the alternative — translating `vibing-with-ntm` and similar playbooks into Go state machines — guarantees drift between what the skill says and what the code does, costs months of engineering, and forecloses the ability to adapt to novel situations the skill author thought of but the code didn't. Skills are the spec; jobs are the substrate that loads them. See §8 for the full job format, the initial job set, and the implementation pattern.
+ 
++
++
++### 1.9 Vertical slices beat feature silos
++
++Every milestone must ship at least one end-to-end path through the real remote stack. A beautiful Planning screen that cannot write artifacts to the VPS is less valuable than a plain editor that can generate, persist, lock, and convert a plan. A polished graph animation is less valuable than a basic Kanban that round-trips through `br` and survives reconnect.
++
++The walking skeleton therefore starts with: connect to VPS → install daemon → stream one remote job → import one project → read one `br` list → convert one plan → launch one tiny swarm. The UI can be ugly in the earliest cuts; the data path cannot be fake.
++
++### 1.10 Measurable fitness functions for each stage
++
++A stage is not "done" because the UI exists. It is done when its real-world fitness functions pass:
++
++| Area | Fitness function |
++| --- | --- |
++| Onboarding | A fresh supported VPS reaches `vps_ready` without opening a terminal outside Hoopoe; failures resume from the last checkpoint. |
++| Planning | A one-paragraph idea produces persisted candidate plans, comparison, synthesis, refinement, a locked `plan.md`, and a cost/audit ledger. |
++| Beads | A locked plan converts into real `br` beads; traceability covers plan sections; the DAG has no cycles unless explicitly accepted. |
++| Swarm | A small mixed swarm launches, registers with Agent Mail, claims beads, reserves files, commits, pushes, and streams state back after laptop sleep. |
++| Hardening | Health snapshots run in isolated worktrees; review findings resolve into fixes/beads/false positives; convergence is visible. |
++| Recovery | Killing the desktop, daemon, or tunnel never loses canonical work; reconnect reconstructs the UI from audit/events/canonical tools. |
++
++These fitness functions are carried into §18 as concrete acceptance tests.
+ ---
+ 
+ ## 2. System architecture
+@@ -226,6 +268,145 @@ HealthAdapter
+ 
+ This gives the security benefits of SSH-tunneled localhost by default while leaving room for provider-managed or team scenarios later.
+ 
++
++### 2.5 Transport ladder and desktop connection FSM
++
++The steady-state transport is deliberately conservative, but the implementation should be explicit about fallbacks and future upgrades.
++
++**Transport ladder:**
++
++1. **Bootstrap SSH** — used for first connect, preflight, ACFS installation, daemon install/upgrade, recovery shells, and emergency diagnostics. Not used for normal hot-path app traffic after the daemon is reachable.
++2. **SSH local tunnel** — v1 default. Daemon binds to `127.0.0.1` on the VPS; desktop forwards a local port and speaks HTTPS/WS to `localhost:<forwarded-port>`.
++3. **Tailscale / tailnet mode** — optional later. The desktop may manage a small `tsnet` sidecar or use an already-installed Tailscale daemon, then connect to a daemon listener bound only to the tailnet interface. This is attractive for teams and long-lived reconnect reliability but should not be a v1 blocker.
++4. **Pinned mTLS direct mode** — advanced/team mode after v1. Requires explicit opt-in, firewall restriction, bearer auth on top of mTLS, and loud diagnostics if exposed publicly.
++5. **Recovery SSH shell** — manual break-glass action surfaced in Diagnostics. It opens a terminal-like recovery channel but does not grant the renderer arbitrary shell execution.
++
++**Desktop `ConnectionManager` FSM:**
++
++```text
++unconfigured
++  → ssh_probing
++  → bootstrapping
++  → tunnel_connecting
++  → authenticating
++  → ready
++  → degraded
++  → reconnecting
++  → ready
++  → disconnected
++```
++
++Triggers include macOS sleep/wake, tunnel death, daemon health failure, WS heartbeat timeout, version mismatch, expired bearer, and network change. Backoff uses jitter with a 30-second cap. Reconnect always performs: tunnel check → bearer/session check → WS-token refresh → subscribe with sequence cursors → fetch one snapshot for active channels → reconcile local clone if project is active.
++
++### 2.6 Seed daemon API and event contract
++
++The formal OpenAPI lives in `packages/schemas/openapi.yaml`, but Phase 2 needs a seed contract that engineers can implement immediately. All write endpoints accept an `Idempotency-Key`; all errors use RFC 7807-style `problem+json`; all state-changing calls write audit entries.
++
++```text
++System      GET  /v1/health
++            GET  /v1/version
++            GET  /v1/system/specs
++            GET  /v1/system/processes
++
++Auth        POST /v1/auth/bootstrap/bearer
++            POST /v1/auth/ws-token
++            POST /v1/auth/session/revoke
++            POST /v1/auth/rotate-secret        # owner only, explicit approval
++
++Events      GET  /v1/events/replay?channel=&sinceSequence=
++            GET  /v1/events/sse?channels=
++            GET  /v1/events/ws-token
++            WS   /v1/events/ws
++
++Jobs        GET  /v1/jobs
++            POST /v1/jobs/{id}/cancel
++            GET  /v1/jobs/{id}/log?offset=
++            GET  /v1/jobs/{id}/artifacts
++
++Bootstrap   POST /v1/bootstrap/preflight
++            POST /v1/bootstrap/acfs/start
++            POST /v1/bootstrap/acfs/resume
++            POST /v1/bootstrap/daemon/upgrade
++
++Projects    GET  /v1/projects
++            POST /v1/projects
++            GET  /v1/projects/{projectId}
++            POST /v1/projects/{projectId}/activate
++            GET  /v1/projects/{projectId}/readiness
++
++Git         GET  /v1/projects/{projectId}/git/status
++            GET  /v1/projects/{projectId}/git/staged-diff
++            GET  /v1/projects/{projectId}/git/unstaged-diff
++            GET  /v1/projects/{projectId}/git/unpushed-commits
++            POST /v1/projects/{projectId}/git/push
++
++Plans       GET  /v1/projects/{projectId}/plans
++            POST /v1/projects/{projectId}/plans
++            POST /v1/projects/{projectId}/plans/{planId}/rounds
++            POST /v1/projects/{projectId}/plans/{planId}/lock
++            GET  /v1/projects/{projectId}/plans/{planId}/artifacts
++
++Beads       GET  /v1/projects/{projectId}/beads
++            GET  /v1/projects/{projectId}/beads/graph
++            GET  /v1/projects/{projectId}/beads/ready
++            GET  /v1/projects/{projectId}/beads/{beadId}
++            PATCH /v1/projects/{projectId}/beads/{beadId}
++            POST /v1/projects/{projectId}/beads/conversion-runs
++            POST /v1/projects/{projectId}/beads/polish-runs
++
++Swarm       POST /v1/projects/{projectId}/swarms
++            GET  /v1/projects/{projectId}/swarms/{swarmId}
++            POST /v1/projects/{projectId}/swarms/{swarmId}/broadcast
++            POST /v1/projects/{projectId}/agents/{agentId}/send
++            POST /v1/projects/{projectId}/agents/{agentId}/interrupt
++            POST /v1/projects/{projectId}/agents/{agentId}/stop
++
++Mail        GET  /v1/projects/{projectId}/mail/messages
++            GET  /v1/projects/{projectId}/mail/threads/{threadId}
++            POST /v1/projects/{projectId}/mail/messages
++            GET  /v1/projects/{projectId}/reservations
++            POST /v1/projects/{projectId}/reservations/force-release
++
++Health      GET  /v1/projects/{projectId}/health/summary
++            GET  /v1/projects/{projectId}/health/files
++            POST /v1/projects/{projectId}/health/snapshots
++
++Reviews     POST /v1/projects/{projectId}/reviews
++            GET  /v1/projects/{projectId}/reviews/{reviewId}
++            GET  /v1/projects/{projectId}/findings
++            PATCH /v1/projects/{projectId}/findings/{findingId}
++
++Tending     GET  /v1/projects/{projectId}/tending/jobs
++            POST /v1/projects/{projectId}/tending/jobs/{jobId}/run
++            PATCH /v1/projects/{projectId}/tending/jobs/{jobId}
++```
++
++**WebSocket envelope:**
++
++```json
++{"op":"subscribe","channels":["project:abc","swarm:sw-123","activity:abc"],"cursors":{"project:abc":182}}
++{"channel":"project:abc","type":"bead.changed","sequence":183,"time":"...","data":{}}
++{"channel":"_system","type":"heartbeat","sequence":9821,"time":"..."}
++{"channel":"project:abc","type":"_gap","from":120,"to":183,"repair":"replayEvents"}
++```
++
++Channels are bounded. Terminal/log streams are chunked and offset-addressable. A slow renderer can lag without causing daemon memory blowups; when it lags past an in-memory ring, the daemon emits `_lag` or `_gap` with a persisted log offset so the client fetches from disk.
++
++### 2.7 Daemon process manager and job registry
++
++The daemon needs a real process-management substrate, not scattered `exec.Command` calls. The substrate is greenfield Go but should follow these invariants:
++
++- **One job registry** keyed by sortable IDs. Jobs survive HTTP requests and desktop disconnects; interrupted jobs are visible after daemon restart.
++- **One process group per child** where possible. Cancellation sends SIGTERM to the group, waits a grace period, then escalates to SIGKILL. Long-running children should not become orphans.
++- **Bounded semaphores** per resource: `llm_calls`, `git_ops_per_project`, `br_ops_per_project`, `health_runs_per_project`, `swarm_spawns_global`, `terminal_streams_per_client`.
++- **Persistent logs** under `~/.hoopoe/logs/{jobId}.log`; in-memory rings are only an acceleration layer.
++- **Chunked log API** with byte offsets, not "one huge terminal string." Terminal attach sends the latest ring plus the current offset.
++- **Structured status** (`queued`, `running`, `waiting_approval`, `canceling`, `succeeded`, `failed`, `interrupted`) stored in daemon SQLite.
++- **Artifact registry** for plan outputs, conversion traces, health snapshots, review findings, and bootstrap logs.
++- **Idempotency keys** on every write endpoint that can be retried by a reconnecting desktop.
++
++The build/test queue (§2.1, §8.5) is implemented on top of this job substrate. It dedupes equivalent commands when safe, throttles by project, and records exact command provenance for every result.
++
+ ---
+ 
+ ## 3. Tech stack
+@@ -237,6 +418,11 @@ This gives the security benefits of SSH-tunneled localhost by default while leav
+ - CodeMirror 6 for plan editing, xterm.js for pane mirroring, React Flow for DAG (Cytoscape only if needed)
+ - macOS Keychain via keytar; local cache in SQLite or IndexedDB
+ 
++- Local read cache: SQLite in WAL mode when native modules are acceptable; IndexedDB fallback for low-risk renderer-only cache. Use FTS5 where SQLite is used for bead titles, plan text, mail snippets, and activity search.
++- Renderer safety: `contextIsolation: true`, `nodeIntegration: false`, one narrow preload bridge, no raw `ipcRenderer` exposure, no direct filesystem or SSH access from the renderer.
++- Virtualization: TanStack Virtual for bead lists, mail/activity feeds, and large agent grids. React Flow for graphs up to the performance threshold; cluster/canvas fallback for very large graphs.
++- IPC boundary: typed IPC/transport layer generated from `packages/schemas/`; tRPC-style ergonomics are allowed inside the desktop, but the daemon contract remains OpenAPI/JSON so Go stays first-class.
++
+ ### VPS daemon
+ 
+ - **Go** (chi/echo, modernc SQLite, gorilla/nhooyr WebSocket, creack/pty fallback)
+@@ -245,6 +431,8 @@ This gives the security benefits of SSH-tunneled localhost by default while leav
+   - `NTM` — **Go** (1.25+, charmbracelet bubbletea/bubbles ecosystem). The largest integration surface; same-language adapter writing means we can read NTM source as canonical reference and copy request/response types straight into Hoopoe's adapter.
+   - `beads_rust` (`br`) — **Rust**, published as a library on crates.io with `pub mod {model, storage, sync, format, ...}`. Hoopoe consumes via `br --json`; the library is available if we ever want in-process embedding.
+   - `Agent Mail` (`mcp_agent_mail`) — **Python** (3.12+, fastmcp + FastAPI). MCP/HTTP regardless of daemon language.
++
++- **Why not switch to Rust despite the strong Rust-daemon case.** Rust/Tokio would be excellent for subprocess fan-out and static binaries, and its type system would catch many contract errors. The revised plan adopts the _discipline_ from that design — explicit process manager, semaphores, typed JSON contracts, structured state DB, log offsets, and worktree-isolated health jobs — while keeping Go because NTM is Go, the daemon is structurally close to NTM, and Go lowers integration and hiring risk for this specific stack. If Phase 0 proves NTM integration is mostly HTTP-only and daemon process orchestration dominates, revisit this decision with a written spike, not by drifting mid-build.
+ - Genre fit: long-lived control-plane daemons that multiplex subprocesses + expose HTTP/WS on Linux servers (kubelet, containerd, Tailscale, Caddy, Consul, **and NTM**) are Go. Hoopoe is structurally a member of that family.
+ 
+ ### Shared
+@@ -260,6 +448,64 @@ This gives the security benefits of SSH-tunneled localhost by default while leav
+ 
+ Detailed library tables and rationale in `packages/schemas/README.md` and `apps/*/README.md` at scaffold time.
+ 
++
++### 3.1 Desktop local data layer
++
++The desktop keeps two kinds of local state and must not blur them.
++
++**Authoritative local-only state:** window layout, stage route, command palette MRU, user settings, keybindings, cached bearer/session metadata, connection profiles, update channel, and UI preferences.
++
++**Read-through remote cache:** project summaries, plan metadata, bead summaries, graph edges, mail/activity snippets, health summaries, recent audit events, and search indexes. These rows carry `sourceSequence`, `sourceSha`, `snapshotTime`, or `etag` so the renderer can show stale state honestly. They can be deleted and rebuilt from the daemon plus canonical tools.
++
++Suggested SQLite tables for the desktop cache:
++
++```text
++vps_profiles(id, host, user, port, last_seen, status)
++projects(id, name, origin_url, active_branch, source_sequence, last_opened)
++plans(id, project_id, title, state, locked_sha, updated_at, source_sequence)
++plan_fts(plan_id, title, body)                       # FTS5 if SQLite
++bead_meta(project_id, bead_id, title, status, priority, type, labels, source_sequence)
++bead_fts(bead_id, title, body, labels)                # FTS5 if SQLite
++bead_deps(project_id, from_bead_id, to_bead_id, source_sequence)
++activity_events(project_id, sequence, category, summary, unread, created_at)
++mail_messages(project_id, message_id, thread_id, sender, subject, snippet, created_at)
++health_summaries(project_id, commit_sha, coverage, avg_complexity, hotspots, created_at)
++clone_state(project_id, path, last_fetched_sha, dirty_local, size_bytes, updated_at)
++```
++
++No canonical mutation is considered complete because the desktop cache says so. Mutations go through daemon RPCs; the desktop may show a local pending badge but must reconcile against daemon acks and canonical state before removing the badge.
++
++### 3.2 Route and data-source map
++
++The plan intentionally keeps UI details in `packages/design-system/`, but routing and data ownership are strategic enough to seed here:
++
++| Route / surface | Purpose | Primary data source |
++| --- | --- | --- |
++| `/onboarding/connect` | SSH profile, fingerprint, VPS preflight | Desktop SSH bridge + daemon bootstrap once installed |
++| `/onboarding/bootstrap` | ACFS install/doctor, daemon install/upgrade | Bootstrap job stream + persisted logs |
++| `/projects` | Project registry, import/create | Daemon project registry + Git/origin checks |
++| `/projects/:id/planning` | Plan list/editor/artifact rail | Plan artifacts on VPS + desktop read cache |
++| `/projects/:id/planning/:planId/compare` | Candidate plan comparison | Plan round artifacts + local diff renderer |
++| `/projects/:id/beads` | Kanban/list | `br`/`.beads` through daemon read model |
++| `/projects/:id/beads/dag` | Dependency graph | `br` + `bv --robot-*` graph/insights |
++| `/projects/:id/beads/:beadId` | Bead drawer | `br`, traceability, Agent Mail, Git/health overlays |
++| `/projects/:id/swarm` | Launch and live grid | NTM + Agent Mail + daemon job state |
++| `/projects/:id/agents/:agentId` | Agent detail and terminal | NTM/PTY stream + Agent Mail + current bead |
++| `/projects/:id/hardening` | Health/review/findings/convergence | Health snapshots + review jobs + findings ledger |
++| Global Activity drawer | Cross-stage coordination | Agent Mail + audit/events + orchestrator-chat job |
++| Diagnostics | Recovery, versions, logs, tending jobs | Daemon health, systemd, audit, job registry |
++| Settings | Connection, secrets, keybindings, updates | Desktop local-only state + daemon settings |
++
++Deep links should preserve useful context through search params, e.g. `?bead=BR-123&tab=traceability`, `?agent=claude-7`, `?finding=F-42`.
++
++### 3.3 Graph and list performance envelopes
++
++- Bead lists and Activity/Mail feeds are virtualized from the first implementation, not retrofitted.
++- React Flow is acceptable for graphs up to roughly 500 visible nodes with clustering; beyond that, default to filtered clusters and progressively reveal details.
++- Store graph layout caches keyed by `bead_graph_hash` / `bv data_hash` when available; invalidate on dependency changes.
++- DAG view has three modes: hierarchical critical path, force exploration, and clustered epic/domain view.
++- If layout computation takes more than 500ms, move it off the renderer thread.
++
+ ---
+ 
+ ## 4. Domain model
+@@ -300,6 +546,28 @@ Before advancing from one stage to the next, these must be true:
+ 
+ Entity schemas (Project, Plan, Bead, SwarmSession, Agent, FileReservation, BudgetPolicy, etc.) live in `packages/schemas/`.
+ 
++
++### 4.3 Seed entity inventory
++
++The schema package should start with these minimum entities so app, daemon, and tests share vocabulary from day one:
++
++| Entity | Required core fields |
++| --- | --- |
++| `VpsProfile` | `id`, `host`, `user`, `port`, `fingerprint`, `connectionMode`, `status`, `toolInventoryVersion` |
++| `Project` | `id`, `name`, `originUrl`, `vpsPath`, `defaultBranch`, `activeBranch`, `lifecycleState`, `readiness` |
++| `Plan` | `id`, `projectId`, `title`, `state`, `source`, `lockedSha`, `artifactRoot`, `rounds`, `linkedBeadIds` |
++| `PlanRound` | `id`, `planId`, `kind`, `parentRoundId`, `providers`, `status`, `cost`, `artifactPaths`, `inputHash` |
++| `Bead` | `id`, `projectId`, `title`, `status`, `priority`, `type`, `labels`, `assignee`, `deps`, `sourceJson` |
++| `TraceabilityMap` | `planSha`, `beadId`, `planSections`, `coverageStatus`, `testObligations`, `orphanReason` |
++| `SwarmSession` | `id`, `projectId`, `ntmSession`, `mode`, `agentCounts`, `status`, `startedAt`, `budgetPolicy` |
++| `AgentPane` | `id`, `sessionId`, `name`, `tool`, `status`, `currentBead`, `lastActivityAt`, `rateLimitState` |
++| `ActivityEvent` | `sequence`, `projectId`, `category`, `actor`, `summary`, `artifactRefs`, `ackState` |
++| `HealthSnapshot` | `id`, `projectId`, `commitSha`, `coverage`, `complexity`, `hotspots`, `testSummary`, `artifactPath` |
++| `Finding` | `id`, `projectId`, `sourceRound`, `severity`, `status`, `fileRefs`, `beadRefs`, `resolution` |
++| `ApprovalRequest` | `id`, `projectId`, `actor`, `action`, `risk`, `expiresAt`, `decision`, `auditRef` |
++
++The schema should intentionally preserve raw payload fields for `br`, `bv`, `ntm`, and Agent Mail responses. Normalized views help UI; raw payloads help adapter debugging when upstream tools change.
++
+ ---
+ 
+ ## 5. Security model
+@@ -339,6 +607,17 @@ The daemon never exposes arbitrary shell execution as a normal API. It executes
+ 
+ Human approval is required before destructive operations (deleting projects, force-pushing, hard resets over active swarm work, killing swarms, exposing daemon ports, raising budget caps, importing provider credentials, running unrecognized custom scripts). The exact list is curated per feature in `docs/security.md`.
+ 
++
++### 5.4 Renderer, cache, and transport hardening
++
++- Electron renderer runs with `contextIsolation: true`, `sandbox: true` where compatible, `nodeIntegration: false`, strict CSP, and no direct access to SSH, Keychain, filesystem, or daemon tokens.
++- The preload exposes a small typed API only. All privileged operations go through main-process IPC handlers that validate schemas and user intent.
++- Bearer tokens and SSH passphrases live in Keychain/safeStorage; they are never written to the desktop SQLite cache.
++- Daemon logs and audit entries pass through a redaction layer before persistence and before streaming to clients.
++- TLS/mTLS fingerprints in direct or tailnet mode use TOFU only when the fingerprint arrived over an authenticated SSH bootstrap channel.
++- The daemon never binds publicly unless a config flag and a runtime confirmation both exist; the Diagnostics page shows a red warning for any non-local/tailnet bind.
++- Local code clone paths are treated as untrusted file contents. Rendering code uses escaping; Markdown preview disables unsafe HTML by default.
++
+ ---
+ 
+ ## 6. First install and VPS onboarding
+@@ -383,6 +662,57 @@ Provider plugin contract (in `packages/schemas/`): `listRegions`, `listSizes`, `
+ 
+ The wizard streams logs and shows structured checkpoint cards. Failures resume from checkpoints rather than starting from scratch.
+ 
++
++### 6.4 VPS sizing guidance and provider cards
++
++Hoopoe should keep provider automation out of the MVP but still make the manual VPS choice boring. The onboarding screen includes sizing cards and checklist copy, not live provider provisioning.
++
++Recommended baseline for serious swarms:
++
++| Use case | Suggested minimum |
++| --- | --- |
++| Planning + small swarms | 8 vCPU, 16–32 GB RAM, 100 GB SSD/NVMe |
++| Normal Flywheel swarms | 16 vCPU, 48–64 GB RAM, 300 GB+ NVMe |
++| Large repos / heavy tests | 24+ vCPU, 64+ GB RAM, 500 GB+ NVMe, generous IO |
++
++Cards can mention common providers and link out in docs, but the product flow remains: user supplies host/user/key → Hoopoe verifies → Hoopoe bootstraps.
++
++### 6.5 Structured ACFS bootstrap parsing
++
++ACFS remains the canonical installer. Hoopoe wraps it with a phase parser but must not depend on brittle cosmetics.
++
++The bootstrap runner records every line to `~/.hoopoe/logs/bootstrap-{runId}.log` and emits structured events when it sees stable markers:
++
++```text
++phase.start       {phase, name}
++phase.line        {phase, stream, offset, text}
++phase.checkpoint  {phase, key, status}
++phase.end         {phase, rc, durationMs}
++phase.fail        {phase, rc, lastLines, resumeHint}
++```
++
++If markers change or parsing confidence drops, the UI falls back to raw-log mode while still preserving the run, exit code, and resume action. Phase 0 must capture fixtures for a clean install, a partially complete install, a failed dependency install, and an already-installed ACFS run.
++
++### 6.6 Daemon systemd unit hardening
++
++The daemon service should be easy to debug but not sloppy. The exact unit may change, but the hardening target is:
++
++```ini
++[Service]
++Type=notify
++Restart=on-failure
++WatchdogSec=30
++KillMode=mixed
++TimeoutStopSec=20
++LimitNOFILE=65536
++ProtectSystem=strict
++ReadWritePaths=%h/.hoopoe /data/projects /tmp
++NoNewPrivileges=true
++PrivateTmp=true
++```
++
++`ProtectSystem=strict` may need relaxation during early ACFS setup; the install mode and steady-state mode can use different units or drop-ins. The Diagnostics screen shows the active unit, last restart reason, and watchdog status.
++
+ ---
+ 
+ ## 7. The four stages and the activity surface — strategic intent
+@@ -435,6 +765,35 @@ The UI must make credential location explicit on every plan job: which mode, whi
+ 
+ **Quality dimensions** (deterministic + model-based, scored as guidance, not truth): intent clarity, architecture specificity, workflow coverage, implementation detail, testing specificity, risk coverage, bead readiness.
+ 
++
++**Idea capture inputs.** The rough-idea flow should ask for enough context to prevent generic plans: target users, product goal, non-goals, tech-stack preferences, deployment target, existing repo path if any, hard constraints, risk areas, desired autonomy level, testing expectations, UI references/screenshots if relevant, and success criteria.
++
++**Artifact layout.** Planning artifacts are stored inside the project so Git, audit, and later bead conversion can find them:
++
++```text
++.hoopoe/plans/<plan-id>/
++  plan.md
++  meta.json
++  drafts/
++    claude.md
++    codex-or-openai.md
++    gemini.md
++    other.md
++  comparative-matrix.md
++  synthesis.md
++  fresh-eyes-critique.md
++  refinement-round-001.md
++  refinement-round-002.md
++  unresolved-decisions.md
++  history.jsonl
++```
++
++`meta.json` records schema version, source mode, project commit SHA at planning time, model/provider/account used, input hash, round IDs, artifact paths, linked bead IDs, lock state, and cost summary. `history.jsonl` records every meaningful action and is mirrored into the daemon audit log.
++
++**Plan round cost and cache discipline.** Each model call records provider, model, request ID when available, input/output token estimates, cost estimate, latency, temperature/reasoning settings, input hash, and artifact hash. Server-side API mode uses a content-addressed cache under `~/.hoopoe/cache/llm/{sha256}.json` with a default 14-day TTL. Defaults: per-round soft cap, per-project monthly cap, and a preflight estimate when providers expose enough pricing/token data. If estimates are unavailable, the UI says so instead of inventing precision.
++
++**Comparison and diff outputs.** The comparative matrix must identify: unique strengths, missing sections, contradictions, risky assumptions, test strategy quality, UX/workflow coverage, migration/rollback detail, security/privacy coverage, and bead readiness. The synthesis job should preserve the strongest concrete detail from all candidates and explicitly list rejected ideas with reasons when rejection matters.
++
+ **Locking.** Writes final `plan.md`, creates a snapshot hash, requires unresolved decisions to be accepted or resolved, marks metadata `locked`, enables "Convert to beads." Amendments to a locked plan create a new version and can trigger bead delta analysis.
+ 
+ ### 7.2 Beads
+@@ -472,6 +831,24 @@ Round 6: fresh-eyes review of bead graph
+ 
+ **Quality dimensions:** plan coverage, dependency correctness, granularity, ready-set size, testability, duplicate risk, parallelism, context richness.
+ 
++
++**Manual curation actions.** The Beads stage should support human corrections without forcing terminal use: edit title/description/acceptance criteria, change priority/status, add/remove dependency edges, merge duplicates, split oversized beads, add missing beads, mark intentionally deferred, attach files/tests/plan sections, and undo recent curation actions before commit. Every write goes through `br` and then `br sync --flush-only`; Hoopoe never edits `.beads` files directly.
++
++**Polish convergence scoring.** Polish rounds should produce both human-readable recommendations and comparable numeric signals. Suggested metrics per bead per round:
++
++```text
++size_delta_score     = stable if output size changes < 5%; degraded toward 0 by 30% delta
++jaccard_score        = trigram or token-shingle overlap against previous round
++semantic_score       = optional embedding cosine, cached by content hash
++structure_score      = deterministic checklist: acceptance criteria, files, tests, dependencies, blockers
++specificity_score    = model/deterministic hybrid: concrete paths, commands, edge cases, examples
++actionability_score  = can an agent start without asking architecture questions?
++```
++
++Default convergence signal: `0.30*size_delta + 0.40*jaccard + 0.30*semantic_or_jaccard`, with a human-visible caveat that scores are decision aids. A bead is considered converged when the score exceeds the project threshold for two consecutive rounds and no reviewer flags missing tests, unclear acceptance criteria, or dependency errors. The polish loop should early-exit once all non-deferred beads converge.
++
++**Graph overlays.** DAG view includes critical path, ready frontier, blocked chains, PageRank/betweenness bottlenecks, duplicate clusters, stale in-progress nodes, and plan-section coverage coloring. Time-travel can render the graph from a previous Git revision or `.beads` snapshot, but all historical views are read-only.
++
+ **Views.** Kanban (execution state), DAG (dependency structure), Force (cluster/hotspot exploration). Bead detail drawer covers overview, full context, dependencies, plan traceability, mail thread, files/reservations, tests/health, commits, review findings, audit history.
+ 
+ ### 7.3 Swarm
+@@ -482,6 +859,20 @@ Round 6: fresh-eyes review of bead graph
+ 
+ **Default launch policy.** Stagger starts by ≥30 seconds; force `AGENTS.md` and README reread; require Agent Mail registration; require `bv --robot-triage` and `br ready --json` before claiming work; mark claimed beads `in_progress`; reserve files before edits; include bead ID in mail subjects, reservation reasons, and commit messages; use `rch` for builds/tests when configured; never invoke bare `bv`; avoid concurrent builds for same project; self-review with fresh eyes before review/close; report blockers quickly; do not wait in communication purgatory.
+ 
++
++**Launch wizard defaults.** The launch form recommends an agent mix from bead count, graph shape, and tool availability. The recommendation is never mandatory; it is a starting point with evidence.
++
++```text
++< 50 beads      → 1 Claude / 1 Codex / 1 Gemini or equivalent small mix
++50–150 beads    → 2–3 high-reasoning agents + 2–3 implementation agents
++150–400 beads   → 3–5 planning/review-capable agents + 5–10 implementation agents
++400+ beads      → require explicit budget/build-queue review before large swarm
++```
++
++Signals used: ready frontier size, critical-path bottlenecks, average bead specificity, test/build cost, available model accounts, budget cap, rate-limit history, and current VPS capacity. The wizard warns when a large swarm would create more contention than progress.
++
++**Safety presets.** Presets are just approval-policy bundles, not different code paths: `supervised` (approval for writes/destructive actions), `guided` (approval for destructive/unrecognized actions), and `autopilot` (typed allowed actions proceed, destructive/unrecognized still gated). The default is `guided`. The user can inspect exactly which actions each preset gates before launch.
++
+ **Push policy (canonical-state freshness).** Origin is the canonical source of truth for code (§1.1); the VPS working tree is just where commits are _created_ before they become canonical. So the swarm must push frequently, not at the end of a session. Default policy: agents push their bead's branch after every commit (or at minimum after every successful test run). The daemon enforces this via a post-commit auto-push hook configured at swarm-launch time, with audit events on every push attempt. Push failures (network, auth, conflict) surface immediately in the Activity panel as urgent items. Rationale: any commit that lives only on the VPS for more than a few minutes is a durability risk and a visibility gap — the desktop's local clone, CI, code review, and the human user can only see what's reached origin.
+ 
+ **Launch sequence.** Reconcile project state → verify launch gates → show warnings (dirty Git, stale reservations, no ready beads, low disk, missing Agent Mail, **N unpushed commits on VPS**) → create swarm spec and audit event → call NTM spawn/add → stagger agent starts → send kickoff prompt → start event subscriptions → activate the project's tending jobs (§8) → show swarm dashboard.
+@@ -554,6 +945,11 @@ Code health is a first-class continuous signal, not a once-per-release report. T
+ 
+ **Snapshot cadence.** On every push to main, after each swarm round, on demand from the Health tab, and from the `snapshot-health` tending job (§8.4) which fires on `vps_push_completed` events and at most once every 10 minutes (cached results reused if no relevant files changed).
+ 
++
++**Worktree isolation.** Health jobs run in a dedicated Git worktree under `~/.hoopoe/work/<project-id>/health/<run-id>/` at the commit being measured. They do not run in the active VPS working tree used by agents. If worktree creation is blocked by Git state, Hoopoe reports the reason and schedules a retry rather than running coverage in-place and risking collisions with active edits.
++
++**Health artifacts.** Each snapshot stores raw tool outputs (`coverage.xml`, `lcov.info`, `go test -json`, `cargo llvm-cov`, `radon`, `lizard`, `scc/tokei`, etc. where applicable), normalized JSON, command provenance, duration, exit codes, and commit SHA. UI summaries point to these artifacts so suspicious numbers can be audited.
++
+ #### 7.4.2 Review rounds
+ 
+ The _process_ of inspecting the code (self-review, cross-agent, fresh-eyes, hotspot-targeted, specialized audits). Hotspots from §7.4.1 feed directly into review prompts so the rounds attack the highest-risk code first. Full operational detail in §9.
+@@ -838,6 +1234,16 @@ Round 9: final landing checklist
+ 
+ Each round writes an artifact recording: model/tool used, prompts, agents involved, findings, fixes, new beads, false positives, test/health deltas, cost/time summary.
+ 
++
++### 9.2.1 Review execution modes
++
++Review rounds can execute in two modes, selected per round:
++
++1. **Direct LLM review** — daemon gathers the plan, bead context, recent diffs, health hotspots, AGENTS.md, and target files, then calls a provider directly. This is good for cheap fresh-eyes critique, random exploration, and targeted hotspot review where tool use is not required.
++2. **Delegated agent review** — daemon sends marching orders to an NTM-managed agent pane, usually an orchestrator or fresh agent, and streams its output into the review topic. This is required for reviews that need tool use, live test execution, cross-agent coordination, UBS scans, or project-specific commands.
++
++Both modes write findings into the same finding ledger and use the same prompt templates. The mode is an implementation detail; the user sees a consistent Review tab.
++
+ ### 9.3 Finding lifecycle
+ 
+ ```text
+@@ -883,6 +1289,30 @@ A Recovery/Diagnostics screen exposes daemon status, tunnel status, NTM sessions
+ 
+ Audit log schema and replay protocol in `docs/security.md`.
+ 
++
++### 10.1 Backpressure, lag, and replay rules
++
++- Each event channel has a bounded in-memory ring and an append-only persisted log where appropriate.
++- High-volume streams (terminal output, bootstrap logs, build logs) are persisted as byte-addressable logs; events carry offsets and summaries, not the entire text.
++- If a client falls behind an event ring, the daemon emits `_lag` with `lastPersistedOffset` or `_gap` with `sinceSequence` repair instructions.
++- Renderer subscriptions coalesce noisy events such as `agent.tick` and `pane.output` by agent/pane at a fixed cadence.
++- Replay is idempotent. Events carry stable IDs; the desktop ignores duplicates and applies newer sequence numbers only.
++
++### 10.2 Production diagnostics and repair actions
++
++Diagnostics should include safe repair buttons, each backed by typed daemon RPC and audit:
++
++| Repair | Safety behavior |
++| --- | --- |
++| Restart daemon | Requires confirmation; streams systemd result; preserves job registry where possible. |
++| Restart NTM / Agent Mail service | Requires project/session impact warning. |
++| Re-run ACFS doctor | Read-only unless the user approves fixes. |
++| Clear desktop local clone | Deletes read-through cache only; never touches VPS or origin. |
++| Force release stale reservation | Requires reason; posts Agent Mail notice; audit entry links to stale evidence. |
++| Replay events from sequence | Read-only repair for UI gaps. |
++| Rebuild bead read model | Re-reads `br`/`.beads`; cache-only action. |
++| Re-run health snapshot | Runs in isolated worktree; queues behind active health jobs. |
++
+ ---
+ 
+ ## 11. Packaging and updates
+@@ -909,6 +1339,9 @@ Deliverables: test VPS with ACFS; NTM server running; sample project with `br`/`
+ 
+ **Exit:** one command produces a reliable machine-readable project snapshot.
+ 
++
++**Additional Phase 0 fixtures:** clean ACFS install, resumed ACFS install, unsupported OS, low disk, missing sudo, `br` schema variant, `bv` unavailable, `ntm serve` unavailable, Agent Mail unavailable, huge terminal output, and health tool missing. These fixtures become adapter contract tests before UI work depends on them.
++
+ ### Phase 1 — Monorepo + desktop shell + lifted scaffolding
+ 
+ Initialize Hoopoe monorepo (Turbo + Bun workspaces, `apps/{desktop, daemon}`, `packages/{schemas, design-system}`).
+@@ -961,6 +1394,9 @@ Setup wizard; preflight checks; ACFS install/doctor integration; resumable setup
+ 
+ **Exit:** fresh supported VPS reaches "ready" state from Hoopoe.
+ 
++
++**Implementation detail:** bootstrap parsing uses structured phase events when markers are recognized and raw-log fallback otherwise (§6.5). The tool inventory records exact command paths, versions, support for JSON/robot/API surfaces, and adapter compatibility status. Unsupported versions produce actionable warnings, not silent degraded behavior.
++
+ ### Phase 4 — Project registry, Git, and the desktop local clone
+ 
+ Create/import/clone project; project readiness checks; `.hoopoe` initialization; **daemon-side Git watcher** that tracks both VPS-local and origin state and emits three event types on the WebSocket stream: `vps_commit_created` (new commit in VPS working tree, not yet pushed), `vps_push_completed` (VPS pushed N commits to origin), and `origin_updated` (origin's refs advanced — fired by `vps_push_completed` and also by external pushes detected via `git fetch origin --dry-run` polling); **post-commit auto-push hook** installed at swarm-launch time per §7.3 push policy, with audit on every push attempt and surfacing of push failures; **desktop local clone (§7.7) — initial clone from origin, `clone-state.json` metadata, file watcher for local-edit detection, project-header dirty banner, "Clear local clone" / "Reveal in Finder" / "Open in terminal" actions, soft/hard size caps**; **clone-sync subsystem on desktop** — subscribe to `origin_updated` and run `git fetch --all --tags --prune` on event, render "N unpushed commits on VPS" indicator from `vps_commit_created` / `vps_push_completed` events without fetching, 60s safety-net poll, on-demand refresh button, fetch-on-WS-reconnect; **daemon RPCs for VPS WIP reads** — `getWorkingTreeStatus`, `getStagedDiff`, `getUnstagedDiff`, `getUnpushedCommits` for the live agent activity overlay; cockpit top bar (§7.6) wired up with project/branch/Git status (origin state from local clone, VPS state from daemon RPCs), tool-health dots, swarm state, beads pulse, code-health pill (placeholder values until Phase 11 lights it up), cost indicator, Activity panel toggle; AGENTS.md detection/editor link; `br` initialization check; `ru --json` multi-repo support.
+@@ -973,12 +1409,18 @@ Plan cards; CodeMirror plan editor; artifact rail; import/create flows; multi-mo
+ 
+ **Exit:** one-paragraph idea can become a locked plan with candidate/synthesis artifacts.
+ 
++
++**Acceptance detail:** the run also records per-round cost metadata, input/output hashes, model/account used, artifact paths, and a plan quality report. Closing the desktop mid-run must not lose the run; reconnect shows the current job state and partial artifacts.
++
+ ### Phase 6 — Bead conversion and quality tracker
+ 
+ `br` adapter; plan-to-beads job; `br sync --flush-only`; traceability map; bead quality tracker; polish round jobs; `bv` adapter.
+ 
+ **Exit:** locked plan converts into real `br` beads with dependencies and traceability.
+ 
++
++**Acceptance detail:** the user can merge/split/edit beads through the UI; every curation action round-trips through `br`, updates the traceability map, and appears in audit. Polish convergence metrics are persisted and can be compared round-over-round.
++
+ ### Phase 7 — Kanban, DAG, Force views
+ 
+ Kanban columns/cards; bead drawer; DAG graph; Force graph; filters; dependency editing; cycle warnings; critical path and ready frontier; `bv --robot-triage` panel.
+@@ -1015,6 +1457,9 @@ First subsystem of the Debugging / Hardening stage (§7.4.1). Health adapter dis
+ 
+ **Exit:** swarm round updates health; low-coverage/high-complexity files can become beads; user can see project coverage, average complexity, and hotspot count from any stage in the cockpit without navigating to the Health tab.
+ 
++
++**Acceptance detail:** a health run for a fixture repo executes in a separate worktree, persists raw and normalized artifacts, and reports exactly which commit SHA it measured. Manual coverage/complexity results for the fixture match Hoopoe's normalized snapshot within documented tolerances.
++
+ ### Phase 12 — Debugging / Hardening: review rounds and convergence
+ 
+ Second subsystem of the Debugging / Hardening stage (§7.4). Hardening-mode swarm launch; review round jobs; fresh-eyes prompts; cross-agent review; finding tracker; finding-to-bead conversion; convergence dashboard; final landing checklist.
+@@ -1037,6 +1482,9 @@ One provider plugin (Hetzner first); cost estimate and teardown; polished empty/
+ 
+ Electron app with four-stage shell (Planning, Beads, Swarm, Debugging / Hardening) plus the Activity panel drawer and the design system; existing-VPS connection; daemon install over SSH; SSH tunnel and event stream; ACFS install/doctor/tool inventory; project import/create; plan import/create/editor; plan-to-beads conversion through `br`; bead Kanban and basic DAG; `bv --robot-triage` panel; NTM swarm launch; agent grid with status and log tail; Agent Mail timeline in the Activity panel; user↔orchestrator chat in the Activity panel (backed by the `orchestrator-chat` tending job, §8.4); tending scheduler (§8) with at minimum the `tend-swarm`, `watch-safety-thresholds`, `push-stale-commits`, and `orchestrator-chat` jobs running with `vibing-with-ntm` and `ntm` skills loaded; basic code health scan; audit log.
+ 
++
++Minimum production-readiness bar inside "must include": bounded event channels, reconnect replay, persisted job logs, daemon version compatibility check, Phase 0 adapter fixtures, renderer isolation, Keychain/safeStorage secret handling, and at least one disposable-VPS or local-VM E2E smoke test.
++
+ ### Can defer
+ 
+ Multi-provider automatic VPS provisioning; perfect PTY fidelity for all panes; direct mTLS public daemon mode; full spend precision; advanced Force graph interactions; full language coverage; CASS/CM deep memory workflows; collaborative multi-user teams; hosted relay/cloud sync; Mac App Store distribution.
+@@ -1089,6 +1537,19 @@ This order ensures every later feature is a vertical slice, not a pile of discon
+ 
+ **`PubSub.unbounded` patterns leak through.** T3code uses `PubSub.unbounded` everywhere — a memory-leak landmine when slow consumers sit on fast producers (terminal output, activity stream). Hoopoe's daemon must bound channels at design time. Catch via load tests with a wedged consumer.
+ 
++
++
++**ACFS phase markers drift.** Bootstrap parsing could desync if installer output changes. Mitigation: pin/test against known ACFS commits, parse only stable markers, preserve raw logs, and fall back to raw-log mode with checkpoint resume.
++
++**Graph rendering degrades on huge bead sets.** React Flow can struggle with hundreds of visible nodes. Mitigation: virtualized lists, graph clustering, layout caching by graph hash, off-main-thread layout, and canvas/Cytoscape fallback when thresholds are crossed.
++
++**Health jobs interfere with active agents.** Coverage commands can be slow and mutate artifacts. Mitigation: run in dedicated Git worktrees, queue one health run per project, record commit SHA, and never run health scans in the live agent working tree unless explicitly approved for a special case.
++
++**Native Electron modules churn.** `better-sqlite3`, `keytar`, and `node-pty` can break on Electron upgrades. Mitigation: pin Electron, rebuild per architecture in CI, keep IndexedDB/fetch-only fallback for noncritical caches, and smoke-test the signed DMG before release.
++
++**Optional Tailscale mode creates support complexity.** Tailnet mode is useful but can create sidecar/account/debug issues. Mitigation: SSH tunnel remains default; Tailscale is a later opt-in with explicit diagnostics and no dependency on Tailscale for core v1.
++
++**Optimistic UI mutates the wrong source.** Local cache writes could feel canonical. Mitigation: all canonical writes go through daemon RPCs and canonical tools; pending UI states are clearly labeled and reconciled before they become final.
+ ---
+ 
+ ## 15. Definition of success
+@@ -1151,6 +1612,16 @@ That is the actual product: not a pretty wrapper around terminals, but a reliabl
+ 
+ Do not start with provider automation, spend charts, or polished graph animations. The first milestone is a working cockpit connected to a real VPS daemon with one real project and one real tool adapter.
+ 
++
++
++**Phase 2.5 — API/process contract hardening before feature build-out.** Do this before Planning/Beads UI depends on daemon behavior.
++
++1. Implement the seed REST/WS contract in §2.6 with generated schema tests.
++2. Implement the job registry and process manager invariants in §2.7.
++3. Add bounded channel/load tests using synthetic high-volume terminal output and a deliberately slow client.
++4. Add idempotency-key tests for retrying write endpoints through a simulated tunnel drop.
++5. Add persisted log offset tests: stream 100 MB of output, disconnect, reconnect, and fetch the missing range by offset.
++6. Create `docs/api-seed.md`, `docs/process-manager.md`, and `docs/reconnect-replay.md` from the implementation as living references.
+ ---
+ 
+ ## 17. References
+@@ -1179,6 +1650,69 @@ When the plan and a referenced skill disagree on swarm or tending behavior, the
+ 
+ Phase 0 must verify actual installed command names, output formats, version compatibility, and exact API surfaces on a fresh ACFS VPS before downstream phases assume them.
+ 
++
++
++---
++
++## 18. Verification and acceptance matrix
++
++### 18.1 Milestone acceptance tests
++
++| Milestone | Acceptance test |
++| --- | --- |
++| Phase 0 | On a real ACFS VPS, one command emits a normalized JSON snapshot for Git, beads, `bv`, NTM, Agent Mail, reservations, and health; fixtures are committed. |
++| Phase 1 | Signed/notarized DMG opens, navigates all four stages, hot-reloads settings, opens ⌘K, and runs a desktop unit test suite. |
++| Phase 2 | Fresh VPS → daemon installed → pairing consumed → bearer stored → WS connected → simulated disconnect/reconnect replays without state corruption. |
++| Phase 3 | ACFS install/doctor runs through Hoopoe with structured checkpoints; a failed run resumes; raw-log fallback works when markers are missing. |
++| Phase 4 | Import a repo with origin; local clone fetches origin; a VPS commit auto-pushes; desktop fetches on `origin_updated`; WIP overlay shows unpushed/modified VPS state. |
++| Phase 5 | One-paragraph idea produces candidates, comparison, synthesis, refinement, lock, cost ledger, and persisted artifacts after desktop restart. |
++| Phase 6 | Locked plan converts to `br` beads; Kanban and traceability match `br`/`.beads`; polish metrics and manual curation round-trip through `br`. |
++| Phase 7 | DAG renders a fixture graph, highlights critical path and ready frontier, and remains usable at 500 visible nodes through clustering/virtualization. |
++| Phase 8 | A small mixed swarm launches through NTM, receives staggered kickoff, registers with Agent Mail, claims beads, and streams logs. |
++| Phase 9 | Activity drawer shows Agent Mail, reservations, bead changes, urgent alerts, and user↔orchestrator chat from any stage. |
++| Phase 10 | Healthy swarm hour produces mostly `wakeAgent:false` / `[SILENT]`; stuck fixture triggers a skill-driven intervention and audit. |
++| Phase 11 | Health scan runs in a worktree, persists raw/normalized artifacts, updates top-bar pill, and can create a bead from a hotspot. |
++| Phase 12 | Review round produces findings; each finding resolves to fix/new bead/false positive/human escalation; convergence dashboard updates. |
++| Phase 13 | Existing-VPS path remains green while one provider plugin can create, estimate, and tear down an instance without affecting manual mode. |
++
++### 18.2 End-to-end smoke scenario
++
++Run before every beta release:
++
++```text
++1. install signed Hoopoe DMG on a clean macOS profile
++2. connect to fresh Ubuntu VPS via SSH
++3. run ACFS bootstrap and daemon install
++4. import fixture repo with origin remote
++5. create or import a plan
++6. generate/refine/lock plan or use fixture locked plan
++7. convert plan to beads
++8. curate at least one bead and dependency in UI
++9. launch a 2–3 agent smoke swarm or mock NTM swarm
++10. ingest Agent Mail and reservations
++11. create a commit on the VPS and verify origin/local-clone sync
++12. run health snapshot in isolated worktree
++13. run one fresh-eyes review and resolve one finding into a bead
++14. kill/restart desktop and daemon; verify replay/recovery
++15. upgrade daemon; verify compatibility checks
++16. confirm no secrets appear in logs or audit artifacts
++```
++
++### 18.3 Adapter contract tests
++
++Each adapter has golden fixtures for normal output, missing tool, unsupported version, malformed JSON, timeout, and high-volume output. For `br`, `bv`, `ntm`, and Agent Mail, Phase 0 fixtures are mandatory before feature work depends on the adapter. Tests assert that human CLI/TUI output is never parsed unless the adapter explicitly marks it as fallback mode.
++
++### 18.4 Release smoke checks
++
++- signed app launches on arm64 and x64 macOS;
++- auto-update mock server upgrades stable → beta and beta → stable channel choices;
++- desktop settings/keybindings survive migration;
++- daemon upgrade backs up config/db and passes `/v1/version` compatibility;
++- local clone cache can be cleared and rebuilt;
++- event replay works after simulated laptop sleep;
++- process manager cancels a long-running job without orphan children;
++- health worktree cleanup leaves no stale multi-GB directories;
++- audit log redaction catches model keys, bearer tokens, SSH passphrases, and provider credentials.
+ ---
+ 
+ ## Appendix A — Where the operational details live now
+@@ -1285,3 +1819,91 @@ Add to top of every vendored file:
+ ```
+ 
+ Copy `t3code/LICENSE` to `apps/desktop/src/vendored/t3code/LICENSE`. Document the lift in the project root `NOTICE` file.
++
++
++---
++
++## Appendix C — Critical implementation files to create
++
++This is a seed inventory, not a fixed tree. It exists to turn the plan into first-week engineering tasks.
++
++### Desktop
++
++```text
++apps/desktop/package.json
++apps/desktop/electron.vite.config.ts
++apps/desktop/src/main/index.ts
++apps/desktop/src/main/connection/ConnectionManager.ts
++apps/desktop/src/main/connection/sshTunnel.ts
++apps/desktop/src/main/connection/daemonClient.ts
++apps/desktop/src/main/connection/eventMultiplexer.ts
++apps/desktop/src/main/auth/AuthBridge.ts
++apps/desktop/src/main/secrets/keychain.ts
++apps/desktop/src/main/settings/SettingsBridge.ts
++apps/desktop/src/main/keybindings/commandRegistry.ts
++apps/desktop/src/main/cache/desktopDb.ts
++apps/desktop/src/main/cache/cloneSync.ts
++apps/desktop/src/preload/index.ts
++apps/desktop/src/renderer/App.tsx
++apps/desktop/src/renderer/routes/onboarding/*.tsx
++apps/desktop/src/renderer/routes/projects/*.tsx
++apps/desktop/src/renderer/routes/planning/*.tsx
++apps/desktop/src/renderer/routes/beads/*.tsx
++apps/desktop/src/renderer/routes/swarm/*.tsx
++apps/desktop/src/renderer/routes/hardening/*.tsx
++apps/desktop/src/renderer/components/activity/ActivityDrawer.tsx
++apps/desktop/src/renderer/components/beads/{KanbanBoard,DagView,BeadDrawer}.tsx
++apps/desktop/src/renderer/components/swarm/{AgentGrid,AgentTile,TerminalPane}.tsx
++apps/desktop/src/renderer/components/health/{HealthPill,HealthTable,HotspotDrawer}.tsx
++apps/desktop/src/renderer/components/diagnostics/DiagnosticsPanel.tsx
++```
++
++### Daemon
++
++```text
++apps/daemon/cmd/hoopoe/main.go
++apps/daemon/internal/api/router.go
++apps/daemon/internal/api/{auth,events,jobs,bootstrap,projects,git,plans,beads,swarm,mail,health,reviews,tending}.go
++apps/daemon/internal/auth/{pairing,session,ws_token,secret_store}.go
++apps/daemon/internal/events/{hub,replay,channels}.go
++apps/daemon/internal/jobs/{registry,process_manager,logs,artifacts,idempotency}.go
++apps/daemon/internal/bootstrap/{preflight,acfs_parser,daemon_upgrade}.go
++apps/daemon/internal/integrations/{git,br,bv,ntm,agent_mail,rch,health}.go
++apps/daemon/internal/tending/{scheduler,job_store,skill_loader,delivery}.go
++apps/daemon/internal/health/{detect,worktree,coverage,complexity,normalize}.go
++apps/daemon/internal/reviews/{engine,findings,prompts}.go
++apps/daemon/internal/storage/{sqlite,migrations,atomic_write}.go
++apps/daemon/internal/security/{approval,redaction,allowlist,path_sandbox}.go
++apps/daemon/systemd/hoopoe.service
++apps/daemon/scripts/bootstrap.sh
++```
++
++### Shared packages and docs
++
++```text
++packages/schemas/openapi.yaml
++packages/schemas/src/{project,plan,bead,swarm,activity,health,review,approval}.ts
++packages/design-system/src/tokens.ts
++packages/design-system/src/components/*.tsx
++docs/source-of-truth.md
++docs/security.md
++docs/onboarding.md
++docs/testing.md
++docs/api-seed.md
++docs/process-manager.md
++docs/reconnect-replay.md
++docs/source-provenance.md
++```
++
++## Appendix D — Non-negotiable implementation guardrails
++
++1. Do not parse bare `bv` output; use robot surfaces only.
++2. Do not expose arbitrary shell execution from the renderer or normal daemon API.
++3. Do not let the desktop local clone become a write target.
++4. Do not let local SQLite/IndexedDB cache become canonical.
++5. Do not run health/coverage jobs inside the active agent working tree by default.
++6. Do not make provider automation block existing-VPS onboarding.
++7. Do not start a large swarm without showing build/test contention, budget, rate-limit, and ready-frontier warnings.
++8. Do not let terminal output be the source of truth for bead/agent/mail state when structured APIs exist.
++9. Do not wake tending LLM jobs when deterministic pre-scripts find nothing actionable.
++10. Do not suppress audit entries just because a job returned `[SILENT]`.
