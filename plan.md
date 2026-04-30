@@ -61,7 +61,7 @@ Hoopoe must never become a fragile parallel database that silently diverges from
 | Session resumption across CLIs    | `casr` (Cross-Agent Session Resumer)                                                                                                                                                                                                                 | When an agent rate-limits, crashes, or needs to swap providers, Hoopoe's recovery action invokes `casr` to convert the in-flight session and resume under a different account/CLI rather than discarding context. Surfaced both in the Activity panel and in `tend-swarm`'s repertoire (§8.4).                                                                                                                                                                                                                                                                                                                                |
 | System resource health            | `srp` (System Resource Protection — ananicy-cpp + monitor), `sbh` (disk-pressure defense), `pt` (process-terminator)                                                                                                                                 | The `watch-safety-thresholds` pre-script (§8.4) reads disk/CPU/load signals from `srp`, runs `sbh`-driven cleanup under disk pressure, and uses `pt` to kill genuinely wedged processes (with audit). These are the deterministic actuators behind "disk pressure cleanup" and "kill wedged pane."                                                                                                                                                                                                                                                                                                                            |
 | Bug scanning & code review tools  | `UBS` (Ultimate Bug Scanner) — primary; specialized audit skills (mock-code, deadlock, security, perf, fuzzing) — secondary                                                                                                                          | Standard tool invoked by §9.2 review rounds (especially round 8 specialized audits) and §9.5 specialized audits. Findings flow into the §9.3 finding ledger with the source tool stamped on each finding so cross-tool deduping is possible.                                                                                                                                                                                                                                                                                                                                                                                  |
-| Plan refinement automation        | `apr` (Automated iterative spec refinement) — *candidate, decision pending, see §7.1*                                                                                                                                                                | Open architectural question: does Hoopoe's §7.1 planning pipeline (candidates → synthesis → fresh-eyes critique → refinement rounds) own this in-house, or delegate to `apr` and present results in the Plan workspace? The plan currently owns it; the alternative is recorded as an open decision.                                                                                                                                                                                                                                                                                                                          |
+| Plan refinement automation        | Hoopoe's §7.1 planning pipeline (in-house). `apr` (Automated iterative spec refinement) is installed by ACFS but **not** used as Hoopoe's planning backend.                                                                                          | Hoopoe owns the candidates → comparative-matrix → synthesis → fresh-eyes critique → refinement-rounds pipeline directly so the Plan workspace controls per-step prompts, artifact layout (`.hoopoe/plans/<plan-id>/`), quality dimensions, and per-round cost ledgering. The cost (duplicating `apr`'s methodology evolution) is accepted in exchange for that control. `apr` remains available on the VPS for users who want to run it manually outside Hoopoe; Hoopoe does not orchestrate it.                                                                                                                              |
 
 
 Hoopoe maintains a cache and append-only event log, but it should always be able to answer:
@@ -108,7 +108,9 @@ When Hoopoe needs to tend the swarm — detect idle/wedged/rate-limited agents, 
 
 The pre-script is deterministic Go that does the cheap mechanical reconcile (read canonical state, evaluate threshold conditions, perform safe deterministic actions like force-stop on a budget breach). When the pre-script detects nothing actionable, it returns `{"wakeAgent": false}` and no LLM fires — the tick costs zero. Only when the pre-script detects a condition that needs judgment does the agent wake, with the relevant skill (e.g., `vibing-with-ntm`) loaded into its context as the authoritative behavioral spec. The agent reasons, decides, and acts via daemon RPCs that go through the same approval gates as user actions. If the agent decides nothing was actually warranted on closer inspection, it replies `[SILENT]` and produces no Activity-panel noise (audit is preserved regardless).
 
-This rule exists because the alternative — translating `vibing-with-ntm` and similar playbooks into Go state machines — guarantees drift between what the skill says and what the code does, costs months of engineering, and forecloses the ability to adapt to novel situations the skill author thought of but the code didn't. Skills are the spec; jobs are the substrate that loads them. See §8 for the full job format, the initial job set, and the implementation pattern.
+The conventional shape for this kind of daemon — the one kubelet, containerd, and most operator/SRE projects use — would be to read `vibing-with-ntm`, distill its rules into Go code, and ship a state machine inside the daemon: every detection becomes a function, every action becomes an adapter method, and the playbook lives in a switch statement somewhere in `internal/tending/loop.go`. That shape is the right answer when the controlled domain is itself deterministic. It is the wrong answer here for three compounding reasons. First, it guarantees drift between what the skill says and what the code does, because the skill is published methodology evolving on its own cadence and the code does not. Second, it makes the methodology a parallel source of truth maintained inside Hoopoe — exactly what §1.1 forbids for every other domain (`br` is canonical for beads, `ntm` is canonical for sessions, and `vibing-with-ntm` is canonical for tending judgment by the same logic). Third, it forecloses adaptation to situations the skill author thought of but the code didn't: an LLM with the skill loaded can react to a novel detection pattern the skill describes in prose, where a Go state machine can only react to detections someone already enumerated and shipped.
+
+Skills are the spec; jobs are the substrate that loads them. See §8 for the full job format, the initial job set, the four-layer separation between scheduler / pre-script / agent runtime / skills, and the tradeoffs this architecture deliberately accepts.
 
 ---
 
@@ -768,12 +770,11 @@ The UI must make credential location explicit on every plan job: which mode, whi
 
 **Locking.** Writes final `plan.md`, creates a snapshot hash, requires unresolved decisions to be accepted or resolved, marks metadata `locked`, enables "Convert to beads." Amendments to a locked plan create a new version and can trigger bead delta analysis.
 
-**Open architectural decision: own the pipeline vs. delegate to `apr`.** The `apr` tool (Automated iterative spec refinement, installed by ACFS) already implements automated iterative refinement with extended AI reasoning — overlapping substantially with the candidates → synthesis → fresh-eyes critique → refinement-rounds pipeline above. Two viable shapes:
+**Resolved: Hoopoe owns the planning pipeline.** The `apr` tool (Automated iterative spec refinement, installed by ACFS) implements its own automated iterative refinement with extended AI reasoning — overlapping substantially with the candidates → synthesis → fresh-eyes critique → refinement-rounds pipeline above. Hoopoe deliberately does **not** delegate to it.
 
-- **Own it (current plan):** Hoopoe's planning job graph implements every step itself. Maximum UI control over per-step prompts, artifact layout, quality dimensions, and per-round cost ledgering. Cost: more code to maintain; we duplicate `apr`'s methodology evolution.
-- **Delegate to `apr`:** Hoopoe orchestrates `apr` runs from the Plan workspace, captures its artifacts into `.hoopoe/plans/<plan-id>/`, and presents them in the same UI. Cost: less control over the inner pipeline; we inherit `apr`'s schedule and prompts.
+Rationale: the Plan workspace is the highest-leverage artifact in the system (§7.1 opening), and owning the pipeline end-to-end is what lets Hoopoe (a) control per-step prompts so candidates/synthesis/critique can be tuned to the §7.1 quality dimensions; (b) own the artifact layout under `.hoopoe/plans/<plan-id>/` so bead conversion (§7.2), traceability (`traceability.json`, `implementation-evidence.jsonl`), and the lock gate consume a known shape; (c) ledger per-round cost against the §7.1 cache and budget rules; and (d) keep planning a first-class citizen of the daemon's job substrate (§2.7) — restartable, replayable, audited like every other Hoopoe job. Delegating to `apr` would force Hoopoe to inherit `apr`'s schedule, prompts, and artifact format, and would split the planning audit trail across two writers (the §1.1 anti-pattern).
 
-Default is "own it" until Phase 5 prototyping shows whether `apr`'s output quality and artifact shape can carry the Plan workspace as-is. Either way, `apr` is listed in the §1.1 source-of-truth table as a candidate so the decision is explicit, not silent.
+The cost — duplicating `apr`'s methodology evolution — is accepted. `apr` remains installed on the VPS for users who want to invoke it manually outside Hoopoe; if its output quality pulls decisively ahead in the future, this decision is revisitable, but the default architecture is in-house ownership.
 
 ### 7.2 Beads
 
@@ -1028,29 +1029,136 @@ The desktop maintains a local Git clone of every project, used purely as a sync-
 
 Tending the swarm — detecting idle/wedged/rate-limited agents, recovering stalled beads, pushing stale commits, deciding when to flip into review mode, surfacing strategic drift, watching safety thresholds — is implemented as **a scheduler running skill-attached jobs**, per principle §1.8. There is no bespoke "operator loop" written in Go. The behavioral spec for tending lives in the `vibing-with-ntm` and `ntm` skills (loaded into agent context when a job wakes); the daemon's job is to run a scheduler, run pre-scripts, dispatch agents with the right skills, gate destructive actions through the approval system, and write audit events.
 
+The architecture has four cleanly separated layers. The conventional alternative — the Go state machine §1.8 rejects — collapses layers 2, 3, and 4 into a single Go file, which is exactly what creates the drift, parallel-source-of-truth, and adaptation-foreclosure problems §1.8 names. The separation is what makes those problems go away.
+
+```text
+┌─────────────────────────────────────────────────────────┐
+│ Layer 1: Scheduler (Go)                                 │
+│   Cron + interval + event triggers + on-demand. Lease-  │
+│   based, durable, restartable. Fires the per-job pre-   │
+│   script on schedule; writes an audit entry on every    │
+│   tick regardless of outcome (§8.3.2).                  │
+└──────────────────┬──────────────────────────────────────┘
+                   │ dispatches the per-job pre-script
+┌──────────────────▼──────────────────────────────────────┐
+│ Layer 2: Pre-script (deterministic Go, per job)         │
+│   The cheap mechanical reconcile. Reads NTM/br/bv/Mail/ │
+│   Git/caut/srp state, evaluates threshold conditions,   │
+│   performs safe deterministic actions (budget breach →  │
+│   halt; stale commits → push; disk pressure → sbh       │
+│   cleanup; wedged process → pt kill). Outputs a final   │
+│   JSON line: {"wakeAgent": bool, "context": {...}}.     │
+│   Most ticks end here.                                  │
+└──────────────────┬──────────────────────────────────────┘
+                   │ if wakeAgent: true, dispatches to
+┌──────────────────▼──────────────────────────────────────┐
+│ Layer 3: Agent runtime                                  │
+│   Spawns an agent with the job's declared skills loaded │
+│   into context and the prompt template interpolated     │
+│   from the pre-script payload. The agent may use        │
+│   read-only daemon tools while reasoning. For mutations │
+│   it emits a typed ActionPlan (§8.3.1). The daemon      │
+│   validates, dry-runs where possible, applies approvals,│
+│   executes the plan through typed RPCs, and verifies    │
+│   postconditions against canonical state. A [SILENT]    │
+│   reply suppresses Activity-panel delivery; the audit   │
+│   entry is still written (§8.3, §10).                   │
+└──────────────────┬──────────────────────────────────────┘
+                   │ loads as authoritative behavioral context
+┌──────────────────▼──────────────────────────────────────┐
+│ Layer 4: Skills (content, not code)                     │
+│   vibing-with-ntm, ntm, ... Versioned content fetched   │
+│   via jsm (preferred, SHA-256 pinned in                 │
+│   .hoopoe/skills.lock.json) or jfp (fallback, advisory  │
+│   version-string). NEVER reimplemented in Go.           │
+└─────────────────────────────────────────────────────────┘
+```
+
+Hoopoe owns the plumbing of layers 1–3. Layer 4 is content the project consumes. In normal projects, skills are **pinned per project** in `.hoopoe/skills.lock.json`; tending behavior changes only when the user explicitly updates the pin or when policy allows floating skills (development/demo mode). Hoopoe may detect and recommend newer skill versions, but upgrades are audited config changes rather than silent behavior changes — this preserves the reproducibility and export/restore guarantees in §10.3 / §10.4.
+
+Every tending run records the exact skill source, installer (`jsm` or `jfp`), digest or advisory version, compatibility result, and prompt manifest. If `jsm` is configured, the SHA-256 pin is verified before the run starts; a digest mismatch puts the job into a blocked state with a Diagnostics entry rather than silently running against a different skill version. If only `jfp` is available, Hoopoe records the installer-reported version string and (where possible) a local content hash, and labels the pin as advisory rather than verified.
+
+The same separation is what makes the `orchestrator-chat` job (§8.4) a literal tending agent rather than chat-shaped daemon code: scheduled tending and the user's Activity-panel chat share layers 1–3 and load the same layer-4 skills, differing only in trigger (clock vs. user message).
+
 This pattern is inspired by Nous Research's Hermes Agent, specifically the cron + skills + pre-script architecture: scheduled jobs, attached skills, delivery targets, and fresh agent sessions. Hoopoe adopts the shape, not Hermes's scheduler implementation or reliability assumptions.
 
 Hoopoe's scheduler must be independently correct under long-running jobs, daemon restarts, clock skew, missed ticks, and slow delivery targets. A due job must never be silently skipped because another due job ran long. Scheduler correctness is a product requirement, not a borrowed property from the reference system.
 
 ### 8.2 Job format
 
-A tending job is a declarative record stored in `~/.hoopoe/tending/jobs.json` (one file per project, atomic writes). The shape:
+A tending job has two representations, deliberately separated:
+
+1. **Editable definition** — declarative YAML/JSON under:
+
+   ```text
+   ~/.hoopoe/tending/global/jobs.d/*.yaml
+   ~/.hoopoe/tending/projects/<project-id>/jobs.d/*.yaml
+   ```
+
+   These files are user-editable, written atomically (tempfile + rename + fsync), and watched for hot reload. They are the source for definitions only.
+
+2. **Runtime state** — stored in daemon SQLite, not in the definition file. SQLite owns imported job revision, next-run time, active leases, run attempts, trigger dedupe, retry counters, cooldowns, dead-letter state, last decision payload, and scheduler metrics. This aligns tending with the job registry described in §2.7 and gives the scheduler real ACID semantics under concurrent updates, event-triggered runs, and crash recovery.
+
+The daemon imports definitions on startup and on file-watch events: validate against schema → resolve referenced scripts/skills → assign a monotonic `revision` → upsert into the runtime registry. Definition files are configuration; SQLite is the durable runtime registry. A user-edited definition that fails validation is rejected with a Diagnostics entry; the previously-imported revision keeps running until the file is fixed.
+
+The shape of a definition:
 
 ```yaml
 id:                  unique stable ID
 name:                human-readable
 kind:                deterministic | gated_agent | orchestrator_chat | external_webhook
+version:             schema version for this job definition
+revision:            monotonically incremented by the daemon on successful import
+                     # not authored by the user; the daemon assigns and persists it
 schedule:            cron expression | "every Nm/h/d" | "on event: <event-type>" | "on demand"
 project_scope:       null (global) | project_id (project-scoped)
 enabled_toolsets:    [br, bv, ntm, agent_mail, git_read, health_adapter, ...]
                      # narrow per-job to keep tool-schema prompt bloat low
+capabilities_required:
+                     # capability IDs from /v1/capabilities (§2.8); missing required
+                     # capabilities put the job into degraded or blocked state per
+                     # `degraded_mode` below, never silent failure
+                     [ntm.sessions.list, br.issues.read, agent_mail.messages.read]
+capabilities_optional:
+                     # enrich detections/actions but do not block the job
+                     [caam.accounts.list, caut.usage.snapshot, casr.session.resume]
+degraded_mode:
+  if_missing_required: block_job | run_read_only | emit_diagnostic
+  if_missing_optional: continue_with_warning | suppress_related_detections
+  activity_behavior:   silent | diagnostics_only | activity_panel_warning
 script:              path to Go pre-script run by the daemon
                      # outputs structured JSON; final line is {"wakeAgent": bool, "context": {...}}
-                     # may also perform safe deterministic actions before deciding
+                     # may also emit typed deterministic action intents (§8.3, §8.3.1)
+                     # which the action executor runs through the same pipeline as
+                     # agent ActionPlans (policy, idempotency, audit, postcondition)
 skills:              [vibing-with-ntm, ntm, ...]
                      # loaded into agent context when wakeAgent is true
                      # consumed via the agentskills.io standard
+                     # pinned per project in .hoopoe/skills.lock.json (§8.1, §10.3)
+skill_requirements:
+                     # optional capability tags expected from the skill manifest,
+                     # e.g. swarm_tending, rate_limit_recovery, review_mode_flip;
+                     # missing tags trigger the same degraded_mode path as missing
+                     # tool capabilities
+                     [swarm_tending, rate_limit_recovery]
 prompt:              template string with {{context.*}} interpolation from the pre-script's payload
+context_policy:
+                     # governs what evidence reaches the LLM and at what cost
+  max_tokens:        default per job; hard cap enforced before the model call
+  include:
+                     # allowed context classes: detections, bead summaries, recent
+                     # Agent Mail, NTM status, selected log windows, health summary,
+                     # Git status, plan excerpts, AGENTS.md
+  exclude:
+                     # glob/path/log/artifact exclusions
+  summarization:
+                     # whether large logs are summarized before inclusion
+  freshness:
+                     # maximum age for canonical snapshots used in the prompt;
+                     # stale snapshots force a refresh before the agent wakes
+  redaction:
+                     # redaction profile from .hoopoe/model-context-policy.json (§5.5)
+  evidence_mode:     refs_only | compact_inline | full_inline
 deliver:             hoopoe_activity_panel | hoopoe_activity_urgent | local | external (Telegram, etc.)
 repeat:              forever | N
 paused:              bool
@@ -1062,19 +1170,85 @@ dead_letter_after:   N failures
 audit_always:        bool (default true) — log even when wakeAgent is false or response is [SILENT]
 ```
 
-Per-job lifecycle commands match Hermes's surface for operator familiarity: `hoopoe tending {list,create,edit,pause,resume,run,remove,status,tick}`. Plus a UI surface in the Diagnostics screen (§10) and the Activity panel.
+Per-job lifecycle commands match Hermes's surface for operator familiarity: `hoopoe tending {list,create,edit,pause,resume,run,remove,status,tick}`. Plus a UI surface in the Diagnostics screen (§10) and the Activity panel. CLI edits write to the definition files under `jobs.d/`; the daemon picks them up on the next file-watch event and re-imports.
 
 ### 8.3 The wakeAgent and [SILENT] patterns
 
 Two patterns make cost and noise sane:
 
-`**wakeAgent: false**` — the pre-script does the cheap mechanical reconcile (read canonical state, evaluate threshold conditions). If nothing is actionable, it returns `{"wakeAgent": false}` and the LLM never fires. A swarm-tending job ticking every 4 minutes with nothing wrong costs zero tokens. The pre-script may also take *immediate deterministic action* before deciding — e.g., a safety-watch job that detects a budget breach can halt the swarm in Go and skip the agent entirely, since the action requires no judgment.
+`**wakeAgent: false**` — the pre-script does the cheap mechanical reconcile (read canonical state, evaluate threshold conditions). If nothing is actionable, it returns `{"wakeAgent": false}` and the LLM never fires. A swarm-tending job ticking every 4 minutes with nothing wrong costs zero tokens.
+
+Pre-scripts may also request *immediate deterministic actions* before deciding — e.g., a safety-watch job that detects a budget breach can halt the swarm without waking an agent, since the action requires no judgment. These deterministic actions still flow through the same typed action executor used by agent ActionPlans (§8.3.1): policy check, idempotency key, audit entry, execution through typed RPCs, and postcondition verification against canonical state. The difference from agent-driven actions is only the actor field (`pre_script:<jobId>` instead of `agent:<runId>`) and a deterministic-safety-specific approval policy. There is one action pathway, not two.
 
 `**[SILENT]*`* — when the agent does wake but decides on closer inspection that nothing was warranted, it replies with output starting `[SILENT]`. Delivery to the Activity panel is suppressed, but the run is still audited (model used, tokens, decision). This keeps the panel quiet during long stretches of healthy operation.
 
 Together these mean: a healthy hour of swarm operation produces near-zero LLM cost and near-zero panel noise, while a stuck or drifting swarm produces exactly the right amount of agent attention and exactly the right amount of user-visible output.
 
-### 8.3.1 Scheduler correctness invariants
+Every agent wake also has a **context manifest** that pairs with the per-job `context_policy` (§8.2). The manifest is stored alongside the tending run record and linked from the audit log; agents are expected to cite evidence refs from the manifest when proposing actions.
+
+```json
+{
+  "runId": "trun_01...",
+  "jobId": "tend-swarm",
+  "contextHash": "sha256:...",
+  "sourceSnapshots": {
+    "br":         {"seq": 812, "hash": "sha256:..."},
+    "ntm":        {"seq": 203, "hash": "sha256:..."},
+    "agent_mail": {"seq": 441, "hash": "sha256:..."},
+    "git":        {"head": "a1b2c3d...", "hash": "sha256:..."}
+  },
+  "skillsLoaded": [
+    {"id": "vibing-with-ntm", "installer": "jsm", "digest": "sha256:...", "pinned": true},
+    {"id": "ntm",             "installer": "jsm", "digest": "sha256:...", "pinned": true}
+  ],
+  "included":   ["AGENTS.md", "detections:open:high", "mail:last_20", "pane_log:ag_7:offsets:1200-1550"],
+  "excluded":   ["secrets/**", "**/*.env"],
+  "redactions": ["secret-like string in pane log", "provider token in env dump"],
+  "tokenEstimate": 18420,
+  "tokenBudget":   20000
+}
+```
+
+### 8.3.1 Agent ActionPlan contract
+
+When a tending agent wants to mutate project, swarm, bead, Git, reservation, build, or process state, it does not directly run arbitrary commands or invoke RPCs ad hoc. It emits a typed `ActionPlan`:
+
+```json
+{
+  "schemaVersion": 1,
+  "jobId": "tend-swarm",
+  "runId": "trun_01...",
+  "summary": "Agent ag_7 appears wedged while holding bead B-142 and a stale reservation.",
+  "evidenceRefs": ["det_01...", "pane_log:ag_7:offsets:1200-1550", "reservation:res_9"],
+  "actions": [
+    {
+      "type": "agent.ask_status",
+      "target": {"agentId": "ag_7"},
+      "idempotencyKey": "tend-swarm:ag_7:ask-status:B-142:2026-04-30",
+      "preconditions":  ["agent still running", "bead B-142 still in_progress"],
+      "postconditions": ["status message present in Agent Mail thread for B-142"]
+    }
+  ],
+  "riskClass": "low",
+  "requiresApproval": false
+}
+```
+
+The daemon — not the model — is the executor. For each action it: checks capability availability (§2.8), acquires declared resource locks, evaluates policy and approval rules (§5.3), verifies preconditions against canonical state, dry-runs where possible, executes through typed RPCs, and then verifies postconditions. The same pipeline runs for deterministic pre-script action intents (§8.3); the only thing that differs is the actor and the approval policy.
+
+Allowed action types are defined in `packages/schemas/tending-actions.yaml` and include only typed operations such as: `agent.ask_status`, `agent.send_marching_orders`, `agent.pause`, `agent.kill_wedged_process`, `reservation.force_release`, `caam.switch_account`, `casr.resume_session`, `git.push_branch`, `swarm.halt`, `review.propose_flip`, and `bead.create_blocker`. Any action type not in the schema is rejected at validation; the agent cannot escape the typed surface by inventing one.
+
+**Postcondition verification always re-reads canonical state.** The executor never trusts the action's own stdout or its own daemon RPC return value as proof of effect. Examples:
+
+- `git.push_branch` verifies origin's target ref contains the expected commit SHA via the daemon's Git read path.
+- `reservation.force_release` verifies Agent Mail no longer reports the reservation **and** that a release notice was posted in the bead's thread.
+- `caam.switch_account` verifies CAAM reports the target account for the agent **and** that the agent's pane resumes producing output within a bounded window.
+- `agent.kill_wedged_process` verifies NTM/tmux no longer reports the killed process and that the bead/reservation state was handled per policy.
+- `bead.create_blocker` verifies `br` contains the new bead and links it to the source bead/finding.
+
+If postcondition verification fails, the executor emits a new detection with `sourceActionId` and severity tied to the failed action's risk class — so a half-succeeded intervention becomes a new tending input rather than a silent log entry. This is what makes tending self-healing under partial failures.
+
+### 8.3.2 Scheduler correctness invariants
 
 - A recurring job must never be marked `completed` unless its repeat count is exhausted or it is explicitly disabled.
 - Missing schedule dependencies, malformed cron expressions, or failed next-run calculation put the job into `error`, not `completed`.
@@ -1098,39 +1272,64 @@ Hoopoe ships with a small default set of tending jobs. They are user-editable �
 - id: tend-swarm
   schedule: every 4m
   enabled_toolsets: [br, bv, ntm, agent_mail, git_read, caam, casr]
+  capabilities_required:
+    [br.issues.read, bv.robot.triage, ntm.sessions.list, agent_mail.messages.read]
+  capabilities_optional:
+    [caam.accounts.list, caam.account.switch, casr.session.resume, caut.usage.snapshot]
+  degraded_mode:
+    if_missing_required: block_job
+    if_missing_optional: continue_with_warning
+    activity_behavior:   diagnostics_only
   script: tend-swarm.go    # reconcile NTM/br/bv/Agent Mail/Git/CAAM;
                             # detect idle, wedged, rate-limited, stalled-bead candidates,
                             # duplicate claims, agents not using Agent Mail, agents not updating br;
                             # surface CAAM-reported account exhaustion as a first-class detection;
                             # if none → wakeAgent: false
   skills: [vibing-with-ntm, ntm]
+  skill_requirements: [swarm_tending, rate_limit_recovery]
   prompt: |
     The swarm has the following detections this tick: {{context.detections}}.
+    Evidence references: {{context.evidence_refs}}.
+
     Read AGENTS.md and the vibing-with-ntm skill, then decide: send marching
     orders, reassign beads, ask an agent for status, force-release a stale
     reservation (with audit note), switch a rate-limited agent to a different
     account via CAAM, resume an exhausted-account agent under a different
     provider via casr, kill a wedged process via pt, or take any other
-    action the skill prescribes. Destructive actions go through the same
-    approvals queue as user-initiated ones. If on closer inspection nothing
-    is warranted, reply [SILENT].
+    action the skill prescribes.
+
+    Mutating actions must be returned as a typed ActionPlan (§8.3.1); cite
+    evidence refs from the context manifest. The daemon will validate,
+    apply approvals, execute, and verify postconditions. Destructive actions
+    flow through the same approvals queue as user-initiated ones. If on
+    closer inspection nothing is warranted, reply [SILENT].
   deliver: hoopoe_activity_panel
 
 - id: watch-safety-thresholds
   schedule: every 30s
   enabled_toolsets: [budget, ntm, caut, srp, sbh, pt]
+  capabilities_required: [ntm.sessions.list, ntm.swarm.halt]
+  capabilities_optional: [caut.usage.snapshot, srp.signals.read, sbh.cleanup, pt.kill]
+  degraded_mode:
+    if_missing_required: block_job
+    if_missing_optional: continue_with_warning
+    activity_behavior:   activity_panel_warning
   script: safety-watch.go    # checks per-agent and per-swarm budget caps (reading
                               # caut for per-provider spend); hard rate-limit halts;
                               # disk pressure (via srp signals); CPU/load (via srp);
                               # daemon health.
-                              # CROSSING A HARD THRESHOLD takes immediate deterministic action:
-                              #   - budget breach → halt swarm via NTM
-                              #   - disk pressure → invoke sbh-driven cleanup of stale
+                              # CROSSING A HARD THRESHOLD emits typed deterministic action
+                              # intents executed by the same action executor as agent
+                              # ActionPlans (§8.3, §8.3.1):
+                              #   - budget breach → swarm.halt
+                              #   - disk pressure → sbh-driven cleanup of stale
                               #     artifacts (build/test outputs, old health snapshots,
                               #     terminal-log rings beyond retention)
                               #   - genuinely wedged process (no output + no syscalls
-                              #     + over a deterministic threshold) → pt-driven kill
-                              #     with audit
+                              #     + over a deterministic threshold) → agent.kill_wedged_process
+                              # Each intent carries an idempotency key, declared
+                              # postconditions, and a `pre_script:watch-safety-thresholds`
+                              # actor. Postcondition failure emits a follow-up detection.
                               # Emits an urgent event for any threshold crossing.
                               # Always returns wakeAgent: false (no judgment needed).
   skills: []
@@ -1194,15 +1393,25 @@ Hoopoe ships with a small default set of tending jobs. They are user-editable �
 - id: orchestrator-chat
   schedule: on event: user_message_in_activity_panel
   enabled_toolsets: [br, bv, ntm, agent_mail, git_read, health_adapter]
+  capabilities_required: [agent_mail.messages.read]
+  capabilities_optional:
+    [br.issues.read, bv.robot.triage, ntm.sessions.list, git.status.read, health_adapter.snapshot.read]
+  degraded_mode:
+    if_missing_required: block_job
+    if_missing_optional: continue_with_warning
+    activity_behavior:   activity_panel_warning
   script: build-chat-context.go    # gathers the user's message, recent activity,
                                     # current swarm state as context for the agent
   skills: [vibing-with-ntm, ntm]
   prompt: |
     The user said: {{context.message}}.
     Current swarm state: {{context.state_summary}}.
-    Respond as the orchestrator agent. You can answer questions, run reads,
-    take actions via daemon RPCs (with approval gates for destructive ones),
-    or broadcast marching orders to the swarm.
+    Respond as the orchestrator agent. You can answer questions and run
+    read-only tools freely. Mutating actions (force-release reservations,
+    broadcast marching orders, halt the swarm, switch agent accounts, etc.)
+    must be returned as a typed ActionPlan (§8.3.1); the daemon validates,
+    applies approval gates for destructive ones, executes, and verifies
+    postconditions.
   deliver: hoopoe_activity_panel
 ```
 
@@ -1226,6 +1435,39 @@ The detect/decide content from the old operator loop is preserved — it just li
 - **One runtime.** Scheduled tending, the orchestrator chat, and any future user-initiated investigation jobs all run on the same agent runtime.
 - **Auditability.** Every job tick writes an audit entry whether or not the agent woke and whether or not it spoke, including the pre-script's structured detection payload.
 - **User-editable.** A user can pause `drift-check`, change `tend-swarm`'s cadence, swap in a custom skill, or add a project-specific job without touching daemon code.
+
+### 8.7 What this approach trades away
+
+The skill-attached-jobs architecture is not free. The tradeoffs are worth naming explicitly so future contributors don't try to "fix" them by reaching for the Go state machine §1.8 deliberately rejects.
+
+- **Latency on judgment-class actions.** A Go state-machine reaction is microseconds; an agent wake-up is seconds-to-tens-of-seconds. Mitigated by deliberately keeping anything where speed matters in the deterministic pre-script: `watch-safety-thresholds` halts the swarm on a budget breach in Go *before* deciding whether to wake an agent for explanation; `push-stale-commits` pushes mechanically; disk-pressure cleanup runs through `sbh` directly; wedged-process kills go through `pt`. The architecture only pays the latency cost where judgment was required anyway.
+- **Skill quality is now a product dependency.** If `vibing-with-ntm` is wrong, Hoopoe is wrong. Mitigated three ways: the skill is treated as canonical methodology, so a wrong skill is the right place to fix the bug, not in Hoopoe's code; `.hoopoe/skills.lock.json` lets users pin a known-good SHA-256 when `jsm` is configured (§10.3); and the deterministic safety floor (`watch-safety-thresholds`) is pure Go and still halts on hard thresholds even if a skill misjudges.
+- **Debuggability is multi-layer.** "Why did Hoopoe do X?" stops being a stack-trace question and becomes a question across the four layers: which job ran, what did the pre-script detect, what context was passed, which skill was loaded at which version, what did the model say, which RPCs did it call, which approvals were consumed. Mitigated by §1.4 / §10 — every layer is audited, and every agent-decision audit entry records model, prompt, response, RPCs called, and approvals consumed. The Diagnostics screen (§10.2) exposes the full chain per tick.
+- **Cold starts are slower than a pure-Go daemon.** Spawning an agent with skills loaded is an order of magnitude slower than a Go function call. Mitigated by `wakeAgent: false` keeping cold starts rare in the steady state — a healthy hour produces few or no agent wake-ups, so the steady-state cost dominates the cold-start cost.
+- **Cost ceilings are ultimately set by the user.** Per-job `enabled_toolsets`, schedule cadence, `max_concurrency`, `dead_letter_after`, and pause toggles are editable from the `hoopoe tending` CLI / Diagnostics (§10). A user worried about cost can lengthen `tend-swarm` from 4m to 10m, narrow its toolset, or pause `drift-check` entirely without writing code. The deterministic safety floor keeps protecting them regardless.
+
+The non-tradeoff worth flagging explicitly: this architecture does *not* trade away determinism in safety actions. Hard thresholds (budget, rate-limit, disk full, push policy) are pre-script-only and never wait for an LLM (§8.3, §8.4). Judgment is for "should we send marching orders or reassign this bead"; safety is for "the budget cap was crossed, halt the swarm now."
+
+### 8.8 Tending evaluation harness
+
+Because tending is partly deterministic (pre-scripts, threshold actions) and partly skill-driven (agent ActionPlans), it needs its own replay/evaluation suite. Unit tests on Go code are necessary but insufficient: the interesting failures are at the seams — wrong wake decisions, malformed ActionPlans, missing postconditions, skill drift, degraded-tool fallthroughs. Mock Flywheel Mode (§13) must include tending fixtures that replay canonical state snapshots, event streams, pane logs, Agent Mail, reservations, build queue state, Git state, health snapshots, and tool-degraded states.
+
+Required fixtures:
+
+- **healthy hour** — no LLM wakes except optional `[SILENT]` smoke checks; no Activity-panel noise; deterministic jobs tick on schedule with `wakeAgent: false`.
+- **idle but not stuck** — detector emits low-confidence detection; escalator suppresses or asks for status, not kill/reassign.
+- **genuinely wedged pane** — deterministic evidence crosses threshold; typed `agent.kill_wedged_process` action is proposed or executed according to policy; postcondition verifies NTM no longer reports the process.
+- **rate-limited agent with CAAM available** — ActionPlan produces `caam.switch_account`; postcondition verifies CAAM reports the new account and the agent's pane resumes output within the bounded window.
+- **rate-limited agent without CAAM** — degraded-mode path (`capabilities_optional` missing) pauses and notifies instead of failing; the prompt is shaped so the agent does not propose `caam.switch_account` actions when the capability isn't present.
+- **stale reservation** — `reservation.force_release` proposal includes evidence refs, approval requirement, Agent Mail notice posting, and postcondition verifying both ledger removal and notice presence.
+- **commit burst** — `snapshot-health` coalesces pushes by commit SHA; `push-stale-commits` does not duplicate pushes (idempotency keys collide and the executor skips).
+- **budget breach** — `watch-safety-thresholds` emits a `swarm.halt` intent immediately without waking an LLM; postcondition verifies NTM reports the swarm halted; latency from threshold crossing to halt is measured.
+- **skill drift** — installed skill digest no longer matches `.hoopoe/skills.lock.json`; pinned project blocks the affected jobs with a Diagnostics entry; floating-skill (development) project proceeds with a warning.
+- **missing tool** — required capability is absent; affected job enters `block_job` state per its `degraded_mode`; Activity behavior follows the configured policy; no silent failure.
+- **postcondition failure** — action executes but canonical state does not reflect the intended change; executor emits a follow-up detection with `sourceActionId` and the next escalator tick can act on it.
+- **action arbitration** — safety action and recovery action target the same swarm in the same window; safety wins, recovery is recorded as `superseded_by` with a link to the safety run.
+
+Each fixture asserts: detections emitted, wake/no-wake behavior, ActionPlan shape and validity, approvals requested, actions executed, postconditions verified or follow-up detections raised, Activity entries emitted, audit records, and cost/noise counters. Fixtures double as the regression suite for §8.3.1's typed-action surface — adding a new action type to `packages/schemas/tending-actions.yaml` requires a fixture that exercises its happy path and at least one postcondition-failure path.
 
 ---
 
@@ -1517,7 +1759,7 @@ Cross-stage Activity drawer (see §7.5); Agent Mail ingestion; agent↔agent mes
 
 Build the scheduler infrastructure and the initial set of tending jobs (§8). Concretely:
 
-- **Scheduler infrastructure** — `~/.hoopoe/tending/jobs.json` storage with atomic writes; tick loop with file lock to prevent overlapping ticks; cron expression / interval / event-trigger / on-demand schedule resolver; pre-script runner (Go subprocess); `wakeAgent` and `[SILENT]` plumbing; agent runtime that loads declared skills from the agentskills.io standard; per-job toolset budget enforcement; delivery dispatcher with `hoopoe_activity_panel`, `hoopoe_activity_urgent`, `local`, and external (Telegram/etc.) targets; audit-on-every-tick regardless of wake/silence.
+- **Scheduler infrastructure** — definitions in `~/.hoopoe/tending/{global,projects/<id>}/jobs.d/*.yaml` with atomic writes + file-watch hot reload + schema validation on import; runtime state (leases, next-run, retries, dead-letter, last decision, scheduler metrics) in daemon SQLite per §2.7 / §8.2; tick loop with bounded worker pool; cron expression / interval / event-trigger / on-demand schedule resolver; pre-script runner (Go subprocess) emitting structured detections + typed deterministic action intents; `wakeAgent` and `[SILENT]` plumbing; agent runtime that loads pinned skills from `.hoopoe/skills.lock.json` (verified against `jsm` SHA-256 when configured, advisory under `jfp`) per §8.1; per-job toolset budget enforcement and `context_policy` token budget enforcement (§8.2); typed action executor (§8.3.1) shared by deterministic pre-script intents and agent ActionPlans — handles policy, idempotency, approvals, execution, and postcondition verification against canonical state; delivery dispatcher with `hoopoe_activity_panel`, `hoopoe_activity_urgent`, `local`, and external (Telegram/etc.) targets; audit-on-every-tick regardless of wake/silence.
 - **Job lifecycle CLI and UI** — `hoopoe tending {list,create,edit,pause,resume,run,remove,status,tick}`; Diagnostics screen (§10) shows job table with last run, next run, last decision, recent audit entries, pause toggles.
 - **Initial job set (§8.4)** — `tend-swarm`, `watch-safety-thresholds`, `push-stale-commits`, `snapshot-health`, `drift-check`, `review-readiness-check`, `orchestrator-chat`. Each ships with its pre-script and prompt; users can edit them post-install.
 - **Skill loader** — dual-path resolution. **Preferred:** `jsm` (Jeffrey's Skills.md CLI, [jeffreys-skills.md](https://jeffreys-skills.md/dashboard)) when the user has a subscription configured, because SHA-256 deterministic versioning lets Hoopoe pin specific skill commits per project (`.hoopoe/skills.lock.json`) and cross-device sync keeps multi-workstation users aligned. **Fallback:** `jfp` (Jeffrey's Prompts, ACFS-installed, free) for users without a `jsm` subscription — sufficient for the open-source skills like `vibing-with-ntm` and `ntm` that the default tending jobs require. Resolution order at swarm-launch time: (1) check `.hoopoe/skills.lock.json` for pinned SHA-256s and verify against `jsm` cache; (2) if `jsm` unavailable or the skill isn't in the premium catalog, try `jfp`; (3) if both fail, refuse to launch the swarm and surface the missing skills in Diagnostics with one-click install/update buttons for whichever installer is configured. Hoopoe never reimplements skill-fetch logic — when `jeffreys-skills.md` evolves, `jsm` or `jfp` brings the changes in without a Hoopoe code release.
@@ -1555,7 +1797,7 @@ Electron app with four-stage shell (Planning, Beads, Swarm, Debugging / Hardenin
 
 ### Can defer
 
-Multi-provider automatic VPS provisioning; perfect PTY fidelity for all panes; direct mTLS public daemon mode; full spend precision (precision beyond what `caut` reports); advanced Force graph interactions; full language coverage; CASS/CM deep memory workflows; `casr` cross-provider session resumption (CAAM-only account switching ships first; `casr` follows when the cross-CLI conversion path stabilizes); `apr`-delegated planning (decision per §7.1); SLB two-person rule integration; `rano` per-call latency dashboards; collaborative multi-user teams; hosted relay/cloud sync; Mac App Store distribution.
+Multi-provider automatic VPS provisioning; perfect PTY fidelity for all panes; direct mTLS public daemon mode; full spend precision (precision beyond what `caut` reports); advanced Force graph interactions; full language coverage; CASS/CM deep memory workflows; `casr` cross-provider session resumption (CAAM-only account switching ships first; `casr` follows when the cross-CLI conversion path stabilizes); SLB two-person rule integration; `rano` per-call latency dashboards; collaborative multi-user teams; hosted relay/cloud sync; Mac App Store distribution.
 
 ### Must include for development and demos
 
@@ -1729,7 +1971,7 @@ Do not start with provider automation, spend charts, or polished graph animation
 
 - `jsm` ([Jeffrey's Skills.md](https://jeffreys-skills.md/dashboard) CLI) — **preferred** install/update mechanism for `vibing-with-ntm`, `ntm`, and other skills. SHA-256 deterministic versioning enables per-project skill-version pinning (`.hoopoe/skills.lock.json`); cross-device sync keeps multi-workstation users aligned. Premium subscription required.
 - `jfp` (Jeffrey's Prompts, ACFS-installed) — **free fallback** install/update mechanism. Sufficient for the open-source skills the default tending jobs require. Used when `jsm` is unavailable or unconfigured. Hoopoe's skill loader (§12 Phase 10) shells out to `jsm` then `jfp` rather than reimplementing fetch/cache.
-- `apr` (Automated iterative spec refinement) — *candidate* for delegating the Planning pipeline; decision pending per §7.1.
+- `apr` (Automated iterative spec refinement) — installed by ACFS on the VPS, but **Hoopoe does not delegate planning to it** (resolved per §7.1). Hoopoe's Planning workspace owns the candidates → synthesis → critique → refinement pipeline in-house. Listed here for completeness because it is part of the ACFS toolchain users may invoke manually outside Hoopoe.
 - `agent.opencode` (OpenCode multi-provider harness) — listed as a Server-side CLI mode option for users without a Claude Max / GPT Pro / Gemini Ultra subscription on a specific provider (§7.1).
 
 **Tools (deliberately not adopted).**
