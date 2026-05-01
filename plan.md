@@ -630,47 +630,114 @@ Before any model call, the daemon records a context manifest: source files/artif
 
 ### 6.1 First-run wizard (Stage 0 — Connect)
 
-Steps:
+**The canonical VPS setup wizard lives at [agent-flywheel.com/wizard](https://agent-flywheel.com/wizard/os-selection) — Hoopoe wraps it, never replaces it.** That public 13-step wizard is the authoritative guide for taking a beginner from "I have a laptop" to "fresh ACFS VPS reachable via SSH." It is maintained alongside ACFS itself and evolves with the toolchain. Hoopoe's first-run wizard is the desktop-app surface of that same flow: it automates the parts that can be automated (SSH key handling, preflight, ACFS install streaming, doctor parsing, tool inventory, daemon pairing), surfaces the parts the user must do at a provider's site (rent VPS, create instance, set up subscription accounts), and adds Hoopoe-specific pairing steps (daemon install, tunnel, CAAM check, Oracle, jsm/jfp) on top.
 
-1. Explain that Hoopoe controls a user-owned VPS.
-2. Choose path: connect existing VPS, provision new, or local demo. Local demo may run in either real local-daemon mode or mock/replay mode.
-3. Configure SSH (generate or import key, paste host/user, verify fingerprint).
-4. Run preflight (OS version, CPU/RAM/disk, network, base tools, permissions).
-5. Install or verify ACFS.
-6. Install or update Hoopoe daemon.
-7. Start daemon as systemd service.
-8. Establish tunnel.
-9. Run tool inventory.
-10. Confirm subscription coverage (Hoopoe is subscription-only, §13). The wizard checks which CLIs are signed in via CAAM (Claude Code → Claude Max, Codex CLI → GPT Pro, Gemini CLI → Gemini Ultra) and asks the user to log into any missing ones via each CLI's own auth flow. Warn (don't block) if zero subscriptions are configured — the user can finish onboarding but planning/swarm/tending will be disabled until at least one is signed in.
-11. Configure ChatGPT Pro reach (optional but recommended): install `oracle` on the user's Mac (`brew install steipete/tap/oracle` or `npm install -g @steipete/oracle`), run the first-time browser-manual-login flow to log into `chatgpt.com`, configure `oracle serve` to start with the user's session, and register its `--remote-host`/`--remote-token` with the daemon. Skip cleanly if the user doesn't have ChatGPT Pro — they fall back to one of the CLI-backed primary models for planning.
-12. Configure other optional credentials (GitHub auth, `[jsm` subscription](https://jeffreys-skills.md/dashboard) for premium-skill installs with SHA-256 versioning + cross-device sync — `jfp` is used as the free fallback when `jsm` is not configured).
-13. Show "VPS Ready."
+**The 13 canonical steps and where Hoopoe sits in each:**
+
+| # | Canonical step (agent-flywheel.com) | Where it happens | Hoopoe's role |
+| - | ----------------------------------- | ---------------- | ------------- |
+| 1 | Choose OS (Mac / Windows / Linux) | Local machine | Hoopoe is **Mac-only for v1** (§11); the wizard skips this step. |
+| 2 | Install Terminal | Local machine | n/a — Hoopoe needs only Electron itself. The Diagnostics "recovery shell" (§2.5) provides a break-glass terminal for users who do need one. |
+| 3 | Generate SSH Key | Local machine | Hoopoe generates a fresh `ed25519` key on demand or imports an existing one from `~/.ssh/`. Stored via macOS Keychain (§5.1). |
+| 4 | Rent VPS (Contabo / OVH / existing) | Provider's website | Hoopoe surfaces canonical specs and recommended providers (§6.2). Provider plugins (§6.2) can automate this post-MVP; for v1 the user does this manually. |
+| 5 | Create Instance (paste pubkey, get IP) | Provider's website | The user pastes the SSH public key Hoopoe just generated into the provider's instance-creation form. Hoopoe then asks for the instance's IP. |
+| 6 | SSH Connect | Local terminal (or Hoopoe) | Hoopoe's tunnel manager (§2.5) opens the SSH connection itself; the user never has to run `ssh` by hand. Fingerprint TOFU is shown in the wizard. |
+| 7 | Set Up Accounts (Claude Code / Codex CLI / Gemini CLI subscriptions) | VPS, after install | Done via each CLI's native auth flow on the VPS. Hoopoe verifies via CAAM in step 12 below; users without subscriptions can finish onboarding but planning/swarm/tending will be disabled until at least one is signed in (§13). |
+| 8 | Pre-Flight Check | VPS | Hoopoe streams `OS version, CPU/RAM/disk, network, base packages, permissions` checks and renders structured pass/fail cards. Failures resume rather than restart (§6.3). |
+| 9 | Run Installer (canonical `curl\|bash` one-liner) | VPS | Hoopoe streams the ACFS one-liner (§6.3) with the structured phase parser (§6.4). Idempotent — interrupted installs resume from the last completed phase. |
+| 10 | Reconnect | Local | Hoopoe re-establishes the SSH tunnel automatically; nothing for the user to do. |
+| 11 | Verify Key (`acfs doctor` / install verification) | VPS | Hoopoe runs `acfs doctor --json` and renders structured pass/fail per category. Failures surface repair actions (§10.2). |
+| 12 | Status Check | VPS | Hoopoe runs the tool inventory (§2.8) and confirms subscription coverage via CAAM: which CLIs are signed in (Claude Code → Claude Max, Codex CLI → GPT Pro, Gemini CLI → Gemini Ultra). Warn (don't block) if zero subscriptions are configured. |
+| 13 | Launch Onboard (interactive tutorial) | VPS | Hoopoe surfaces the `onboard` command as an *optional* link in the wizard's success screen — newcomers to the agent-flywheel methodology benefit from it; users coming from the agent-flywheel.com guide will already have run it. Hoopoe does not replace `onboard` and does not gate completion on it. |
+
+**Hoopoe-specific extensions on top of the canonical 13** (these run as additional phases inside the same wizard, sequenced after the canonical step they extend):
+
+- **After step 9 (Run Installer):** install or update the Hoopoe Go daemon binary and its `Type=notify` systemd unit (§6.5).
+- **After step 10 (Reconnect):** establish the persistent SSH tunnel that all subsequent daemon traffic flows through (§2.5), then exchange the daemon's initial pairing token for a 30-day bearer (§5.2, §6.3).
+- **After step 12 (Status Check):** configure ChatGPT Pro reach (optional but recommended): install `oracle` on the user's Mac (`brew install steipete/tap/oracle` or `npm install -g @steipete/oracle`), run the first-time browser-manual-login flow to log into `chatgpt.com`, configure `oracle serve` to start with the user's session, and register its `--remote-host`/`--remote-token` with the daemon. Skip cleanly if the user doesn't have ChatGPT Pro — they fall back to one of the CLI-backed primary models for planning (§7.1).
+- **After step 12 (Status Check):** configure other optional credentials (GitHub auth so the desktop's local clone (§7.7) can fetch from origin without prompts; [`jsm` subscription](https://jeffreys-skills.md/dashboard) for premium-skill installs with SHA-256 versioning + cross-device sync — `jfp` is used as the free fallback when `jsm` is not configured, §8.1).
+- **In place of step 13 (Launch Onboard):** show **"VPS Ready"** with a link to launch `onboard` in a Diagnostics terminal pane for new users, plus a primary CTA to import or create the first project (§7).
+
+**Local-demo path.** The wizard also offers a "Local demo" path that bypasses steps 4–11 entirely: the daemon runs on the user's Mac, Mock Flywheel Mode (§13) supplies fixture data, and the user can navigate the four-stage shell against replayed snapshots without owning a VPS or any subscriptions. This path exists for reviewers, contributors, and CI; it is not a supported way to run real swarms.
 
 ### 6.2 Existing VPS first, provider automation second
 
-The MVP supports **existing VPS** first because it is easiest to make reliable and fastest to debug. Provider automation is designed from day one but ships after the tunnel/daemon/tooling path works. Recommended rollout: existing VPS → one provider plugin (the team's preferred provider) → additional providers → one-click teardown and cost inventory.
+The MVP supports **existing VPS** first because it is easiest to make reliable and fastest to debug. Provider automation is designed from day one but ships after the tunnel/daemon/tooling path works. Recommended rollout: existing VPS → one provider plugin (Contabo first, since the canonical guide highlights it as the best-value top pick) → additional providers (OVH, then Hetzner / DigitalOcean as common alternatives) → one-click teardown and cost inventory.
+
+**Canonical VPS sizing (from the agent-flywheel.com wizard, step 4).** Hoopoe inherits the same sizing recommendation as the canonical guide and surfaces it in the wizard's "Rent VPS" / "Connect existing VPS" screens so users hitting Hoopoe directly see the same numbers as users coming from the agent-flywheel.com path:
+
+| Spec        | Recommended      | Workable | Minimum |
+| ----------- | ---------------- | -------- | ------- |
+| OS          | Ubuntu 24.x or newer (ACFS targets Ubuntu 25.10) | — | — |
+| RAM         | **64 GB**        | 48 GB    | 32 GB   |
+| vCPU        | 12–16            | 8        | 8       |
+| Storage     | 250 GB+ NVMe SSD | 100 GB   | 50 GB   |
+| Price       | ~$40–56/month    | —        | —       |
+
+The 64 GB recommendation is grounded in the agent-flywheel guide's per-agent overhead (~2 GB RAM per agent) and the §7.3 default 12-agent cap: a serious mixed swarm needs 24+ GB just for agents, plus headroom for builds/tests and the daemon itself. Hoopoe warns at 32 GB and below in the wizard's preflight (§6.4) but does not block — the user can run a smaller swarm against a smaller VPS.
+
+**Recommended providers** (mirroring the canonical guide's "no affiliate" comparison table):
+
+| Provider | Plan | RAM | vCPU | Storage | Price | Notes |
+| -------- | ---- | --- | ---- | ------- | ----- | ----- |
+| **Contabo** (top pick) | Cloud VPS 50 | 64 GB | 16 | 400 GB | $56/mo | Best value overall; US datacenter pricing includes ~$10/mo surcharge; activation typically minutes, occasionally up to ~1 hr. |
+| **OVH** | VPS-5 | 64 GB | 16 | 640 GB | $40/mo | Lowest 64 GB price; reliable, good support; activation in minutes. |
+| **Hetzner / DigitalOcean / Linode / etc.** | (varies) | (varies) | (varies) | (varies) | (varies) | Any provider that supports Ubuntu 24+ with SSH-key login works. AWS/GCP/Azure are *deliberately not recommended* — billing is unpredictable and equivalent specs cost 3–5× more, exactly the failure mode the canonical guide calls out. |
+
+The wizard renders a comparison card matching the agent-flywheel.com format and links out to the canonical guide for users who want the full justification. Hoopoe does not maintain its own pricing comparison — provider details come from a small JSON catalog that mirrors the upstream guide and is refreshed alongside ACFS releases.
 
 Provider plugin contract (in `packages/schemas/`): `listRegions`, `listSizes`, `createInstance`, `destroyInstance`, `estimateMonthlyCost`.
 
 ### 6.3 Bootstrap flow
 
-```text
-1. verify OS and basic dependencies
-2. install missing base packages
-3. verify bootstrap source pins, release checksums, and expected installer URLs
-4. install or verify ACFS
-5. run ACFS doctor/inventory
-6. record exact ACFS/tool versions, source URLs, commits, and checksums
-7. install Hoopoe daemon binary
-8. create daemon config and signing secret
-9. install systemd unit (Type=notify) and start daemon as the least-privileged Hoopoe service user compatible with the project paths
-10. daemon emits initial pairing token to stdout (captured by SSH)
-11. desktop opens SSH tunnel, exchanges pairing token → 30d bearer
-12. bearer persisted in macOS Keychain via safeStorage
-13. version handshake; print machine-readable result JSON
+The bootstrap is a thin orchestration layer **on top of the canonical ACFS one-liner** (the same one-liner the agent-flywheel.com wizard step 9 instructs users to run). Hoopoe never re-implements the ACFS install logic; it streams the canonical installer and parses its output (§6.4).
+
+**The canonical one-liner** ([github.com/Dicklesworthstone/agentic_coding_flywheel_setup](https://github.com/Dicklesworthstone/agentic_coding_flywheel_setup)):
+
+```bash
+curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/main/install.sh?$(date +%s)" \
+  | bash -s -- --yes --mode vibe
 ```
 
-The wizard streams logs and shows structured checkpoint cards. Failures resume from checkpoints rather than starting from scratch.
+For **production / stable** installs Hoopoe pins to a tagged release rather than tracking `main`, exactly as the canonical README recommends:
+
+```bash
+# Hoopoe's default for v1: pin to a known-good ACFS release tag
+curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/<TAG>/install.sh" \
+  | bash -s -- --yes --mode vibe --ref <TAG>
+```
+
+The `<TAG>` is recorded in Hoopoe's release manifest so a given Hoopoe build always pairs with a known-good ACFS release, and Diagnostics (§10.2) shows both versions side by side. The `--ref` flag ensures all fetched ACFS sub-scripts use the same version, eliminating split-version installs. Idempotency is a property of the upstream installer — re-running it skips already-installed phases — which is what makes step 9 of the wizard safely retryable when SSH drops mid-install.
+
+**`--mode vibe`** is the canonical default and matches the agent-flywheel guide's "Vibe Mode": passwordless sudo with dangerous agent flags enabled, optimized for velocity on a throwaway/owner-controlled VPS. Hoopoe's safety architecture (DCG verdicts ingested into the approvals queue per §5.3, audited destructive-action gates per §5.3, the `watch-safety-thresholds` deterministic safety floor per §8.4, and the per-swarm preset selection in §7.3) layers on top of Vibe Mode rather than replacing it. The user's VPS is theirs; Hoopoe just makes sure no agent action that touches durable state happens without an audit trail and an approval gate where one is required.
+
+**Full bootstrap sequence** (Hoopoe's wizard runs this; each numbered step has a structured checkpoint card and resume-on-failure semantics):
+
+```text
+1. verify OS and basic dependencies (preflight, mirrors agent-flywheel.com step 8)
+2. install missing base packages
+3. verify bootstrap source pins (ACFS commit/tag, install.sh checksum,
+   expected installer URLs match the agent-flywheel.com release manifest)
+4. stream the canonical curl|bash one-liner (agent-flywheel.com step 9)
+   with --yes --mode vibe --ref <pinned-tag>; the upstream installer
+   handles phase resume, SHA256 verification, and dependency installs
+5. run `acfs doctor --json` for structured inventory (mirrors step 11–12)
+6. record exact ACFS/tool versions, source URLs, commits, and checksums
+   into the daemon's tool inventory (§2.8)
+7. install Hoopoe daemon binary (via signed release URL, checksum + provenance verified, §11)
+8. create daemon config and signing secret (32 bytes random, ServerSecretStore)
+9. install systemd unit (Type=notify, hardened per §6.5) and start daemon
+   as the least-privileged Hoopoe service user compatible with the project paths
+10. daemon emits initial pairing token to stdout (captured by SSH session)
+11. desktop opens SSH tunnel, exchanges pairing token → 30-day bearer
+12. bearer persisted in macOS Keychain via safeStorage
+13. version handshake; print machine-readable result JSON
+14. (optional) surface a "Launch onboard" link to the wizard success screen
+    for users who haven't run the canonical interactive tutorial yet
+    (agent-flywheel.com step 13)
+```
+
+The wizard streams logs and shows structured checkpoint cards. Failures resume from checkpoints rather than starting from scratch — this is true both at Hoopoe's outer level (step granularity) and at the inner ACFS one-liner level (phase granularity, courtesy of the upstream installer's idempotent design).
 
 ### 6.4 Structured ACFS bootstrap parsing
 
@@ -1865,7 +1932,7 @@ Second subsystem of the Debugging / Hardening stage (§7.4). Hardening-mode swar
 
 ### Phase 13 — Provider automation and production polish
 
-One provider plugin (Hetzner first); cost estimate and teardown; polished empty/loading/error states; onboarding tour; diagnostics screen; crash reports opt-in; daemon upgrade system end-to-end; documentation and demo project.
+One provider plugin (**Contabo first**, matching the §6.2 rollout — the agent-flywheel.com wizard's top pick and the easiest "just works" path for a beginner following the canonical guide); cost estimate and teardown wired to the §13 cost-transparency numbers; polished empty/loading/error states; onboarding tour mirroring the [agent-flywheel.com 13-step wizard](https://agent-flywheel.com/wizard/os-selection); diagnostics screen; crash reports opt-in; daemon upgrade system end-to-end; documentation and demo project.
 
 (Signed/notarized DMG and auto-update infrastructure are already in place from Phase 1's lift — this phase is about polish, error UX, and provider automation, not building the release pipeline.)
 
@@ -1878,6 +1945,18 @@ One provider plugin (Hetzner first); cost estimate and teardown; polished empty/
 ### Subscription requirement
 
 Hoopoe is **subscription-required**. The user must have at least one of: Claude Max (drives Claude Code), GPT Pro (drives Codex CLI and unlocks ChatGPT Pro web for Oracle), Gemini Ultra (drives Gemini CLI). Recommended for full agent-flywheel methodology: ChatGPT Pro for planning + at least one CLI subscription for swarm execution. Hoopoe does not support BYOK API keys, has no direct-API path to OpenAI/Anthropic/Google, and will not gain one — see §5.1, §7.1, and Appendix C for the architectural rationale. The new-plan empty-state and onboarding wizard make this requirement explicit so users without subscriptions discover the constraint up front rather than after install.
+
+**Cost transparency** (mirroring the [agent-flywheel.com cost breakdown](https://agent-flywheel.com/) — Hoopoe quotes the same numbers because the underlying assumption is identical: the tools are free, the user pays for the AI subscriptions and the VPS):
+
+| Line item                                          | Cost (USD/month)            | Notes                                                                                                |
+| -------------------------------------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Cloud VPS (64 GB Ubuntu, Contabo or OVH per §6.2)  | ~$40–56                     | Flat month-to-month; no commitment. AWS/GCP/Azure deliberately not recommended (§6.2).                |
+| Claude Max (drives Claude Code)                    | $200 (or $400 power-user)   | $400 unlocks two Claude Max accounts — useful for parallel Claude swarms when CAAM rotates between them. |
+| ChatGPT Pro (drives Oracle for the planning pipeline) | $200                     | Essential for the §7.1 planning-with-extended-reasoning path; without it the user falls back to a CLI-backed primary model. |
+| Gemini Ultra (drives Gemini CLI), optional         | (varies by plan)            | Needed only if Gemini agents are part of the swarm composition (§7.3).                                |
+| **Estimated all-in monthly total**                 | **~$440–$656**              | For comparison, a junior developer is $5,000+/month; under $700 buys a 10+-agent swarm running 24/7. |
+
+These costs are **not** in Hoopoe's UI as a billing dashboard — Hoopoe doesn't see the user's credit card. They appear in the onboarding wizard's "Subscription requirement" screen (so users discover the floor *before* renting a VPS), in the empty-state of the new-plan screen when no subscriptions are configured, and in the project-settings docs page. The numbers are pulled from a small JSON catalog mirroring the canonical guide's pricing table, refreshed alongside ACFS releases.
 
 ### Must include
 
@@ -1973,7 +2052,7 @@ That is the actual product: not a pretty wrapper around terminals, but a reliabl
 
 **Phase 0 (parallel) — Research spike on real ACFS VPS.** ~3 days.
 
-1. Stand up an Ubuntu 24.04 VPS with ACFS installed (Hetzner / DigitalOcean / existing).
+1. Stand up a 64 GB Ubuntu 24+ VPS with ACFS installed via the canonical curl|bash one-liner per §6.3, on **Contabo Cloud VPS 50** or **OVH VPS-5** (the agent-flywheel.com top picks per §6.2) or an existing VPS the team already controls. Run the canonical [agent-flywheel.com 13-step wizard](https://agent-flywheel.com/wizard/os-selection) end-to-end first, *as a user would*, before writing any Hoopoe code that wraps it — you cannot automate a flow you haven't completed manually, and step-by-step notes from this run become the basis for §6.4's structured ACFS bootstrap parsing.
 2. Write a script that produces one machine-readable JSON snapshot covering: Git status, `br list --json`, `bv --robot-triage`, `bv --robot-plan`, `bv --robot-insights`, `ntm --robot-snapshot`, Agent Mail dump, file reservations, lizard health, `ru sync --dry-run --json`, `ru status --no-fetch --json`, `ru list --paths`, `ru prune` (dry-run), `ru robot-docs`, and `ru --schema` (so the `GitAdapter`'s §2.3 scope is grounded in what `ru` actually emits, including its NDJSON per-repo result format and exit-code vocabulary).
 3. Capture parser fixtures for every output format. Document any drift from expected shapes.
 4. Identify gotchas (TUI invocations, undocumented flags, version skew) before writing adapters.
@@ -2025,7 +2104,9 @@ Do not start with provider automation, spend charts, or polished graph animation
 
 **Methodology (the playbooks Hoopoe codifies as software).**
 
-- Agentic Coding Flywheel methodology: `agent-flywheel.com/complete-guide`
+- Agent Flywheel home: [agent-flywheel.com](https://agent-flywheel.com/) — top-level overview, "Is this for you?", the cost breakdown Hoopoe mirrors in §13, and the canonical 13-step VPS setup wizard at [agent-flywheel.com/wizard](https://agent-flywheel.com/wizard/os-selection) that §6 wraps end-to-end. When the canonical wizard changes, Hoopoe's wizard follows.
+- Agentic Coding Flywheel methodology: [agent-flywheel.com/complete-guide](https://agent-flywheel.com/complete-guide) — the long-form methodology that informs §7.1 planning, §7.2 beads, §7.3 swarm, and §7.4 hardening. When this doc and a referenced skill disagree on swarm or tending behavior, the skill wins (§17 closing); when this doc and Hoopoe's plan disagree on *user-facing setup*, the canonical guide wins.
+- Core flywheel introduction: [agent-flywheel.com/core-flywheel](https://agent-flywheel.com/core-flywheel) — the beginner-friendly subset (Agent Mail + beads + bv) Hoopoe makes navigable from day one for users coming from the canonical introductory path.
 - Beads workflow skill: `jeffreys-skills.md/skills/beads-workflow` — authoritative for Stage 02 (plan-to-beads conversion, polish rounds, traceability).
 - `ntm` skill: `jeffreys-skills.md/skills/ntm` — tool reference for NTM (spawn, marching orders, inbox, robot-mode, pipelines/controllers/serve, safety/policy/approvals).
 - `vibing-with-ntm` skill: `jeffreys-skills.md/skills/vibing-with-ntm` — authoritative behavioral spec for Stage 03 (Swarm, §7.3) and the tending jobs (§8). Covers tending swarms, recovering stuck/rate-limited panes, build/test contention handling, review-only mode, convergence detection, and multi-agent coordination via Agent Mail + Beads + BV. Loaded directly into Hoopoe's tending agents at runtime — not reimplemented in code.
@@ -2038,7 +2119,7 @@ Do not start with provider automation, spend charts, or polished graph animation
 
 **Tools (core flywheel — Hoopoe wraps).**
 
-- ACFS setup: `github.com/Dicklesworthstone/agentic_coding_flywheel_setup` — canonical installer; `acfs.manifest.yaml` is the authoritative tool list Hoopoe must keep its adapter inventory aligned with.
+- ACFS setup: [github.com/Dicklesworthstone/agentic_coding_flywheel_setup](https://github.com/Dicklesworthstone/agentic_coding_flywheel_setup) — canonical installer (the curl|bash one-liner Hoopoe streams in §6.3, with `--mode vibe` default and `--ref <tag>` pinning for production); idempotent (interrupted installs resume from the last completed phase); `acfs.manifest.yaml` is the authoritative tool list Hoopoe must keep its adapter inventory aligned with; the `onboard` interactive tutorial (agent-flywheel.com wizard step 13) is the canonical introduction Hoopoe surfaces but does not replace.
 - NTM: `github.com/Dicklesworthstone/ntm`
 - Beads Rust (`br`): `github.com/Dicklesworthstone/beads_rust`
 - `bv`: bead-graph triage TUI / `--robot-`* JSON surfaces (installed alongside `br`).
