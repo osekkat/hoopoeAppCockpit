@@ -222,8 +222,18 @@ AgentMailAdapter
   3. read-only DB/file fallback if documented
 
 GitAdapter
-  1. git plumbing commands
-  2. ru --json for multi-repo workflows
+  1. git plumbing commands (per-project reads/writes via daemon)
+  2. ru --json for multi-project VPS-side operations:
+       ru sync --json --non-interactive   # N-project origin sync
+       ru status --no-fetch --json        # cheap multi-project status
+       ru list --paths                    # project enumeration
+       ru prune --archive                 # orphan-clone detection (wired
+                                          # as a Diagnostics repair, §10.2)
+     ru review / agent-sweep / ai-sync / dep-update are deliberately NOT
+     adapter surfaces — they overlap with §7.4 / §8 / §9 workflows but
+     own their own state store under ~/.local/state/ru/**, which would
+     create a parallel source of truth for session state (§1.1). Same
+     rationale as §7.1's "Resolved" paragraph on apr. See §17.
 
 HealthAdapter
   1. project-native reports
@@ -1571,6 +1581,7 @@ Diagnostics should include safe repair buttons, each backed by typed daemon RPC 
 | Restart NTM / Agent Mail service        | Requires project/session impact warning.                                                                                                                                                                |
 | Re-run ACFS doctor                      | Read-only unless the user approves fixes.                                                                                                                                                               |
 | Clear desktop local clone               | Deletes the local mirror only; never touches VPS or origin.                                                                                                                                             |
+| Detect / archive orphan project clones  | Runs `ru prune` on the VPS; `--archive` moves orphans to `~/.local/state/ru/archived/` (non-destructive); `--delete` requires explicit user confirmation; no-op when no orphans detected. Layout-aware per §2.3.                                                                                           |
 | Force release stale reservation         | Requires reason; posts Agent Mail notice; audit entry links to stale evidence.                                                                                                                          |
 | Replay events from sequence             | Read-only repair for UI gaps.                                                                                                                                                                           |
 | Rebuild bead read model                 | Re-reads `br`/`.beads`; cache-only action.                                                                                                                                                              |
@@ -1882,7 +1893,7 @@ That is the actual product: not a pretty wrapper around terminals, but a reliabl
 **Phase 0 (parallel) — Research spike on real ACFS VPS.** ~3 days.
 
 1. Stand up an Ubuntu 24.04 VPS with ACFS installed (Hetzner / DigitalOcean / existing).
-2. Write a script that produces one machine-readable JSON snapshot covering: Git status, `br list --json`, `bv --robot-triage`, `bv --robot-plan`, `bv --robot-insights`, `ntm --robot-snapshot`, Agent Mail dump, file reservations, lizard health.
+2. Write a script that produces one machine-readable JSON snapshot covering: Git status, `br list --json`, `bv --robot-triage`, `bv --robot-plan`, `bv --robot-insights`, `ntm --robot-snapshot`, Agent Mail dump, file reservations, lizard health, `ru sync --dry-run --json`, `ru status --no-fetch --json`, `ru list --paths`, `ru prune` (dry-run), `ru robot-docs`, and `ru --schema` (so the `GitAdapter`'s §2.3 scope is grounded in what `ru` actually emits, including its NDJSON per-repo result format and exit-code vocabulary).
 3. Capture parser fixtures for every output format. Document any drift from expected shapes.
 4. Identify gotchas (TUI invocations, undocumented flags, version skew) before writing adapters.
 
@@ -1951,7 +1962,7 @@ Do not start with provider automation, spend charts, or polished graph animation
 - Beads Rust (`br`): `github.com/Dicklesworthstone/beads_rust`
 - `bv`: bead-graph triage TUI / `--robot-`* JSON surfaces (installed alongside `br`).
 - Agent Mail: `github.com/Dicklesworthstone/mcp_agent_mail`
-- Repo Updater (`ru`): `github.com/Dicklesworthstone/repo_updater`
+- Repo Updater (`ru`): `github.com/Dicklesworthstone/repo_updater` — **adopted narrowly** for VPS-side multi-project operations inside the `GitAdapter` (§2.3): `ru sync --json --non-interactive`, `ru status --no-fetch --json`, `ru list --paths`, `ru prune --archive` (the last wired as a Diagnostics repair, §10.2). **Deliberately not adopted at runtime:** `ru review`, `ru agent-sweep`, `ru ai-sync`, `ru dep-update`. They overlap with §7.4 / §8 / §9 in *primitives* but the *workflow shape* is different (GitHub work items vs. beads; dirty-repo sweep vs. planned swarm; per-repo sessions vs. bead claims), and each owns its own state store under `~/.local/state/ru/**` — shelling out would create a parallel source of truth for session state (§1.1, same rationale as §7.1's "Resolved" paragraph on `apr`). **Reference-implementation value is high, though:** `ru`'s NTM robot-mode integration (`--robot-spawn/send/wait/activity/status/interrupt` with IDLE/TYPING/THINKING/TOOL_USE/COMPLETE/ERROR → unified-state mapping), priority scoring (type/labels/age/recency/staleness weights), blocking-prompt risk classification (high=`Password:`/passphrase/OTP; medium=merge-conflict/host-key; low=commit-message), quality-gate auto-detection by project type (npm/cargo/go/pytest/shellcheck), secret-scan patterns (`sk-`/`ghp_`/`xox`/`AKIA`/`BEGIN RSA PRIVATE KEY`), global backoff coordination (shared `backoff.state` with `pause_until` + exponential + jitter + cap), work-stealing queue via atomic `mkdir` locks, GraphQL alias batching (25 repos/query), idempotent GitHub-action execution (`gh_actions.jsonl` dedupe log), and digest caching are ~17,700 lines of worked Bash solving problems Hoopoe hits in §2.7 / §2.8 / §5.4 / §7.4 / §8 / §9. Read those code paths during the corresponding phases and port the patterns into Go — do not invoke `ru` to execute them.
 - Remote Compilation Helper (`rch`): build offload — referenced throughout §7.3 / §8.5.
 
 **Tools (safety, accounts, observability — Hoopoe surfaces).**
@@ -1987,7 +1998,7 @@ Do not start with provider automation, spend charts, or polished graph animation
 
 When the plan and a referenced skill disagree on swarm or tending behavior, the skill wins — the plan is summarizing the skill, not redefining it. Hermes Agent is an architectural reference for scheduler + skills patterns. Hoopoe-specific safety, audit, approval, scheduler correctness, and source-of-truth rules override Hermes behavior whenever they differ.
 
-Phase 0 must verify actual installed command names, output formats, version compatibility, and exact API surfaces on a fresh ACFS VPS before downstream phases assume them. Specifically: `caut` JSON snapshot shape, `CAAM` account-list/switch CLI, `DCG` verdict format, `UBS` finding format, `jsm` and `jfp` install/list/verify/update CLIs (and their SHA-256 / version-string output formats so the lock-file design in §10.3 is grounded in what each tool actually emits), `pt`/`srp`/`sbh` invocation contracts.
+Phase 0 must verify actual installed command names, output formats, version compatibility, and exact API surfaces on a fresh ACFS VPS before downstream phases assume them. Specifically: `caut` JSON snapshot shape, `CAAM` account-list/switch CLI, `DCG` verdict format, `UBS` finding format, `jsm` and `jfp` install/list/verify/update CLIs (and their SHA-256 / version-string output formats so the lock-file design in §10.3 is grounded in what each tool actually emits), `pt`/`srp`/`sbh` invocation contracts, and `ru sync/status/list/prune --json` shapes + `ru robot-docs` / `ru --schema` catalog (so the `GitAdapter` scope in §2.3 is pinned to what `ru` actually emits before Phase 4 wires it in).
 
 ---
 
