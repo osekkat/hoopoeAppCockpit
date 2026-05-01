@@ -779,7 +779,7 @@ PrivateTmp=true
 
 ## 7. The four stages and the activity surface — strategic intent
 
-UI specs, component inventories, and detailed view layouts live in `packages/design-system/`. This section captures only the strategic intent and the load-bearing decisions per stage. §7.1–§7.4 are the four numbered stages the user navigates between; §7.5 is the Activity panel, a cross-stage UI surface available from any stage.
+UI specs, component inventories, and detailed view layouts live in `packages/design-system/`. Pre-Phase-1 visual sketches live in `design/mockups/v1/`; design choices the plan should adopt and unresolved design-vs-plan conflicts are recorded in `design/DECISIONS.md`. This section captures only the strategic intent and the load-bearing decisions per stage. §7.1–§7.4 are the four numbered stages the user navigates between; §7.5 is the Activity panel, a cross-stage UI surface available from any stage.
 
 ### 7.1 Planning
 
@@ -799,6 +799,8 @@ A third sub-mode applies to both: when the project already has a codebase (a non
 1. **Primary model** (the one that does synthesis and refinement). Default: **ChatGPT Pro** via Oracle browser mode. Fallbacks if the user doesn't have a Pro subscription configured: Codex CLI (GPT-5 Pro via API counterpart on a GPT Pro subscription), Claude Code (Opus), Gemini CLI (Gemini 3 Pro / Deep Think). Whichever the user picks here is also the "final arbiter" model for synthesis and refinement rounds — per the agent-flywheel guide, GPT Pro web is the recommended choice when available because it has Extended Reasoning and unlimited use on the Pro subscription.
 2. **Competing-candidate models** (up to 3, in addition to the primary). Default selection mirrors the agent-flywheel recommendation: Claude Opus (via Claude Code), Gemini 3 Pro (via Gemini CLI), and one of {Grok Heavy, GPT-5.4 via Codex CLI} as the third. The user can deselect any of them; the picker shows which subscriptions the user has configured and greys out unavailable models.
 3. **"Let Hoopoe choose models for me"** toggle — picks the 4-way default if the user doesn't want to think about it.
+
+Underneath those, a binary **kickoff-mode** toggle decides what the models do on submit: *"Ask clarifying questions"* (models interview the user before drafting) or *"Take a first shot"* (models go straight to a draft). Default `clarify`. See `design/mockups/v1/wizard.jsx` `StepBrief`.
 
 The chat box is a one-shot input (not an ongoing conversation); after the user clicks "Generate plans," the pipeline runs on the VPS as a daemon job and the screen flips to a live progress view showing each candidate model's status (queued → drafting → completed/failed) and a side-by-side artifact rail.
 
@@ -937,7 +939,7 @@ Round 6: fresh-eyes review of bead graph
 
 **Quality dimensions:** plan coverage, dependency correctness, granularity, ready-set size, testability, duplicate risk, parallelism, context richness.
 
-**Views.** Kanban (execution state), DAG (dependency structure), Force (cluster/hotspot exploration). Bead detail drawer covers overview, full context, dependencies, plan traceability, mail thread, files/reservations, tests/health, commits, review findings, audit history.
+**Views.** Kanban (execution state), DAG (dependency structure), Force (cluster/hotspot exploration). DAG layout is top-down topological by longest-path-from-root, with sibling order within a layer following average parent x-coordinate to minimize edge crossings (see `design/mockups/v1/beads.jsx` `DAGView`); Force is deferred per §13. Bead detail drawer covers overview, full context, dependencies, plan traceability, mail thread, files/reservations, tests/health, commits, review findings, audit history. The "Rounds" view exposes the literal prompt sent to each polish-round model alongside the action summary, making each round's artifact directly inspectable per §1.4 (see `design/mockups/v1/beads.jsx` `RoundsModal`).
 
 ### 7.3 Swarm
 
@@ -2252,6 +2254,7 @@ The full earlier version is preserved at `plan.full.md`. Detail moved out of thi
 | Testing strategy detail (desktop tests, daemon tests, integration scenarios, E2E disposable VPS, smoke checks)                                           | `docs/testing.md`                              |
 | Provider plugin contract                                                                                                                                 | `packages/schemas/`                            |
 | Pane stream event types                                                                                                                                  | `packages/schemas/`                            |
+| Pre-Phase-1 visual sketches (Liquid Glass shell, Sidebar, Plan workspace, Bead DAG/Kanban, Swarm, first-run wizard); design-vs-plan conflicts ledger     | `design/mockups/v1/` + `design/DECISIONS.md`   |
 
 
 Schemas, API contracts, and component inventories belong in source code so the type system and tests catch drift. The plan reserves itself for vision, decisions, and roadmap.
