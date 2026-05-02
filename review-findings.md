@@ -1,5 +1,12 @@
 # Hoopoe Phase 0/1 review findings
 
+## Round 3 — p1 (FuchsiaStone)
+- Scope: `/testing-fuzzing` pass over snapshot-script + fixture parsers — built `packages/fixtures/tests/fixture-fuzz.test.ts` with 13 adversarial cases (empty/truncated/proto-pollution/BOM/binary/missing/oversized/file-where-dir/etc.).
+- **CRITICAL bug found by fuzzing + fixed inline:** `validateCorpus(rootOverride)` accepted the override but the underlying `scenarioPath`/`goldenOutputPath`/`phase0ScenarioPath` helpers (from loader.ts) silently bypassed it and resolved against `fixturesRoot()` — meaning isolated fuzz/test corpora were never actually validated. Refactored to derive local path helpers from `root` directly + thread `path` through `validateGoldenOutputFile`. 50/50 tests pass post-fix.
+- Confirmed clean: empty/truncated meta, BOM-prefixed JSON, binary bytes mid-stream in events.jsonl, malformed line in middle, oversized 50K-line events.jsonl (<5s load), missing required file, file-where-dir-expected, prototype-pollution attempts (`__proto__`/`constructor` keys do NOT pollute Object.prototype).
+- Determinism: validateCorpus returns identical finding sets across two runs.
+- Saturation watch: Round 3 found 1 CRITICAL (fixed inline) + 1 INFO (harness committed). Filing trend toward saturation.
+
 ## Round 4 — p4 (FuchsiaPond)
 - Scope: focused saturation pass over the routed shell, Activity drawer, smoke config, and desktop guardrail greps.
 - Verification: provider-SDK/API-key grep was clean across `apps/desktop/src/renderer`, `apps/desktop/tests`, and `playwright.config.ts`.
@@ -160,6 +167,12 @@ this file under a `## Round N — <reviewer>` heading.
 
 ## t3code lift — [MEDIUM] vendored test files lacked provenance headers (FIXED INLINE)
 **Where:** `apps/desktop/src/vendored/t3code/{serverListeningDetector,runtimeArch,clientPersistence}.test.ts` + `apps/desktop/src/vendored/t3code/keybindings/{evaluator,parser}.test.ts`   **Issue:** AGENTS.md / plan.md Appendix B require every file under `vendored/t3code/` to declare its provenance — either "Originally from github.com/pingdotgg/t3code (MIT License)..." for lifted files, or "Hoopoe-owned" for shims/tests. The 5 test files had no header at all, making the audit ambiguous (a future reviewer could mistake them for unattributed lifts).   **Suggested fix:** Added 3-line "Hoopoe-owned tests for the vendored helper" header to each. Implementation files retain their MIT notices. 24/24 vendored tests still pass. Done inline.   **Reviewer:** p1   **Round:** 2
+
+## fixtures validator — [CRITICAL] `validateCorpus(rootOverride)` ignores the override (FIXED INLINE)
+**Where:** `packages/fixtures/src/validate.ts:478-520`   **Issue:** `validateCorpus` accepts `rootOverride?: string` but the per-scenario / per-golden-output / per-phase0-scenario path helpers it calls (`scenarioPath`, `goldenOutputPath`, `phase0ScenarioPath` from `loader.ts`) all resolve against `fixturesRoot()` — they never see the override. Result: `validateCorpus("/tmp/some-test-corpus")` silently validates the project's actual fixtures instead of the test corpus, making fuzz/test isolation impossible. Found by Round 3 fuzz harness — 4 of 5 initial fuzz failures traced to this single bug.   **Suggested fix:** Refactored to derive local `scenarioPathLocal/phase0ScenarioPathLocal/goldenOutputPathLocal` helpers from `root` directly and thread the resolved `path` into `validateGoldenOutputFile`. 50/50 tests still pass post-fix; 13/13 fuzz tests now green. Done inline.   **Reviewer:** p1   **Round:** 3
+
+## fixtures harness — [INFO] adversarial-input fuzz suite added
+**Where:** `packages/fixtures/tests/fixture-fuzz.test.ts` (new file)   **Issue:** Phase 0 fixture parsers had no adversarial-input coverage prior to Round 3. The new fuzz harness exercises 13 pathological cases per `/testing-fuzzing` skill: empty/truncated JSON, BOM prefixes, binary bytes mid-stream, malformed lines, oversized files, missing files, file-where-dir, prototype-pollution attempts (`__proto__`/`constructor`). All pass; loader + validator confirmed panic-free.   **Suggested fix:** None — harness committed as ongoing regression coverage.   **Reviewer:** p1   **Round:** 3
 
 ## t3code lift — [LOW] Effect.* references in vendored comments are explanations, not leaks
 **Where:** `apps/desktop/src/vendored/t3code/keybindings/types.ts:8-9`, `vendored/t3code/README.md:30-31`   **Issue:** `grep -rn 'Effect\.'` finds these matches; on first read they look like leakage. They are correctly explanatory ("Effect.Schema-based shapes reduced to plain TypeScript"). Verified by full grep of `import.*effect` returning empty.   **Suggested fix:** None — the comments are correct documentation of the strip. Filed as visibility note for future reviewers.   **Reviewer:** p1   **Round:** 2
