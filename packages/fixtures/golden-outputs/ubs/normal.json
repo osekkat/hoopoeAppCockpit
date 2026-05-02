@@ -1,0 +1,28 @@
+{
+  "meta": {
+    "adapter": "ubs",
+    "state": "normal",
+    "kind": "realistic",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-02T22:19:06Z",
+    "source": "snapshot.sh --self-test (local 2026-05-02)"
+  },
+  "argv": [
+    "ubs",
+    "--help"
+  ],
+  "exit": 0,
+  "durationMs": 112,
+  "stdoutBytes": 0,
+  "stderrBytes": 4540,
+  "stdoutText": "",
+  "stderrText": "Usage: ubs [options] [PROJECT_DIR]\n       ubs [options] FILE1 FILE2 ...\n       ubs --files FILE1,FILE2,... [options] [PROJECT_DIR]\n       ubs doctor [options]\n       ubs sessions [--entries N] [--raw]\n\nOptions:\n  --format=FMT            text|json|jsonl|sarif|toon (default: text)\n  --version               Print version and exit\n  --ci                    CI mode (stable timestamps)\n  --fail-on-warning       Exit non-zero if warnings or critical exist\n  -v, --verbose           Pass -v to child scanners (if supported)\n  -q, --quiet             Reduce console output (also passes -q to scanners)\n  --only=CSV              Restrict to languages: js,python,c,cpp,rust,golang,java,ruby,swift,csharp,cs,elixir,ex\n  --exclude=CSV           Exclude languages\n  --module-dir=DIR        Where to store/lookup modules (default: /home/ubuntu/.local/share/ubs/modules)\n  --category=CSV          Focus on category packs (e.g., resource-lifecycle for AST lifecycle analyzers)\n  --comparison=FILE       Baseline JSON to diff combined results against\n  --report-json=FILE      Write combined summary JSON to FILE\n  --html-report=FILE      Emit shareable HTML report to FILE\n  --beads-jsonl=FILE      Also write combined findings to JSONL for Beads/strung\n  --jsonl-summary-only    JSONL output: emit only summary counts, no individual findings\n  --suggest-ignore        Print large-directory ignore suggestions (without modifying files)\n  --update                Update the installed ubs binary and exit\n  --non-interactive       No-op (accepted for installer/cron compatibility)\n  --update-modules        Force re-download of modules before run\n  --jobs=N                Parallelism hint (passed to children if supported)\n  --ignore-file=PATH      Read additional ignore globs (default: PROJECT/.ubsignore if present)\n  --skip-size-check       Skip directory size guard (use with care)\n  --skip-type-narrowing   Skip JS/Rust/Kotlin/Swift/C# type narrowing checks (falls back to basic heuristics)\n  --no-dotnet             Pass through to the C# module: skip dotnet checks\n  --no-build              Pass through to the C# module: skip dotnet build\n  --no-test               Pass through to the C# module: skip dotnet test\n  --no-format             Pass through to the C# module: skip dotnet format\n  --no-deps               Pass through to the C# module: skip dotnet package checks\n  --dotnet-target=PATH    Pass through to the C# module: select solution/project for dotnet commands\n  --no-auto-update        Disable auto-update (even if UBS_ENABLE_AUTO_UPDATE=1)\n  --staged                Scan only files staged for commit (git index)\n  --diff, --git-diff      Scan only modified files (working tree vs HEAD)\n  --files=F1,F2,...       Scan only the listed files (comma or space separated)\n  -h, --help              Show this help\n\nEnvironment Variables:\n  UBS_OUTPUT_FORMAT=FMT       Default output format (text|json|jsonl|sarif|toon)\n                              Overridden by --format CLI flag\n  TOON_DEFAULT_FORMAT=FMT     Global fallback format if UBS_OUTPUT_FORMAT not set\n  TOON_TRU_BIN=PATH           Explicit path to tru encoder (overrides TOON_BIN)\n  TOON_BIN=PATH               TOON encoder binary (default: tru)\n                              Set to a specific toon_rust encoder path if needed (do not use Node.js toon)\n  UBS_MAX_DIR_SIZE_MB=N       Max directory size in MB before refusing to scan (default: 1000)\n                              Set to 0 to disable this safety check\n  UBS_SKIP_SIZE_CHECK=1       Skip directory size guard entirely\n  UBS_REFUSE_HOME_ROOT=0|1    Whether to refuse scanning $HOME or / (default: 1)\n                              Set to 0 to allow scanning these directories\n\nExamples:\n  ubs .                       # auto-detect languages and scan\n  ubs --staged                # scan only staged files (pre-commit style)\n  ubs --diff                  # scan only modified files (quick check)\n  ubs --files=a.js,b.py .     # scan specific files in current dir\n  ubs src/a.js src/b.py       # multiple positional args (same effect)\n  ubs --format=json --ci .    # machine-readable combined JSON\n  ubs --format=toon .         # TOON format (~50% smaller than JSON)\n  ubs --only=js,python .      # restrict language set\n  ubs doctor --fix            # validate cached modules & redownload corrupted copies\n  ubs sessions --entries 1    # view the most recent installer summary\n  UBS_OUTPUT_FORMAT=toon ubs .  # set default format via env var\n  UBS_MAX_DIR_SIZE_MB=0 ubs . # disable size check for large directories\n",
+  "truncated": false,
+  "redacted": false,
+  "tags": [],
+  "capabilities": {
+    "ubs.scan": {
+      "status": "ok"
+    }
+  }
+}

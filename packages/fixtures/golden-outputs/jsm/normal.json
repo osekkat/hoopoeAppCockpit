@@ -1,0 +1,494 @@
+{
+  "meta": {
+    "adapter": "jsm",
+    "state": "normal",
+    "kind": "realistic",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-02T22:19:06Z",
+    "source": "snapshot.sh --self-test (local 2026-05-02)"
+  },
+  "argv": [
+    "jsm",
+    "list",
+    "--json"
+  ],
+  "exit": 0,
+  "durationMs": 212,
+  "stdoutBytes": 10933,
+  "stderrBytes": 0,
+  "stdoutJson": {
+    "workspace": "default",
+    "skills": [
+      {
+        "name": "agent-fungibility-philosophy",
+        "version": 2,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "agent-mail",
+        "version": 2,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "bd-to-br-migration",
+        "version": 2,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "beads-br",
+        "version": 1,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "beads-bv",
+        "version": 1,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "beads-workflow",
+        "version": 3,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "caam",
+        "version": 2,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "cass",
+        "version": 5,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "cass-memory",
+        "version": 2,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "cc-hooks",
+        "version": 2,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "changelog-md-workmanship",
+        "version": 2,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "code-review-gemini-swarm-with-ntm",
+        "version": 1,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "codebase-archaeology",
+        "version": 1,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "codebase-audit",
+        "version": 2,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "codebase-report",
+        "version": 2,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "dcg",
+        "version": 3,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "de-slopify",
+        "version": 3,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "deadlock-finder-and-fixer",
+        "version": 2,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "dsr",
+        "version": 1,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "dueling-idea-wizards",
+        "version": 1,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "e2e-testing-for-webapps",
+        "version": 2,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "extreme-software-optimization",
+        "version": 1,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "gh-actions",
+        "version": 1,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "gh-cli",
+        "version": 1,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "idea-wizard",
+        "version": 2,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "library-updater",
+        "version": 4,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "mcp-server-design",
+        "version": 2,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "modes-of-reasoning-project-analysis",
+        "version": 2,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "multi-pass-bug-hunting",
+        "version": 1,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "ntm",
+        "version": 6,
+        "pinned": false,
+        "installed_at": "2026-04-30",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "planning-workflow",
+        "version": 4,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "profiling-software-performance",
+        "version": 3,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "rch",
+        "version": 3,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "readme-writing",
+        "version": 1,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "reality-check-for-project",
+        "version": 1,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "release-preparations",
+        "version": 2,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "rg-optimized",
+        "version": 1,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "saas-cli-auth-flow",
+        "version": 1,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "simplify-and-refactor-code-isomorphically",
+        "version": 2,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "slb",
+        "version": 1,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "ssh",
+        "version": 1,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "tanstack",
+        "version": 2,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "testing-conformance-harnesses",
+        "version": 2,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "testing-fuzzing",
+        "version": 3,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "testing-golden-artifacts",
+        "version": 3,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "testing-real-service-e2e-no-mocks",
+        "version": 2,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "ubs",
+        "version": 2,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "ux-audit",
+        "version": 1,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "vibing-with-ntm",
+        "version": 6,
+        "pinned": false,
+        "installed_at": "2026-04-30",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      },
+      {
+        "name": "wezterm",
+        "version": 2,
+        "pinned": false,
+        "installed_at": "2026-05-02",
+        "status": "? unknown",
+        "update_available": false,
+        "latest_version": null
+      }
+    ],
+    "count": 50,
+    "pinned_count": 0,
+    "update_count": 0
+  },
+  "stdoutText": "{\n  \"workspace\": \"default\",\n  \"skills\": [\n    {\n      \"name\": \"agent-fungibility-philosophy\",\n      \"version\": 2,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"agent-mail\",\n      \"version\": 2,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"bd-to-br-migration\",\n      \"version\": 2,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"beads-br\",\n      \"version\": 1,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"beads-bv\",\n      \"version\": 1,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"beads-workflow\",\n      \"version\": 3,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"caam\",\n      \"version\": 2,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"cass\",\n      \"version\": 5,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"cass-memory\",\n      \"version\": 2,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"cc-hooks\",\n      \"version\": 2,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"changelog-md-workmanship\",\n      \"version\": 2,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"code-review-gemini-swarm-with-ntm\",\n      \"version\": 1,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"codebase-archaeology\",\n      \"version\": 1,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"codebase-audit\",\n      \"version\": 2,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"codebase-report\",\n      \"version\": 2,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"dcg\",\n      \"version\": 3,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"de-slopify\",\n      \"version\": 3,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"deadlock-finder-and-fixer\",\n      \"version\": 2,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"dsr\",\n      \"version\": 1,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"dueling-idea-wizards\",\n      \"version\": 1,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"e2e-testing-for-webapps\",\n      \"version\": 2,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"extreme-software-optimization\",\n      \"version\": 1,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"gh-actions\",\n      \"version\": 1,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"gh-cli\",\n      \"version\": 1,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"idea-wizard\",\n      \"version\": 2,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"library-updater\",\n      \"version\": 4,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"mcp-server-design\",\n      \"version\": 2,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"modes-of-reasoning-project-analysis\",\n      \"version\": 2,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"multi-pass-bug-hunting\",\n      \"version\": 1,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"ntm\",\n      \"version\": 6,\n      \"pinned\": false,\n      \"installed_at\": \"2026-04-30\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"planning-workflow\",\n      \"version\": 4,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"profiling-software-performance\",\n      \"version\": 3,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"rch\",\n      \"version\": 3,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"readme-writing\",\n      \"version\": 1,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"reality-check-for-project\",\n      \"version\": 1,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"release-preparations\",\n      \"version\": 2,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"rg-optimized\",\n      \"version\": 1,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"saas-cli-auth-flow\",\n      \"version\": 1,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"simplify-and-refactor-code-isomorphically\",\n      \"version\": 2,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"slb\",\n      \"version\": 1,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"ssh\",\n      \"version\": 1,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"tanstack\",\n      \"version\": 2,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"testing-conformance-harnesses\",\n      \"version\": 2,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"testing-fuzzing\",\n      \"version\": 3,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"testing-golden-artifacts\",\n      \"version\": 3,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"testing-real-service-e2e-no-mocks\",\n      \"version\": 2,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"ubs\",\n      \"version\": 2,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"ux-audit\",\n      \"version\": 1,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"vibing-with-ntm\",\n      \"version\": 6,\n      \"pinned\": false,\n      \"installed_at\": \"2026-04-30\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    },\n    {\n      \"name\": \"wezterm\",\n      \"version\": 2,\n      \"pinned\": false,\n      \"installed_at\": \"2026-05-02\",\n      \"status\": \"? unknown\",\n      \"update_available\": false,\n      \"latest_version\": null\n    }\n  ],\n  \"count\": 50,\n  \"pinned_count\": 0,\n  \"update_count\": 0\n}\n",
+  "stderrText": "",
+  "truncated": false,
+  "redacted": false,
+  "tags": [],
+  "capabilities": {
+    "jsm.skill.install": {
+      "status": "ok"
+    },
+    "jsm.skill.verify": {
+      "status": "ok",
+      "notes": "SHA-256 deterministic"
+    },
+    "jsm.skill.list": {
+      "status": "ok"
+    }
+  }
+}

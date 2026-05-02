@@ -1,0 +1,463 @@
+{
+  "meta": {
+    "adapter": "ntm",
+    "state": "normal",
+    "kind": "realistic",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-02T22:19:06Z",
+    "source": "snapshot.sh --self-test (local 2026-05-02)"
+  },
+  "argv": [
+    "ntm",
+    "--robot-snapshot"
+  ],
+  "exit": 0,
+  "durationMs": 1327,
+  "stdoutBytes": 10215,
+  "stderrBytes": 286,
+  "stdoutJson": {
+    "success": true,
+    "timestamp": "2026-05-02T21:50:09Z",
+    "version": "1.0.0",
+    "output_format": "json",
+    "ts": "2026-05-02T21:50:09Z",
+    "safety_profile": "standard",
+    "sessions": [
+      {
+        "name": "hoopoe",
+        "attached": true,
+        "agents": [
+          {
+            "pane": "0.1",
+            "type": "claude",
+            "type_confidence": 0.95,
+            "type_method": "process",
+            "state": "active",
+            "last_output_age_sec": -1,
+            "output_tail_lines": 103,
+            "current_bead": null,
+            "pending_mail": 0
+          }
+        ]
+      },
+      {
+        "name": "hoopoeAppCockpit",
+        "attached": true,
+        "agents": [
+          {
+            "pane": "0.1",
+            "type": "claude",
+            "type_confidence": 0.95,
+            "type_method": "process",
+            "state": "active",
+            "last_output_age_sec": -1,
+            "output_tail_lines": 74,
+            "current_bead": null,
+            "pending_mail": 0
+          },
+          {
+            "pane": "0.2",
+            "type": "claude",
+            "type_confidence": 0.95,
+            "type_method": "process",
+            "state": "active",
+            "last_output_age_sec": -1,
+            "output_tail_lines": 74,
+            "current_bead": null,
+            "pending_mail": 0
+          },
+          {
+            "pane": "0.3",
+            "type": "codex",
+            "type_confidence": 0.9,
+            "type_method": "title",
+            "state": "idle",
+            "last_output_age_sec": -1,
+            "output_tail_lines": 77,
+            "current_bead": null,
+            "pending_mail": 0
+          },
+          {
+            "pane": "0.4",
+            "type": "codex",
+            "type_confidence": 0.9,
+            "type_method": "title",
+            "state": "idle",
+            "last_output_age_sec": -1,
+            "output_tail_lines": 77,
+            "current_bead": null,
+            "pending_mail": 0
+          }
+        ]
+      }
+    ],
+    "beads_summary": {
+      "available": true,
+      "project": "/home/ubuntu/Projects/hoopoeAppCockpit",
+      "ready_preview": [
+        {
+          "id": "hp-r3i",
+          "title": "Cross-cutting: packages/schemas — OpenAPI + TS client + Go types",
+          "priority": "P1"
+        },
+        {
+          "id": "hp-r33",
+          "title": "Cross-cutting: capability registry + degraded-mode contract",
+          "priority": "P1"
+        },
+        {
+          "id": "hp-r7i",
+          "title": "Phase 0: Provision research-spike VPS with ACFS",
+          "priority": "P0"
+        },
+        {
+          "id": "hp-191",
+          "title": "Phase 1: Vendor t3code build pipeline (build-desktop-artifact, mock-update-server, release.yml)",
+          "priority": "P0"
+        },
+        {
+          "id": "hp-15s",
+          "title": "Phase 1: Vendor t3code desktop lifecycle files (clientPersistence, backendPort, etc.)",
+          "priority": "P0"
+        }
+      ]
+    },
+    "agent_mail": {
+      "available": true,
+      "project": "/home/ubuntu/Projects/hoopoeAppCockpit",
+      "total_unread": 27,
+      "agents": {
+        "BlueHill": {
+          "unread": 5,
+          "pending_ack": 0
+        },
+        "FuchsiaPond": {
+          "unread": 1,
+          "pending_ack": 0
+        },
+        "FuchsiaStone": {
+          "unread": 4,
+          "pending_ack": 0
+        },
+        "GreenBear": {
+          "unread": 9,
+          "pending_ack": 0
+        },
+        "PurpleBear": {
+          "unread": 8,
+          "pending_ack": 0
+        }
+      },
+      "threads_known": 4
+    },
+    "mail_unread": 27,
+    "tools": [
+      {
+        "name": "acfs",
+        "installed": true,
+        "version": "0.7.0",
+        "path": "/home/ubuntu/.local/bin/acfs",
+        "capabilities": [
+          "robot_mode",
+          "doctor",
+          "info",
+          "status",
+          "update",
+          "dashboard",
+          "session"
+        ],
+        "health": {
+          "healthy": true,
+          "message": "acfs is healthy",
+          "latency_ms": 95,
+          "last_checked": "2026-05-02T21:50:10Z"
+        }
+      },
+      {
+        "name": "am",
+        "installed": true,
+        "version": "0.0.0",
+        "path": "/home/ubuntu/.local/bin/mcp-agent-mail",
+        "capabilities": [
+          "macros",
+          "server_available"
+        ],
+        "health": {
+          "healthy": true,
+          "message": "Agent Mail server is healthy",
+          "latency_ms": 3,
+          "last_checked": "2026-05-02T21:50:09Z"
+        }
+      },
+      {
+        "name": "bd",
+        "installed": false,
+        "version": "0.0.0",
+        "capabilities": [],
+        "health": {
+          "healthy": false,
+          "message": "Tool not installed",
+          "last_checked": "2026-05-02T21:50:09Z"
+        }
+      },
+      {
+        "name": "bv",
+        "installed": true,
+        "version": "bv v0.16.0",
+        "path": "/home/ubuntu/.local/bin/bv",
+        "capabilities": [
+          "robot_mode"
+        ],
+        "health": {
+          "healthy": true,
+          "message": "bv is healthy",
+          "latency_ms": 24,
+          "last_checked": "2026-05-02T21:50:10Z"
+        },
+        "required": true
+      },
+      {
+        "name": "caam",
+        "installed": true,
+        "version": "0.0.0",
+        "path": "/home/ubuntu/.npm-global/bin/caam",
+        "capabilities": [
+          "robot_mode"
+        ],
+        "health": {
+          "healthy": false,
+          "message": "caam at /home/ubuntu/.npm-global/bin/caam not responding",
+          "error": "failed to get caam version: exit status 1",
+          "latency_ms": 51,
+          "last_checked": "2026-05-02T21:50:10Z"
+        }
+      },
+      {
+        "name": "cass",
+        "installed": true,
+        "version": "cass 0.4.1",
+        "path": "/home/ubuntu/.local/bin/cass",
+        "capabilities": [
+          "robot_mode",
+          "search"
+        ],
+        "health": {
+          "healthy": false,
+          "message": "cass at /home/ubuntu/.local/bin/cass not responding",
+          "error": "exit status 1",
+          "latency_ms": 13,
+          "last_checked": "2026-05-02T21:50:09Z"
+        }
+      },
+      {
+        "name": "caut",
+        "installed": false,
+        "version": "0.0.0",
+        "capabilities": [],
+        "health": {
+          "healthy": false,
+          "message": "Tool not installed",
+          "last_checked": "2026-05-02T21:50:09Z"
+        }
+      },
+      {
+        "name": "cm",
+        "installed": true,
+        "version": "0.2.9",
+        "path": "/home/ubuntu/.local/bin/cm",
+        "capabilities": [
+          "robot_mode"
+        ],
+        "health": {
+          "healthy": true,
+          "message": "cm is healthy (daemon not running)",
+          "latency_ms": 201,
+          "last_checked": "2026-05-02T21:50:10Z"
+        }
+      },
+      {
+        "name": "dcg",
+        "installed": true,
+        "version": "0.5.0",
+        "path": "/home/ubuntu/.local/bin/dcg",
+        "capabilities": [],
+        "health": {
+          "healthy": true,
+          "message": "dcg is healthy",
+          "latency_ms": 1,
+          "last_checked": "2026-05-02T21:50:09Z"
+        }
+      },
+      {
+        "name": "giil",
+        "installed": false,
+        "version": "0.0.0",
+        "capabilities": [],
+        "health": {
+          "healthy": false,
+          "message": "Tool not installed",
+          "last_checked": "2026-05-02T21:50:09Z"
+        }
+      },
+      {
+        "name": "jfp",
+        "installed": false,
+        "version": "0.0.0",
+        "capabilities": [],
+        "health": {
+          "healthy": false,
+          "message": "Tool not installed",
+          "last_checked": "2026-05-02T21:50:09Z"
+        }
+      },
+      {
+        "name": "ms",
+        "installed": true,
+        "version": "0.1.0",
+        "path": "/home/ubuntu/.local/bin/ms",
+        "capabilities": [
+          "robot_mode",
+          "search",
+          "suggest",
+          "list",
+          "show"
+        ],
+        "health": {
+          "healthy": true,
+          "message": "ms is healthy",
+          "latency_ms": 8,
+          "last_checked": "2026-05-02T21:50:10Z"
+        }
+      },
+      {
+        "name": "pt",
+        "installed": false,
+        "version": "0.0.0",
+        "capabilities": [],
+        "health": {
+          "healthy": false,
+          "message": "Tool not installed",
+          "last_checked": "2026-05-02T21:50:09Z"
+        }
+      },
+      {
+        "name": "rano",
+        "installed": false,
+        "version": "0.0.0",
+        "capabilities": [],
+        "health": {
+          "healthy": false,
+          "message": "Tool not installed",
+          "last_checked": "2026-05-02T21:50:09Z"
+        }
+      },
+      {
+        "name": "rch",
+        "installed": true,
+        "version": "rch 1.0.13",
+        "path": "/home/ubuntu/.local/bin/rch",
+        "capabilities": [
+          "robot_mode"
+        ],
+        "health": {
+          "healthy": true,
+          "message": "rch is healthy",
+          "latency_ms": 2,
+          "last_checked": "2026-05-02T21:50:09Z"
+        }
+      },
+      {
+        "name": "ru",
+        "installed": true,
+        "version": "ru version 1.3.1",
+        "path": "/home/ubuntu/.local/bin/ru",
+        "capabilities": [],
+        "health": {
+          "healthy": true,
+          "message": "ru is healthy",
+          "latency_ms": 128,
+          "last_checked": "2026-05-02T21:50:10Z"
+        }
+      },
+      {
+        "name": "s2p",
+        "installed": false,
+        "version": "0.0.0",
+        "capabilities": [],
+        "health": {
+          "healthy": false,
+          "message": "Tool not installed",
+          "last_checked": "2026-05-02T21:50:09Z"
+        }
+      },
+      {
+        "name": "slb",
+        "installed": true,
+        "version": "0.0.0",
+        "path": "/usr/local/bin/slb",
+        "capabilities": [
+          "robot_mode",
+          "daemon_mode",
+          "request",
+          "approve",
+          "deny",
+          "status",
+          "pending"
+        ],
+        "health": {
+          "healthy": false,
+          "message": "slb at /usr/local/bin/slb not responding",
+          "error": "failed to get slb version: exit status 1",
+          "latency_ms": 23,
+          "last_checked": "2026-05-02T21:50:10Z"
+        }
+      },
+      {
+        "name": "ubs",
+        "installed": true,
+        "version": "UBS Meta-Runner v5.2.29 (git 2a27f78)",
+        "path": "/home/ubuntu/.local/bin/ubs",
+        "capabilities": [],
+        "health": {
+          "healthy": true,
+          "message": "ubs is healthy",
+          "latency_ms": 31,
+          "last_checked": "2026-05-02T21:50:09Z"
+        }
+      },
+      {
+        "name": "xf",
+        "installed": false,
+        "version": "0.0.0",
+        "capabilities": [],
+        "health": {
+          "healthy": false,
+          "message": "Tool not installed",
+          "last_checked": "2026-05-02T21:50:09Z"
+        }
+      }
+    ],
+    "alerts": []
+  },
+  "stdoutText": "{\n  \"success\": true,\n  \"timestamp\": \"2026-05-02T21:50:09Z\",\n  \"version\": \"1.0.0\",\n  \"output_format\": \"json\",\n  \"ts\": \"2026-05-02T21:50:09Z\",\n  \"safety_profile\": \"standard\",\n  \"sessions\": [\n    {\n      \"name\": \"hoopoe\",\n      \"attached\": true,\n      \"agents\": [\n        {\n          \"pane\": \"0.1\",\n          \"type\": \"claude\",\n          \"type_confidence\": 0.95,\n          \"type_method\": \"process\",\n          \"state\": \"active\",\n          \"last_output_age_sec\": -1,\n          \"output_tail_lines\": 103,\n          \"current_bead\": null,\n          \"pending_mail\": 0\n        }\n      ]\n    },\n    {\n      \"name\": \"hoopoeAppCockpit\",\n      \"attached\": true,\n      \"agents\": [\n        {\n          \"pane\": \"0.1\",\n          \"type\": \"claude\",\n          \"type_confidence\": 0.95,\n          \"type_method\": \"process\",\n          \"state\": \"active\",\n          \"last_output_age_sec\": -1,\n          \"output_tail_lines\": 74,\n          \"current_bead\": null,\n          \"pending_mail\": 0\n        },\n        {\n          \"pane\": \"0.2\",\n          \"type\": \"claude\",\n          \"type_confidence\": 0.95,\n          \"type_method\": \"process\",\n          \"state\": \"active\",\n          \"last_output_age_sec\": -1,\n          \"output_tail_lines\": 74,\n          \"current_bead\": null,\n          \"pending_mail\": 0\n        },\n        {\n          \"pane\": \"0.3\",\n          \"type\": \"codex\",\n          \"type_confidence\": 0.9,\n          \"type_method\": \"title\",\n          \"state\": \"idle\",\n          \"last_output_age_sec\": -1,\n          \"output_tail_lines\": 77,\n          \"current_bead\": null,\n          \"pending_mail\": 0\n        },\n        {\n          \"pane\": \"0.4\",\n          \"type\": \"codex\",\n          \"type_confidence\": 0.9,\n          \"type_method\": \"title\",\n          \"state\": \"idle\",\n          \"last_output_age_sec\": -1,\n          \"output_tail_lines\": 77,\n          \"current_bead\": null,\n          \"pending_mail\": 0\n        }\n      ]\n    }\n  ],\n  \"beads_summary\": {\n    \"available\": true,\n    \"project\": \"/home/ubuntu/Projects/hoopoeAppCockpit\",\n    \"ready_preview\": [\n      {\n        \"id\": \"hp-r3i\",\n        \"title\": \"Cross-cutting: packages/schemas — OpenAPI + TS client + Go types\",\n        \"priority\": \"P1\"\n      },\n      {\n        \"id\": \"hp-r33\",\n        \"title\": \"Cross-cutting: capability registry + degraded-mode contract\",\n        \"priority\": \"P1\"\n      },\n      {\n        \"id\": \"hp-r7i\",\n        \"title\": \"Phase 0: Provision research-spike VPS with ACFS\",\n        \"priority\": \"P0\"\n      },\n      {\n        \"id\": \"hp-191\",\n        \"title\": \"Phase 1: Vendor t3code build pipeline (build-desktop-artifact, mock-update-server, release.yml)\",\n        \"priority\": \"P0\"\n      },\n      {\n        \"id\": \"hp-15s\",\n        \"title\": \"Phase 1: Vendor t3code desktop lifecycle files (clientPersistence, backendPort, etc.)\",\n        \"priority\": \"P0\"\n      }\n    ]\n  },\n  \"agent_mail\": {\n    \"available\": true,\n    \"project\": \"/home/ubuntu/Projects/hoopoeAppCockpit\",\n    \"total_unread\": 27,\n    \"agents\": {\n      \"BlueHill\": {\n        \"unread\": 5,\n        \"pending_ack\": 0\n      },\n      \"FuchsiaPond\": {\n        \"unread\": 1,\n        \"pending_ack\": 0\n      },\n      \"FuchsiaStone\": {\n        \"unread\": 4,\n        \"pending_ack\": 0\n      },\n      \"GreenBear\": {\n        \"unread\": 9,\n        \"pending_ack\": 0\n      },\n      \"PurpleBear\": {\n        \"unread\": 8,\n        \"pending_ack\": 0\n      }\n    },\n    \"threads_known\": 4\n  },\n  \"mail_unread\": 27,\n  \"tools\": [\n    {\n      \"name\": \"acfs\",\n      \"installed\": true,\n      \"version\": \"0.7.0\",\n      \"path\": \"/home/ubuntu/.local/bin/acfs\",\n      \"capabilities\": [\n        \"robot_mode\",\n        \"doctor\",\n        \"info\",\n        \"status\",\n        \"update\",\n        \"dashboard\",\n        \"session\"\n      ],\n      \"health\": {\n        \"healthy\": true,\n        \"message\": \"acfs is healthy\",\n        \"latency_ms\": 95,\n        \"last_checked\": \"2026-05-02T21:50:10Z\"\n      }\n    },\n    {\n      \"name\": \"am\",\n      \"installed\": true,\n      \"version\": \"0.0.0\",\n      \"path\": \"/home/ubuntu/.local/bin/mcp-agent-mail\",\n      \"capabilities\": [\n        \"macros\",\n        \"server_available\"\n      ],\n      \"health\": {\n        \"healthy\": true,\n        \"message\": \"Agent Mail server is healthy\",\n        \"latency_ms\": 3,\n        \"last_checked\": \"2026-05-02T21:50:09Z\"\n      }\n    },\n    {\n      \"name\": \"bd\",\n      \"installed\": false,\n      \"version\": \"0.0.0\",\n      \"capabilities\": [],\n      \"health\": {\n        \"healthy\": false,\n        \"message\": \"Tool not installed\",\n        \"last_checked\": \"2026-05-02T21:50:09Z\"\n      }\n    },\n    {\n      \"name\": \"bv\",\n      \"installed\": true,\n      \"version\": \"bv v0.16.0\",\n      \"path\": \"/home/ubuntu/.local/bin/bv\",\n      \"capabilities\": [\n        \"robot_mode\"\n      ],\n      \"health\": {\n        \"healthy\": true,\n        \"message\": \"bv is healthy\",\n        \"latency_ms\": 24,\n        \"last_checked\": \"2026-05-02T21:50:10Z\"\n      },\n      \"required\": true\n    },\n    {\n      \"name\": \"caam\",\n      \"installed\": true,\n      \"version\": \"0.0.0\",\n      \"path\": \"/home/ubuntu/.npm-global/bin/caam\",\n      \"capabilities\": [\n        \"robot_mode\"\n      ],\n      \"health\": {\n        \"healthy\": false,\n        \"message\": \"caam at /home/ubuntu/.npm-global/bin/caam not responding\",\n        \"error\": \"failed to get caam version: exit status 1\",\n        \"latency_ms\": 51,\n        \"last_checked\": \"2026-05-02T21:50:10Z\"\n      }\n    },\n    {\n      \"name\": \"cass\",\n      \"installed\": true,\n      \"version\": \"cass 0.4.1\",\n      \"path\": \"/home/ubuntu/.local/bin/cass\",\n      \"capabilities\": [\n        \"robot_mode\",\n        \"search\"\n      ],\n      \"health\": {\n        \"healthy\": false,\n        \"message\": \"cass at /home/ubuntu/.local/bin/cass not responding\",\n        \"error\": \"exit status 1\",\n        \"latency_ms\": 13,\n        \"last_checked\": \"2026-05-02T21:50:09Z\"\n      }\n    },\n    {\n      \"name\": \"caut\",\n      \"installed\": false,\n      \"version\": \"0.0.0\",\n      \"capabilities\": [],\n      \"health\": {\n        \"healthy\": false,\n        \"message\": \"Tool not installed\",\n        \"last_checked\": \"2026-05-02T21:50:09Z\"\n      }\n    },\n    {\n      \"name\": \"cm\",\n      \"installed\": true,\n      \"version\": \"0.2.9\",\n      \"path\": \"/home/ubuntu/.local/bin/cm\",\n      \"capabilities\": [\n        \"robot_mode\"\n      ],\n      \"health\": {\n        \"healthy\": true,\n        \"message\": \"cm is healthy (daemon not running)\",\n        \"latency_ms\": 201,\n        \"last_checked\": \"2026-05-02T21:50:10Z\"\n      }\n    },\n    {\n      \"name\": \"dcg\",\n      \"installed\": true,\n      \"version\": \"0.5.0\",\n      \"path\": \"/home/ubuntu/.local/bin/dcg\",\n      \"capabilities\": [],\n      \"health\": {\n        \"healthy\": true,\n        \"message\": \"dcg is healthy\",\n        \"latency_ms\": 1,\n        \"last_checked\": \"2026-05-02T21:50:09Z\"\n      }\n    },\n    {\n      \"name\": \"giil\",\n      \"installed\": false,\n      \"version\": \"0.0.0\",\n      \"capabilities\": [],\n      \"health\": {\n        \"healthy\": false,\n        \"message\": \"Tool not installed\",\n        \"last_checked\": \"2026-05-02T21:50:09Z\"\n      }\n    },\n    {\n      \"name\": \"jfp\",\n      \"installed\": false,\n      \"version\": \"0.0.0\",\n      \"capabilities\": [],\n      \"health\": {\n        \"healthy\": false,\n        \"message\": \"Tool not installed\",\n        \"last_checked\": \"2026-05-02T21:50:09Z\"\n      }\n    },\n    {\n      \"name\": \"ms\",\n      \"installed\": true,\n      \"version\": \"0.1.0\",\n      \"path\": \"/home/ubuntu/.local/bin/ms\",\n      \"capabilities\": [\n        \"robot_mode\",\n        \"search\",\n        \"suggest\",\n        \"list\",\n        \"show\"\n      ],\n      \"health\": {\n        \"healthy\": true,\n        \"message\": \"ms is healthy\",\n        \"latency_ms\": 8,\n        \"last_checked\": \"2026-05-02T21:50:10Z\"\n      }\n    },\n    {\n      \"name\": \"pt\",\n      \"installed\": false,\n      \"version\": \"0.0.0\",\n      \"capabilities\": [],\n      \"health\": {\n        \"healthy\": false,\n        \"message\": \"Tool not installed\",\n        \"last_checked\": \"2026-05-02T21:50:09Z\"\n      }\n    },\n    {\n      \"name\": \"rano\",\n      \"installed\": false,\n      \"version\": \"0.0.0\",\n      \"capabilities\": [],\n      \"health\": {\n        \"healthy\": false,\n        \"message\": \"Tool not installed\",\n        \"last_checked\": \"2026-05-02T21:50:09Z\"\n      }\n    },\n    {\n      \"name\": \"rch\",\n      \"installed\": true,\n      \"version\": \"rch 1.0.13\",\n      \"path\": \"/home/ubuntu/.local/bin/rch\",\n      \"capabilities\": [\n        \"robot_mode\"\n      ],\n      \"health\": {\n        \"healthy\": true,\n        \"message\": \"rch is healthy\",\n        \"latency_ms\": 2,\n        \"last_checked\": \"2026-05-02T21:50:09Z\"\n      }\n    },\n    {\n      \"name\": \"ru\",\n      \"installed\": true,\n      \"version\": \"ru version 1.3.1\",\n      \"path\": \"/home/ubuntu/.local/bin/ru\",\n      \"capabilities\": [],\n      \"health\": {\n        \"healthy\": true,\n        \"message\": \"ru is healthy\",\n        \"latency_ms\": 128,\n        \"last_checked\": \"2026-05-02T21:50:10Z\"\n      }\n    },\n    {\n      \"name\": \"s2p\",\n      \"installed\": false,\n      \"version\": \"0.0.0\",\n      \"capabilities\": [],\n      \"health\": {\n        \"healthy\": false,\n        \"message\": \"Tool not installed\",\n        \"last_checked\": \"2026-05-02T21:50:09Z\"\n      }\n    },\n    {\n      \"name\": \"slb\",\n      \"installed\": true,\n      \"version\": \"0.0.0\",\n      \"path\": \"/usr/local/bin/slb\",\n      \"capabilities\": [\n        \"robot_mode\",\n        \"daemon_mode\",\n        \"request\",\n        \"approve\",\n        \"deny\",\n        \"status\",\n        \"pending\"\n      ],\n      \"health\": {\n        \"healthy\": false,\n        \"message\": \"slb at /usr/local/bin/slb not responding\",\n        \"error\": \"failed to get slb version: exit status 1\",\n        \"latency_ms\": 23,\n        \"last_checked\": \"2026-05-02T21:50:10Z\"\n      }\n    },\n    {\n      \"name\": \"ubs\",\n      \"installed\": true,\n      \"version\": \"UBS Meta-Runner v5.2.29 (git 2a27f78)\",\n      \"path\": \"/home/ubuntu/.local/bin/ubs\",\n      \"capabilities\": [],\n      \"health\": {\n        \"healthy\": true,\n        \"message\": \"ubs is healthy\",\n        \"latency_ms\": 31,\n        \"last_checked\": \"2026-05-02T21:50:09Z\"\n      }\n    },\n    {\n      \"name\": \"xf\",\n      \"installed\": false,\n      \"version\": \"0.0.0\",\n      \"capabilities\": [],\n      \"health\": {\n        \"healthy\": false,\n        \"message\": \"Tool not installed\",\n        \"last_checked\": \"2026-05-02T21:50:09Z\"\n      }\n    }\n  ],\n  \"alerts\": []\n}\n",
+  "stderrText": "2026/05/02 23:50:10 WARN failed to check dependency cycles tool=bv error=\"bv -robot-insights: exit status 1: Error loading beads: failed to read beads directory: open /home/ubuntu/Projects/.beads: no such file or directory\\nMake sure you are in a project initialized with 'br init'.\\n\"\n",
+  "truncated": false,
+  "redacted": false,
+  "tags": [],
+  "capabilities": {
+    "ntm.robot.snapshot": {
+      "status": "ok"
+    },
+    "ntm.robot.status": {
+      "status": "ok"
+    },
+    "ntm.robot.tail": {
+      "status": "ok"
+    },
+    "ntm.serve.rest": {
+      "status": "untested",
+      "transport": "http",
+      "notes": "endpoint discovery only"
+    }
+  }
+}

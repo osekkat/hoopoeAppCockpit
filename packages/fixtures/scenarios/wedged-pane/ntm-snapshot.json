@@ -1,0 +1,47 @@
+{
+  "sessions": [
+    {
+      "id": "hoopoe-implementation",
+      "windows": 1,
+      "panes": [
+        {
+          "id": "%1",
+          "agent": "GreenBear",
+          "program": "claude-code",
+          "model": "claude-opus-4-7",
+          "state": "TOOL_USE",
+          "last_activity_ts": "2026-05-02T19:42:11Z",
+          "bead": "hp-zir",
+          "idle_seconds": 1080,
+          "wedge_classification": "wedged",
+          "evidence": "tool_use mid-call; no progress 18 min; partial line in scrollback"
+        },
+        {
+          "id": "%2",
+          "agent": "BlueHill",
+          "program": "codex-cli",
+          "model": "GPT-5",
+          "state": "IDLE",
+          "last_activity_ts": "2026-05-02T19:58:00Z",
+          "bead": "hp-k6r",
+          "idle_seconds": 90
+        },
+        {
+          "id": "%3",
+          "agent": "FuchsiaPond",
+          "program": "codex-cli",
+          "model": "gpt-5.5",
+          "state": "TYPING",
+          "last_activity_ts": "2026-05-02T19:59:55Z",
+          "bead": "hp-ara"
+        }
+      ]
+    }
+  ],
+  "counters": {
+    "sessions": 1,
+    "panes": 3,
+    "alive": 3,
+    "wedged": 1
+  }
+}

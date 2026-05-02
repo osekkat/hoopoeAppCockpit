@@ -1,0 +1,41 @@
+{
+  "meta": {
+    "adapter": "git",
+    "state": "normal",
+    "kind": "realistic",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-02T22:19:06Z",
+    "source": "snapshot.sh --self-test (local 2026-05-02)"
+  },
+  "argv": [
+    "git",
+    "status",
+    "--porcelain=v2",
+    "--branch"
+  ],
+  "exit": 0,
+  "durationMs": 110,
+  "stdoutBytes": 136,
+  "stderrBytes": 0,
+  "stdoutText": "# branch.oid 2a27f7831600cecb2891f0c0543273f1a8b0aede\n# branch.head master\n# branch.upstream origin/master\n# branch.ab +2 -0\n? scripts/\n",
+  "stderrText": "",
+  "truncated": false,
+  "redacted": false,
+  "tags": [],
+  "capabilities": {
+    "git.status.read": {
+      "status": "ok"
+    },
+    "git.diff.read": {
+      "status": "ok"
+    },
+    "git.unpushed.list": {
+      "status": "ok",
+      "fallback": "rev-list --left-right"
+    },
+    "git.push": {
+      "status": "blocked-by-policy",
+      "notes": "snapshot script never pushes"
+    }
+  }
+}

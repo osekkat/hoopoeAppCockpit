@@ -1,0 +1,25 @@
+{
+  "reservations": [
+    {
+      "id": 47,
+      "agent": "GreenBear",
+      "paths": [
+        "apps/desktop/src/main/**"
+      ],
+      "exclusive": true,
+      "reason": "hp-zir",
+      "expires_ts": "2026-05-02T22:00:00Z"
+    },
+    {
+      "id": 88,
+      "agent": "FuchsiaStone",
+      "paths": [
+        "packages/fixtures/scenarios/**"
+      ],
+      "exclusive": true,
+      "reason": "hp-wle",
+      "expires_ts": "2026-05-02T22:11:52Z"
+    }
+  ],
+  "conflicts": []
+}

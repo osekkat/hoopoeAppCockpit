@@ -1,0 +1,64 @@
+{
+  "meta": {
+    "kind": "synthetic",
+    "scenario": "rate-limited-with-caam",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-02T22:17:37Z",
+    "source": "build-scenarios.sh",
+    "notes": "Provider rate limit; CAAM alternative available. Pre-script detects; ActionPlan: caam.switch_account; agent resumes after switch."
+  },
+  "detections": [
+    {
+      "kind": "agent.rate_limited",
+      "payload": {
+        "agent": "GreenBear",
+        "provider": "claude",
+        "retry_after_s": 1800
+      }
+    },
+    {
+      "kind": "caam.alternative_available",
+      "payload": {
+        "provider": "claude",
+        "alternative": "backup",
+        "percent_used": 12
+      }
+    }
+  ],
+  "wakeAgent": true,
+  "actionPlan": {
+    "actions": [
+      {
+        "type": "caam.switch_account",
+        "args": {
+          "to": "backup",
+          "reason": "primary at 100%"
+        }
+      },
+      {
+        "type": "agent.resume",
+        "args": {
+          "agent": "GreenBear",
+          "reason": "post-switch retry"
+        }
+      }
+    ]
+  },
+  "approvalsRequested": [
+    {
+      "scope": "caam.switch_account",
+      "reason": "switch primary→backup (autopilot may pre-approve based on §5.3 risk class)"
+    }
+  ],
+  "postconditions": [
+    {
+      "check": "caam.active_account == backup",
+      "expect": true
+    },
+    {
+      "check": "GreenBear.state in {RUNNING,TYPING,TOOL_USE}",
+      "expect": true
+    }
+  ],
+  "activityBehavior": "surface"
+}

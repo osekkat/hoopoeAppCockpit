@@ -1,0 +1,30 @@
+{
+  "meta": {
+    "adapter": "dcg",
+    "state": "normal",
+    "kind": "realistic",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-02T22:19:06Z",
+    "source": "snapshot.sh --self-test (local 2026-05-02)"
+  },
+  "argv": [
+    "dcg",
+    "status",
+    "--json"
+  ],
+  "exit": 2,
+  "durationMs": 110,
+  "stdoutBytes": 0,
+  "stderrBytes": 167,
+  "stdoutText": "",
+  "stderrText": "error: unrecognized subcommand 'status'\n\n  tip: some similar subcommands exist: 'setup', 'stats'\n\nUsage: dcg [OPTIONS] [COMMAND]\n\nFor more information, try '--help'.\n\n",
+  "truncated": false,
+  "redacted": false,
+  "tags": [],
+  "capabilities": {
+    "dcg.verdicts.subscribe": {
+      "status": "untested",
+      "notes": "verdict format pinned via --help; runtime stream from hook"
+    }
+  }
+}

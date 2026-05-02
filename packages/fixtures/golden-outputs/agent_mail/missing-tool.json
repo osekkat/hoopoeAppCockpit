@@ -1,0 +1,30 @@
+{
+  "meta": {
+    "adapter": "agent_mail",
+    "state": "missing-tool",
+    "kind": "synthetic",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-02T22:19:06Z",
+    "source": "hand-written"
+  },
+  "argv": [
+    "agent_mail",
+    "--version"
+  ],
+  "exit": 127,
+  "durationMs": 5,
+  "stdoutBytes": 0,
+  "stdoutText": "",
+  "stderrBytes": 38,
+  "stderrText": "agent_mail: command not found\n",
+  "truncated": false,
+  "redacted": false,
+  "tags": [
+    "missing-tool"
+  ],
+  "capabilities": {
+    "agent_mail._present": {
+      "status": "missing"
+    }
+  }
+}

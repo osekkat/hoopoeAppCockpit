@@ -1,0 +1,26 @@
+{
+  "meta": {
+    "adapter": "jfp",
+    "state": "normal",
+    "kind": "stub",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-02T22:19:06Z",
+    "source": "hand-written stub (real-VPS pin pending hp-r7i)"
+  },
+  "argv": [
+    "jfp",
+    "list"
+  ],
+  "exit": 0,
+  "durationMs": 50,
+  "stdoutBytes": 2,
+  "stdoutJson": {},
+  "stdoutText": "{}",
+  "stderrBytes": 0,
+  "stderrText": "",
+  "truncated": false,
+  "redacted": false,
+  "tags": [
+    "stub"
+  ]
+}

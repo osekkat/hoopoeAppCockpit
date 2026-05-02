@@ -1,0 +1,3 @@
+PASS apps/desktop/src/main/BackendLifecycle.test.ts (12 tests)
+PASS packages/fixtures/src/index.test.ts (1 test)
+Total: 13 passed

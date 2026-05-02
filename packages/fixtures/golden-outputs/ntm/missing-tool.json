@@ -1,0 +1,30 @@
+{
+  "meta": {
+    "adapter": "ntm",
+    "state": "missing-tool",
+    "kind": "synthetic",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-02T22:19:06Z",
+    "source": "hand-written"
+  },
+  "argv": [
+    "ntm",
+    "--version"
+  ],
+  "exit": 127,
+  "durationMs": 5,
+  "stdoutBytes": 0,
+  "stdoutText": "",
+  "stderrBytes": 38,
+  "stderrText": "ntm: command not found\n",
+  "truncated": false,
+  "redacted": false,
+  "tags": [
+    "missing-tool"
+  ],
+  "capabilities": {
+    "ntm._present": {
+      "status": "missing"
+    }
+  }
+}

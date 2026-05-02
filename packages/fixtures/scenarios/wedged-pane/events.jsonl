@@ -1,0 +1,4 @@
+{"channel":"swarm","seq":1,"ts":"2026-05-02T19:42:11Z","type":"agent.state_changed","payload":{"agent":"GreenBear","from":"TYPING","to":"TOOL_USE"}}
+{"channel":"swarm","seq":2,"ts":"2026-05-02T19:50:00Z","type":"swarm.tick","payload":{"alive":3,"wedged":0,"warnings":["GreenBear no progress 8m"]}}
+{"channel":"swarm","seq":3,"ts":"2026-05-02T19:55:00Z","type":"swarm.tick","payload":{"alive":3,"wedged":0,"warnings":["GreenBear no progress 13m"]}}
+{"channel":"swarm","seq":4,"ts":"2026-05-02T20:00:11Z","type":"agent.classified_wedged","payload":{"agent":"GreenBear","idle_s":1080,"wedge_threshold_s":600,"evidence":"partial line; tool_use stuck"}}

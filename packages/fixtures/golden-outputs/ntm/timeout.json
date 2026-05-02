@@ -1,0 +1,32 @@
+{
+  "meta": {
+    "adapter": "ntm",
+    "state": "timeout",
+    "kind": "synthetic",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-02T22:19:06Z",
+    "source": "hand-written; mimics ENVELOPE_TIMEOUT_S exhaustion"
+  },
+  "argv": [
+    "ntm",
+    "--json",
+    "list"
+  ],
+  "exit": 124,
+  "durationMs": 30000,
+  "stdoutBytes": 0,
+  "stdoutText": "",
+  "stderrBytes": 27,
+  "stderrText": "timeout: sending signal TERM",
+  "truncated": false,
+  "redacted": false,
+  "tags": [
+    "timeout"
+  ],
+  "capabilities": {
+    "ntm._timeout": {
+      "status": "degraded",
+      "notes": "exceeded ENVELOPE_TIMEOUT_S; adapter must surface; do not retry without backoff"
+    }
+  }
+}

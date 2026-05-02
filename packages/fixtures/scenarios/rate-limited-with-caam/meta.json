@@ -1,0 +1,9 @@
+{
+  "kind": "synthetic",
+  "scenario": "rate-limited-with-caam",
+  "fixturesVersion": "phase0-2026-05-02",
+  "capturedAt": "2026-05-02T22:17:37Z",
+  "vpsId": "local-full",
+  "source": "snapshot.sh + scripts/snapshot/seed/build-scenarios.sh",
+  "notes": "Anthropic rate limit hit; CAAM has alternative account. tend-swarm should propose ActionPlan: caam.switch_account; agent resumes after switch."
+}

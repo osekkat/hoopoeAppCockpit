@@ -1,0 +1,31 @@
+{
+  "meta": {
+    "adapter": "ubs",
+    "state": "unsupported-version",
+    "kind": "synthetic",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-02T22:19:06Z",
+    "source": "hand-written; mimics --version probe of pre-min-compatible binary"
+  },
+  "argv": [
+    "ubs",
+    "--version"
+  ],
+  "exit": 0,
+  "durationMs": 12,
+  "stdoutBytes": 14,
+  "stdoutText": "ubs 0.0.1\n",
+  "stderrBytes": 0,
+  "stderrText": "",
+  "truncated": false,
+  "redacted": false,
+  "tags": [
+    "unsupported-version"
+  ],
+  "capabilities": {
+    "ubs._minVersion": {
+      "status": "missing",
+      "notes": "observed 0.0.1; min-compatible per integration contract is higher"
+    }
+  }
+}

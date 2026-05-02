@@ -1,0 +1,33 @@
+{
+  "meta": {
+    "adapter": "caam",
+    "state": "normal",
+    "kind": "realistic",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-02T22:19:06Z",
+    "source": "snapshot.sh --self-test (local 2026-05-02)"
+  },
+  "argv": [
+    "caam",
+    "account-list",
+    "--json"
+  ],
+  "exit": 1,
+  "durationMs": 143,
+  "stdoutBytes": 0,
+  "stderrBytes": 78,
+  "stdoutText": "",
+  "stderrText": "Error: unknown command \"account-list\" for \"caam\"\nRun 'caam --help' for usage.\n",
+  "truncated": false,
+  "redacted": false,
+  "tags": [],
+  "capabilities": {
+    "caam.accounts.list": {
+      "status": "ok"
+    },
+    "caam.account.switch": {
+      "status": "blocked-by-policy",
+      "notes": "destructive; --help only in snapshot"
+    }
+  }
+}

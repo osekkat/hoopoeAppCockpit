@@ -1,0 +1,9 @@
+{
+  "kind": "synthetic",
+  "scenario": "wedged-pane",
+  "fixturesVersion": "phase0-2026-05-02",
+  "capturedAt": "2026-05-02T22:17:37Z",
+  "vpsId": "local-full",
+  "source": "snapshot.sh + scripts/snapshot/seed/build-scenarios.sh",
+  "notes": "One pane wedged (idle > wedge_threshold_s + last_output ends mid-line). tend-swarm should propose ActionPlan: agent.kill_wedged_process or agent.ask_status (per skill)."
+}

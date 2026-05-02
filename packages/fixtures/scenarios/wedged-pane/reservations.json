@@ -1,0 +1,16 @@
+{
+  "reservations": [
+    {
+      "id": 99,
+      "agent": "GreenBear",
+      "paths": [
+        "apps/desktop/src/main.ts"
+      ],
+      "exclusive": true,
+      "reason": "hp-zir",
+      "expires_ts": "2026-05-02T20:42:11Z",
+      "note": "still held by wedged agent"
+    }
+  ],
+  "conflicts": []
+}

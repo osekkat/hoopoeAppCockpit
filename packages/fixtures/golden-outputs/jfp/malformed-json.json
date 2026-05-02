@@ -1,0 +1,32 @@
+{
+  "meta": {
+    "adapter": "jfp",
+    "state": "malformed-json",
+    "kind": "synthetic",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-02T22:19:06Z",
+    "source": "hand-written; tests parser graceful-degradation"
+  },
+  "argv": [
+    "jfp",
+    "--json",
+    "list"
+  ],
+  "exit": 0,
+  "durationMs": 35,
+  "stdoutBytes": 38,
+  "stdoutText": "{\"truncated_at_first_object\": tru",
+  "stderrBytes": 0,
+  "stderrText": "",
+  "truncated": false,
+  "redacted": false,
+  "tags": [
+    "malformed-json"
+  ],
+  "capabilities": {
+    "jfp._parse": {
+      "status": "degraded",
+      "notes": "stdout was non-JSON; adapter must NOT panic"
+    }
+  }
+}

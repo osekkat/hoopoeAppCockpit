@@ -1,0 +1,144 @@
+{
+  "git": {
+    "git.status.read": {
+      "status": "ok"
+    },
+    "git.diff.read": {
+      "status": "ok"
+    },
+    "git.unpushed.list": {
+      "status": "ok",
+      "fallback": "rev-list --left-right"
+    },
+    "git.push": {
+      "status": "blocked-by-policy",
+      "notes": "snapshot script never pushes"
+    }
+  },
+  "br": {
+    "br.issues.read": {
+      "status": "ok"
+    },
+    "br.issues.update": {
+      "status": "ok"
+    },
+    "br.dep.add": {
+      "status": "ok"
+    },
+    "br.sync.flush_only": {
+      "status": "ok",
+      "notes": "br sync --flush-only is non-invasive (never runs git)"
+    }
+  },
+  "bv": {
+    "bv.robot.triage": {
+      "status": "ok"
+    },
+    "bv.robot.plan": {
+      "status": "ok"
+    },
+    "bv.robot.insights": {
+      "status": "ok"
+    },
+    "bv.robot.diff": {
+      "status": "ok"
+    },
+    "bv.tui": {
+      "status": "blocked-by-policy",
+      "notes": "Guardrail 1: bare bv launches TUI; never invoked"
+    }
+  },
+  "ntm": {
+    "ntm.robot.snapshot": {
+      "status": "ok"
+    },
+    "ntm.robot.status": {
+      "status": "ok"
+    },
+    "ntm.robot.tail": {
+      "status": "ok"
+    },
+    "ntm.serve.rest": {
+      "status": "untested",
+      "transport": "http",
+      "notes": "endpoint discovery only"
+    }
+  },
+  "agent_mail": {
+    "agent_mail.messages.read": {
+      "status": "ok"
+    },
+    "agent_mail.messages.send": {
+      "status": "ok"
+    },
+    "agent_mail.reservations.list": {
+      "status": "ok"
+    }
+  },
+  "ru": {
+    "ru.sync.dry_run": {
+      "status": "ok",
+      "notes": "--dry-run --non-interactive"
+    },
+    "ru.status.read": {
+      "status": "ok"
+    },
+    "ru.list.paths": {
+      "status": "ok"
+    },
+    "ru.prune.dry_run": {
+      "status": "ok"
+    },
+    "ru.schema": {
+      "status": "ok"
+    }
+  },
+  "health": {
+    "health.coverage": {
+      "status": "untested",
+      "notes": "language-specific runners attempted best-effort"
+    },
+    "health.complexity": {
+      "status": "untested"
+    }
+  },
+  "caut": {},
+  "caam": {
+    "caam.accounts.list": {
+      "status": "ok"
+    },
+    "caam.account.switch": {
+      "status": "ok",
+      "notes": "alternative account available"
+    }
+  },
+  "dcg": {
+    "dcg.verdicts.subscribe": {
+      "status": "untested",
+      "notes": "verdict format pinned via --help; runtime stream from hook"
+    }
+  },
+  "casr": {},
+  "ubs": {
+    "ubs.scan": {
+      "status": "ok"
+    }
+  },
+  "jsm": {
+    "jsm.skill.install": {
+      "status": "ok"
+    },
+    "jsm.skill.verify": {
+      "status": "ok",
+      "notes": "SHA-256 deterministic"
+    },
+    "jsm.skill.list": {
+      "status": "ok"
+    }
+  },
+  "jfp": {},
+  "oracle": {},
+  "pt": {},
+  "srp": {},
+  "sbh": {}
+}

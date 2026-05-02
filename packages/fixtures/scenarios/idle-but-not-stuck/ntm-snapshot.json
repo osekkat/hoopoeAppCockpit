@@ -1,0 +1,57 @@
+{
+  "sessions": [
+    {
+      "id": "hoopoe-implementation",
+      "windows": 1,
+      "panes": [
+        {
+          "id": "%1",
+          "agent": "GreenBear",
+          "program": "claude-code",
+          "model": "claude-opus-4-7",
+          "state": "IDLE",
+          "last_activity_ts": "2026-05-02T19:58:00Z",
+          "bead": "hp-xru",
+          "idle_seconds": 90
+        },
+        {
+          "id": "%2",
+          "agent": "BlueHill",
+          "program": "codex-cli",
+          "model": "GPT-5",
+          "state": "IDLE",
+          "last_activity_ts": "2026-05-02T19:58:00Z",
+          "bead": "hp-k6r",
+          "idle_seconds": 90
+        },
+        {
+          "id": "%3",
+          "agent": "FuchsiaPond",
+          "program": "codex-cli",
+          "model": "gpt-5.5",
+          "state": "IDLE",
+          "last_activity_ts": "2026-05-02T19:58:30Z",
+          "bead": "hp-ara",
+          "idle_seconds": 60
+        },
+        {
+          "id": "%4",
+          "agent": "FuchsiaStone",
+          "program": "claude-code",
+          "model": "claude-opus-4-7",
+          "state": "IDLE",
+          "last_activity_ts": "2026-05-02T19:58:30Z",
+          "bead": "hp-wle",
+          "idle_seconds": 60
+        }
+      ]
+    }
+  ],
+  "counters": {
+    "sessions": 1,
+    "panes": 4,
+    "alive": 4,
+    "wedged": 0,
+    "idle_under_threshold": 4
+  }
+}

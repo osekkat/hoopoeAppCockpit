@@ -1,0 +1,33 @@
+{
+  "meta": {
+    "adapter": "br",
+    "state": "high-volume",
+    "kind": "synthetic",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-02T22:19:06Z",
+    "source": "hand-written; mimics ENVELOPE_MAX_BYTES truncation"
+  },
+  "argv": [
+    "br",
+    "--json",
+    "dump-everything"
+  ],
+  "exit": 0,
+  "durationMs": 4200,
+  "stdoutBytes": 1048576,
+  "stdoutText": "<truncated 1MiB worth of JSON>",
+  "stderrBytes": 0,
+  "stderrText": "",
+  "truncated": true,
+  "redacted": false,
+  "tags": [
+    "high-volume",
+    "truncated"
+  ],
+  "capabilities": {
+    "br._highVolume": {
+      "status": "degraded",
+      "notes": "stdout exceeded ENVELOPE_MAX_BYTES; pagination required (per integration contract)"
+    }
+  }
+}

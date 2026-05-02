@@ -1,0 +1,4 @@
+{"channel":"swarm","seq":1,"ts":"2026-05-02T19:50:00Z","type":"swarm.tick","payload":{"alive":4,"wedged":0,"queued_beads":12}}
+{"channel":"agent_state","seq":2,"ts":"2026-05-02T19:51:30Z","type":"agent.state_changed","payload":{"agent":"BlueHill","from":"IDLE","to":"TYPING","bead":"hp-k6r"}}
+{"channel":"beads","seq":3,"ts":"2026-05-02T19:52:00Z","type":"bead.status_changed","payload":{"id":"hp-ara","from":"open","to":"in_progress","actor":"FuchsiaPond"}}
+{"channel":"audit","seq":4,"ts":"2026-05-02T19:54:43Z","type":"bead.closed","payload":{"id":"hp-6v3","actor":"FuchsiaStone","reason":"snapshot script ready"}}

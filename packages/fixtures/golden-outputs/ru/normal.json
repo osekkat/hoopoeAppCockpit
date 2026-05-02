@@ -1,0 +1,353 @@
+{
+  "meta": {
+    "adapter": "ru",
+    "state": "normal",
+    "kind": "realistic",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-02T22:19:06Z",
+    "source": "snapshot.sh --self-test (local 2026-05-02)"
+  },
+  "argv": [
+    "ru",
+    "--schema"
+  ],
+  "exit": 0,
+  "durationMs": 212,
+  "stdoutBytes": 5860,
+  "stderrBytes": 0,
+  "stdoutJson": {
+    "generated_at": "2026-05-02T21:50:25Z",
+    "version": "1.3.1",
+    "output_format": "json",
+    "command": "robot-docs",
+    "data": {
+      "schema_version": "1.0.0",
+      "topic": "schemas",
+      "content": {
+        "description": "JSON Schema definitions for ru command outputs. All JSON outputs share the same envelope wrapper.",
+        "envelope": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "required": [
+            "generated_at",
+            "version",
+            "output_format",
+            "command",
+            "data"
+          ],
+          "properties": {
+            "generated_at": {
+              "type": "string",
+              "format": "date-time",
+              "description": "ISO 8601 UTC timestamp"
+            },
+            "version": {
+              "type": "string",
+              "description": "ru version (semver)"
+            },
+            "output_format": {
+              "type": "string",
+              "enum": [
+                "json",
+                "toon"
+              ],
+              "description": "Output format used"
+            },
+            "command": {
+              "type": "string",
+              "description": "Command that produced the output"
+            },
+            "data": {
+              "type": "object",
+              "description": "Command-specific payload (see per-command schemas)"
+            },
+            "_meta": {
+              "type": "object",
+              "properties": {
+                "duration_seconds": {
+                  "type": "integer"
+                },
+                "exit_code": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "commands": {
+          "status": {
+            "description": "Output of ru status --json",
+            "data_schema": {
+              "type": "object",
+              "required": [
+                "total",
+                "repos"
+              ],
+              "properties": {
+                "total": {
+                  "type": "integer",
+                  "description": "Total number of configured repos"
+                },
+                "repos": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "repo",
+                      "path",
+                      "status",
+                      "branch",
+                      "ahead",
+                      "behind",
+                      "dirty",
+                      "mismatch"
+                    ],
+                    "properties": {
+                      "repo": {
+                        "type": "string",
+                        "description": "Repository identifier (owner/name)"
+                      },
+                      "path": {
+                        "type": "string",
+                        "description": "Local filesystem path"
+                      },
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "current",
+                          "behind",
+                          "ahead",
+                          "diverged",
+                          "missing",
+                          "not_git",
+                          "no_upstream"
+                        ],
+                        "description": "Sync status relative to remote"
+                      },
+                      "branch": {
+                        "type": "string",
+                        "description": "Current branch name"
+                      },
+                      "ahead": {
+                        "type": "integer",
+                        "description": "Commits ahead of remote"
+                      },
+                      "behind": {
+                        "type": "integer",
+                        "description": "Commits behind remote"
+                      },
+                      "dirty": {
+                        "type": "boolean",
+                        "description": "Has uncommitted local changes"
+                      },
+                      "mismatch": {
+                        "type": "boolean",
+                        "description": "Remote URL differs from config"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "list": {
+            "description": "Output of ru list --json",
+            "data_schema": {
+              "type": "object",
+              "required": [
+                "total",
+                "repos"
+              ],
+              "properties": {
+                "total": {
+                  "type": "integer",
+                  "description": "Number of configured repos"
+                },
+                "repos": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "repo",
+                      "url"
+                    ],
+                    "properties": {
+                      "repo": {
+                        "type": "string",
+                        "description": "Repository identifier"
+                      },
+                      "url": {
+                        "type": "string",
+                        "description": "Git clone URL"
+                      },
+                      "branch": {
+                        "type": "string",
+                        "description": "Configured branch (if specified)"
+                      },
+                      "custom_name": {
+                        "type": "string",
+                        "description": "Custom local directory name (if specified)"
+                      },
+                      "path": {
+                        "type": "string",
+                        "description": "Local path (when using --paths)"
+                      },
+                      "source": {
+                        "type": "string",
+                        "description": "Config file that defines this repo"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "sync": {
+            "description": "Output of ru sync --json",
+            "data_schema": {
+              "type": "object",
+              "required": [
+                "config",
+                "summary",
+                "repos"
+              ],
+              "properties": {
+                "config": {
+                  "type": "object",
+                  "properties": {
+                    "projects_dir": {
+                      "type": "string"
+                    },
+                    "layout": {
+                      "type": "string"
+                    },
+                    "parallel": {
+                      "type": "integer"
+                    },
+                    "clone_only": {
+                      "type": "boolean"
+                    },
+                    "pull_only": {
+                      "type": "boolean"
+                    },
+                    "dry_run": {
+                      "type": "boolean"
+                    }
+                  }
+                },
+                "summary": {
+                  "type": "object",
+                  "properties": {
+                    "total": {
+                      "type": "integer",
+                      "description": "Total repos processed"
+                    },
+                    "cloned": {
+                      "type": "integer",
+                      "description": "Repos freshly cloned"
+                    },
+                    "pulled": {
+                      "type": "integer",
+                      "description": "Repos updated via pull"
+                    },
+                    "skipped": {
+                      "type": "integer",
+                      "description": "Repos skipped (dirty, up-to-date, etc.)"
+                    },
+                    "failed": {
+                      "type": "integer",
+                      "description": "Repos that failed"
+                    }
+                  }
+                },
+                "repos": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "repo",
+                      "status"
+                    ],
+                    "properties": {
+                      "repo": {
+                        "type": "string"
+                      },
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "cloned",
+                          "pulled",
+                          "up-to-date",
+                          "skipped",
+                          "failed",
+                          "dirty"
+                        ]
+                      },
+                      "detail": {
+                        "type": "string",
+                        "description": "Additional context for the status"
+                      },
+                      "duration_ms": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "error": {
+            "description": "Error envelope returned on failures",
+            "data_schema": {
+              "type": "object",
+              "required": [
+                "error"
+              ],
+              "properties": {
+                "error": {
+                  "type": "string",
+                  "description": "Human-readable error message"
+                },
+                "code": {
+                  "type": "integer",
+                  "description": "Exit code"
+                },
+                "command": {
+                  "type": "string",
+                  "description": "Command that failed"
+                },
+                "details": {
+                  "type": "string",
+                  "description": "Additional error context"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "stdoutText": "{\n  \"generated_at\": \"2026-05-02T21:50:25Z\",\n  \"version\": \"1.3.1\",\n  \"output_format\": \"json\",\n  \"command\": \"robot-docs\",\n  \"data\": {\"schema_version\":\"1.0.0\",\"topic\":\"schemas\",\"content\":{\n  \"description\": \"JSON Schema definitions for ru command outputs. All JSON outputs share the same envelope wrapper.\",\n  \"envelope\": {\n    \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n    \"type\": \"object\",\n    \"required\": [\"generated_at\", \"version\", \"output_format\", \"command\", \"data\"],\n    \"properties\": {\n      \"generated_at\": {\"type\": \"string\", \"format\": \"date-time\", \"description\": \"ISO 8601 UTC timestamp\"},\n      \"version\": {\"type\": \"string\", \"description\": \"ru version (semver)\"},\n      \"output_format\": {\"type\": \"string\", \"enum\": [\"json\", \"toon\"], \"description\": \"Output format used\"},\n      \"command\": {\"type\": \"string\", \"description\": \"Command that produced the output\"},\n      \"data\": {\"type\": \"object\", \"description\": \"Command-specific payload (see per-command schemas)\"},\n      \"_meta\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"duration_seconds\": {\"type\": \"integer\"},\n          \"exit_code\": {\"type\": \"integer\"}\n        }\n      }\n    }\n  },\n  \"commands\": {\n    \"status\": {\n      \"description\": \"Output of ru status --json\",\n      \"data_schema\": {\n        \"type\": \"object\",\n        \"required\": [\"total\", \"repos\"],\n        \"properties\": {\n          \"total\": {\"type\": \"integer\", \"description\": \"Total number of configured repos\"},\n          \"repos\": {\n            \"type\": \"array\",\n            \"items\": {\n              \"type\": \"object\",\n              \"required\": [\"repo\", \"path\", \"status\", \"branch\", \"ahead\", \"behind\", \"dirty\", \"mismatch\"],\n              \"properties\": {\n                \"repo\": {\"type\": \"string\", \"description\": \"Repository identifier (owner/name)\"},\n                \"path\": {\"type\": \"string\", \"description\": \"Local filesystem path\"},\n                \"status\": {\"type\": \"string\", \"enum\": [\"current\", \"behind\", \"ahead\", \"diverged\", \"missing\", \"not_git\", \"no_upstream\"], \"description\": \"Sync status relative to remote\"},\n                \"branch\": {\"type\": \"string\", \"description\": \"Current branch name\"},\n                \"ahead\": {\"type\": \"integer\", \"description\": \"Commits ahead of remote\"},\n                \"behind\": {\"type\": \"integer\", \"description\": \"Commits behind remote\"},\n                \"dirty\": {\"type\": \"boolean\", \"description\": \"Has uncommitted local changes\"},\n                \"mismatch\": {\"type\": \"boolean\", \"description\": \"Remote URL differs from config\"}\n              }\n            }\n          }\n        }\n      }\n    },\n    \"list\": {\n      \"description\": \"Output of ru list --json\",\n      \"data_schema\": {\n        \"type\": \"object\",\n        \"required\": [\"total\", \"repos\"],\n        \"properties\": {\n          \"total\": {\"type\": \"integer\", \"description\": \"Number of configured repos\"},\n          \"repos\": {\n            \"type\": \"array\",\n            \"items\": {\n              \"type\": \"object\",\n              \"required\": [\"repo\", \"url\"],\n              \"properties\": {\n                \"repo\": {\"type\": \"string\", \"description\": \"Repository identifier\"},\n                \"url\": {\"type\": \"string\", \"description\": \"Git clone URL\"},\n                \"branch\": {\"type\": \"string\", \"description\": \"Configured branch (if specified)\"},\n                \"custom_name\": {\"type\": \"string\", \"description\": \"Custom local directory name (if specified)\"},\n                \"path\": {\"type\": \"string\", \"description\": \"Local path (when using --paths)\"},\n                \"source\": {\"type\": \"string\", \"description\": \"Config file that defines this repo\"}\n              }\n            }\n          }\n        }\n      }\n    },\n    \"sync\": {\n      \"description\": \"Output of ru sync --json\",\n      \"data_schema\": {\n        \"type\": \"object\",\n        \"required\": [\"config\", \"summary\", \"repos\"],\n        \"properties\": {\n          \"config\": {\n            \"type\": \"object\",\n            \"properties\": {\n              \"projects_dir\": {\"type\": \"string\"},\n              \"layout\": {\"type\": \"string\"},\n              \"parallel\": {\"type\": \"integer\"},\n              \"clone_only\": {\"type\": \"boolean\"},\n              \"pull_only\": {\"type\": \"boolean\"},\n              \"dry_run\": {\"type\": \"boolean\"}\n            }\n          },\n          \"summary\": {\n            \"type\": \"object\",\n            \"properties\": {\n              \"total\": {\"type\": \"integer\", \"description\": \"Total repos processed\"},\n              \"cloned\": {\"type\": \"integer\", \"description\": \"Repos freshly cloned\"},\n              \"pulled\": {\"type\": \"integer\", \"description\": \"Repos updated via pull\"},\n              \"skipped\": {\"type\": \"integer\", \"description\": \"Repos skipped (dirty, up-to-date, etc.)\"},\n              \"failed\": {\"type\": \"integer\", \"description\": \"Repos that failed\"}\n            }\n          },\n          \"repos\": {\n            \"type\": \"array\",\n            \"items\": {\n              \"type\": \"object\",\n              \"required\": [\"repo\", \"status\"],\n              \"properties\": {\n                \"repo\": {\"type\": \"string\"},\n                \"status\": {\"type\": \"string\", \"enum\": [\"cloned\", \"pulled\", \"up-to-date\", \"skipped\", \"failed\", \"dirty\"]},\n                \"detail\": {\"type\": \"string\", \"description\": \"Additional context for the status\"},\n                \"duration_ms\": {\"type\": \"integer\"}\n              }\n            }\n          }\n        }\n      }\n    },\n    \"error\": {\n      \"description\": \"Error envelope returned on failures\",\n      \"data_schema\": {\n        \"type\": \"object\",\n        \"required\": [\"error\"],\n        \"properties\": {\n          \"error\": {\"type\": \"string\", \"description\": \"Human-readable error message\"},\n          \"code\": {\"type\": \"integer\", \"description\": \"Exit code\"},\n          \"command\": {\"type\": \"string\", \"description\": \"Command that failed\"},\n          \"details\": {\"type\": \"string\", \"description\": \"Additional error context\"}\n        }\n      }\n    }\n  }\n}}\n}\n",
+  "stderrText": "",
+  "truncated": false,
+  "redacted": false,
+  "tags": [],
+  "capabilities": {
+    "ru.sync.dry_run": {
+      "status": "ok",
+      "notes": "--dry-run --non-interactive"
+    },
+    "ru.status.read": {
+      "status": "ok"
+    },
+    "ru.list.paths": {
+      "status": "ok"
+    },
+    "ru.prune.dry_run": {
+      "status": "ok"
+    },
+    "ru.schema": {
+      "status": "ok"
+    }
+  }
+}

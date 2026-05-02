@@ -1,0 +1,33 @@
+{
+  "meta": {
+    "kind": "synthetic",
+    "scenario": "idle-but-not-stuck",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-02T22:17:37Z",
+    "source": "build-scenarios.sh",
+    "notes": "All panes IDLE 60-90s; well under wedge_threshold_s=600. tend-swarm pre-script must report wakeAgent=false."
+  },
+  "detections": [
+    {
+      "kind": "swarm.idle",
+      "payload": {
+        "max_idle_s": 90,
+        "wedge_threshold_s": 600,
+        "classification": "idle"
+      }
+    }
+  ],
+  "wakeAgent": false,
+  "approvalsRequested": [],
+  "postconditions": [
+    {
+      "check": "no.action_taken",
+      "expect": true
+    },
+    {
+      "check": "no.audit_entry_for_intervention",
+      "expect": true
+    }
+  ],
+  "activityBehavior": "silent"
+}

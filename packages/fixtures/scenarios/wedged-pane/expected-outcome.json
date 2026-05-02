@@ -1,0 +1,74 @@
+{
+  "meta": {
+    "kind": "synthetic",
+    "scenario": "wedged-pane",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-02T22:17:37Z",
+    "source": "build-scenarios.sh",
+    "notes": "Wedged agent: idle 18m, tool_use mid-call, holds reservation. Pre-script detects wedge; agent woken; ActionPlan: agent.ask_status first, then agent.kill_wedged_process if no response, then reservation.force_release."
+  },
+  "detections": [
+    {
+      "kind": "agent.wedged",
+      "payload": {
+        "agent": "GreenBear",
+        "idle_s": 1080,
+        "wedge_threshold_s": 600
+      }
+    },
+    {
+      "kind": "reservation.held_by_wedged",
+      "payload": {
+        "agent": "GreenBear",
+        "reservation_id": 99
+      }
+    }
+  ],
+  "wakeAgent": true,
+  "actionPlan": {
+    "actions": [
+      {
+        "type": "agent.ask_status",
+        "args": {
+          "agent": "GreenBear",
+          "timeout_s": 60
+        }
+      },
+      {
+        "type": "agent.kill_wedged_process",
+        "args": {
+          "agent": "GreenBear",
+          "reason": "no response after ask_status"
+        }
+      },
+      {
+        "type": "reservation.force_release",
+        "args": {
+          "reservation_id": 99,
+          "reason": "owner agent killed"
+        }
+      }
+    ]
+  },
+  "approvalsRequested": [
+    {
+      "scope": "agent.kill_wedged_process",
+      "reason": "killing GreenBear (P0; approve to proceed)"
+    },
+    {
+      "scope": "reservation.force_release",
+      "reason": "force-releasing apps/desktop/src/main.ts (held by killed agent)"
+    }
+  ],
+  "postconditions": [
+    {
+      "check": "GreenBear.state == DEAD",
+      "expect": true
+    },
+    {
+      "check": "reservation_99.released",
+      "expect": true
+    }
+  ],
+  "activityBehavior": "surface"
+}

@@ -1,0 +1,48 @@
+{
+  "meta": {
+    "kind": "synthetic",
+    "scenario": "rate-limited-no-caam",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-02T22:17:37Z",
+    "source": "build-scenarios.sh",
+    "notes": "Provider rate limit, no CAAM alternative. Pre-script detects; ActionPlan: agent.pause; surface to user with retry_after countdown."
+  },
+  "detections": [
+    {
+      "kind": "agent.rate_limited",
+      "payload": {
+        "agent": "GreenBear",
+        "provider": "claude",
+        "retry_after_s": 1800
+      }
+    },
+    {
+      "kind": "caam.no_alternative",
+      "payload": {
+        "provider": "claude",
+        "available_accounts": 1
+      }
+    }
+  ],
+  "wakeAgent": true,
+  "actionPlan": {
+    "actions": [
+      {
+        "type": "agent.pause",
+        "args": {
+          "agent": "GreenBear",
+          "until": "2026-05-02T20:28:00Z",
+          "reason": "claude rate limit; no alternative account"
+        }
+      }
+    ]
+  },
+  "approvalsRequested": [],
+  "postconditions": [
+    {
+      "check": "GreenBear.state == PAUSED",
+      "expect": true
+    }
+  ],
+  "activityBehavior": "surface"
+}

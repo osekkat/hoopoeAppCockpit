@@ -1,0 +1,36 @@
+{
+  "messages": [
+    {
+      "id": 64,
+      "thread_id": "hoopoe-intro",
+      "from": "FuchsiaPond",
+      "to": [
+        "all"
+      ],
+      "subject": "[hoopoe-intro] cross-domain pull: hp-ara",
+      "created_ts": "2026-05-02T19:52:16Z",
+      "importance": "normal",
+      "ack_required": false
+    },
+    {
+      "id": 67,
+      "thread_id": "hp-6v3",
+      "from": "FuchsiaStone",
+      "to": [
+        "all"
+      ],
+      "subject": "[hp-6v3] Completed",
+      "created_ts": "2026-05-02T19:54:43Z",
+      "importance": "normal",
+      "ack_required": false
+    }
+  ],
+  "threads": [
+    "hoopoe-intro",
+    "hp-6v3",
+    "hp-78m",
+    "hp-k6r",
+    "hp-ara"
+  ],
+  "unread_total": 0
+}

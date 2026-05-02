@@ -1,0 +1,3 @@
+{"channel":"agent_state","seq":1,"ts":"2026-05-02T19:58:00Z","type":"agent.errored","payload":{"agent":"GreenBear","kind":"rate_limited","retry_after_s":1800}}
+{"channel":"caut","seq":2,"ts":"2026-05-02T19:58:01Z","type":"caut.usage_changed","payload":{"provider":"claude","account":"primary","percent":100,"reset_at":"2026-05-02T20:28:00Z"}}
+{"channel":"caam","seq":3,"ts":"2026-05-02T19:58:02Z","type":"caam.account_status","payload":{"active_account":"primary","available_accounts":3,"alternatives":[{"id":"backup","provider":"claude","percent_used":12}]}}

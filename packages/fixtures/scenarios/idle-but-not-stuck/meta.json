@@ -1,0 +1,9 @@
+{
+  "kind": "synthetic",
+  "scenario": "idle-but-not-stuck",
+  "fixturesVersion": "phase0-2026-05-02",
+  "capturedAt": "2026-05-02T22:17:37Z",
+  "vpsId": "local-full",
+  "source": "snapshot.sh + scripts/snapshot/seed/build-scenarios.sh",
+  "notes": "All panes IDLE but recent enough that pre-script must NOT classify as wedged. Tests the IDLE vs WEDGED disambiguation in tend-swarm."
+}

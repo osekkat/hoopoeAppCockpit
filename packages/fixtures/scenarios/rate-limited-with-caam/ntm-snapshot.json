@@ -1,0 +1,28 @@
+{
+  "sessions": [
+    {
+      "id": "hoopoe-implementation",
+      "windows": 1,
+      "panes": [
+        {
+          "id": "%1",
+          "agent": "GreenBear",
+          "program": "claude-code",
+          "model": "claude-opus-4-7",
+          "state": "ERROR",
+          "last_activity_ts": "2026-05-02T19:58:00Z",
+          "bead": "hp-zir",
+          "error": "rate_limited",
+          "retry_after_s": 1800
+        }
+      ]
+    }
+  ],
+  "counters": {
+    "sessions": 1,
+    "panes": 1,
+    "alive": 1,
+    "wedged": 0,
+    "errored": 1
+  }
+}

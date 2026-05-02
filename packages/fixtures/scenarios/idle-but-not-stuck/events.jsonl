@@ -1,0 +1,1 @@
+{"channel":"swarm","seq":1,"ts":"2026-05-02T19:59:00Z","type":"swarm.tick","payload":{"alive":4,"wedged":0,"all_idle":true,"max_idle_s":90,"wedge_threshold_s":600}}
