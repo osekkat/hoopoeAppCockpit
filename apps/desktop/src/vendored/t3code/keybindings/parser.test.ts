@@ -1,3 +1,7 @@
+// Hoopoe-owned tests for the vendored t3code keybindings parser.
+// Implementation file (./parser.ts) carries the MIT notice;
+// tests are Hoopoe-authored.
+
 import { expect, test } from "bun:test";
 import {
   compileResolvedKeybindingRule,

@@ -109,6 +109,46 @@ const BANNED_IDENTIFIERS: ReadonlyArray<BannedIdentifier> = [
   },
 ];
 
+/**
+ * Banned imports — package names that the Hoopoe surface MUST NOT depend on
+ * outside `apps/desktop/src/vendored/t3code/**`. Closes the §14 risk that
+ * Effect framework dependencies leak from vendored code into Hoopoe-owned
+ * adapters: every Effect-shaped helper must be re-implemented in plain TS
+ * or imported through the vendored shim layer (`vendored/t3code/_shims.ts`).
+ *
+ * Matched against the RAW line (before string-stripping) so the package
+ * name inside the import quote is visible. Allowlisted via the same
+ * `// codex-shape-scrub-ok: <reason>` suppression as identifier hits.
+ */
+interface BannedImport {
+  readonly pattern: RegExp;
+  readonly source: string;
+  readonly message: string;
+}
+
+const BANNED_IMPORTS: ReadonlyArray<BannedImport> = [
+  {
+    pattern: /from\s+["']effect["']/,
+    source: "effect",
+    message: "Effect framework leakage: re-implement the pattern in plain TS or import via vendored/t3code/_shims.ts (plan.md §3 'Effect framework is not adopted').",
+  },
+  {
+    pattern: /from\s+["']effect\/[^"']+["']/,
+    source: "effect/*",
+    message: "Effect submodule leakage: same as `effect`. Use the vendored shim or re-implement.",
+  },
+  {
+    pattern: /from\s+["']@effect\/[^"']+["']/,
+    source: "@effect/*",
+    message: "Effect ecosystem package leakage. Re-implement or use the vendored shim.",
+  },
+  {
+    pattern: /from\s+["']@t3tools\/[^"']+["']/,
+    source: "@t3tools/*",
+    message: "T3 Code workspace package leakage. Hoopoe doesn't ship @t3tools/* runtime; use the vendored copy + Hoopoe-owned adapter.",
+  },
+];
+
 const SUPPRESSION_MARKER = "codex-shape-scrub-ok:";
 
 function* walk(dir: string): IterableIterator<string> {
@@ -276,6 +316,21 @@ export function scanFile(filePath: string, source: string): ReadonlyArray<Findin
         identifier,
         message: messageByIdentifier.get(identifier) ?? "Codex-shape identifier not allowed.",
       });
+    }
+    // Banned-imports check runs against the RAW line (before string
+    // stripping) so the package name inside the import quote is visible.
+    for (const banned of BANNED_IMPORTS) {
+      const importMatch = banned.pattern.exec(raw);
+      if (importMatch) {
+        findings.push({
+          file: filePath,
+          line: lineIndex + 1,
+          column: importMatch.index + 1,
+          text: raw.trim(),
+          identifier: banned.source,
+          message: banned.message,
+        });
+      }
     }
   }
   return findings;

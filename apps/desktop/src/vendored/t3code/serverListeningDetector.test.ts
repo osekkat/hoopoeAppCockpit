@@ -1,3 +1,7 @@
+// Hoopoe-owned tests for the vendored t3code helper in this directory.
+// The implementation file (./serverListeningDetector.ts) carries the MIT
+// notice; tests are Hoopoe-authored and not subject to the lift policy.
+
 import { expect, test } from "bun:test";
 import { ServerListeningDetector } from "./serverListeningDetector.ts";
 

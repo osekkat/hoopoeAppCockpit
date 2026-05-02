@@ -112,3 +112,36 @@ test("scrub: reports file/line/column accurately", () => {
   expect(findings[0]?.column).toBeGreaterThan(0);
   expect(findings[0]?.identifier).toBe("Thread");
 });
+
+test("scrub: flags banned imports (effect / @effect/* / @t3tools/*)", () => {
+  const source = [
+    'import { Schema } from "effect";',
+    'import * as Eff from "effect/Effect";',
+    'import { Layer } from "@effect/platform-node";',
+    'import { ServerSettings } from "@t3tools/contracts";',
+  ].join("\n");
+  const findings = scanFile("/fake/file.ts", source);
+  const sources = findings.map((f) => f.identifier).toSorted();
+  expect(sources).toEqual(["@effect/*", "@t3tools/*", "effect", "effect/*"]);
+});
+
+test("scrub: same-line suppression skips banned imports", () => {
+  // Same-line suppression matches the existing identifier-suppression
+  // behavior: the `// codex-shape-scrub-ok: <reason>` annotation must be
+  // on the same line as the offending code. Multi-line suppression is a
+  // future enhancement; for now keep the model uniform.
+  const source = [
+    'import { Schema } from "effect"; // codex-shape-scrub-ok: vendored shim re-export',
+  ].join("\n");
+  expect(scanFile("/fake/file.ts", source)).toHaveLength(0);
+});
+
+test("scrub: legitimate imports (react / node:fs / @hoopoe/*) are not flagged", () => {
+  const source = [
+    'import { useEffect } from "react";', // useEffect is whole-word OK; "react" not banned
+    'import * as FS from "node:fs";',
+    'import { type ToneToken } from "@hoopoe/design-system";',
+    'import { writeFileStringAtomically } from "../vendored/t3code/settings/atomicWrite.ts";',
+  ].join("\n");
+  expect(scanFile("/fake/file.ts", source)).toHaveLength(0);
+});

@@ -1,3 +1,7 @@
+// Hoopoe-owned tests for the vendored t3code helper in this directory.
+// The implementation file (./clientPersistence.ts) carries the MIT
+// notice; tests are Hoopoe-authored and not subject to the lift policy.
+
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
