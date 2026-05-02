@@ -1,0 +1,800 @@
+{
+  "meta": {
+    "version": "1.0.0",
+    "generated_at": "2026-05-02T12:47:43.524032+01:00",
+    "phase2_ready": true,
+    "issue_count": 207,
+    "compute_time_ms": 0
+  },
+  "quick_ref": {
+    "open_count": 207,
+    "actionable_count": 8,
+    "blocked_count": 199,
+    "in_progress_count": 0,
+    "top_picks": [
+      {
+        "id": "hp-r3i",
+        "title": "Cross-cutting: packages/schemas — OpenAPI + TS client + Go types",
+        "score": 0.5990708411122116,
+        "reasons": [
+          "🎯 Completing this unblocks 8 downstream issues (hp-14zt, hp-1ry, +6 more)",
+          "📊 High centrality in dependency graph (PageRank: 100%)",
+          "⚡ Low effort, high impact - good starting point",
+          "✅ Currently unclaimed - available for work",
+          "🚨 High priority (P1) - prioritize this work"
+        ],
+        "unblocks": 8
+      },
+      {
+        "id": "hp-xru",
+        "title": "Phase 1: Clone \u0026 pin t3code, initialize monorepo (Turbo + Bun + workspaces)",
+        "score": 0.41241320784411367,
+        "reasons": [
+          "🎯 Completing this unblocks 6 downstream issues (hp-15s, hp-191, +4 more)",
+          "📊 High centrality in dependency graph (PageRank: 58%)",
+          "⚡ Low effort, high impact - good starting point",
+          "✅ Currently unclaimed - available for work",
+          "🚨 High priority (P0) - prioritize this work"
+        ],
+        "unblocks": 6
+      },
+      {
+        "id": "hp-r33",
+        "title": "Cross-cutting: capability registry + degraded-mode contract",
+        "score": 0.38767464677537034,
+        "reasons": [
+          "🎯 Completing this unblocks 4 downstream issues (hp-6bj, hp-6e2, +2 more)",
+          "📊 High centrality in dependency graph (PageRank: 46%)",
+          "⚡ Low effort, high impact - good starting point",
+          "✅ Currently unclaimed - available for work",
+          "🚨 High priority (P1) - prioritize this work"
+        ],
+        "unblocks": 4
+      }
+    ]
+  },
+  "recommendations": [
+    {
+      "id": "hp-r3i",
+      "title": "Cross-cutting: packages/schemas — OpenAPI + TS client + Go types",
+      "type": "epic",
+      "status": "open",
+      "priority": 1,
+      "labels": null,
+      "score": 0.5990708411122116,
+      "breakdown": {
+        "pagerank": 0.22,
+        "betweenness": 0,
+        "blocker_ratio": 0.13,
+        "staleness": 0.0009864731667438272,
+        "priority_boost": 0.07500000000000001,
+        "time_to_impact": 0.09625,
+        "urgency": 0.004082163435858266,
+        "risk": 0.0020000000000000005,
+        "pagerank_norm": 1,
+        "betweenness_norm": 0,
+        "blocker_ratio_norm": 1,
+        "staleness_norm": 0.019729463334876542,
+        "priority_boost_norm": 0.75,
+        "time_to_impact_norm": 0.9624999999999999,
+        "urgency_norm": 0.04082163435858266,
+        "risk_norm": 0.020000000000000004,
+        "time_to_impact_explanation": "Deep in critical path (depth 39), median estimate 60m",
+        "risk_explanation": "Low risk - stable dependency structure",
+        "risk_signals": {
+          "fan_variance": 0,
+          "activity_churn": 0,
+          "cross_repo_risk": 0,
+          "status_risk": 0.1,
+          "composite_risk": 0.020000000000000004,
+          "explanation": "Low risk - stable dependency structure"
+        }
+      },
+      "action": "Quick win - start here for fast progress",
+      "reasons": [
+        "🎯 Completing this unblocks 8 downstream issues (hp-14zt, hp-1ry, +6 more)",
+        "📊 High centrality in dependency graph (PageRank: 100%)",
+        "⚡ Low effort, high impact - good starting point",
+        "✅ Currently unclaimed - available for work",
+        "🚨 High priority (P1) - prioritize this work"
+      ],
+      "unblocks_ids": [
+        "hp-14zt",
+        "hp-1ry",
+        "hp-38d",
+        "hp-3ab",
+        "hp-4d7",
+        "hp-5ja",
+        "hp-dmz",
+        "hp-gkk"
+      ]
+    },
+    {
+      "id": "hp-xru",
+      "title": "Phase 1: Clone \u0026 pin t3code, initialize monorepo (Turbo + Bun + workspaces)",
+      "type": "task",
+      "status": "open",
+      "priority": 0,
+      "labels": null,
+      "score": 0.41241320784411367,
+      "breakdown": {
+        "pagerank": 0.12680532654679932,
+        "betweenness": 0,
+        "blocker_ratio": 0.02275,
+        "staleness": 0.000985122791724537,
+        "priority_boost": 0.1,
+        "time_to_impact": 0.09625,
+        "urgency": 0.004048618713374641,
+        "risk": 0.0020000000000000005,
+        "pagerank_norm": 0.576387847939997,
+        "betweenness_norm": 0,
+        "blocker_ratio_norm": 0.175,
+        "staleness_norm": 0.01970245583449074,
+        "priority_boost_norm": 1,
+        "time_to_impact_norm": 0.9624999999999999,
+        "urgency_norm": 0.04048618713374641,
+        "risk_norm": 0.020000000000000004,
+        "time_to_impact_explanation": "Deep in critical path (depth 39), median estimate 60m",
+        "risk_explanation": "Low risk - stable dependency structure",
+        "risk_signals": {
+          "fan_variance": 0,
+          "activity_churn": 0,
+          "cross_repo_risk": 0,
+          "status_risk": 0.1,
+          "composite_risk": 0.020000000000000004,
+          "explanation": "Low risk - stable dependency structure"
+        }
+      },
+      "action": "Quick win - start here for fast progress",
+      "reasons": [
+        "🎯 Completing this unblocks 6 downstream issues (hp-15s, hp-191, +4 more)",
+        "📊 High centrality in dependency graph (PageRank: 58%)",
+        "⚡ Low effort, high impact - good starting point",
+        "✅ Currently unclaimed - available for work",
+        "🚨 High priority (P0) - prioritize this work"
+      ],
+      "unblocks_ids": [
+        "hp-15s",
+        "hp-191",
+        "hp-6sv",
+        "hp-ara",
+        "hp-k6r",
+        "hp-lxs"
+      ]
+    },
+    {
+      "id": "hp-r33",
+      "title": "Cross-cutting: capability registry + degraded-mode contract",
+      "type": "epic",
+      "status": "open",
+      "priority": 1,
+      "labels": null,
+      "score": 0.38767464677537034,
+      "breakdown": {
+        "pagerank": 0.10179177951565993,
+        "betweenness": 0,
+        "blocker_ratio": 0.08775000000000001,
+        "staleness": 0.0009864676903742285,
+        "priority_boost": 0.07500000000000001,
+        "time_to_impact": 0.09625,
+        "urgency": 0.0040742784120485764,
+        "risk": 0.0020000000000000005,
+        "pagerank_norm": 0.46268990688936334,
+        "betweenness_norm": 0,
+        "blocker_ratio_norm": 0.675,
+        "staleness_norm": 0.01972935380748457,
+        "priority_boost_norm": 0.75,
+        "time_to_impact_norm": 0.9624999999999999,
+        "urgency_norm": 0.040742784120485764,
+        "risk_norm": 0.020000000000000004,
+        "time_to_impact_explanation": "Deep in critical path (depth 38), median estimate 60m",
+        "risk_explanation": "Low risk - stable dependency structure",
+        "risk_signals": {
+          "fan_variance": 0,
+          "activity_churn": 0,
+          "cross_repo_risk": 0,
+          "status_risk": 0.1,
+          "composite_risk": 0.020000000000000004,
+          "explanation": "Low risk - stable dependency structure"
+        }
+      },
+      "action": "Quick win - start here for fast progress",
+      "reasons": [
+        "🎯 Completing this unblocks 4 downstream issues (hp-6bj, hp-6e2, +2 more)",
+        "📊 High centrality in dependency graph (PageRank: 46%)",
+        "⚡ Low effort, high impact - good starting point",
+        "✅ Currently unclaimed - available for work",
+        "🚨 High priority (P1) - prioritize this work"
+      ],
+      "unblocks_ids": [
+        "hp-6bj",
+        "hp-6e2",
+        "hp-p4x",
+        "hp-r3l"
+      ]
+    },
+    {
+      "id": "hp-9kt",
+      "title": "Phase 6: Bead conversion + traceability + polish rounds + bv adapter",
+      "type": "epic",
+      "status": "open",
+      "priority": 0,
+      "labels": null,
+      "score": 0.33268373246723737,
+      "breakdown": {
+        "pagerank": 0.015355593702682836,
+        "betweenness": 0.2,
+        "blocker_ratio": 0.04225,
+        "staleness": 0.00023820292071759257,
+        "priority_boost": 0.1,
+        "time_to_impact": 0.09625,
+        "urgency": 0.003848616737554084,
+        "risk": 0.017320061592241805,
+        "pagerank_norm": 0.06979815319401289,
+        "betweenness_norm": 1,
+        "blocker_ratio_norm": 0.325,
+        "staleness_norm": 0.004764058414351851,
+        "priority_boost_norm": 1,
+        "time_to_impact_norm": 0.9624999999999999,
+        "urgency_norm": 0.038486167375540836,
+        "risk_norm": 0.17320061592241806,
+        "time_to_impact_explanation": "Deep in critical path (depth 19), median estimate 60m",
+        "risk_explanation": "Low risk - stable dependency structure",
+        "risk_signals": {
+          "fan_variance": 0.5106687197413936,
+          "activity_churn": 0,
+          "cross_repo_risk": 0,
+          "status_risk": 0.1,
+          "composite_risk": 0.17320061592241806,
+          "explanation": "Low risk - stable dependency structure"
+        }
+      },
+      "action": "Work on hp-1ry first to unblock this",
+      "reasons": [
+        "🔀 Critical path bottleneck (betweenness: 100%)",
+        "✅ Currently unclaimed - available for work",
+        "⏳ Blocked by 9 items - need to clear dependencies",
+        "🚨 High priority (P0) - prioritize this work"
+      ],
+      "blocked_by": [
+        "hp-1ry",
+        "hp-2sv",
+        "hp-dz8",
+        "hp-j3x",
+        "hp-ojh",
+        "hp-pjp",
+        "hp-r33",
+        "hp-vh7",
+        "hp-xi9"
+      ]
+    },
+    {
+      "id": "hp-1ry",
+      "title": "Phase 2.5: Seed REST contract — implement §2.6 endpoints with generated schema tests",
+      "type": "task",
+      "status": "open",
+      "priority": 0,
+      "labels": null,
+      "score": 0.3316386231581712,
+      "breakdown": {
+        "pagerank": 0.09128860591830536,
+        "betweenness": 0.0024492480067183193,
+        "blocker_ratio": 0.09425,
+        "staleness": 0.000950361695794753,
+        "priority_boost": 0.1,
+        "time_to_impact": 0.09625,
+        "urgency": 0.00392256332689554,
+        "risk": 0.0020000000000000005,
+        "pagerank_norm": 0.4149482087195698,
+        "betweenness_norm": 0.012246240033591595,
+        "blocker_ratio_norm": 0.725,
+        "staleness_norm": 0.01900723391589506,
+        "priority_boost_norm": 1,
+        "time_to_impact_norm": 0.9624999999999999,
+        "urgency_norm": 0.039225633268955395,
+        "risk_norm": 0.020000000000000004,
+        "time_to_impact_explanation": "Deep in critical path (depth 38), median estimate 60m",
+        "risk_explanation": "Low risk - stable dependency structure",
+        "risk_signals": {
+          "fan_variance": 0,
+          "activity_churn": 0,
+          "cross_repo_risk": 0,
+          "status_risk": 0.1,
+          "composite_risk": 0.020000000000000004,
+          "explanation": "Low risk - stable dependency structure"
+        }
+      },
+      "action": "Work on hp-r3i first to unblock this",
+      "reasons": [
+        "🔓 Unblocks 1 item(s): hp-ngq",
+        "📊 High centrality in dependency graph (PageRank: 41%)",
+        "✅ Currently unclaimed - available for work",
+        "⏳ Blocked by hp-r3i - complete that first",
+        "🚨 High priority (P0) - prioritize this work"
+      ],
+      "unblocks_ids": [
+        "hp-ngq"
+      ],
+      "blocked_by": [
+        "hp-r3i"
+      ]
+    },
+    {
+      "id": "hp-zir",
+      "title": "Phase 1: Decompose t3code main.ts into BackendLifecycle/UpdateMachine/IpcRegistry/WindowManager/SettingsBridge/AuthBridge",
+      "type": "task",
+      "status": "open",
+      "priority": 0,
+      "labels": null,
+      "score": 0.29254152151542295,
+      "breakdown": {
+        "pagerank": 0.05335198790757834,
+        "betweenness": 0.006430425801182616,
+        "blocker_ratio": 0.052000000000000005,
+        "staleness": 0.0009800930107445988,
+        "priority_boost": 0.1,
+        "time_to_impact": 0.09625,
+        "urgency": 0.004042855301058352,
+        "risk": 0.0020000000000000005,
+        "pagerank_norm": 0.24250903594353793,
+        "betweenness_norm": 0.03215212900591308,
+        "blocker_ratio_norm": 0.4,
+        "staleness_norm": 0.019601860214891974,
+        "priority_boost_norm": 1,
+        "time_to_impact_norm": 0.9624999999999999,
+        "urgency_norm": 0.04042855301058351,
+        "risk_norm": 0.020000000000000004,
+        "time_to_impact_explanation": "Deep in critical path (depth 37), median estimate 60m",
+        "risk_explanation": "Low risk - stable dependency structure",
+        "risk_signals": {
+          "fan_variance": 0,
+          "activity_churn": 0,
+          "cross_repo_risk": 0,
+          "status_risk": 0.1,
+          "composite_risk": 0.020000000000000004,
+          "explanation": "Low risk - stable dependency structure"
+        }
+      },
+      "action": "Work on hp-15s first to unblock this",
+      "reasons": [
+        "🎯 Completing this unblocks 3 downstream issues (hp-4bt, hp-rth, hp-spx)",
+        "✅ Currently unclaimed - available for work",
+        "⏳ Blocked by hp-15s - complete that first",
+        "🚨 High priority (P0) - prioritize this work"
+      ],
+      "unblocks_ids": [
+        "hp-4bt",
+        "hp-rth",
+        "hp-spx"
+      ],
+      "blocked_by": [
+        "hp-15s"
+      ]
+    },
+    {
+      "id": "hp-vh7",
+      "title": "Phase 5: Planning workspace + multi-model pipeline + Oracle adapter",
+      "type": "epic",
+      "status": "open",
+      "priority": 0,
+      "labels": null,
+      "score": 0.2909312247443445,
+      "breakdown": {
+        "pagerank": 0.0063459911596353965,
+        "betweenness": 0.17550793984589497,
+        "blocker_ratio": 0.00975,
+        "staleness": 0.000005260659895833334,
+        "priority_boost": 0.1,
+        "time_to_impact": 0.09625,
+        "urgency": 0.003884541278803039,
+        "risk": 0.02387230240483433,
+        "pagerank_norm": 0.028845414361979075,
+        "betweenness_norm": 0.8775396992294748,
+        "blocker_ratio_norm": 0.075,
+        "staleness_norm": 0.00010521319791666667,
+        "priority_boost_norm": 1,
+        "time_to_impact_norm": 0.9624999999999999,
+        "urgency_norm": 0.03884541278803039,
+        "risk_norm": 0.23872302404834328,
+        "time_to_impact_explanation": "Deep in critical path (depth 20), median estimate 60m",
+        "risk_explanation": "Risk factors: high dependency variance",
+        "risk_signals": {
+          "fan_variance": 0.729076746827811,
+          "activity_churn": 0,
+          "cross_repo_risk": 0,
+          "status_risk": 0.1,
+          "composite_risk": 0.23872302404834328,
+          "explanation": "Risk factors: high dependency variance"
+        }
+      },
+      "action": "Work on hp-6gs4 first to unblock this",
+      "reasons": [
+        "🔀 Critical path bottleneck (betweenness: 88%)",
+        "✅ Currently unclaimed - available for work",
+        "⏳ Blocked by 16 items - need to clear dependencies",
+        "🚨 High priority (P0) - prioritize this work"
+      ],
+      "blocked_by": [
+        "hp-6gs4",
+        "hp-8ec",
+        "hp-al4",
+        "hp-du6",
+        "hp-e33",
+        "hp-hx12",
+        "hp-jxe",
+        "hp-ktn",
+        "hp-m6am",
+        "hp-pmw",
+        "hp-r3i",
+        "hp-rsly",
+        "hp-s00",
+        "hp-x3z",
+        "hp-xr8",
+        "hp-z5r"
+      ]
+    },
+    {
+      "id": "hp-k6r",
+      "title": "Phase 1: Build greenfield design tokens (cream/dark, agent palette, status pills, priority chips, coverage ramp)",
+      "type": "task",
+      "status": "open",
+      "priority": 0,
+      "labels": null,
+      "score": 0.2649668944648187,
+      "breakdown": {
+        "pagerank": 0.04950214422561721,
+        "betweenness": 0.0023101988587975212,
+        "blocker_ratio": 0.02925,
+        "staleness": 0.000980091015181327,
+        "priority_boost": 0.1,
+        "time_to_impact": 0.09625,
+        "urgency": 0.0040411839814273485,
+        "risk": 0.0020000000000000005,
+        "pagerank_norm": 0.22500974648007824,
+        "betweenness_norm": 0.011550994293987605,
+        "blocker_ratio_norm": 0.225,
+        "staleness_norm": 0.019601820303626543,
+        "priority_boost_norm": 1,
+        "time_to_impact_norm": 0.9624999999999999,
+        "urgency_norm": 0.04041183981427349,
+        "risk_norm": 0.020000000000000004,
+        "time_to_impact_explanation": "Deep in critical path (depth 36), median estimate 60m",
+        "risk_explanation": "Low risk - stable dependency structure",
+        "risk_signals": {
+          "fan_variance": 0,
+          "activity_churn": 0,
+          "cross_repo_risk": 0,
+          "status_risk": 0.1,
+          "composite_risk": 0.020000000000000004,
+          "explanation": "Low risk - stable dependency structure"
+        }
+      },
+      "action": "Work on hp-xru first to unblock this",
+      "reasons": [
+        "🔓 Unblocks 2 item(s): hp-8sm, hp-sh0",
+        "✅ Currently unclaimed - available for work",
+        "⏳ Blocked by hp-xru - complete that first",
+        "🚨 High priority (P0) - prioritize this work"
+      ],
+      "unblocks_ids": [
+        "hp-8sm",
+        "hp-sh0"
+      ],
+      "blocked_by": [
+        "hp-xru"
+      ]
+    },
+    {
+      "id": "hp-38d",
+      "title": "Phase 2: Daemon HTTP/WS scaffolding (chi/echo + gorilla/nhooyr WS, /health, /v1/version, /v1/jobs)",
+      "type": "task",
+      "status": "open",
+      "priority": 0,
+      "labels": null,
+      "score": 0.26403813952575206,
+      "breakdown": {
+        "pagerank": 0.03321505062259317,
+        "betweenness": 0.0005452064528440917,
+        "blocker_ratio": 0.02275,
+        "staleness": 0.0009503842175733026,
+        "priority_boost": 0.1,
+        "time_to_impact": 0.09625,
+        "urgency": 0.0040245331141795185,
+        "risk": 0.0020000000000000005,
+        "pagerank_norm": 0.15097750282996894,
+        "betweenness_norm": 0.002726032264220458,
+        "blocker_ratio_norm": 0.175,
+        "staleness_norm": 0.01900768435146605,
+        "priority_boost_norm": 1,
+        "time_to_impact_norm": 0.9624999999999999,
+        "urgency_norm": 0.04024533114179518,
+        "risk_norm": 0.020000000000000004,
+        "time_to_impact_explanation": "Deep in critical path (depth 30), median estimate 60m",
+        "risk_explanation": "Low risk - stable dependency structure",
+        "risk_signals": {
+          "fan_variance": 0,
+          "activity_churn": 0,
+          "cross_repo_risk": 0,
+          "status_risk": 0.1,
+          "composite_risk": 0.020000000000000004,
+          "explanation": "Low risk - stable dependency structure"
+        }
+      },
+      "action": "Work on hp-r3i first to unblock this",
+      "reasons": [
+        "🎯 Completing this unblocks 3 downstream issues (hp-dmoj, hp-kfb, hp-wqm)",
+        "✅ Currently unclaimed - available for work",
+        "⏳ Blocked by hp-r3i - complete that first",
+        "🚨 High priority (P0) - prioritize this work"
+      ],
+      "unblocks_ids": [
+        "hp-dmoj",
+        "hp-kfb",
+        "hp-wqm"
+      ],
+      "blocked_by": [
+        "hp-r3i"
+      ]
+    },
+    {
+      "id": "hp-i62",
+      "title": "Phase 1: Build reusable component set (StageHeader, AgentTile, BeadCard, StatusPill, PriorityChip, CoverageBar, TerminalPane, TimelineRow, HealthKpiCard, ApprovalDialog)",
+      "type": "task",
+      "status": "open",
+      "priority": 1,
+      "labels": null,
+      "score": 0.2557134791758351,
+      "breakdown": {
+        "pagerank": 0.03873368718340823,
+        "betweenness": 0.03891326893562054,
+        "blocker_ratio": 0.091,
+        "staleness": 0.0009089911868248457,
+        "priority_boost": 0.07500000000000001,
+        "time_to_impact": 0.09625,
+        "urgency": 0.004037484483800852,
+        "risk": 0.02046153846153846,
+        "pagerank_norm": 0.1760622144700374,
+        "betweenness_norm": 0.1945663446781027,
+        "blocker_ratio_norm": 0.7,
+        "staleness_norm": 0.018179823736496913,
+        "priority_boost_norm": 0.75,
+        "time_to_impact_norm": 0.9624999999999999,
+        "urgency_norm": 0.04037484483800852,
+        "risk_norm": 0.20461538461538462,
+        "time_to_impact_explanation": "Deep in critical path (depth 34), median estimate 60m",
+        "risk_explanation": "Risk factors: high dependency variance",
+        "risk_signals": {
+          "fan_variance": 0.6153846153846154,
+          "activity_churn": 0,
+          "cross_repo_risk": 0,
+          "status_risk": 0.1,
+          "composite_risk": 0.20461538461538462,
+          "explanation": "Risk factors: high dependency variance"
+        }
+      },
+      "action": "Work on hp-6f4 first to unblock this",
+      "reasons": [
+        "✅ Currently unclaimed - available for work",
+        "⏳ Blocked by 5 items - need to clear dependencies",
+        "🚨 High priority (P1) - prioritize this work"
+      ],
+      "blocked_by": [
+        "hp-6f4",
+        "hp-8gg",
+        "hp-8sm",
+        "hp-k6r",
+        "hp-sh0"
+      ]
+    }
+  ],
+  "quick_wins": [
+    {
+      "id": "hp-xru",
+      "title": "Phase 1: Clone \u0026 pin t3code, initialize monorepo (Turbo + Bun + workspaces)",
+      "score": 1.6229419688230418,
+      "reason": "Unblocks 6 items, high priority",
+      "unblocks_ids": [
+        "hp-15s",
+        "hp-191",
+        "hp-6sv",
+        "hp-ara",
+        "hp-k6r",
+        "hp-lxs"
+      ]
+    },
+    {
+      "id": "hp-r3i",
+      "title": "Cross-cutting: packages/schemas — OpenAPI + TS client + Go types",
+      "score": 1.3679700005769253,
+      "reason": "Unblocks 8 items, high priority",
+      "unblocks_ids": [
+        "hp-14zt",
+        "hp-1ry",
+        "hp-38d",
+        "hp-3ab",
+        "hp-4d7",
+        "hp-5ja",
+        "hp-dmz",
+        "hp-gkk"
+      ]
+    },
+    {
+      "id": "hp-38d",
+      "title": "Phase 2: Daemon HTTP/WS scaffolding (chi/echo + gorilla/nhooyr WS, /health, /v1/version, /v1/jobs)",
+      "score": 1.3000000000000003,
+      "reason": "Unblocks 3 items, high priority",
+      "unblocks_ids": [
+        "hp-dmoj",
+        "hp-kfb",
+        "hp-wqm"
+      ]
+    },
+    {
+      "id": "hp-5s4",
+      "title": "Phase 10: Tending scheduler infrastructure (cron + interval + event + on-demand; lease-based; durable; restartable)",
+      "score": 1.1339850002884626,
+      "reason": "Unblocks 2 items, high priority",
+      "unblocks_ids": [
+        "hp-4ywy",
+        "hp-sqd"
+      ]
+    },
+    {
+      "id": "hp-r7i",
+      "title": "Phase 0: Provision research-spike VPS with ACFS",
+      "score": 1.1339850002884626,
+      "reason": "Unblocks 2 items, high priority",
+      "unblocks_ids": [
+        "hp-6v3",
+        "hp-jvm"
+      ]
+    }
+  ],
+  "blockers_to_clear": [
+    {
+      "id": "hp-r3i",
+      "title": "Cross-cutting: packages/schemas — OpenAPI + TS client + Go types",
+      "unblocks_count": 8,
+      "unblocks_ids": [
+        "hp-14zt",
+        "hp-1ry",
+        "hp-38d",
+        "hp-3ab",
+        "hp-4d7",
+        "hp-5ja",
+        "hp-dmz",
+        "hp-gkk"
+      ],
+      "actionable": true
+    },
+    {
+      "id": "hp-xru",
+      "title": "Phase 1: Clone \u0026 pin t3code, initialize monorepo (Turbo + Bun + workspaces)",
+      "unblocks_count": 6,
+      "unblocks_ids": [
+        "hp-15s",
+        "hp-191",
+        "hp-6sv",
+        "hp-ara",
+        "hp-k6r",
+        "hp-lxs"
+      ],
+      "actionable": true
+    },
+    {
+      "id": "hp-r33",
+      "title": "Cross-cutting: capability registry + degraded-mode contract",
+      "unblocks_count": 4,
+      "unblocks_ids": [
+        "hp-6bj",
+        "hp-6e2",
+        "hp-p4x",
+        "hp-r3l"
+      ],
+      "actionable": true
+    },
+    {
+      "id": "hp-38d",
+      "title": "Phase 2: Daemon HTTP/WS scaffolding (chi/echo + gorilla/nhooyr WS, /health, /v1/version, /v1/jobs)",
+      "unblocks_count": 3,
+      "unblocks_ids": [
+        "hp-dmoj",
+        "hp-kfb",
+        "hp-wqm"
+      ],
+      "actionable": false,
+      "blocked_by": [
+        "hp-r3i"
+      ]
+    },
+    {
+      "id": "hp-zir",
+      "title": "Phase 1: Decompose t3code main.ts into BackendLifecycle/UpdateMachine/IpcRegistry/WindowManager/SettingsBridge/AuthBridge",
+      "unblocks_count": 3,
+      "unblocks_ids": [
+        "hp-4bt",
+        "hp-rth",
+        "hp-spx"
+      ],
+      "actionable": false,
+      "blocked_by": [
+        "hp-15s"
+      ]
+    }
+  ],
+  "project_health": {
+    "counts": {
+      "total": 207,
+      "open": 207,
+      "closed": 0,
+      "blocked": 199,
+      "actionable": 8,
+      "by_status": {
+        "open": 207
+      },
+      "by_type": {
+        "epic": 24,
+        "task": 183
+      },
+      "by_priority": {
+        "0": 77,
+        "1": 105,
+        "2": 21,
+        "3": 4
+      }
+    },
+    "graph": {
+      "node_count": 207,
+      "edge_count": 929,
+      "density": 0.02178603255006801,
+      "has_cycles": false,
+      "phase2_ready": true
+    },
+    "velocity": {
+      "closed_last_7_days": 0,
+      "closed_last_30_days": 0,
+      "avg_days_to_close": 0,
+      "weekly": [
+        {
+          "week_start": "2026-04-27T00:00:00Z",
+          "closed": 0
+        },
+        {
+          "week_start": "2026-04-20T00:00:00Z",
+          "closed": 0
+        },
+        {
+          "week_start": "2026-04-13T00:00:00Z",
+          "closed": 0
+        },
+        {
+          "week_start": "2026-04-06T00:00:00Z",
+          "closed": 0
+        },
+        {
+          "week_start": "2026-03-30T00:00:00Z",
+          "closed": 0
+        },
+        {
+          "week_start": "2026-03-23T00:00:00Z",
+          "closed": 0
+        },
+        {
+          "week_start": "2026-03-16T00:00:00Z",
+          "closed": 0
+        },
+        {
+          "week_start": "2026-03-09T00:00:00Z",
+          "closed": 0
+        }
+      ]
+    }
+  },
+  "commands": {
+    "claim_top": "CI=1 br update hp-r3i --status in_progress --json",
+    "show_top": "CI=1 br show hp-r3i --json",
+    "list_ready": "CI=1 br ready --json",
+    "list_blocked": "CI=1 br blocked --json",
+    "refresh_triage": "bv --robot-triage"
+  }
+}
