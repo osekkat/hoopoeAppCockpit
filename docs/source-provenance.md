@@ -75,3 +75,60 @@ Per `plan.md` Appendix B:
 The reference clone produced during `hp-xru` lives at `/tmp/t3code-pinned`.
 This is a local working clone for inspecting upstream as we lift; it is not
 part of the Hoopoe repo and is not relied on at runtime.
+
+## Codex-shape scrub (Phase 1 week 2 — `hp-4nrd`)
+
+`plan.md §14` names "Lifted code carries Codex-shaped assumptions" as a
+real risk. T3 code's desktop layer was written for a chat/agent product;
+subtle assumptions around `Thread`, `Chat`, `Provider`, `MessageList`,
+`Conversation` can leak through scrubbing into Hoopoe's purpose-built
+code. The lint at
+`scripts/codex-shape-scrub/check-codex-shape-scrub.ts` is the durable
+enforcement (wired into root `bun run lint` and `bun run test`).
+
+The one-time manual scrub of the lifted surface, run at the end of
+Phase 1 week 2:
+
+- [x] `grep '\bThread\b' apps/desktop/src/` (excluding vendored) →
+      0 matches; bead/swarm/activity language used throughout the
+      `apps/desktop/src/main/` modules and adapter files.
+- [x] `grep '\bProvider\b' apps/desktop/src/` (excluding vendored) →
+      0 matches; CAAM-account language is used where t3code would say
+      "provider". (One match in `packages/fixtures/src/validate.ts` —
+      the comment `Provider-secret patterns we forbid in the corpus`
+      refers to the SDK secrets we ban under Guardrail #11; not a
+      Codex-shape identifier.)
+- [x] `grep '\bChat\b' apps/desktop/src/` (excluding vendored) →
+      0 matches as a bare PascalCase identifier. The
+      `orchestrator-chat` tending agent is referenced as a string
+      / kebab-case literal only.
+- [x] `grep 'MAX_' apps/desktop/src/` (excluding vendored) →
+      0 silent caps; bounded-queue patterns in `SettingsBridge.ts`
+      use `MAX_PENDING_PER_SUBSCRIBER` with an explicit
+      `dropped: N` notice (Appendix B anti-pattern #3 closed).
+- [x] `grep -E '(Conversation|ChatTurn|MessageList)'`
+      `apps/desktop/src/` (excluding vendored) → 0 matches.
+- [x] **Import audit:** every `import from '../vendored/t3code/...'`
+      under `apps/desktop/src/main/` resolves to one of the
+      Appendix B "Patterns lifted" approved files
+      (`atomicWrite`, `stripDefaults`, `keybindings/{parser,evaluator,types}`,
+      `windowReveal`, `clientPersistence`, `desktopSettings`,
+      `runtimeArch`, `serverListeningDetector`, `backendPort`,
+      `backendReadiness`, `updateMachine`, `updateChannels`,
+      `updateState`, `appBranding`, `confirmDialog`,
+      `syncShellEnvironment`, `_shims`).
+- [x] **Storybook stories** — design-system stories use Hoopoe domain
+      language (`bead`, `swarm`, `agent`, `plan`, `activity`) per
+      hp-i62 components. No `chat` / `thread` / `conversation`
+      stories.
+- [x] **Component names** — every primitive in
+      `packages/design-system/src/components/` matches the design
+      system list (`StageHeader`, `StatusPill`, `PriorityChip`,
+      `BeadCard`, `AgentTile`, `CoverageBar`, `TerminalPane`,
+      `TimelineRow`, `HealthKpiCard`, `ApprovalDialog`,
+      `CommandPalette`). No t3code-shaped names.
+
+Signed: GreenBear · 2026-05-02. The lint
+(`scripts/codex-shape-scrub/check-codex-shape-scrub.ts`) gates every
+future PR; future reviews can reference this checklist for the
+one-time pass.
