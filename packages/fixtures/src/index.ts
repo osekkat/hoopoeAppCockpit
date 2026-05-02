@@ -27,3 +27,69 @@ export type FixtureKind =
   | "ru_status"
   | "ru_list"
   | "ru_prune";
+
+// Re-exports for the corpus loader + Mock Flywheel replay engine (hp-wle, hp-o74).
+// Downstream consumers (apps/desktop, future hp-q3t harness) import from here.
+export {
+  ADAPTER_SLUGS,
+  TENDING_SCENARIOS,
+  PHASE0_SCENARIOS,
+  GOLDEN_OUTPUT_STATES,
+  FIXTURE_KINDS,
+  type AdapterSlug,
+  type TendingScenarioId,
+  type Phase0ScenarioId,
+  type GoldenOutputState,
+  type FixtureMeta,
+  type GoldenOutputMeta,
+  type GoldenOutputFixture,
+  type InvocationEnvelope,
+  type ExpectedOutcome,
+} from "./kinds.ts";
+
+export {
+  fixturesRoot,
+  scenarioPath,
+  phase0ScenarioPath,
+  goldenOutputPath,
+  enumerateRequiredFixtures,
+  loaderSelfDescribe,
+  FixtureNotFoundError,
+  FIXTURES_VERSION,
+} from "./loader.ts";
+
+export {
+  loadTendingScenario,
+  loadPhase0Scenario,
+  listAvailableScenarios,
+  ScenarioLoadError,
+  startReplay,
+  deriveCursors,
+  createMockDaemonClient,
+  deriveScenarioEndCursors,
+  MOCK_PAIRING_TOKEN,
+  MOCK_BEARER_TOKEN,
+  MOCK_WS_TOKEN,
+  type LoadedScenario,
+  type ReplayEvent,
+  type PaneLog,
+  type BuildLog,
+  type ReplaySession,
+  type ReplaySpeed,
+  type ReplaySubscriber,
+  type StartReplayOptions,
+  type MockDaemonClient,
+  type MockDaemonClientOptions,
+  type MockBearerResponse,
+  type MockWsTokenResponse,
+  type MockPairingToken,
+  type MockSubscribeOptions,
+} from "../replay/index.ts";
+
+export {
+  validateCorpus,
+  formatResult,
+  type ValidationResult,
+  type Finding,
+  type FindingSeverity,
+} from "./validate.ts";

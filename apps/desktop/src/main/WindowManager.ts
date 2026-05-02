@@ -1,55 +1,43 @@
 // Hoopoe-owned. Owns BrowserWindow creation, multi-window state, restore on
 // dock-click, and first-paint reveal across platforms. Uses the vendored
 // t3code `windowReveal.ts` helper for the cross-platform reveal trigger.
-//
-// Strict CSP and safe webPreferences are enforced here at construction time
-// (plan.md §5.4 / Appendix C #2): contextIsolation: true, sandbox: true,
-// nodeIntegration: false, no `unsafe-inline` / `unsafe-eval`. The renderer
-// reaches the main process only through the typed preload bridge that the
-// IpcRegistry powers.
+// Renderer hardening (hp-rflj) constants live in `./window-policy.ts` so
+// they can be unit-tested without importing `electron` — see that file for
+// the canonical CSP + webPreferences definitions.
 
 import {
   BrowserWindow,
-  app,
   type BrowserWindowConstructorOptions,
-  type WebPreferences,
 } from "electron";
 import { bindFirstRevealTrigger } from "../vendored/t3code/windowReveal.ts";
+import {
+  ALLOWED_NAVIGATION_ORIGINS,
+  DEFAULT_CSP,
+  DEFAULT_HEIGHT,
+  DEFAULT_WIDTH,
+  HARDENING_RESPONSE_HEADERS,
+  SAFE_WEB_PREFERENCES,
+  isAllowedNavigationUrl,
+} from "./window-policy.ts";
+
+export {
+  ALLOWED_NAVIGATION_ORIGINS,
+  DEFAULT_CSP,
+  HARDENING_RESPONSE_HEADERS,
+  SAFE_WEB_PREFERENCES,
+  isAllowedNavigationUrl,
+};
 
 export interface CreateMainWindowOptions {
   readonly preloadPath: string;
   readonly initialUrl: string;
-  /** Strict CSP applied via response headers + a meta fallback. The default
-   * forbids inline scripts and external network access except to the
-   * SSH-tunneled daemon endpoint passed in here. */
+  /** Strict CSP applied via response headers. The default forbids inline
+   * scripts, eval, and external network access except to the SSH-tunneled
+   * daemon endpoint (loopback + websocket). */
   readonly cspDirective?: string;
   readonly width?: number;
   readonly height?: number;
 }
-
-const DEFAULT_WIDTH = 1440;
-const DEFAULT_HEIGHT = 900;
-
-const DEFAULT_CSP =
-  "default-src 'self'; " +
-  "script-src 'self'; " +
-  "style-src 'self' 'unsafe-inline'; " +
-  "img-src 'self' data: blob:; " +
-  "font-src 'self' data:; " +
-  "connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:*; " +
-  "object-src 'none'; " +
-  "base-uri 'none'; " +
-  "frame-ancestors 'none'; " +
-  "form-action 'none'";
-
-const SAFE_WEB_PREFERENCES: WebPreferences = {
-  contextIsolation: true,
-  sandbox: true,
-  nodeIntegration: false,
-  webSecurity: true,
-  allowRunningInsecureContent: false,
-  spellcheck: false,
-};
 
 const knownWindows = new Set<BrowserWindow>();
 
@@ -71,15 +59,8 @@ export function createMainWindow(options: CreateMainWindowOptions): BrowserWindo
     knownWindows.delete(window);
   });
 
-  // Apply CSP to every response so we don't depend on the renderer setting a
-  // <meta http-equiv> fallback. The connect-src list pinned to 127.0.0.1:*
-  // lets the SSH-tunneled daemon connection through without opening the door
-  // to general network egress.
-  window.webContents.session.webRequest.onHeadersReceived((details, callback) => {
-    const headers = { ...details.responseHeaders };
-    headers["Content-Security-Policy"] = [csp];
-    callback({ responseHeaders: headers });
-  });
+  applyResponseHeaders(window, csp);
+  applyNavigationGuards(window);
 
   // Cross-platform first-paint reveal — see vendored/t3code/windowReveal.ts.
   bindFirstRevealTrigger(
@@ -92,6 +73,36 @@ export function createMainWindow(options: CreateMainWindowOptions): BrowserWindo
 
   void window.loadURL(options.initialUrl);
   return window;
+}
+
+/** Apply CSP + a few hardening response headers to every response. The CSP
+ * is applied here (not via <meta>) so the renderer can't disable it by
+ * removing the meta tag. */
+function applyResponseHeaders(window: BrowserWindow, csp: string): void {
+  window.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    const headers = { ...details.responseHeaders };
+    headers["Content-Security-Policy"] = [csp];
+    for (const [key, value] of Object.entries(HARDENING_RESPONSE_HEADERS)) {
+      headers[key] = [value];
+    }
+    callback({ responseHeaders: headers });
+  });
+}
+
+/** Block navigation away from the loopback origin and refuse `window.open()`
+ * outright — `{ action: "deny" }` is the safe default. Routing external URLs
+ * to the OS browser is wired through `window.hoopoe.files.openExternal`
+ * (preload bridge → main IpcRegistry → `electron.shell.openExternal`) so
+ * the renderer can't inherit the preload + privileges via a new window. */
+function applyNavigationGuards(window: BrowserWindow): void {
+  window.webContents.on("will-navigate", (event, url) => {
+    if (!isAllowedNavigationUrl(url)) {
+      event.preventDefault();
+    }
+  });
+  window.webContents.setWindowOpenHandler(() => {
+    return { action: "deny" };
+  });
 }
 
 export function listKnownWindows(): readonly BrowserWindow[] {
@@ -124,5 +135,6 @@ export function closeAllWindows(): void {
 export const windowManagerInternalsForTesting = {
   defaultCsp: DEFAULT_CSP,
   safeWebPreferences: SAFE_WEB_PREFERENCES,
-  electronApp: app,
+  allowedNavigationOrigins: ALLOWED_NAVIGATION_ORIGINS,
+  isAllowedNavigationUrl,
 };

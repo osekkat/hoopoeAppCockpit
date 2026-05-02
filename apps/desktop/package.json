@@ -6,11 +6,14 @@
   "scripts": {
     "build": "vite build && tsdown src/main.ts --format esm --platform node --external electron --out-dir dist-electron --no-clean && cp dist-electron/main.mjs dist-electron/main.js",
     "dev": "vite --host 127.0.0.1",
+    "e2e": "playwright test -c ../../playwright.config.ts",
+    "test:smoke": "bun test tests/smoke/*.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "bun test"
+    "test": "bun test src tests/smoke/*.test.ts"
   },
   "dependencies": {
     "@hoopoe/design-system": "workspace:*",
+    "@hoopoe/fixtures": "workspace:*",
     "@tanstack/react-router": "^1.0.0",
     "electron": "40.9.3",
     "electron-updater": "^6.6.2",
