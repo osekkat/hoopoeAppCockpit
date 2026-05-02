@@ -21,8 +21,10 @@
   "scripts": {
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
-    "test": "turbo run test",
-    "lint": "oxlint --report-unused-disable-directives",
+    "test": "bun run test:provider-sdks && turbo run test",
+    "test:provider-sdks": "bun test scripts/providerlint/check-provider-sdks.test.ts",
+    "lint": "bun run lint:provider-sdks && oxlint --report-unused-disable-directives",
+    "lint:provider-sdks": "bun scripts/providerlint/check-provider-sdks.ts",
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
     "clean": "rm -rf node_modules apps/*/node_modules packages/*/node_modules apps/*/dist apps/*/dist-electron packages/*/dist .turbo apps/*/.turbo packages/*/.turbo"
