@@ -4,9 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "echo 'desktop build is wired up in hp-15s / hp-191; no-op for hp-xru smoke'",
+    "build": "echo 'desktop build is wired up in hp-191 (build pipeline); no-op for vendored smoke'",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "bun test"
+  },
+  "dependencies": {
+    "electron": "40.9.3",
+    "electron-updater": "^6.6.2"
   },
   "devDependencies": {
     "@types/bun": "catalog:",
