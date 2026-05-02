@@ -1,0 +1,184 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hoopoe.local/schemas/research-spike/snapshot.schema.json",
+  "title": "Hoopoe Research-Spike Snapshot",
+  "description": "Normalized JSON snapshot of an ACFS VPS. Produced by scripts/research-spike/snapshot.sh. Drives parser fixtures (plan.md §16, §18.3) and the Mock Flywheel corpus (hp-wle).",
+  "type": "object",
+  "required": ["meta", "captures"],
+  "additionalProperties": false,
+  "properties": {
+    "meta": {
+      "type": "object",
+      "required": ["snapshotVersion", "capturedAt", "scenario", "host"],
+      "additionalProperties": false,
+      "properties": {
+        "snapshotVersion": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+          "description": "Snapshot envelope schema version. Bump on breaking changes."
+        },
+        "snapshotSchemaUrl": {
+          "type": "string",
+          "description": "Path or URL of the schema this snapshot validates against."
+        },
+        "capturedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "RFC3339 timestamp when capture started."
+        },
+        "vpsId": {
+          "type": "string",
+          "description": "Stable identifier for the VPS this snapshot came from. Free-form (e.g. 'research-spike-2026-05-02', 'mock-flywheel')."
+        },
+        "scenario": {
+          "type": "string",
+          "enum": ["fresh", "active", "failure", "mock", "ad_hoc"],
+          "description": "fresh = post-onboard idle project. active = mid-swarm. failure = deliberate failure injected for failure-path fixtures (§18.3). mock = synthetic from Mock Flywheel. ad_hoc = unclassified one-off."
+        },
+        "scenarioNotes": {
+          "type": "string",
+          "description": "Free-form notes about what was deliberately broken/configured for this scenario."
+        },
+        "acfsTag": {
+          "type": ["string", "null"],
+          "description": "ACFS installer tag pinned at install time. Null when not pinned."
+        },
+        "host": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["uname"],
+          "properties": {
+            "uname": {"type": "string"},
+            "lsbRelease": {"type": ["string", "null"]},
+            "kernel": {"type": ["string", "null"]},
+            "cpuCount": {"type": ["integer", "null"]},
+            "memTotalKb": {"type": ["integer", "null"]},
+            "diskFree": {"type": ["string", "null"], "description": "df -h / output, single line."}
+          }
+        },
+        "toolVersions": {
+          "type": "object",
+          "description": "tool-name → version-string-or-null map. Pulled from each adapter's --version where supported.",
+          "additionalProperties": {"type": ["string", "null"]}
+        },
+        "fixturesVersion": {
+          "type": "string",
+          "description": "Tag matching packages/fixtures/phase0-<date>/ when this snapshot is committed as a fixture (plan.md §2.8)."
+        },
+        "captureDurationMs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Wall-clock duration of the entire snapshot run."
+        }
+      }
+    },
+    "captures": {
+      "type": "object",
+      "description": "Per-tool capture map. Keys are stable tool slugs; missing keys mean the tool was not even attempted (use the per-tool {present:false} envelope to record 'attempted but missing').",
+      "additionalProperties": {"$ref": "#/$defs/ToolCapture"},
+      "properties": {
+        "git": {"$ref": "#/$defs/ToolCapture"},
+        "br": {"$ref": "#/$defs/ToolCapture"},
+        "bv": {"$ref": "#/$defs/ToolCapture"},
+        "ntm": {"$ref": "#/$defs/ToolCapture"},
+        "agent_mail": {"$ref": "#/$defs/ToolCapture"},
+        "ru": {"$ref": "#/$defs/ToolCapture"},
+        "health": {"$ref": "#/$defs/ToolCapture"},
+        "caut": {"$ref": "#/$defs/ToolCapture"},
+        "caam": {"$ref": "#/$defs/ToolCapture"},
+        "dcg": {"$ref": "#/$defs/ToolCapture"},
+        "casr": {"$ref": "#/$defs/ToolCapture"},
+        "ubs": {"$ref": "#/$defs/ToolCapture"},
+        "jsm": {"$ref": "#/$defs/ToolCapture"},
+        "jfp": {"$ref": "#/$defs/ToolCapture"},
+        "oracle": {"$ref": "#/$defs/ToolCapture"},
+        "pt": {"$ref": "#/$defs/ToolCapture"},
+        "srp": {"$ref": "#/$defs/ToolCapture"},
+        "sbh": {"$ref": "#/$defs/ToolCapture"}
+      }
+    }
+  },
+  "$defs": {
+    "ToolCapture": {
+      "type": "object",
+      "required": ["tool", "present", "captures"],
+      "additionalProperties": false,
+      "properties": {
+        "tool": {"type": "string", "description": "Stable tool slug. Matches the parent key."},
+        "version": {"type": ["string", "null"], "description": "Captured version string. Null if not retrievable."},
+        "binPath": {"type": ["string", "null"], "description": "Resolved absolute path of the binary (which $tool)."},
+        "present": {"type": "boolean", "description": "True if the binary was on PATH and at least one invocation produced output. False = tool missing or unreachable."},
+        "skipReason": {"type": ["string", "null"], "description": "Set when present=false to explain (missing binary, capability blocked by policy, deliberate skip in this scenario)."},
+        "capabilities": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["status"],
+            "additionalProperties": false,
+            "properties": {
+              "status": {"type": "string", "enum": ["ok", "degraded", "missing", "blocked-by-policy", "untested"]},
+              "fallback": {"type": ["string", "null"]},
+              "transport": {"type": ["string", "null"]},
+              "notes": {"type": "string"}
+            }
+          },
+          "description": "capId → status map. Mirrors plan.md §2.8 capability registry shape so the registry can ingest this snapshot directly."
+        },
+        "captures": {
+          "type": "object",
+          "additionalProperties": {"$ref": "#/$defs/InvocationCapture"},
+          "description": "Per-invocation results. Keys are short labels (e.g. 'list', 'robot_plan', 'help')."
+        },
+        "errors": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Top-level (non-invocation) errors encountered while attempting this tool."
+        },
+        "capturedAt": {"type": "string", "format": "date-time"}
+      }
+    },
+    "InvocationCapture": {
+      "type": "object",
+      "required": ["argv", "exit", "durationMs"],
+      "additionalProperties": false,
+      "properties": {
+        "argv": {
+          "type": "array",
+          "items": {"type": "string"},
+          "minItems": 1,
+          "description": "Exact argv as executed. argv[0] is the binary."
+        },
+        "stdin": {"type": ["string", "null"], "description": "stdin payload if any."},
+        "exit": {"type": "integer", "description": "Process exit code. Negative for signals."},
+        "durationMs": {"type": "integer", "minimum": 0, "description": "Wall-clock duration in ms."},
+        "stdoutBytes": {"type": "integer", "minimum": 0},
+        "stderrBytes": {"type": "integer", "minimum": 0},
+        "stdoutJson": {
+          "description": "Parsed JSON when stdout was valid JSON. Absent otherwise. Adapter contract tests should prefer this field.",
+          "type": ["object", "array", "string", "number", "boolean", "null"]
+        },
+        "stdoutText": {
+          "type": ["string", "null"],
+          "description": "Raw stdout text. Always present (unless truncated). May duplicate stdoutJson when both apply."
+        },
+        "stderrText": {
+          "type": ["string", "null"],
+          "description": "Raw stderr text."
+        },
+        "truncated": {
+          "type": "boolean",
+          "description": "True if stdout/stderr exceeded the per-invocation byte cap (default 1 MiB)."
+        },
+        "redacted": {
+          "type": "boolean",
+          "description": "True if any redaction rule matched (bearer tokens, SSH passphrases, provider creds — see scripts/research-spike/lib/envelope.sh REDACT_PATTERNS)."
+        },
+        "tags": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Free-form labels (e.g. 'tui-trap-avoided', 'requires-network', 'destructive-dry-run-only')."
+        }
+      }
+    }
+  }
+}
