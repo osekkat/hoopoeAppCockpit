@@ -8,8 +8,8 @@ implementation.
 
 ## Status
 
-Pre-Phase-1 scaffold (hp-xru). Real tokens + Storybook + component set
-land in **hp-k6r** per `plan.md §16` Phase 1 week 1.
+`hp-k6r` installs the Phase 1 token layer. Component primitives land in
+follow-on beads, starting with `hp-i62`.
 
 ## Components (per `plan.md §12 Phase 1`)
 
@@ -28,9 +28,15 @@ The reusable component set targeted for Phase 1:
 - `TimelineRow` — Activity-panel cross-stage timeline atom.
 - `HealthKpiCard`, `ApprovalDialog`, `CommandPalette` — bigger composites.
 
-## Token sources
+## Token Sources
 
-- `src/tokens/index.ts` — typed token shapes (agent family, status pill
-  variants, priority chip variants, coverage ramp).
-- The visual palette derives from `design/mockups/v1/` and is locked in
-  `design/DECISIONS.md` when a decision conflicts with `plan.md`.
+- `src/tokens/index.ts` is the source of truth for colors, typography,
+  spacing, radii, shadows, status tones, priority chips, agent-family
+  tones, tool-health dots, and the coverage ramp.
+- `src/tokens/theme.css` exposes the same values as CSS variables, with
+  dark mode as the default `:root` theme and a deferred light-theme hook
+  under `:root[data-theme="light"]`.
+- `src/tokens/tokens.stories.ts` renders the token showcase for the
+  Storybook surface without requiring component-library dependencies yet.
+- `apps/desktop/tailwind.config.ts` consumes `tailwindTokenTheme` from
+  this package so app styling derives from the same token source.

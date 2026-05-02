@@ -6,10 +6,12 @@
   "main": "src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./tokens": "./src/tokens/index.ts"
+    "./tokens": "./src/tokens/index.ts",
+    "./tokens/theme.css": "./src/tokens/theme.css"
   },
   "scripts": {
-    "build": "echo 'design-system build (Storybook + token export) lands in hp-k6r; no-op for hp-xru smoke'",
+    "build": "tsc --noEmit -p tsconfig.json",
+    "storybook": "echo 'Storybook runner dependencies land with component scaffolding; token stories live in src/**/*.stories.ts'",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "bun test"
   },
