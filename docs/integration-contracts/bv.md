@@ -26,12 +26,13 @@
 | capId                       | Required by                              | Surface                                              | Status semantics                                            |
 | --------------------------- | ---------------------------------------- | ---------------------------------------------------- | ----------------------------------------------------------- |
 | `bv.robot.triage`           | Beads stage triage panel                 | `bv --robot-triage`                                  | `ok` when JSON parses + `bottlenecks`/`recommendations` keys present |
+| `bv.robot.next`             | "Pick the next task" CTA + recommend hint | `bv --robot-next`                                   | Single top recommendation: `{id, title, score, reasons[], unblocks, claim_command, show_command}` |
 | `bv.robot.plan`             | DAG view "ready frontier" highlight      | `bv --robot-plan`                                    | `ok` when `tracks` + `summary.highest_impact` present       |
 | `bv.robot.insights`         | DAG view + bottleneck panel              | `bv --robot-insights`                                | `ok` when `Bottlenecks`, `CriticalPath`, `Stats.PageRank` present |
-| `bv.robot.diff`             | Bead delta panel                         | `bv --robot-diff --diff-since <ref>`                 | Empty range → `{summary: {...}, ...}` with zeros             |
-| `bv.robot.priority`         | Priority misalignment notifier           | `bv --robot-priority`                                | `recommendations: null` is normal — no misalignment         |
-| `bv.robot.recipes`          | Recipe picker UI                         | `bv --robot-recipes`                                 | Lists built-in + user recipes                                |
-| `bv.robot.help`             | Adapter capability probe                 | `bv --robot-help`                                    | Used at probe time; not surfaced in UI                       |
+| `bv.robot.diff`             | Bead delta panel                         | `bv --robot-diff --diff-since <ref>`                 | Empty range → `{summary: {...}, ...}` with zeros. **Not advertised by `--robot-help` but works.** |
+| `bv.robot.priority`         | Priority misalignment notifier           | `bv --robot-priority`                                | `recommendations: null` is normal — no misalignment. **Not advertised by `--robot-help` but works.** |
+| `bv.robot.recipes`          | Recipe picker UI                         | `bv --robot-recipes`                                 | Lists built-in + user recipes. **Not advertised by `--robot-help` but works.** |
+| `bv.robot.help`             | Adapter capability probe                 | `bv --robot-help`                                    | Used at probe time; advertises only the 4 "core commands" (triage/next/plan/insights). |
 | `bv.export.md`              | Export-to-markdown action                | `bv --recipe <r> --export-md <file>`                 | Writes file; Hoopoe captures the path, never the bytes inline |
 | `bv.tui`                    | (deliberately unused)                    | bare `bv`                                            | `blocked-by-policy` (Guardrail 1)                            |
 

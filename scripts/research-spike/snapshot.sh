@@ -179,6 +179,7 @@ capture::bv() {
   envelope::tool_open bv
   envelope::probe_version bv bv || { envelope::tool_close bv; return 0; }
   envelope::add_capability bv bv.robot.triage ok
+  envelope::add_capability bv bv.robot.next ok
   envelope::add_capability bv bv.robot.plan ok
   envelope::add_capability bv bv.robot.insights ok
   envelope::add_capability bv bv.robot.diff ok
@@ -187,6 +188,7 @@ capture::bv() {
   TAGS=tui-trap-avoided envelope::run_capture robot_help -- bv --robot-help
   envelope::run_capture robot_recipes -- bv --robot-recipes
   envelope::run_capture robot_triage -- bv --robot-triage
+  envelope::run_capture robot_next -- bv --robot-next
   envelope::run_capture robot_plan -- bv --robot-plan
   envelope::run_capture robot_plan_actionable -- bv --recipe actionable --robot-plan
   envelope::run_capture robot_insights -- bv --robot-insights
