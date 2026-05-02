@@ -1,5 +1,18 @@
 # Hoopoe Phase 0/1 review findings
 
+## Round 3 — p2 (GreenBear) — saturation
+- Scope: final security sweep across the full reviewer scope.
+- Guardrail 11 (provider SDK / API key envvars): zero leaks outside fixture-corpus + scanner code.
+- Guardrail 2 (renderer-side shell exec): zero leaks (no `child_process.exec/spawn`, no `shell:true` outside tests).
+- Renderer hardening flags in `window-policy.ts`: `contextIsolation:true`, `sandbox:true`, `nodeIntegration{,InWorker,InSubFrames}:false` all still locked.
+- 0 new findings. Round 2 (0 new) + Round 3 (0 new) = saturation per the ≤2-consecutive policy.
+
+## Round 2 — p2 (GreenBear)
+- Scope: cross-review of p1's Mock Flywheel + the SettingsBridge ↔ SettingsAuditTrail wiring.
+- MFM auth: p1 was correct that AuthBridge isn't HTTP-exercised, but the `MOCK_FLYWHEEL_COMMANDS.exchangePairingForBearer` / `issueWsToken` IPC handlers DO call into a typed `MockDaemonClient` that mirrors AuthBridge's surface — the bead's "AuthBridge code path exercised" claim is functionally true (just not over real HTTP). Acceptable for mock-mode.
+- SettingsAuditTrail wiring: confirmed p1's HIGH — `apps/desktop/src/main/SettingsBridge.ts` has 0 calls to `auditSettingsChange()`. `setUserSettings` / `setProjectSettings` write security-relevant changes to disk without entering the audit pathway. Fix needs an actor identity (renderer-IPC vs scheduled-tending vs hot-reload), so I did NOT fix inline. Reaffirming p1's HIGH.
+- 0 NEW findings; reaffirms p1's HIGH about SettingsBridge → SettingsAuditTrail bypass.
+
 ## Round 1 — p2 (GreenBear)
 - Scope: hp-zir BackendLifecycle process management; SettingsBridge PubSub broadcast re-entry; SecretStore presence/persistence semantics; codex-shape-scrub Effect-import gap.
 - **Fixed inline:** extended `scripts/codex-shape-scrub/check-codex-shape-scrub.ts` to flag `from "effect"` / `from "effect/*"` / `from "@effect/*"` / `from "@t3tools/*"` imports outside `apps/desktop/src/vendored/t3code/**`. Verified the original scrub did NOT catch these (synthetic test fixture returned `[]`); now does. 4 new tests in `check-codex-shape-scrub.test.ts`. Workspace scan reports 0 violations. Changes were swept into p1's Round 2 commit `09209ee`.
