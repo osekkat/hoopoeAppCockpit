@@ -1,5 +1,12 @@
 # Hoopoe Phase 0/1 review findings
 
+## Round 4 — p4 (FuchsiaPond)
+- Scope: focused saturation pass over the routed shell, Activity drawer, smoke config, and desktop guardrail greps.
+- Verification: provider-SDK/API-key grep was clean across `apps/desktop/src/renderer`, `apps/desktop/tests`, and `playwright.config.ts`.
+- Guardrail 12 check: default Swarm shell still avoids raw terminal panes; terminal wording is limited to settings copy and negative tests.
+- New findings: 1 MEDIUM accessibility gap in the Activity drawer closed-state semantics.
+- Action: filed only; no CRITICAL/HIGH defects found in this pass.
+
 ## Round 3 — p2 (GreenBear) — saturation
 - Scope: final security sweep across the full reviewer scope.
 - Guardrail 11 (provider SDK / API key envvars): zero leaks outside fixture-corpus + scanner code.
@@ -279,3 +286,6 @@ this file under a `## Round N — <reviewer>` heading.
 
 ## Desktop smoke tests — [MEDIUM] hp-tg0 Playwright smoke lacks structured logs and endpoint guard
 **Where:** `apps/desktop/tests/smoke/e2e/desktop-shell.spec.ts:4`   **Issue:** hp-j30's deeper e2e attaches structured NDJSON logs and calls `assertNoProductionEndpoints()`, but the hp-tg0 smoke spec only collects runtime console errors. It gives no phase snapshots, fixture/source metadata, endpoint assertion, or artifact trail when the smoke run fails.   **Suggested fix:** Wrap each smoke test in `createPhase1TestLogger`, log setup/act/assert phases plus visited URLs/runtime errors, call `assertNoProductionEndpoints()` for the resolved `baseURL`, and attach `desktop-shell-smoke.ndjson` through `testInfo.attach()`.   **Reviewer:** p4   **Round:** 3
+
+## Activity panel — [MEDIUM] closed drawer remains a live dialog with focusable controls
+**Where:** `apps/desktop/src/renderer/shell/activity-panel.tsx:37`   **Issue:** `ActivityPanel` always renders the `role="dialog"` aside and its Close button, but only the backdrop receives `aria-hidden`/`tabIndex` changes. When `open=false`, the visually closed drawer can still remain in the accessibility tree with a focusable control, so keyboard and screen-reader users may reach a hidden Activity panel.   **Suggested fix:** Add `aria-hidden={!open}` and `inert`/disabled focus management to the panel subtree when closed, set `tabIndex={open ? 0 : -1}` or disable the Close button while closed, and add a DOM test asserting closed-state controls are unreachable before adding a full focus trap for the open state.   **Reviewer:** p4   **Round:** 4

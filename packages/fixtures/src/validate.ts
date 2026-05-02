@@ -356,8 +356,8 @@ function validateGoldenOutputFile(
   ctx: ValidatorContext,
   adapter: AdapterSlug,
   state: GoldenOutputState,
+  path: string,
 ): void {
-  const path = goldenOutputPath(adapter, state);
   if (!isFile(path)) {
     pushError(
       ctx,
@@ -474,14 +474,25 @@ function scanForSecrets(ctx: ValidatorContext, root: string): void {
   }
 }
 
-/** Run the validator against the corpus root (defaults to `fixturesRoot()`). */
+/** Run the validator against the corpus root (defaults to `fixturesRoot()`).
+ *  All path helpers are derived from `root` — passing a custom root produces
+ *  a fully isolated validation pass (used by the fuzz harness). */
 export function validateCorpus(rootOverride?: string): ValidationResult {
   const root = rootOverride ?? fixturesRoot();
   const ctx: ValidatorContext = { root, findings: [], jsonParsed: 0 };
 
+  // Local path helpers honoring `root` — the public loader.ts helpers
+  // resolve against `fixturesRoot()` and would silently bypass the
+  // override, so we re-derive from `root` directly here.
+  const scenarioPathLocal = (id: string): string => join(root, "scenarios", id);
+  const phase0ScenarioPathLocal = (id: string, version = "phase0-2026-05-02"): string =>
+    join(root, version, "scenarios", id);
+  const goldenOutputPathLocal = (adapter: string, state: string): string =>
+    join(root, "golden-outputs", adapter, `${state}.json`);
+
   let tendingScenariosFound = 0;
   for (const id of TENDING_SCENARIOS as readonly TendingScenarioId[]) {
-    const dir = scenarioPath(id);
+    const dir = scenarioPathLocal(id);
     if (isDir(dir)) {
       tendingScenariosFound++;
     }
@@ -490,7 +501,7 @@ export function validateCorpus(rootOverride?: string): ValidationResult {
 
   let phase0ScenariosFound = 0;
   for (const id of PHASE0_SCENARIOS as readonly Phase0ScenarioId[]) {
-    const dir = phase0ScenarioPath(id);
+    const dir = phase0ScenarioPathLocal(id);
     if (isDir(dir)) {
       phase0ScenariosFound++;
       // Phase 0 directories are placeholders pre-VPS; only assert they exist.
@@ -502,9 +513,9 @@ export function validateCorpus(rootOverride?: string): ValidationResult {
   let goldenOutputsFound = 0;
   for (const adapter of ADAPTER_SLUGS as readonly AdapterSlug[]) {
     for (const state of GOLDEN_OUTPUT_STATES as readonly GoldenOutputState[]) {
-      const path = goldenOutputPath(adapter, state);
+      const path = goldenOutputPathLocal(adapter, state);
       if (isFile(path)) goldenOutputsFound++;
-      validateGoldenOutputFile(ctx, adapter, state);
+      validateGoldenOutputFile(ctx, adapter, state, path);
     }
   }
 
