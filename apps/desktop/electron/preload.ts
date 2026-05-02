@@ -20,6 +20,7 @@
 // `window.hoopoe`. Skipping any step fails the renderer-isolation lint
 // (`scripts/rendererlint/check-renderer-isolation.ts`).
 
+import { randomUUID } from "node:crypto";
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 
 // ── Channel names ──────────────────────────────────────────────────────────
@@ -103,7 +104,11 @@ export const hoopoeBridge: HoopoeBridge = {
     request: (method, body) =>
       invoke(CHANNELS.daemonRequest, { method, body }),
     subscribe: (topic, listener) => {
-      const subscriptionId = `${topic}#${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      // Subscription IDs are crypto-random (RFC 4122 v4 UUID) so a malicious
+      // or buggy renderer can't predict/collide channel names. The `topic`
+      // is included for diagnostics only — the actual channel is bound to
+      // the random suffix, not the topic.
+      const subscriptionId = randomUUID();
       const channel = `${CHANNELS.daemonSubscribe}.${subscriptionId}`;
       void invoke(CHANNELS.daemonSubscribe, { topic, subscriptionId });
       const unsubscribe = subscribe(channel, listener);
