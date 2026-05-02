@@ -1,0 +1,15 @@
+openapi: 3.1.0
+info:
+  title: Hoopoe Daemon API
+  version: 0.0.0-pre
+  description: |
+    Placeholder OpenAPI definition. The seed contract from `plan.md §2.6`
+    (`/v1/health`, `/v1/version`, `/v1/compatibility`, `/v1/capabilities`,
+    `/v1/auth/*`, `/v1/events/replay`, `/v1/jobs`, ...) lands in hp-r3i
+    (Phase 2.5). Codegen for the TS client and Go types is wired into the
+    `bun run build` task at that time so the daemon and desktop never drift.
+servers:
+  - url: http://127.0.0.1:0
+    description: Local SSH-tunneled daemon (placeholder)
+paths: {}
+components: {}

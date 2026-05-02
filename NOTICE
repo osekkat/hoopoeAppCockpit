@@ -1,0 +1,26 @@
+Hoopoe — macOS Electron desktop cockpit for the Agentic Coding Flywheel.
+
+Hoopoe is unreleased while the project is pre-Phase-1; no copyright notice for
+Hoopoe's own code is included here yet.
+
+THIRD-PARTY ATTRIBUTIONS
+========================
+
+t3code (https://github.com/pingdotgg/t3code)
+--------------------------------------------
+The desktop scaffolding (Electron lifecycle, auth bridge, settings system,
+keybindings + AST, build pipeline) is vendored from t3code under the MIT
+License. Copies of lifted files live under
+`apps/desktop/src/vendored/t3code/` with the MIT notice preserved at the top
+of each file. The verbatim t3code MIT license text is preserved at
+`apps/desktop/src/vendored/t3code/LICENSE`.
+
+  License: MIT
+  Copyright (c) 2026 T3 Tools Inc.
+  Pinned commit: see `docs/source-provenance.md`
+
+Adaptations to lifted t3code files (rebranding, schema swaps, daemon-launch
+wiring, monolith decomposition) live in Hoopoe's own files that import from
+`vendored/`. We do not edit `vendored/` files in place beyond mechanical mass
+renames; this keeps the diff against upstream small enough to re-merge later
+if needed. See `plan.md` Appendix B for the file inventory.

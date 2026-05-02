@@ -1,0 +1,10 @@
+{
+  "name": "@hoopoe/daemon",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build": "mkdir -p bin && go build -o bin/hoopoe ./cmd/hoopoe",
+    "typecheck": "go vet ./...",
+    "test": "go test ./..."
+  }
+}

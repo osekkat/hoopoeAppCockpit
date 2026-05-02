@@ -1,2 +1,46 @@
 # bv (beads viewer) local config and caches
 .bv/
+
+# Node/Bun/Turbo
+node_modules
+.bun
+.turbo
+*.log
+*.tsbuildinfo
+# Note: bun.lock IS committed for reproducibility (t3code pattern)
+
+# Build outputs
+apps/*/dist
+apps/*/dist-electron
+packages/*/dist
+build/
+release/
+release-mock/
+
+# Go build artifacts (stray binaries when `go build ./...` runs from apps/daemon)
+apps/daemon/bin/
+apps/daemon/hoopoe
+apps/daemon/*.test
+apps/daemon/coverage.out
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+
+# Env
+.env
+.env.local
+
+# Hoopoe runtime artifacts
+.hoopoe/
+.logs/
+.t3
+.tanstack
+.vitest-*
+
+# NTM working state (per-pane; excluded from VCS)
+.ntm/
+
+# Claude Code session state
+.claude/

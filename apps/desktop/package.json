@@ -1,0 +1,17 @@
+{
+  "name": "@hoopoe/desktop",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "echo 'desktop build is wired up in hp-15s / hp-191; no-op for hp-xru smoke'",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "@types/node": "catalog:",
+    "typescript": "catalog:"
+  },
+  "productName": "Hoopoe"
+}
