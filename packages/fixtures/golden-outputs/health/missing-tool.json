@@ -1,0 +1,30 @@
+{
+  "meta": {
+    "adapter": "health",
+    "state": "missing-tool",
+    "kind": "synthetic",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-02T22:32:46Z",
+    "source": "hand-written"
+  },
+  "argv": [
+    "health",
+    "--version"
+  ],
+  "exit": 127,
+  "durationMs": 5,
+  "stdoutBytes": 0,
+  "stdoutText": "",
+  "stderrBytes": 38,
+  "stderrText": "health: command not found\n",
+  "truncated": false,
+  "redacted": false,
+  "tags": [
+    "missing-tool"
+  ],
+  "capabilities": {
+    "health._present": {
+      "status": "missing"
+    }
+  }
+}

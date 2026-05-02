@@ -25,7 +25,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 SNAPSHOT=""
 FIXTURES_VERSION="phase0-2026-05-02"
 OUT_DIR="$REPO_ROOT/packages/fixtures/golden-outputs"
-ADAPTERS=(br bv ntm agent_mail git ru caam caut dcg casr ubs jsm jfp oracle pt srp sbh)
+ADAPTERS=(br bv ntm agent_mail git ru health caam caut dcg casr ubs jsm jfp oracle pt srp sbh)
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -186,6 +186,7 @@ preferred_normal_label() {
     ntm) echo "robot_snapshot";;
     agent_mail) echo "help";;
     ru) echo "schema";;
+    health) echo "lizard_version";;
     caam) echo "accounts_list";;
     caut) echo "usage_json";;
     dcg) echo "status";;
