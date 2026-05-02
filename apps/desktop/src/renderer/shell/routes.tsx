@@ -7,10 +7,13 @@ import {
   type ShellRouteId,
 } from "../stages.ts";
 import { useShellUiStore } from "../store.ts";
+import { formatRelativeActivation, routeForStage } from "../topbar/project-switcher-model.ts";
 import { EmptyStage } from "./empty-stage.tsx";
 import { StageHeader } from "./stage-header.tsx";
 
 export function ProjectPickerRoute() {
+  const projects = useShellUiStore((state) => state.projects);
+  const projectViewStateById = useShellUiStore((state) => state.projectViewStateById);
   const rememberProject = useShellUiStore((state) => state.rememberProject);
 
   return (
@@ -20,15 +23,25 @@ export function ProjectPickerRoute() {
         <h1 id="project-picker-title">Local demo</h1>
       </div>
       <div className="hh-project-list">
-        <Link
-          className="hh-project-card"
-          onClick={() => rememberProject(defaultProjectId)}
-          params={{ projectId: defaultProjectId }}
-          to="/$projectId/plan"
-        >
-          <span className="hh-project-card-title">Local demo</span>
-          <span className="hh-project-card-meta">Fixture-backed cockpit</span>
-        </Link>
+        {projects.map((project) => {
+          const restoredStage =
+            projectViewStateById[project.id]?.lastStageId ?? "plan";
+
+          return (
+            <Link
+              className="hh-project-card"
+              key={project.id}
+              onClick={() => rememberProject(project.id)}
+              params={{ projectId: project.id }}
+              to={routeForStage(restoredStage)}
+            >
+              <span className="hh-project-card-title">{project.name}</span>
+              <span className="hh-project-card-meta">
+                {project.branch} - {formatRelativeActivation(project.lastActivatedAt)}
+              </span>
+            </Link>
+          );
+        })}
         <button className="hh-project-card hh-project-card-muted" type="button">
           <span className="hh-project-card-title">Add project</span>
           <span className="hh-project-card-meta">Pending daemon pairing</span>

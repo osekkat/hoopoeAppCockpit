@@ -1,12 +1,13 @@
 import { Link, Outlet, useParams, useRouterState } from "@tanstack/react-router";
 import { Activity, Command, PanelRightClose, PanelRightOpen } from "lucide-react";
+import { useEffect, useRef } from "react";
 import {
-  projectDisplayName,
   stageDefinitions,
   stageForPathname,
   topBarPlaceholders,
 } from "../stages.ts";
 import { useShellUiStore } from "../store.ts";
+import { ProjectRunningPill, ProjectSwitcher } from "../topbar/ProjectSwitcher.tsx";
 import { ActivityPanel } from "./activity-panel.tsx";
 
 export function RootLayout() {
@@ -17,6 +18,30 @@ export function RootLayout() {
   const activityPanelOpen = useShellUiStore((state) => state.activityPanelOpen);
   const toggleActivityPanel = useShellUiStore((state) => state.toggleActivityPanel);
   const setActivityPanelOpen = useShellUiStore((state) => state.setActivityPanelOpen);
+  const rememberStageScroll = useShellUiStore((state) => state.rememberStageScroll);
+  const projectViewStateById = useShellUiStore((state) => state.projectViewStateById);
+  const projects = useShellUiStore((state) => state.projects);
+  const activeProjectId = useShellUiStore((state) => state.activeProjectId);
+  const stageContentRef = useRef<HTMLElement | null>(null);
+  const scrollSaveTimerRef = useRef<number | null>(null);
+  const topbarProjectId = projectId ?? activeProjectId ?? undefined;
+  const activeProject =
+    projects.find((project) => project.id === topbarProjectId) ?? null;
+
+  useEffect(() => {
+    if (!projectId || !activeStage) return;
+    const scrollY =
+      projectViewStateById[projectId]?.stageScrollYByStage[activeStage.id] ?? 0;
+    stageContentRef.current?.scrollTo({ top: scrollY });
+  }, [activeStage, projectId, projectViewStateById, pathname]);
+
+  useEffect(() => {
+    return () => {
+      if (scrollSaveTimerRef.current !== null) {
+        window.clearTimeout(scrollSaveTimerRef.current);
+      }
+    };
+  }, []);
 
   return (
     <div className="hh-shell" data-activity-open={activityPanelOpen}>
@@ -64,12 +89,10 @@ export function RootLayout() {
 
       <section className="hh-main-region">
         <header className="hh-topbar">
-          <div className="hh-project-chip">
-            <span className="hh-project-dot" aria-hidden="true" />
-            <span>{projectDisplayName(projectId)}</span>
-          </div>
+          <ProjectSwitcher />
 
           <div className="hh-topbar-status" aria-label="Project status">
+            <ProjectRunningPill project={activeProject} />
             {topBarPlaceholders.map((item) => {
               const Icon = item.icon;
               return (
@@ -102,7 +125,23 @@ export function RootLayout() {
           </div>
         </header>
 
-        <main className="hh-stage-content">
+        <main
+          className="hh-stage-content"
+          ref={stageContentRef}
+          onScroll={(event) => {
+            if (projectId && activeStage) {
+              const scrollY = event.currentTarget.scrollTop;
+              const stageId = activeStage.id;
+              if (scrollSaveTimerRef.current !== null) {
+                window.clearTimeout(scrollSaveTimerRef.current);
+              }
+              scrollSaveTimerRef.current = window.setTimeout(() => {
+                rememberStageScroll(projectId, stageId, scrollY);
+                scrollSaveTimerRef.current = null;
+              }, 250);
+            }
+          }}
+        >
           <Outlet />
         </main>
       </section>
