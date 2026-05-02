@@ -1,0 +1,259 @@
+# Originally from github.com/pingdotgg/t3code (MIT), commit 460d9c3.
+# Adapted for Hoopoe's macOS-only v1 release pipeline.
+
+name: Hoopoe Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+      - "!v*-nightly.*"
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: "Release channel"
+        required: false
+        default: stable
+        type: choice
+        options:
+          - stable
+          - nightly
+      version:
+        description: "Release version, for example 1.2.3 or v1.2.3"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  preflight:
+    name: Preflight
+    runs-on: macos-14
+    timeout-minutes: 15
+    outputs:
+      release_channel: ${{ steps.release_meta.outputs.release_channel }}
+      version: ${{ steps.release_meta.outputs.version }}
+      tag: ${{ steps.release_meta.outputs.tag }}
+      release_name: ${{ steps.release_meta.outputs.release_name }}
+      is_prerelease: ${{ steps.release_meta.outputs.is_prerelease }}
+      make_latest: ${{ steps.release_meta.outputs.make_latest }}
+      ref: ${{ github.sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: package.json
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - id: release_meta
+        name: Resolve release metadata
+        shell: bash
+        env:
+          DISPATCH_CHANNEL: ${{ github.event.inputs.channel }}
+          DISPATCH_VERSION: ${{ github.event.inputs.version }}
+          NIGHTLY_DATE: ${{ github.run_started_at }}
+          NIGHTLY_RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          set -euo pipefail
+
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && "${DISPATCH_CHANNEL:-stable}" == "nightly" ]]; then
+            nightly_date="$(date -u -j -f '%Y-%m-%dT%H:%M:%SZ' "$NIGHTLY_DATE" +%Y%m%d 2>/dev/null || date -u +%Y%m%d)"
+            version="0.0.0-nightly.${nightly_date}.${NIGHTLY_RUN_NUMBER}"
+            tag="v${version}"
+            echo "release_channel=nightly" >> "$GITHUB_OUTPUT"
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+            echo "tag=$tag" >> "$GITHUB_OUTPUT"
+            echo "release_name=Hoopoe Nightly $version" >> "$GITHUB_OUTPUT"
+            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
+            echo "make_latest=false" >> "$GITHUB_OUTPUT"
+          else
+            if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+              raw="${DISPATCH_VERSION}"
+              if [[ -z "$raw" ]]; then
+                echo "workflow_dispatch stable releases require the version input." >&2
+                exit 1
+              fi
+            else
+              raw="${GITHUB_REF_NAME}"
+            fi
+
+            version="${raw#v}"
+            if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+              echo "Invalid release version: $raw" >&2
+              exit 1
+            fi
+
+            echo "release_channel=stable" >> "$GITHUB_OUTPUT"
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+            echo "tag=v$version" >> "$GITHUB_OUTPUT"
+            echo "release_name=Hoopoe v$version" >> "$GITHUB_OUTPUT"
+            if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
+              echo "make_latest=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
+              echo "make_latest=false" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Test
+        run: bun run test
+
+  build:
+    name: Build ${{ matrix.label }}
+    needs: preflight
+    if: ${{ !failure() && !cancelled() && needs.preflight.result == 'success' }}
+    runs-on: macos-14
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macOS arm64
+            platform: mac
+            target: dmg
+            arch: arm64
+          - label: macOS x64
+            platform: mac
+            target: dmg
+            arch: x64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.preflight.outputs.ref }}
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: package.json
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build desktop artifact
+        shell: bash
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          set -euo pipefail
+          args=(
+            --platform "${{ matrix.platform }}"
+            --target "${{ matrix.target }}"
+            --arch "${{ matrix.arch }}"
+            --build-version "${{ needs.preflight.outputs.version }}"
+            --verbose
+          )
+
+          has_all() {
+            for value in "$@"; do
+              if [[ -z "$value" ]]; then
+                return 1
+              fi
+            done
+            return 0
+          }
+
+          if has_all "$CSC_LINK" "$CSC_KEY_PASSWORD" "$APPLE_API_KEY" "$APPLE_API_KEY_ID" "$APPLE_API_ISSUER"; then
+            key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+            printf '%s' "$APPLE_API_KEY" > "$key_path"
+            export APPLE_API_KEY="$key_path"
+            echo "macOS signing and notarization enabled."
+            args+=(--signed)
+          else
+            echo "macOS signing disabled; missing one or more Apple signing secrets."
+          fi
+
+          bun scripts/build-desktop-artifact.ts "${args[@]}"
+
+      - name: Collect release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-publish
+
+          shopt -s nullglob
+          for pattern in \
+            "release/*.dmg" \
+            "release/*.zip" \
+            "release/*.blockmap" \
+            "release/*.yml"; do
+            for file in $pattern; do
+              cp "$file" release-publish/
+            done
+          done
+
+          if [[ "${{ matrix.arch }}" != "arm64" ]]; then
+            shopt -s nullglob
+            for manifest in release-publish/*-mac.yml; do
+              mv "$manifest" "${manifest%.yml}-${{ matrix.arch }}.yml"
+            done
+          fi
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-${{ matrix.platform }}-${{ matrix.arch }}
+          path: release-publish/*
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: [preflight, build]
+    if: ${{ !failure() && !cancelled() && needs.preflight.result == 'success' && needs.build.result == 'success' }}
+    runs-on: macos-14
+    timeout-minutes: 10
+    steps:
+      - name: Download desktop artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: desktop-*
+          merge-multiple: true
+          path: release-assets
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.preflight.outputs.tag }}
+          target_commitish: ${{ needs.preflight.outputs.ref }}
+          name: ${{ needs.preflight.outputs.release_name }}
+          generate_release_notes: true
+          prerelease: ${{ needs.preflight.outputs.is_prerelease }}
+          make_latest: ${{ needs.preflight.outputs.make_latest }}
+          files: |
+            release-assets/*.dmg
+            release-assets/*.zip
+            release-assets/*.blockmap
+            release-assets/*.yml
+          fail_on_unmatched_files: true
+          token: ${{ secrets.GH_TOKEN || github.token }}
