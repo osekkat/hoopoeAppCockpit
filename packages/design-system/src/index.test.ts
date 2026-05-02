@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
   COVERAGE_RAMP,
   HOOPOE_DESIGN_SYSTEM_PACKAGE_NAME,
+  statusPillStatesByKind,
   agentFamilyTones,
   coverageThresholds,
   cssVariableThemes,
@@ -16,6 +17,7 @@ test("design-system exposes package identity and coverage thresholds", () => {
   expect(COVERAGE_RAMP.length).toBe(3);
   expect(COVERAGE_RAMP.map((stop) => stop.threshold)).toEqual([0, 60, 80]);
   expect(coverageThresholds).toEqual({ low: 0, medium: 60, high: 80 });
+  expect(statusPillStatesByKind.bead).toContain("paused");
 });
 
 test("status, priority, agent, and tool tones meet AA text contrast", () => {

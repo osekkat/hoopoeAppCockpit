@@ -9,6 +9,7 @@ export type StatusTone =
   | "in_review"
   | "closed"
   | "blocked"
+  | "paused"
   | "queued"
   | "running"
   | "waiting_approval"
@@ -153,6 +154,7 @@ export const statusTones: Record<StatusTone, ToneToken> = {
   in_review: tone("#FFF4E7", "#9B5717", "#F8D2A5", "#E9963F"),
   closed: tone("#EAF7EE", "#1D6C40", "#BDE4CA", "#30B66B"),
   blocked: tone("#FFECEC", "#A92C31", "#FFC7C9", "#E5484D"),
+  paused: tone("#F3F3F5", "#5E5E66", "#DADAE0", "#8E8E93"),
   queued: tone("#F3F3F5", "#5E5E66", "#DADAE0", "#8E8E93"),
   running: tone("#E8F7F1", "#0D6D46", "#B9E5D1", "#10A37F"),
   waiting_approval: tone("#FFF4E7", "#9B5717", "#F8D2A5", "#E9963F"),

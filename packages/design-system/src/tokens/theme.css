@@ -57,6 +57,10 @@
   --status-blocked-fg: #A92C31;
   --status-blocked-border: #FFC7C9;
   --status-blocked-dot: #E5484D;
+  --status-paused-bg: #F3F3F5;
+  --status-paused-fg: #5E5E66;
+  --status-paused-border: #DADAE0;
+  --status-paused-dot: #8E8E93;
   --status-queued-bg: #F3F3F5;
   --status-queued-fg: #5E5E66;
   --status-queued-border: #DADAE0;

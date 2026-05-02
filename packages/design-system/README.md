@@ -40,3 +40,10 @@ The reusable component set targeted for Phase 1:
   Storybook surface without requiring component-library dependencies yet.
 - `apps/desktop/tailwind.config.ts` consumes `tailwindTokenTheme` from
   this package so app styling derives from the same token source.
+
+## Component Primitives
+
+- `src/components/status-pill.ts` provides the `StatusPill` primitive
+  model and DOM renderer for all bead, job, approval, capability, and
+  tool-health states. It is dependency-free until the React wrapper layer
+  lands in the broader component-set bead.

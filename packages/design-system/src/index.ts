@@ -8,5 +8,6 @@
 // shapes from `./tokens` so consumers can import paths exist now.
 
 export * from "./tokens/index.ts";
+export * from "./components/index.ts";
 
 export const HOOPOE_DESIGN_SYSTEM_PACKAGE_NAME = "@hoopoe/design-system";
