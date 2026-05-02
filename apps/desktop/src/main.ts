@@ -12,7 +12,11 @@ import * as Path from "node:path";
 import { spawnBackend, type BackendHandle } from "./main/BackendLifecycle.ts";
 import { createUpdateMachine, type UpdateMachine } from "./main/UpdateMachine.ts";
 import { IpcRegistry } from "./main/IpcRegistry.ts";
-import { SettingsBridge, defaultSettingsBridgePaths } from "./main/SettingsBridge.ts";
+import {
+  SettingsBridge,
+  defaultUserSettingsPath,
+  projectSettingsPath,
+} from "./main/SettingsBridge.ts";
 import { AuthBridge } from "./main/AuthBridge.ts";
 import { resolveDesktopRuntimeInfo } from "./vendored/t3code/runtimeArch.ts";
 import {
@@ -26,6 +30,8 @@ export interface DesktopBootstrapInput {
   readonly daemonBinaryPath: string;
   readonly secretStorage: DesktopSecretStorage;
   readonly relaunch?: (reason: string) => void;
+  /** Optional active-project root for the project-tier settings file. */
+  readonly projectRoot?: string;
   /** Test seam — defaults to native `process.platform` / `process.arch`. */
   readonly platform?: NodeJS.Platform;
   readonly processArch?: string;
@@ -53,10 +59,11 @@ export async function bootstrapDesktop(
     runningUnderArm64Translation: input.runningUnderArm64Translation ?? false,
   });
 
-  const paths = defaultSettingsBridgePaths(input.homeDir);
   const settings = new SettingsBridge({
-    paths,
-    currentAppVersion: input.currentAppVersion,
+    paths: {
+      userFile: defaultUserSettingsPath(input.homeDir),
+      projectFile: input.projectRoot ? projectSettingsPath(input.projectRoot) : null,
+    },
     ...(input.relaunch ? { relaunch: input.relaunch } : {}),
   });
 
@@ -97,5 +104,6 @@ export {
   SettingsBridge,
   spawnBackend,
   createUpdateMachine,
-  defaultSettingsBridgePaths,
+  defaultUserSettingsPath,
+  projectSettingsPath,
 };
