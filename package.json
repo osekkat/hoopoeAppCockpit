@@ -20,7 +20,9 @@
   },
   "scripts": {
     "build": "turbo run build",
+    "e2e": "bun scripts/e2e/run-e2e.ts",
     "e2e:desktop:smoke": "playwright test -c playwright.config.ts",
+    "e2e:desktop:phase1": "bun run --cwd apps/desktop e2e:phase1",
     "typecheck": "turbo run typecheck",
     "test": "bun run test:provider-sdks && bun run test:renderer-isolation && bun run test:codex-shape-scrub && turbo run test",
     "test:provider-sdks": "bun test scripts/providerlint/check-provider-sdks.test.ts",

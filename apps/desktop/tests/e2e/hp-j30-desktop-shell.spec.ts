@@ -1,20 +1,16 @@
 import { expect, test, type Page } from "@playwright/test";
-import { existsSync } from "node:fs";
-import { assertNoProductionEndpoints, createPhase1TestLogger } from "../../src/test-utils/index.ts";
+import {
+  assertNoProductionEndpoints,
+  chromiumHostStatus,
+  createPhase1TestLogger,
+} from "../../src/test-utils/index.ts";
 
-const chromiumHostReady =
-  process.platform !== "linux" ||
-  [
-    "/usr/lib/x86_64-linux-gnu/libgbm.so.1",
-    "/usr/lib/aarch64-linux-gnu/libgbm.so.1",
-    "/usr/lib64/libgbm.so.1",
-  ].some((path) => existsSync(path));
+// hp-411d: shared helper so the smoke + hp-j30 suites skip-or-run together
+// instead of one failing 3/3 while the other skips with a different message.
+const hostStatus = chromiumHostStatus();
 
 test.describe("hp-j30 desktop shell e2e", () => {
-  test.skip(
-    !chromiumHostReady,
-    "Chromium host dependency libgbm.so.1 is missing; install Playwright deps to run hp-j30 e2e.",
-  );
+  test.skip(!hostStatus.ready, hostStatus.reason);
 
   test("navigates stages, exercises Activity, and records command-palette wiring", async ({
     page,

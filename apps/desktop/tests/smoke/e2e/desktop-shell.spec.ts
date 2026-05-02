@@ -1,6 +1,14 @@
 import { expect, test, type Page } from "@playwright/test";
+import { chromiumHostStatus } from "../../../src/test-utils/index.ts";
+
+const hostStatus = chromiumHostStatus();
 
 test.describe("Hoopoe desktop shell smoke", () => {
+  // hp-411d: skip the entire smoke describe block when Playwright's bundled
+  // Chromium can't load (host missing libgbm.so.1). Both this suite and the
+  // hp-j30 deeper suite consult the same helper so they pass-or-skip together.
+  test.skip(!hostStatus.ready, hostStatus.reason);
+
   test("boots without console errors and navigates every stage by sidebar", async ({ page }) => {
     const runtimeErrors = captureRuntimeErrors(page);
 

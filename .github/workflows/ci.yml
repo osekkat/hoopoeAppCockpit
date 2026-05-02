@@ -1,0 +1,115 @@
+# hp-411d Phase 1.5 — PR-blocking CI workflow.
+#
+# Pre-hp-411d the only workflow was `release.yml` (tag-triggered, macOS-only).
+# That left typecheck/test/e2e unprotected on every PR. This workflow runs on
+# every push to master and every pull request, splits into:
+#
+#   1. lint-typecheck-test  — ubuntu-latest, no system deps, fast guard.
+#   2. e2e                  — ubuntu-latest, installs Playwright host deps via
+#                             `bunx playwright install --with-deps chromium`,
+#                             then `bun run e2e` (which runs both smoke and
+#                             hp-j30 suites via scripts/e2e/run-e2e.ts).
+#
+# The orchestrator's deterministic skip-or-run behavior means even a missing
+# system dep doesn't fail the e2e job — but the install step is meant to make
+# that condition rare in CI.
+#
+# Doc: docs/development/e2e-host-requirements.md
+
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  lint-typecheck-test:
+    name: Lint + typecheck + test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: package.json
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Test
+        run: bun run test
+
+  e2e:
+    name: E2E (smoke + hp-j30)
+    runs-on: ubuntu-latest
+    needs: lint-typecheck-test
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: package.json
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # Install Playwright's bundled Chromium AND the apt packages it links
+      # against (libgbm1, libgtk-3-0, libnss3, libasound2t64, fonts-liberation).
+      # The --with-deps flag invokes apt-get internally; the GitHub-hosted
+      # ubuntu-latest image runs the action as a privileged user.
+      - name: Install Playwright + system deps
+        run: bunx playwright install --with-deps chromium
+
+      - name: E2E
+        run: bun run e2e
+
+      - name: Upload Playwright HTML report (smoke)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-smoke-report
+          path: /tmp/hoopoe-playwright-smoke/html
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Upload Playwright HTML report (hp-j30)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-hp-j30-report
+          path: /tmp/hoopoe-playwright-hp-j30/html
+          retention-days: 7
+          if-no-files-found: ignore
