@@ -28,6 +28,10 @@ export interface BackendSpawnOptions {
   readonly fetchImpl?: typeof fetch;
   readonly spawnImpl?: typeof spawn;
   readonly logger?: BackendLogger;
+  /** Hard ceiling on how long we wait for the daemon to print
+   *  "Listening on http://...". If exceeded, we SIGKILL the child and throw —
+   *  prevents indefinite UI hang when daemon is alive but wedged. */
+  readonly startupTimeoutMs?: number;
 }
 
 export interface BackendLogger {
@@ -55,6 +59,7 @@ export interface BackendStopOptions {
 }
 
 const DEFAULT_GRACE_MS = 8_000;
+const DEFAULT_STARTUP_TIMEOUT_MS = 60_000;
 
 // Tracks child processes whose exit was explicitly requested by `stop()`.
 // Lets the surrounding code distinguish a clean shutdown from a crash without
@@ -125,8 +130,21 @@ export async function spawnBackend(options: BackendSpawnOptions): Promise<Backen
     });
   });
 
+  // Hard cap on the listening-detector wait. Without it, a daemon that's
+  // alive but wedged (no log line, no exit) hangs `Promise.race` forever
+  // and the desktop boot screen never resolves.
+  const startupTimeoutMs = options.startupTimeoutMs ?? DEFAULT_STARTUP_TIMEOUT_MS;
+  let startupTimer: NodeJS.Timeout | null = null;
+  const startupDeadline = new Promise<never>((_, reject) => {
+    startupTimer = setTimeout(() => {
+      const reason = `daemon did not log "Listening on http://" within ${startupTimeoutMs}ms`;
+      detector.fail(new Error(reason));
+      reject(new Error(reason));
+    }, startupTimeoutMs);
+  });
+
   try {
-    await Promise.race([detector.promise, earlyExit]);
+    await Promise.race([detector.promise, earlyExit, startupDeadline]);
     await waitForHttpReady(baseUrl, {
       ...options.readinessOptions,
       fetchImpl,
@@ -137,6 +155,8 @@ export async function spawnBackend(options: BackendSpawnOptions): Promise<Backen
       child.kill("SIGKILL");
     }
     throw error;
+  } finally {
+    if (startupTimer !== null) clearTimeout(startupTimer);
   }
 
   logger.info("backend.ready", { baseUrl });

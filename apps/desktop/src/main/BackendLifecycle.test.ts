@@ -84,3 +84,25 @@ test("stopBackendAndWaitForExit: marks the child as expected-exit and resolves o
   expect(child.killed).toBe(true);
   expect(internalsForTesting.isExpectedExit(child as unknown as ChildProcess)).toBe(true);
 });
+
+test("spawnBackend: enforces startupTimeoutMs when daemon never logs `Listening on http://`", async () => {
+  const { child, impl } = fakeSpawn();
+  // Daemon stays "alive" — never pushes a listening line and never exits.
+  const fetchImpl = (): Promise<Response> => Promise.resolve(new Response("ok", { status: 200 }));
+  let thrown: unknown = null;
+  try {
+    await spawnBackend({
+      daemonBinaryPath: "/fake/hoopoe",
+      spawnImpl: impl as unknown as typeof import("node:child_process").spawn,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      portResolver: async () => true,
+      startupTimeoutMs: 25,
+    });
+  } catch (error) {
+    thrown = error;
+  }
+  expect(thrown).not.toBeNull();
+  expect(String(thrown)).toContain("did not log");
+  expect(child.killed).toBe(true);
+  expect(internalsForTesting.isExpectedExit(child as unknown as ChildProcess)).toBe(true);
+});

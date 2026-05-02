@@ -385,7 +385,11 @@ export class SettingsBridge {
         const next = subscriber.queue.shift();
         if (!next) break;
         try {
-          subscriber.listener(next);
+          // Await covers both sync `void` return and accidental `Promise<void>`
+          // — without await, a rejected Promise from an async listener escapes
+          // the try/catch and surfaces as unhandled-rejection (fatal under
+          // `--unhandled-rejections=strict`, the Node default).
+          await subscriber.listener(next);
         } catch {
           // Listener errors must not poison the bus.
         }
