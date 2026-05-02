@@ -1,5 +1,19 @@
 # Hoopoe Phase 0/1 review findings
 
+## Round 4 — p1 (FuchsiaStone) — **SATURATION REACHED**
+- Scope: targeted sanity sweep of LocalDemoStateIsolator wipe-path safety + leftover scope. No deep new dives.
+- Finding: `wipeDemoRoot` defense-in-depth catches `..`-escape attempts (resolved path no longer contains `.hoopoe/demo/`) but does NOT validate that `fixtureId` is a clean basename — `fixtureId="subdir/../bar"` resolves to `~/.hoopoe/demo/bar` (passes guard but is logically wrong). 1 MEDIUM filed; no exploit demonstrable.
+- Findings cadence: Round 0=3, Round 1=4, Round 2=2, Round 3=2, Round 4=1. Three consecutive rounds at ≤2 findings → saturation criterion met.
+- All CRITICAL findings in my scope fixed inline. Open HIGHs filed for orchestrator routing (audit-wiring + AuthBridge end-to-end + token-shape regex). All MEDIUMs filed.
+- Signaling: `[hoopoe-review] p1 review-saturation reached, ready for next phase`.
+
+## Round 5 — p4 (FuchsiaPond)
+- Scope: final saturation pass over `ProjectSwitcher`, `ProjectRegistry`, Playwright smoke config, and persisted shell state.
+- Verification: `rch exec -- bun test apps/desktop/src/renderer/shell.test.tsx apps/desktop/src/renderer/settings/SettingsModel.test.ts` passed 23/23 tests.
+- UBS: scoped scan over renderer, smoke tests, `ProjectRegistry.ts`, and `playwright.config.ts` reported 0 critical issues.
+- New findings: 0; remaining warnings duplicate already-filed focus, persistence, and switch-case/term-narrowing triage.
+- Saturation: Round 4 had 1 new finding and Round 5 had 0, so p4 review saturation is reached.
+
 ## Round 3 — p1 (FuchsiaStone)
 - Scope: `/testing-fuzzing` pass over snapshot-script + fixture parsers — built `packages/fixtures/tests/fixture-fuzz.test.ts` with 13 adversarial cases (empty/truncated/proto-pollution/BOM/binary/missing/oversized/file-where-dir/etc.).
 - **CRITICAL bug found by fuzzing + fixed inline:** `validateCorpus(rootOverride)` accepted the override but the underlying `scenarioPath`/`goldenOutputPath`/`phase0ScenarioPath` helpers (from loader.ts) silently bypassed it and resolved against `fixturesRoot()` — meaning isolated fuzz/test corpora were never actually validated. Refactored to derive local path helpers from `root` directly + thread `path` through `validateGoldenOutputFile`. 50/50 tests pass post-fix.
@@ -170,6 +184,9 @@ this file under a `## Round N — <reviewer>` heading.
 
 ## fixtures validator — [CRITICAL] `validateCorpus(rootOverride)` ignores the override (FIXED INLINE)
 **Where:** `packages/fixtures/src/validate.ts:478-520`   **Issue:** `validateCorpus` accepts `rootOverride?: string` but the per-scenario / per-golden-output / per-phase0-scenario path helpers it calls (`scenarioPath`, `goldenOutputPath`, `phase0ScenarioPath` from `loader.ts`) all resolve against `fixturesRoot()` — they never see the override. Result: `validateCorpus("/tmp/some-test-corpus")` silently validates the project's actual fixtures instead of the test corpus, making fuzz/test isolation impossible. Found by Round 3 fuzz harness — 4 of 5 initial fuzz failures traced to this single bug.   **Suggested fix:** Refactored to derive local `scenarioPathLocal/phase0ScenarioPathLocal/goldenOutputPathLocal` helpers from `root` directly and thread the resolved `path` into `validateGoldenOutputFile`. 50/50 tests still pass post-fix; 13/13 fuzz tests now green. Done inline.   **Reviewer:** p1   **Round:** 3
+
+## LocalDemoStateIsolator — [MEDIUM] wipe path-traversal guard catches escape but not bogus-basename fixtureId
+**Where:** `apps/desktop/src/main/LocalDemoStateIsolator.ts:88` (`wipeDemoRoot` guard)   **Issue:** The `wipeDemoRoot` guard checks that the resolved `paths.demoRoot` contains the substring `.hoopoe/demo/`. This catches obvious escape attempts like `fixtureId="../../tmp/sensitive"` (resolved path doesn't contain `.hoopoe/demo/`) but does NOT validate that `fixtureId` itself is a clean basename. A `fixtureId` of `"subdir/../bar"` resolves to `~/.hoopoe/demo/bar` — passes the guard, wipes a different fixture's state directory than the user intended. No exploit because `fixtureId` is taken from the `LOCAL_DEMO_CATALOG` (curated set), but defense-in-depth is partial. **Suggested fix:** Add `if (!/^[a-zA-Z0-9_-]+$/.test(fixtureId)) throw ...` in both `resolveDemoStatePaths` and the catalog-loading path. 1-line additive change; tests would need a new "rejects bogus fixtureId" case.   **Reviewer:** p1   **Round:** 4
 
 ## fixtures harness — [INFO] adversarial-input fuzz suite added
 **Where:** `packages/fixtures/tests/fixture-fuzz.test.ts` (new file)   **Issue:** Phase 0 fixture parsers had no adversarial-input coverage prior to Round 3. The new fuzz harness exercises 13 pathological cases per `/testing-fuzzing` skill: empty/truncated JSON, BOM prefixes, binary bytes mid-stream, malformed lines, oversized files, missing files, file-where-dir, prototype-pollution attempts (`__proto__`/`constructor`). All pass; loader + validator confirmed panic-free.   **Suggested fix:** None — harness committed as ongoing regression coverage.   **Reviewer:** p1   **Round:** 3
