@@ -57,6 +57,12 @@ A contract is **done** when a new adapter author can write the Go from the contr
 - Capability IDs follow `<tool>.<surface>.<verb>` — e.g. `bv.robot.plan`, `caam.account.switch`. The capability registry (`plan.md` §2.8) ingests these as keys.
 - `blocked-by-policy` is the right status for capabilities that *exist* in the tool but Hoopoe deliberately refuses to call (e.g. bare `bv`, `caam switch-account` outside an arbitration plan, `pt kill` outside `watch-safety-thresholds`).
 
+## Companion docs
+
+- **[`gotchas-and-version-skew.md`](gotchas-and-version-skew.md)** — the integration-contracts-angle gotchas catalog (`hp-d54`). Read before writing any adapter parser.
+- **[`../research-spike/gotchas.md`](../research-spike/gotchas.md)** — the workflow + setup catalog (broader than this directory).
+- **[`../research-spike/research-spike-notes.md`](../research-spike/research-spike-notes.md)** — field notebook from real-VPS / local self-test runs.
+
 ## Refresh cadence
 
 Update a contract when (any of):
