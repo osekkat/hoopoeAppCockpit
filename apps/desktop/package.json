@@ -7,9 +7,11 @@
     "build": "vite build && tsdown src/main.ts --format esm --platform node --external electron --out-dir dist-electron --no-clean && cp dist-electron/main.mjs dist-electron/main.js",
     "dev": "vite --host 127.0.0.1",
     "e2e": "playwright test -c ../../playwright.config.ts",
+    "e2e:phase1": "playwright test -c tests/e2e/hp-j30.playwright.config.ts",
     "test:smoke": "bun test tests/smoke/*.test.ts",
+    "test:phase1": "bun test tests/unit/*.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "bun test src tests/smoke/*.test.ts"
+    "test": "bun test src tests/smoke/*.test.ts tests/unit/*.test.ts"
   },
   "dependencies": {
     "@hoopoe/design-system": "workspace:*",
@@ -23,10 +25,10 @@
     "zustand": "^5.0.0"
   },
   "devDependencies": {
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
     "@types/bun": "catalog:",
     "@types/node": "catalog:",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^5.0.0",
     "tsdown": "catalog:",
     "typescript": "catalog:",
