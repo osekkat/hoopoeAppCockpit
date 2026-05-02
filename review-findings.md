@@ -1,5 +1,19 @@
 # Hoopoe Phase 0/1 review findings
 
+## Round 1 — p2 (GreenBear)
+- Scope: hp-zir BackendLifecycle process management; SettingsBridge PubSub broadcast re-entry; SecretStore presence/persistence semantics; codex-shape-scrub Effect-import gap.
+- **Fixed inline:** extended `scripts/codex-shape-scrub/check-codex-shape-scrub.ts` to flag `from "effect"` / `from "effect/*"` / `from "@effect/*"` / `from "@t3tools/*"` imports outside `apps/desktop/src/vendored/t3code/**`. Verified the original scrub did NOT catch these (synthetic test fixture returned `[]`); now does. 4 new tests in `check-codex-shape-scrub.test.ts`. Workspace scan reports 0 violations. Changes were swept into p1's Round 2 commit `09209ee`.
+- BackendLifecycle: 1 MEDIUM (orphan `child.once("exit")` listener leaks past `Promise.race`); 1 MEDIUM (`extraArgs` provenance); 1 MEDIUM (`daemonBinaryPath` no exec/checksum precondition); 1 LOW (stdout listeners persist post-detector); 1 LOW (`findOpenPort` TOCTOU vs spawn).
+- SettingsBridge: 1 LOW (broadcast iterates live Map; subscribe-during-broadcast may double-deliver — snapshot before iterating).
+- SecretStore: 1 LOW (`has()` decrypts unnecessarily); 1 LOW (`set()` boolean overloaded — split persistent vs in-memory).
+
+## Round 3 — p4 (FuchsiaPond)
+- Scope: `testing-real-service-e2e-no-mocks` pass over desktop smoke/e2e tests versus hp-o74 Mock Flywheel Mode and local-demo wiring.
+- Verification: `rch exec -- bun test apps/desktop/src/main/MockFlywheelMode.test.ts apps/desktop/src/main/LocalDemoBootstrap.test.ts apps/desktop/tests/unit/hp-j30-phase1.test.ts` passed 34/34 tests.
+- Result: Mock Flywheel substrate is green, but browser smoke still exercises static renderer fixtures rather than the fixture replayer path.
+- Filed: 2 HIGH integration gaps and 1 MEDIUM logging/endpoint-guard gap; no CRITICAL findings.
+- No inline fix: replacing the E2E data path needs renderer data-source wiring plus a mock-mode bootstrap script, which is beyond the 30-minute HIGH fix window.
+
 ## Round 2 — p1 (FuchsiaStone)
 - Scope: cross-review of p2's t3code lift — vendored/t3code/** + main/{BackendLifecycle,UpdateMachine,IpcRegistry,WindowManager,SettingsBridge,AuthBridge}.ts. Looked for: lift completeness, MIT-notice preservation, Effect framework leakage, parameter-property syntax under `erasableSyntaxOnly: true`.
 - MIT notice: 5 vendored test files lacked any provenance header — fixed inline by adding a "Hoopoe-owned tests for the vendored helper" line to each. _shims.ts + settings/index.ts already self-document as Hoopoe-owned. 24/24 vendored tests still pass.
