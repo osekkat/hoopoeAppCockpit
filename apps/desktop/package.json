@@ -4,18 +4,30 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "echo 'desktop build is wired up in hp-191 (build pipeline); no-op for vendored smoke'",
+    "build": "vite build && tsdown src/main.ts --format esm --platform node --external electron --out-dir dist-electron --no-clean && cp dist-electron/main.mjs dist-electron/main.js",
+    "dev": "vite --host 127.0.0.1",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "bun test"
   },
   "dependencies": {
+    "@hoopoe/design-system": "workspace:*",
+    "@tanstack/react-router": "^1.0.0",
     "electron": "40.9.3",
-    "electron-updater": "^6.6.2"
+    "electron-updater": "^6.6.2",
+    "lucide-react": "^0.468.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "zustand": "^5.0.0"
   },
   "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
     "@types/bun": "catalog:",
     "@types/node": "catalog:",
-    "typescript": "catalog:"
+    "@vitejs/plugin-react": "^5.0.0",
+    "tsdown": "catalog:",
+    "typescript": "catalog:",
+    "vite": "^8.0.0"
   },
   "productName": "Hoopoe"
 }
