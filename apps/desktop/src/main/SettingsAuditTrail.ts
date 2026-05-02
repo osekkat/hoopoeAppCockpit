@@ -196,7 +196,7 @@ function readDottedKey(obj: Record<string, unknown>, key: string): unknown {
   const parts = key.split(".");
   let cur: unknown = obj;
   for (const p of parts) {
-    if (cur == null || typeof cur !== "object") return undefined;
+    if (cur === null || cur === undefined || typeof cur !== "object") return undefined;
     cur = (cur as Record<string, unknown>)[p];
   }
   return cur;
@@ -204,7 +204,7 @@ function readDottedKey(obj: Record<string, unknown>, key: string): unknown {
 
 function deepEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true;
-  if (a == null || b == null) return false;
+  if (a === null || a === undefined || b === null || b === undefined) return false;
   if (typeof a !== typeof b) return false;
   if (typeof a !== "object") return false;
   // Cheap structural compare via JSON; fine for settings values

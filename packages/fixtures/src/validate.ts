@@ -177,7 +177,7 @@ function pushWarning(ctx: ValidatorContext, rule: string, path: string, message:
 function validateMetaShape(ctx: ValidatorContext, scenarioDir: string): void {
   const metaPath = join(scenarioDir, "meta.json");
   const meta = tryParseJson(metaPath);
-  if (meta == null) {
+  if (meta === null || meta === undefined) {
     pushError(ctx, "meta.unparseable", metaPath, "meta.json missing or unparseable");
     return;
   }
@@ -193,7 +193,7 @@ function validateMetaShape(ctx: ValidatorContext, scenarioDir: string): void {
       pushError(ctx, "meta.missing-key", metaPath, `meta.json missing required key '${k}'`);
     }
   }
-  if (m.kind != null && !["realistic", "synthetic", "stub"].includes(m.kind as string)) {
+  if (m.kind !== null && m.kind !== undefined && !["realistic", "synthetic", "stub"].includes(m.kind as string)) {
     pushError(
       ctx,
       "meta.bad-kind",
@@ -240,14 +240,14 @@ function validateScenarioDir(
     }
     if (file.endsWith(".json")) {
       const parsed = tryParseJson(fp);
-      if (parsed == null) {
+      if (parsed === null || parsed === undefined) {
         pushError(ctx, "scenario.unparseable-json", fp, `${file} did not parse as JSON`);
       } else {
         ctx.jsonParsed++;
       }
     } else if (file.endsWith(".jsonl")) {
       const lines = tryParseNdjson(fp);
-      if (lines == null) {
+      if (lines === null || lines === undefined) {
         pushError(ctx, "scenario.unparseable-jsonl", fp, `${file} did not parse as NDJSON`);
       } else {
         ctx.jsonParsed += lines.length;
@@ -255,7 +255,8 @@ function validateScenarioDir(
         for (let i = 0; i < lines.length; i++) {
           const ev = lines[i] as Record<string, unknown> | null;
           if (
-            ev == null ||
+            ev === null ||
+            ev === undefined ||
             typeof ev.channel !== "string" ||
             typeof ev.seq !== "number" ||
             typeof ev.ts !== "string" ||
@@ -309,7 +310,7 @@ function validateExpectedOutcomeShape(ctx: ValidatorContext, scenarioDir: string
   const path = join(scenarioDir, "expected-outcome.json");
   if (!isFile(path)) return; // already reported
   const parsed = tryParseJson(path) as Record<string, unknown> | null;
-  if (parsed == null) return;
+  if (parsed === null || parsed === undefined) return;
   const requiredKeys = ["meta", "detections", "wakeAgent", "approvalsRequested", "postconditions", "activityBehavior"];
   for (const k of requiredKeys) {
     if (!(k in parsed)) {
@@ -321,7 +322,11 @@ function validateExpectedOutcomeShape(ctx: ValidatorContext, scenarioDir: string
       );
     }
   }
-  if (parsed.activityBehavior != null && !["silent", "audit_only", "surface"].includes(parsed.activityBehavior as string)) {
+  if (
+    parsed.activityBehavior !== null &&
+    parsed.activityBehavior !== undefined &&
+    !["silent", "audit_only", "surface"].includes(parsed.activityBehavior as string)
+  ) {
     pushError(
       ctx,
       "outcome.bad-activity-behavior",
@@ -329,7 +334,7 @@ function validateExpectedOutcomeShape(ctx: ValidatorContext, scenarioDir: string
       `expected-outcome.activityBehavior must be silent|audit_only|surface (got '${String(parsed.activityBehavior)}')`,
     );
   }
-  if (parsed.wakeAgent === true && parsed.actionPlan == null) {
+  if (parsed.wakeAgent === true && (parsed.actionPlan === null || parsed.actionPlan === undefined)) {
     pushError(
       ctx,
       "outcome.wake-without-plan",
@@ -337,7 +342,7 @@ function validateExpectedOutcomeShape(ctx: ValidatorContext, scenarioDir: string
       "expected-outcome: wakeAgent=true but actionPlan is missing",
     );
   }
-  if (parsed.wakeAgent === false && parsed.actionPlan != null) {
+  if (parsed.wakeAgent === false && parsed.actionPlan !== null && parsed.actionPlan !== undefined) {
     pushWarning(
       ctx,
       "outcome.plan-without-wake",
@@ -363,13 +368,13 @@ function validateGoldenOutputFile(
     return;
   }
   const parsed = tryParseJson(path) as Record<string, unknown> | null;
-  if (parsed == null) {
+  if (parsed === null || parsed === undefined) {
     pushError(ctx, "golden.unparseable", path, "did not parse as JSON");
     return;
   }
   ctx.jsonParsed++;
   const m = parsed.meta as Record<string, unknown> | undefined;
-  if (m == null) {
+  if (m === null || m === undefined) {
     pushError(ctx, "golden.no-meta", path, "missing meta block");
     return;
   }
