@@ -9,7 +9,8 @@
       "packages/schemas",
       "packages/design-system",
       "packages/fixtures",
-      "packages/fixture-replay"
+      "packages/fixture-replay",
+      "packages/test-evidence"
     ],
     "catalog": {
       "@types/bun": "^1.3.13",

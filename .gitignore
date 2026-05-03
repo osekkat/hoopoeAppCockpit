@@ -49,6 +49,10 @@ apps/daemon/coverage.out
 **/test-results/
 **/playwright-report/
 
+# Test-evidence envelopes (hp-6sv) — generated per run; uploaded to CI artifact
+# storage, never committed. The conventions live in docs/testing.md.
+docs/test-evidence/
+
 # Orchestrator nudge files (per-pane scratch from swarm dispatches)
 /p[0-9]_*.txt
 /p[0-9][0-9]_*.txt

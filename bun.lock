@@ -17,6 +17,9 @@
     "apps/daemon": {
       "name": "@hoopoe/daemon",
       "version": "0.0.0",
+      "devDependencies": {
+        "@hoopoe/test-evidence": "workspace:*",
+      },
     },
     "apps/desktop": {
       "name": "@hoopoe/desktop",
@@ -25,6 +28,7 @@
         "@hoopoe/design-system": "workspace:*",
         "@hoopoe/fixture-replay": "workspace:*",
         "@hoopoe/fixtures": "workspace:*",
+        "@hoopoe/test-evidence": "workspace:*",
         "@tanstack/react-query": "^5.100.8",
         "@tanstack/react-router": "^1.0.0",
         "electron": "40.9.3",
@@ -77,8 +81,18 @@
     },
     "packages/schemas": {
       "name": "@hoopoe/schemas",
-      "version": "0.1.0",
+      "version": "0.0.0",
       "devDependencies": {
+        "@types/bun": "catalog:",
+        "@types/node": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/test-evidence": {
+      "name": "@hoopoe/test-evidence",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@playwright/test": "^1.59.1",
         "@types/bun": "catalog:",
         "@types/node": "catalog:",
         "typescript": "catalog:",
@@ -153,6 +167,8 @@
     "@hoopoe/fixtures": ["@hoopoe/fixtures@workspace:packages/fixtures"],
 
     "@hoopoe/schemas": ["@hoopoe/schemas@workspace:packages/schemas"],
+
+    "@hoopoe/test-evidence": ["@hoopoe/test-evidence@workspace:packages/test-evidence"],
 
     "@jridgewell/gen-mapping": ["@jridgewell/gen-mapping@0.3.13", "", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.5.0", "@jridgewell/trace-mapping": "^0.3.24" } }, "sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA=="],
 

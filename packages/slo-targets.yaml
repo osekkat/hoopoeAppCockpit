@@ -1,0 +1,57 @@
+schemaVersion: 1
+# Single source of truth for §10.5 SLO targets. Tests, plan-quality
+# scoring, and Diagnostics dashboards all read this file — do not
+# duplicate numbers into test files. To assert against a target, add
+# `@slo:<id>` to the test name; the @hoopoe/test-evidence reporter
+# will record the observed value and flip `passed: false` if the
+# target is breached.
+#
+# Kinds:
+#   latency_p95  — declared "<n>ms" or "<n>s"; passed when observed <= threshold
+#   duration_p95 — same shape as latency_p95
+#   boolean      — declared "true" or "false"; passed when observed matches
+#   counter      — declared "<n>"; passed when observed <= threshold
+#   percentage   — declared "<n>%"; passed when observed <= threshold
+#
+# The full list mirrors plan.md §10.5.
+targets:
+  desktop.reconnect.p95:
+    kind: latency_p95
+    declared: "10000ms"
+    description: "Desktop must reconnect to the daemon within 10s p95 after the network returns."
+    references: ["plan.md §10.5"]
+  events.replay.10min.p95:
+    kind: latency_p95
+    declared: "5000ms"
+    description: "Snapshot-on-reconnect replay of 10 minutes of WS events completes within 5s p95."
+    references: ["plan.md §10.5", "plan.md §2.6"]
+  activity.event.display.p95:
+    kind: latency_p95
+    declared: "1000ms"
+    description: "An emitted Activity event reaches the panel within 1s p95 of emission."
+    references: ["plan.md §10.5"]
+  terminal.attach.first-byte.p95:
+    kind: latency_p95
+    declared: "2000ms"
+    description: "First byte of a Diagnostics terminal stream attach within 2s p95."
+    references: ["plan.md §10.5", "plan.md §7.3"]
+  file.open.cached.p95:
+    kind: latency_p95
+    declared: "150ms"
+    description: "Cached file open in the desktop local clone returns within 150ms p95."
+    references: ["plan.md §10.5", "plan.md §7.7"]
+  bead.kanban.load.1k.p95:
+    kind: latency_p95
+    declared: "1000ms"
+    description: "Kanban view loads 1,000 beads within 1s p95."
+    references: ["plan.md §10.5", "plan.md §7"]
+  dag.usable.500-nodes:
+    kind: boolean
+    declared: "true"
+    description: "DAG view is usable (scrollable + < 500ms layout) at 500 nodes."
+    references: ["plan.md §10.5", "plan.md §7"]
+  job.cancellation.no-orphans:
+    kind: boolean
+    declared: "true"
+    description: "Cancelling a daemon job leaves no orphan child processes."
+    references: ["plan.md §10.5", "plan.md §2.7"]

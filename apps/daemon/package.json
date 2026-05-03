@@ -5,6 +5,10 @@
   "scripts": {
     "build": "mkdir -p bin && go build -o bin/hoopoed ./cmd/hoopoed",
     "typecheck": "go vet ./...",
-    "test": "go test ./..."
+    "test": "go test ./...",
+    "test:evidence": "bun scripts/test-evidence/run-go.ts -- ./..."
+  },
+  "devDependencies": {
+    "@hoopoe/test-evidence": "workspace:*"
   }
 }
