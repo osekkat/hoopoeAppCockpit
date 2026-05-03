@@ -85,6 +85,7 @@ func (s StaticCompatibilityComposer) Compose(registry *CapabilityRegistry) *Comp
 			SchemaVersion: s.Migration.SchemaVersion,
 			AppliedAt:     s.Migration.AppliedAt,
 			Pending:       pending,
+			Phase:         s.Migration.Phase,
 		},
 		Capabilities: registry,
 	}
