@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hoopoe.dev/schemas/v1/ws-envelope.json",
+  "title": "Hoopoe WS event envelope (v1)",
+  "description": "Standalone JSON Schema mirror of components.WsEventEnvelope and friends from packages/schemas/openapi.yaml. Lives here so AsyncAPI tooling and downstream services that don't read OpenAPI can pin against the same shape. The OpenAPI definitions are authoritative; this file is regenerated alongside (or kept in sync by hand until the regen script lands).",
+  "definitions": {
+    "Actor": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": { "enum": ["user", "agent", "scheduler", "system", "dcg", "approval"] },
+        "id": { "type": "string" },
+        "displayName": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "WsSubscribeOp": {
+      "type": "object",
+      "required": ["op", "channels"],
+      "properties": {
+        "op": { "const": "subscribe" },
+        "channels": { "type": "array", "items": { "type": "string" } },
+        "cursors": {
+          "type": "object",
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        }
+      },
+      "additionalProperties": false
+    },
+    "WsUnsubscribeOp": {
+      "type": "object",
+      "required": ["op", "channels"],
+      "properties": {
+        "op": { "const": "unsubscribe" },
+        "channels": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "WsClientOp": {
+      "oneOf": [
+        { "$ref": "#/definitions/WsSubscribeOp" },
+        { "$ref": "#/definitions/WsUnsubscribeOp" }
+      ]
+    },
+    "WsEventEnvelope": {
+      "type": "object",
+      "required": ["eventId", "schemaVersion", "channel", "type", "sequence", "time"],
+      "properties": {
+        "eventId": { "type": "string" },
+        "schemaVersion": { "type": "integer", "minimum": 1 },
+        "channel": { "type": "string" },
+        "type": { "type": "string" },
+        "sequence": { "type": "integer", "minimum": 0 },
+        "time": { "type": "string", "format": "date-time" },
+        "actor": { "$ref": "#/definitions/Actor" },
+        "causationId": { "type": "string" },
+        "correlationId": { "type": "string" },
+        "data": {}
+      },
+      "additionalProperties": false
+    },
+    "WsHeartbeat": {
+      "type": "object",
+      "required": ["channel", "type", "sequence", "time"],
+      "properties": {
+        "channel": { "const": "_system" },
+        "type": { "const": "heartbeat" },
+        "sequence": { "type": "integer", "minimum": 0 },
+        "time": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "WsGap": {
+      "type": "object",
+      "required": ["channel", "type", "from", "to", "repair"],
+      "properties": {
+        "channel": { "type": "string" },
+        "type": { "const": "_gap" },
+        "from": { "type": "integer", "minimum": 0 },
+        "to": { "type": "integer", "minimum": 0 },
+        "repair": { "enum": ["replayEvents"] }
+      },
+      "additionalProperties": false
+    },
+    "WsLag": {
+      "type": "object",
+      "required": ["channel", "type", "sequence", "time"],
+      "properties": {
+        "channel": { "type": "string" },
+        "type": { "const": "_lag" },
+        "sequence": { "type": "integer", "minimum": 0 },
+        "time": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "WsServerMessage": {
+      "oneOf": [
+        { "$ref": "#/definitions/WsEventEnvelope" },
+        { "$ref": "#/definitions/WsHeartbeat" },
+        { "$ref": "#/definitions/WsGap" },
+        { "$ref": "#/definitions/WsLag" }
+      ]
+    }
+  }
+}

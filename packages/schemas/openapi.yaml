@@ -417,6 +417,79 @@ paths:
               schema: { $ref: '#/components/schemas/Approval' }
         default: { $ref: '#/components/responses/Problem' }
 
+  # ─────────────────────────────────────────────────────────────────────────
+  # Events (§2.6) — replay stream for the WS reconnect path.
+  # The bidirectional WebSocket itself is not modeled here (OpenAPI 3.x
+  # cannot describe it); see `events/ws-envelope.schema.json` for the
+  # standalone envelope JSON Schema that mirrors `components.WsEventEnvelope`.
+  # ─────────────────────────────────────────────────────────────────────────
+
+  /v1/events/replay:
+    get:
+      tags: [Events]
+      operationId: replayEvents
+      summary: Replay events from a sequence cursor for one channel.
+      description: |
+        Used by the desktop on reconnect (after laptop sleep, daemon
+        restart, tunnel re-establishment, or a `_gap` notice on the WS).
+        Returns events strictly after `sinceSequence` up to the daemon's
+        retention horizon. Past the horizon, the desktop falls back to
+        the persisted-log offset reported in the `_gap` notice.
+      parameters:
+        - name: channel
+          in: query
+          required: true
+          description: Channel selector (e.g., `project:proj_01`).
+          schema: { type: string, minLength: 1 }
+        - name: sinceSequence
+          in: query
+          required: true
+          description: Last-known sequence number; replay returns sequence > this.
+          schema: { type: integer, minimum: 0 }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 1000, default: 200 }
+      responses:
+        '200':
+          description: Replayed event window.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EventReplayResponse' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Tending (§8) — submit an ActionPlan; daemon validates + dry-runs +
+  # enforces policy/approvals + executes + verifies postconditions.
+  # ─────────────────────────────────────────────────────────────────────────
+
+  /v1/projects/{projectId}/tending/actionplans:
+    parameters:
+      - $ref: '#/components/parameters/ProjectIdPath'
+      - $ref: '#/components/parameters/IdempotencyKey'
+    post:
+      tags: [Tending]
+      operationId: submitActionPlan
+      summary: Submit a typed ActionPlan from a tending agent (§8.3.1).
+      description: |
+        The daemon validates `actions[].kind` against the closed action set
+        in `tending-actions.yaml`, evaluates policy + approval rules, and
+        either accepts (returning a Job) or rejects with a `problem+json`
+        whose `code` indicates the failure (e.g.,
+        `tending.action_kind_unknown`, `approval.required`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ActionPlan' }
+      responses:
+        '202':
+          description: ActionPlan accepted; Job tracks execution.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Job' }
+        default: { $ref: '#/components/responses/Problem' }
+
   /v1/projects/{projectId}/approvals/{approvalId}/deny:
     parameters:
       - $ref: '#/components/parameters/ProjectIdPath'
@@ -1369,3 +1442,262 @@ components:
           type: array
           items: { $ref: '#/components/schemas/Approval' }
         page: { $ref: '#/components/schemas/PageMeta' }
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # WebSocket event stream (§2.6) — envelope + subscribe + system events.
+    # ─────────────────────────────────────────────────────────────────────────
+    #
+    # OpenAPI 3.x cannot model bidirectional WebSocket streams adequately, so
+    # the wire format is described as schemas and a JSON-Schema sidecar at
+    # `events/ws-envelope.schema.json` mirrors the same shapes for consumers
+    # that want a non-OpenAPI source. The actual event types per channel
+    # are an open set; the daemon publishes a registry at runtime.
+
+    WsSubscribeOp:
+      type: object
+      description: |
+        Client → daemon. Subscribe to one or more channels with optional
+        per-channel cursors (last-seen sequence). The daemon replays from
+        the cursor (subject to retention) before streaming live events.
+      required: [op, channels]
+      properties:
+        op:
+          type: string
+          const: subscribe
+        channels:
+          type: array
+          items: { type: string }
+          description: |
+            Channel selectors, e.g., `project:proj_01`, `swarm:sw_01`,
+            `activity:proj_01`, `_system`.
+        cursors:
+          type: object
+          additionalProperties:
+            type: integer
+            minimum: 0
+          description: |
+            Map of channel → last-known sequence number. Daemon resumes after
+            (cursor + 1). Channels absent from the map start from "live now."
+
+    WsUnsubscribeOp:
+      type: object
+      required: [op, channels]
+      properties:
+        op:
+          type: string
+          const: unsubscribe
+        channels:
+          type: array
+          items: { type: string }
+
+    WsClientOp:
+      description: 'Discriminated union of client → daemon op messages.'
+      oneOf:
+        - $ref: '#/components/schemas/WsSubscribeOp'
+        - $ref: '#/components/schemas/WsUnsubscribeOp'
+      discriminator:
+        propertyName: op
+        mapping:
+          subscribe: '#/components/schemas/WsSubscribeOp'
+          unsubscribe: '#/components/schemas/WsUnsubscribeOp'
+
+    WsEventEnvelope:
+      type: object
+      description: |
+        Daemon → client envelope for every project / swarm / activity event.
+        `sequence` is monotonic per `channel`; clients persist the last seen
+        and pass it back on reconnect for replay.
+      required: [eventId, schemaVersion, channel, type, sequence, time]
+      properties:
+        eventId: { type: string, description: 'ULID for the event.' }
+        schemaVersion: { $ref: '#/components/schemas/SchemaVersion' }
+        channel:
+          type: string
+          description: 'e.g., `project:proj_01`, `swarm:sw_01`.'
+        type:
+          type: string
+          description: |
+            Channel-scoped event type (e.g., `bead.changed`, `agent.idle`,
+            `job.status.changed`). The daemon publishes the per-channel
+            registry; clients tolerate unknown types (forward-compat).
+        sequence:
+          type: integer
+          minimum: 0
+          description: 'Monotonic per channel.'
+        time: { type: string, format: date-time }
+        actor: { $ref: '#/components/schemas/Actor' }
+        causationId:
+          type: string
+          description: 'ID of the command/action that caused this event.'
+        correlationId:
+          type: string
+          description: 'Cross-event handle (e.g., swarm session ID).'
+        data:
+          description: |
+            Event-type-specific payload. Schema per `type`; consumers should
+            switch on `type` and validate against the published per-type schema.
+            Unknown types should not fail-closed (forward-compat).
+
+    WsHeartbeat:
+      type: object
+      description: |
+        Daemon-emitted liveness ping on the `_system` channel. Clients use
+        this to detect tunnel/transport stalls.
+      required: [channel, type, sequence, time]
+      properties:
+        channel:
+          type: string
+          const: _system
+        type:
+          type: string
+          const: heartbeat
+        sequence:
+          type: integer
+          minimum: 0
+        time: { type: string, format: date-time }
+
+    WsGap:
+      type: object
+      description: |
+        Daemon-emitted gap notice when a slow client falls past the in-memory
+        ring. Includes a persisted-log offset hint so the client fetches the
+        missing range from disk via `GET /v1/events/replay`.
+      required: [channel, type, from, to, repair]
+      properties:
+        channel: { type: string }
+        type:
+          type: string
+          const: _gap
+        from: { type: integer, minimum: 0 }
+        to: { type: integer, minimum: 0 }
+        repair:
+          type: string
+          enum: [replayEvents]
+
+    WsLag:
+      type: object
+      description: |
+        Soft-lag warning emitted before a `_gap`. Allows clients to drain
+        their queue before the daemon escalates to a gap notice.
+      required: [channel, type, sequence, time]
+      properties:
+        channel: { type: string }
+        type:
+          type: string
+          const: _lag
+        sequence: { type: integer, minimum: 0 }
+        time: { type: string, format: date-time }
+
+    WsServerMessage:
+      description: 'Discriminated union of daemon → client messages.'
+      oneOf:
+        - $ref: '#/components/schemas/WsEventEnvelope'
+        - $ref: '#/components/schemas/WsHeartbeat'
+        - $ref: '#/components/schemas/WsGap'
+        - $ref: '#/components/schemas/WsLag'
+
+    EventReplayResponse:
+      type: object
+      required: [channel, events, latestSequence]
+      properties:
+        channel: { type: string }
+        events:
+          type: array
+          items: { $ref: '#/components/schemas/WsEventEnvelope' }
+        latestSequence:
+          type: integer
+          minimum: 0
+          description: 'Highest sequence currently retained for this channel.'
+        retentionHorizon:
+          type: integer
+          minimum: 0
+          description: |
+            Lowest sequence still available via replay. Sequences below this
+            are reachable only via the persisted-log offset on disk.
+        truncated:
+          type: boolean
+          description: 'True iff `limit` capped the result (more events available).'
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # ActionPlan (§8.3.1) — typed agent action surface, mirrored to
+    # `tending-actions.yaml`. The closed `kind` set is canonical there;
+    # CommandSpec.kind is open by design (other callers may add new kinds).
+    # ─────────────────────────────────────────────────────────────────────────
+
+    ActionKind:
+      type: string
+      description: |
+        Closed enum of allowed tending action types per §8.3.1. Mirrored in
+        `tending-actions.yaml`; the daemon rejects any ActionPlan whose
+        action `kind` is outside this set. Adding a new kind is a deliberate
+        spec bump that lands in both places.
+      enum:
+        - agent.ask_status
+        - agent.send_marching_orders
+        - agent.pause
+        - agent.kill_wedged_process
+        - reservation.force_release
+        - caam.switch_account
+        - casr.resume_session
+        - git.push_branch
+        - swarm.halt
+        - review.propose_flip
+        - bead.create_blocker
+
+    ActionRiskClass:
+      $ref: '#/components/schemas/ApprovalRiskClass'
+
+    Action:
+      type: object
+      description: |
+        One typed action inside an ActionPlan. The `kind` is closed; `target`
+        and `args` shapes are per-kind (validated by the daemon against the
+        action's published schema in tending-actions.yaml).
+      required: [kind, target, idempotencyKey]
+      properties:
+        kind: { $ref: '#/components/schemas/ActionKind' }
+        target:
+          type: object
+          additionalProperties: true
+          description: 'Per-kind target keys (e.g., {agentId}, {branch}).'
+        args:
+          type: object
+          additionalProperties: true
+          description: 'Per-kind args; opaque at this layer.'
+        idempotencyKey:
+          type: string
+          description: 'Stable key used to dedupe repeated executions.'
+        preconditions:
+          type: array
+          items: { type: string }
+        postconditions:
+          type: array
+          items: { type: string }
+
+    ActionPlan:
+      type: object
+      description: |
+        What a tending agent emits to mutate state. The daemon (not the
+        model) executes; for each action it verifies preconditions, acquires
+        locks, evaluates policy + approvals, dry-runs where possible,
+        executes through typed RPCs, then re-reads canonical state to
+        verify postconditions.
+      required: [schemaVersion, jobId, runId, summary, actions, riskClass]
+      properties:
+        schemaVersion: { $ref: '#/components/schemas/SchemaVersion' }
+        jobId: { type: string, description: 'Owning tending job ID.' }
+        runId: { type: string, description: 'Per-execution run ID (ULID).' }
+        summary:
+          type: string
+          description: 'One-sentence rationale shown in the Activity panel.'
+        evidenceRefs:
+          type: array
+          items: { type: string }
+          description: 'Opaque IDs into audit / pane logs / reservations / detections.'
+        actions:
+          type: array
+          items: { $ref: '#/components/schemas/Action' }
+        riskClass: { $ref: '#/components/schemas/ApprovalRiskClass' }
+        requiresApproval:
+          type: boolean
+          description: 'True iff at least one action requires human approval.'

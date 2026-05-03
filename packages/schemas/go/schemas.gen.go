@@ -11,6 +11,51 @@ const (
 	BearerAuthScopes bearerAuthContextKey = "bearerAuth.Scopes"
 )
 
+// Defines values for ActionKind.
+const (
+	AgentAskStatus          ActionKind = "agent.ask_status"
+	AgentKillWedgedProcess  ActionKind = "agent.kill_wedged_process"
+	AgentPause              ActionKind = "agent.pause"
+	AgentSendMarchingOrders ActionKind = "agent.send_marching_orders"
+	BeadCreateBlocker       ActionKind = "bead.create_blocker"
+	CaamSwitchAccount       ActionKind = "caam.switch_account"
+	CasrResumeSession       ActionKind = "casr.resume_session"
+	GitPushBranch           ActionKind = "git.push_branch"
+	ReservationForceRelease ActionKind = "reservation.force_release"
+	ReviewProposeFlip       ActionKind = "review.propose_flip"
+	SwarmHalt               ActionKind = "swarm.halt"
+)
+
+// Valid indicates whether the value is a known member of the ActionKind enum.
+func (e ActionKind) Valid() bool {
+	switch e {
+	case AgentAskStatus:
+		return true
+	case AgentKillWedgedProcess:
+		return true
+	case AgentPause:
+		return true
+	case AgentSendMarchingOrders:
+		return true
+	case BeadCreateBlocker:
+		return true
+	case CaamSwitchAccount:
+		return true
+	case CasrResumeSession:
+		return true
+	case GitPushBranch:
+		return true
+	case ReservationForceRelease:
+		return true
+	case ReviewProposeFlip:
+		return true
+	case SwarmHalt:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ActorKind.
 const (
 	ActorKindAgent     ActorKind = "agent"
@@ -602,6 +647,62 @@ func (e VersionResponseDaemonChannel) Valid() bool {
 	}
 }
 
+// Action One typed action inside an ActionPlan. The `kind` is closed; `target`
+// and `args` shapes are per-kind (validated by the daemon against the
+// action's published schema in tending-actions.yaml).
+type Action struct {
+	// Args Per-kind args; opaque at this layer.
+	Args *map[string]interface{} `json:"args,omitempty"`
+
+	// IdempotencyKey Stable key used to dedupe repeated executions.
+	IdempotencyKey string `json:"idempotencyKey"`
+
+	// Kind Closed enum of allowed tending action types per §8.3.1. Mirrored in
+	// `tending-actions.yaml`; the daemon rejects any ActionPlan whose
+	// action `kind` is outside this set. Adding a new kind is a deliberate
+	// spec bump that lands in both places.
+	Kind           ActionKind `json:"kind"`
+	Postconditions *[]string  `json:"postconditions,omitempty"`
+	Preconditions  *[]string  `json:"preconditions,omitempty"`
+
+	// Target Per-kind target keys (e.g., {agentId}, {branch}).
+	Target map[string]interface{} `json:"target"`
+}
+
+// ActionKind Closed enum of allowed tending action types per §8.3.1. Mirrored in
+// `tending-actions.yaml`; the daemon rejects any ActionPlan whose
+// action `kind` is outside this set. Adding a new kind is a deliberate
+// spec bump that lands in both places.
+type ActionKind string
+
+// ActionPlan What a tending agent emits to mutate state. The daemon (not the
+// model) executes; for each action it verifies preconditions, acquires
+// locks, evaluates policy + approvals, dry-runs where possible,
+// executes through typed RPCs, then re-reads canonical state to
+// verify postconditions.
+type ActionPlan struct {
+	Actions []Action `json:"actions"`
+
+	// EvidenceRefs Opaque IDs into audit / pane logs / reservations / detections.
+	EvidenceRefs *[]string `json:"evidenceRefs,omitempty"`
+
+	// JobId Owning tending job ID.
+	JobId string `json:"jobId"`
+
+	// RequiresApproval True iff at least one action requires human approval.
+	RequiresApproval *bool             `json:"requiresApproval,omitempty"`
+	RiskClass        ApprovalRiskClass `json:"riskClass"`
+
+	// RunId Per-execution run ID (ULID).
+	RunId string `json:"runId"`
+
+	// SchemaVersion Monotonically increasing schema version for a persisted shape.
+	SchemaVersion SchemaVersion `json:"schemaVersion"`
+
+	// Summary One-sentence rationale shown in the Activity panel.
+	Summary string `json:"summary"`
+}
+
 // Actor Who initiated an action — used in audit + event envelopes.
 type Actor struct {
 	// DisplayName Optional UI-only label; never used for authorization.
@@ -896,6 +997,22 @@ type CompatibilityReport struct {
 // Cursor Opaque pagination cursor. Use the `next` cursor from a list response
 // verbatim; do not parse it. Cursors are stable for ≥24h.
 type Cursor = string
+
+// EventReplayResponse defines model for EventReplayResponse.
+type EventReplayResponse struct {
+	Channel string            `json:"channel"`
+	Events  []WsEventEnvelope `json:"events"`
+
+	// LatestSequence Highest sequence currently retained for this channel.
+	LatestSequence int `json:"latestSequence"`
+
+	// RetentionHorizon Lowest sequence still available via replay. Sequences below this
+	// are reachable only via the persisted-log offset on disk.
+	RetentionHorizon *int `json:"retentionHorizon,omitempty"`
+
+	// Truncated True iff `limit` capped the result (more events available).
+	Truncated *bool `json:"truncated,omitempty"`
+}
 
 // GateCheck One named precondition for a gate. `ok` when satisfied; otherwise
 // `detail` explains what's missing in human-readable form.
@@ -1258,6 +1375,43 @@ type VersionResponse struct {
 // VersionResponseDaemonChannel defines model for VersionResponse.Daemon.Channel.
 type VersionResponseDaemonChannel string
 
+// WsEventEnvelope Daemon → client envelope for every project / swarm / activity event.
+// `sequence` is monotonic per `channel`; clients persist the last seen
+// and pass it back on reconnect for replay.
+type WsEventEnvelope struct {
+	// Actor Who initiated an action — used in audit + event envelopes.
+	Actor *Actor `json:"actor,omitempty"`
+
+	// CausationId ID of the command/action that caused this event.
+	CausationId *string `json:"causationId,omitempty"`
+
+	// Channel e.g., `project:proj_01`, `swarm:sw_01`.
+	Channel string `json:"channel"`
+
+	// CorrelationId Cross-event handle (e.g., swarm session ID).
+	CorrelationId *string `json:"correlationId,omitempty"`
+
+	// Data Event-type-specific payload. Schema per `type`; consumers should
+	// switch on `type` and validate against the published per-type schema.
+	// Unknown types should not fail-closed (forward-compat).
+	Data interface{} `json:"data,omitempty"`
+
+	// EventId ULID for the event.
+	EventId string `json:"eventId"`
+
+	// SchemaVersion Monotonically increasing schema version for a persisted shape.
+	SchemaVersion SchemaVersion `json:"schemaVersion"`
+
+	// Sequence Monotonic per channel.
+	Sequence int       `json:"sequence"`
+	Time     time.Time `json:"time"`
+
+	// Type Channel-scoped event type (e.g., `bead.changed`, `agent.idle`,
+	// `job.status.changed`). The daemon publishes the per-channel
+	// registry; clients tolerate unknown types (forward-compat).
+	Type string `json:"type"`
+}
+
 // IdempotencyKey defines model for IdempotencyKey.
 type IdempotencyKey = string
 
@@ -1271,6 +1425,16 @@ type bearerAuthContextKey string
 type GetCapabilitiesParams struct {
 	// Tool Filter to a single tool (e.g., `ntm`, `br`, `bv`).
 	Tool *string `form:"tool,omitempty" json:"tool,omitempty"`
+}
+
+// ReplayEventsParams defines parameters for ReplayEvents.
+type ReplayEventsParams struct {
+	// Channel Channel selector (e.g., `project:proj_01`).
+	Channel string `form:"channel" json:"channel"`
+
+	// SinceSequence Last-known sequence number; replay returns sequence > this.
+	SinceSequence int  `form:"sinceSequence" json:"sinceSequence"`
+	Limit         *int `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
 // ListJobsParams defines parameters for ListJobs.
@@ -1340,6 +1504,16 @@ type ListPlansParams struct {
 	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
+// SubmitActionPlanParams defines parameters for SubmitActionPlan.
+type SubmitActionPlanParams struct {
+	// IdempotencyKey Stable client-generated key (ULID/UUID) for safe retries. The daemon
+	// dedupes by key within a sliding window (default 24h) and replays the
+	// original status + body. Required on retryable writes; clients that omit
+	// it on a write that turns out to be retryable will receive a
+	// `precondition-failed` problem on the second attempt.
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
 // CancelJobJSONRequestBody defines body for CancelJob for application/json ContentType.
 type CancelJobJSONRequestBody = JobCancelRequest
 
@@ -1348,3 +1522,6 @@ type ApproveApprovalJSONRequestBody = ApprovalDecisionRequest
 
 // DenyApprovalJSONRequestBody defines body for DenyApproval for application/json ContentType.
 type DenyApprovalJSONRequestBody = ApprovalDecisionRequest
+
+// SubmitActionPlanJSONRequestBody defines body for SubmitActionPlan for application/json ContentType.
+type SubmitActionPlanJSONRequestBody = ActionPlan

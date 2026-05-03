@@ -165,6 +165,62 @@ test("Project + Bead + Job + Approval entity schemas compile against the §4/§5
   expect(approval.source).toBe("hoopoe_policy");
 });
 
+test("WsEventEnvelope + WsHeartbeat + WsGap accept the §2.6 wire shapes", () => {
+  const envelope: import("./index.ts").WsEventEnvelope = {
+    eventId: "evt_01HXK...",
+    schemaVersion: 1,
+    channel: "project:proj_01",
+    type: "bead.changed",
+    sequence: 183,
+    time: "2026-05-04T00:00:00Z",
+    actor: { kind: "agent", id: "ag_123" },
+    causationId: "cmd_01HXK...",
+    correlationId: "swarm_01HXK...",
+    data: { beadId: "hp-r3i", from: "open", to: "in_progress" },
+  };
+  expect(envelope.sequence).toBe(183);
+
+  const hb: import("./index.ts").WsHeartbeat = {
+    channel: "_system",
+    type: "heartbeat",
+    sequence: 9821,
+    time: "2026-05-04T00:00:00Z",
+  };
+  expect(hb.channel).toBe("_system");
+
+  const gap: import("./index.ts").WsGap = {
+    channel: "project:proj_01",
+    type: "_gap",
+    from: 120,
+    to: 183,
+    repair: "replayEvents",
+  };
+  expect(gap.repair).toBe("replayEvents");
+});
+
+test("ActionPlan with one git.push_branch action narrows correctly (§8.3.1)", () => {
+  const plan: import("./index.ts").ActionPlan = {
+    schemaVersion: 1,
+    jobId: "tend-swarm",
+    runId: "trun_01HXK...",
+    summary: "push agent ag_7's branch after passing tests",
+    evidenceRefs: ["det_01", "pane_log:ag_7:offsets:1200-1550"],
+    actions: [
+      {
+        kind: "git.push_branch",
+        target: { projectId: "proj_01", branch: "feat/ag_7-bead-142" },
+        args: { expectedSha: "abc123" },
+        idempotencyKey: "tend-swarm:proj_01:push:abc123:2026-05-04",
+        preconditions: ["branch exists at expectedSha"],
+        postconditions: ["origin contains expectedSha"],
+      },
+    ],
+    riskClass: "medium",
+    requiresApproval: false,
+  };
+  expect(plan.actions[0]?.kind).toBe("git.push_branch");
+});
+
 test("CompatibilityReport embeds CapabilityRegistry + structured MigrationState", () => {
   const report: CompatibilityReport = {
     schemaVersion: 1,

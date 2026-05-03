@@ -1,0 +1,237 @@
+# tending-actions.yaml — canonical action set for tending agents (§8.3.1).
+#
+# This file is authoritative for the closed list of action `kind`s. The
+# `ActionKind` enum in openapi.yaml mirrors this list; the daemon rejects any
+# ActionPlan whose `kind` is outside what's defined here. Adding a new kind is
+# a deliberate spec change that lands in BOTH files in the same commit.
+#
+# Per §8.3.1: the daemon (not the model) is the executor. For each action it:
+#   1. validates the `kind` against this list,
+#   2. checks capability availability (§2.8),
+#   3. acquires declared resource locks,
+#   4. evaluates policy + approval rules (§5.3),
+#   5. verifies preconditions against canonical state,
+#   6. dry-runs where possible,
+#   7. executes through typed RPCs,
+#   8. re-reads canonical state to verify postconditions.
+#
+# `target` and `args` schemas are per-kind. They live below as JSON Schema
+# fragments (Draft 2020-12 superset). The daemon validates request payloads
+# against the matching schema before queueing.
+#
+# Every action records `idempotencyKey` (stable across retries) so the queue
+# can dedupe. `riskClass` follows the ApprovalRiskClass enum.
+
+schemaVersion: 1
+mirrorsOpenapiSchema: ActionKind
+mirrorsOpenapiYaml: ./openapi.yaml
+
+actions:
+  agent.ask_status:
+    description: |
+      Send a non-mutating "what's your status?" prompt to a tending-tracked
+      agent. Triggered when a pre-script detects an agent has been silent
+      past its no-output threshold but the pane is still alive.
+    riskClass: low
+    requiresApprovalDefault: false
+    target:
+      type: object
+      required: [agentId]
+      properties:
+        agentId: { type: string }
+    args:
+      type: object
+      properties:
+        prompt: { type: string }
+
+  agent.send_marching_orders:
+    description: |
+      Replace the marching-orders prompt buffer for an agent. Mutating;
+      used by tend-swarm when an agent picks up a stale or no-longer-valid
+      bead, or to nudge an idle agent to claim ready work.
+    riskClass: medium
+    requiresApprovalDefault: false
+    target:
+      type: object
+      required: [agentId]
+      properties:
+        agentId: { type: string }
+    args:
+      type: object
+      required: [marchingOrdersBody]
+      properties:
+        marchingOrdersBody: { type: string }
+        forceOverwrite: { type: boolean, default: false }
+
+  agent.pause:
+    description: |
+      Pause an agent's tending eligibility. The agent stays alive in NTM
+      but tending pre-scripts ignore it. Used to quiet a noisy
+      duplicate-claimer pending operator review.
+    riskClass: low
+    requiresApprovalDefault: false
+    target:
+      type: object
+      required: [agentId]
+      properties:
+        agentId: { type: string }
+    args:
+      type: object
+      properties:
+        reason: { type: string }
+        until: { type: string, format: date-time }
+
+  agent.kill_wedged_process:
+    description: |
+      SIGTERM → grace → SIGKILL the agent's worker process group when the
+      pane is responsive but the underlying CLI is wedged (rate-limited,
+      hung TUI, etc.). Postcondition verifies the process group is gone
+      and the bead/reservation state was handled per policy.
+    riskClass: high
+    requiresApprovalDefault: true
+    target:
+      type: object
+      required: [agentId]
+      properties:
+        agentId: { type: string }
+    args:
+      type: object
+      properties:
+        graceSeconds: { type: integer, minimum: 0, maximum: 60, default: 5 }
+        reason: { type: string }
+
+  reservation.force_release:
+    description: |
+      Force-release an Agent Mail file reservation when the holding agent
+      is verifiably gone. Postcondition verifies Agent Mail no longer
+      reports the reservation AND that a release notice was posted in the
+      bead's thread.
+    riskClass: high
+    requiresApprovalDefault: true
+    target:
+      type: object
+      required: [reservationId]
+      properties:
+        reservationId: { type: string }
+    args:
+      type: object
+      properties:
+        reason: { type: string }
+        notifyHoldingAgent: { type: boolean, default: true }
+
+  caam.switch_account:
+    description: |
+      Switch a CAAM-managed account for a specific agent (e.g., rotate
+      Claude Max → Codex when Claude is rate-limited). Postcondition
+      verifies CAAM reports the target account AND the agent's pane
+      resumes producing output within a bounded window.
+    riskClass: medium
+    requiresApprovalDefault: false
+    target:
+      type: object
+      required: [agentId, targetAccountId]
+      properties:
+        agentId: { type: string }
+        targetAccountId: { type: string }
+    args:
+      type: object
+      properties:
+        reason: { type: string }
+
+  casr.resume_session:
+    description: |
+      Resume a previously-suspended agent session via CASR (Cross-Agent
+      Session Resumer). Used to bring back an agent the operator had
+      shelved earlier in the run.
+    riskClass: low
+    requiresApprovalDefault: false
+    target:
+      type: object
+      required: [sessionId]
+      properties:
+        sessionId: { type: string }
+    args:
+      type: object
+      properties:
+        reason: { type: string }
+
+  git.push_branch:
+    description: |
+      Push the bead's branch to origin via the daemon's typed git RPC.
+      Postcondition verifies origin's target ref contains the expected
+      commit SHA (NEVER trust git push's stdout — re-read origin).
+    riskClass: medium
+    requiresApprovalDefault: false
+    target:
+      type: object
+      required: [projectId, branch]
+      properties:
+        projectId: { type: string }
+        branch: { type: string }
+    args:
+      type: object
+      required: [expectedSha]
+      properties:
+        expectedSha: { type: string, description: 'Local HEAD that must land on origin.' }
+        force: { type: boolean, default: false }
+
+  swarm.halt:
+    description: |
+      Halt a swarm session — interrupts every agent in the session, pauses
+      the build queue, and records the halt as an audit event. Used by
+      review-flip and emergency-stop flows.
+    riskClass: high
+    requiresApprovalDefault: true
+    target:
+      type: object
+      required: [swarmId]
+      properties:
+        swarmId: { type: string }
+    args:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string }
+
+  review.propose_flip:
+    description: |
+      Propose flipping a project from `swarm_running` into
+      `hardening_rounds`. Creates a Hoopoe-policy approval; the operator
+      decides via the Approvals queue. Approval triggers the
+      hardening-flip orchestration (hp-tu1l).
+    riskClass: medium
+    requiresApprovalDefault: true
+    target:
+      type: object
+      required: [projectId, swarmId]
+      properties:
+        projectId: { type: string }
+        swarmId: { type: string }
+    args:
+      type: object
+      properties:
+        rationale: { type: string }
+        readyBeadCount: { type: integer, minimum: 0 }
+
+  bead.create_blocker:
+    description: |
+      Create a new bead that blocks the source bead — used when tending
+      detects a problem too large for the current bead to absorb. The new
+      bead is auto-linked. Postcondition verifies br contains the new
+      bead and the dependency edge.
+    riskClass: low
+    requiresApprovalDefault: false
+    target:
+      type: object
+      required: [projectId, sourceBeadId]
+      properties:
+        projectId: { type: string }
+        sourceBeadId: { type: string }
+    args:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string }
+        description: { type: string }
+        priority: { type: integer, minimum: 0, maximum: 4, default: 1 }
+        issueType: { enum: [task, bug, feature, epic, question, docs] }

@@ -317,6 +317,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/events/replay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Replay events from a sequence cursor for one channel.
+         * @description Used by the desktop on reconnect (after laptop sleep, daemon
+         *     restart, tunnel re-establishment, or a `_gap` notice on the WS).
+         *     Returns events strictly after `sinceSequence` up to the daemon's
+         *     retention horizon. Past the horizon, the desktop falls back to
+         *     the persisted-log offset reported in the `_gap` notice.
+         */
+        get: operations["replayEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{projectId}/tending/actionplans": {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Stable client-generated key (ULID/UUID) for safe retries. The daemon
+                 *     dedupes by key within a sliding window (default 24h) and replays the
+                 *     original status + body. Required on retryable writes; clients that omit
+                 *     it on a write that turns out to be retryable will receive a
+                 *     `precondition-failed` problem on the second attempt.
+                 */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description Project identifier (slug or ULID). */
+                projectId: components["parameters"]["ProjectIdPath"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit a typed ActionPlan from a tending agent (§8.3.1).
+         * @description The daemon validates `actions[].kind` against the closed action set
+         *     in `tending-actions.yaml`, evaluates policy + approval rules, and
+         *     either accepts (returning a Job) or rejects with a `problem+json`
+         *     whose `code` indicates the failure (e.g.,
+         *     `tending.action_kind_unknown`, `approval.required`).
+         */
+        post: operations["submitActionPlan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/projects/{projectId}/approvals/{approvalId}/deny": {
         parameters: {
             query?: never;
@@ -980,6 +1040,178 @@ export interface components {
             items: components["schemas"]["Approval"][];
             page: components["schemas"]["PageMeta"];
         };
+        /**
+         * @description Client → daemon. Subscribe to one or more channels with optional
+         *     per-channel cursors (last-seen sequence). The daemon replays from
+         *     the cursor (subject to retention) before streaming live events.
+         */
+        WsSubscribeOp: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            op: "subscribe";
+            /**
+             * @description Channel selectors, e.g., `project:proj_01`, `swarm:sw_01`,
+             *     `activity:proj_01`, `_system`.
+             */
+            channels: string[];
+            /**
+             * @description Map of channel → last-known sequence number. Daemon resumes after
+             *     (cursor + 1). Channels absent from the map start from "live now."
+             */
+            cursors?: {
+                [key: string]: number;
+            };
+        };
+        WsUnsubscribeOp: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            op: "unsubscribe";
+            channels: string[];
+        };
+        /** @description Discriminated union of client → daemon op messages. */
+        WsClientOp: components["schemas"]["WsSubscribeOp"] | components["schemas"]["WsUnsubscribeOp"];
+        /**
+         * @description Daemon → client envelope for every project / swarm / activity event.
+         *     `sequence` is monotonic per `channel`; clients persist the last seen
+         *     and pass it back on reconnect for replay.
+         */
+        WsEventEnvelope: {
+            /** @description ULID for the event. */
+            eventId: string;
+            schemaVersion: components["schemas"]["SchemaVersion"];
+            /** @description e.g., `project:proj_01`, `swarm:sw_01`. */
+            channel: string;
+            /**
+             * @description Channel-scoped event type (e.g., `bead.changed`, `agent.idle`,
+             *     `job.status.changed`). The daemon publishes the per-channel
+             *     registry; clients tolerate unknown types (forward-compat).
+             */
+            type: string;
+            /** @description Monotonic per channel. */
+            sequence: number;
+            /** Format: date-time */
+            time: string;
+            actor?: components["schemas"]["Actor"];
+            /** @description ID of the command/action that caused this event. */
+            causationId?: string;
+            /** @description Cross-event handle (e.g., swarm session ID). */
+            correlationId?: string;
+            /**
+             * @description Event-type-specific payload. Schema per `type`; consumers should
+             *     switch on `type` and validate against the published per-type schema.
+             *     Unknown types should not fail-closed (forward-compat).
+             */
+            data?: unknown;
+        };
+        /**
+         * @description Daemon-emitted liveness ping on the `_system` channel. Clients use
+         *     this to detect tunnel/transport stalls.
+         */
+        WsHeartbeat: {
+            /** @constant */
+            channel: "_system";
+            /** @constant */
+            type: "heartbeat";
+            sequence: number;
+            /** Format: date-time */
+            time: string;
+        };
+        /**
+         * @description Daemon-emitted gap notice when a slow client falls past the in-memory
+         *     ring. Includes a persisted-log offset hint so the client fetches the
+         *     missing range from disk via `GET /v1/events/replay`.
+         */
+        WsGap: {
+            channel: string;
+            /** @constant */
+            type: "_gap";
+            from: number;
+            to: number;
+            /** @enum {string} */
+            repair: "replayEvents";
+        };
+        /**
+         * @description Soft-lag warning emitted before a `_gap`. Allows clients to drain
+         *     their queue before the daemon escalates to a gap notice.
+         */
+        WsLag: {
+            channel: string;
+            /** @constant */
+            type: "_lag";
+            sequence: number;
+            /** Format: date-time */
+            time: string;
+        };
+        /** @description Discriminated union of daemon → client messages. */
+        WsServerMessage: components["schemas"]["WsEventEnvelope"] | components["schemas"]["WsHeartbeat"] | components["schemas"]["WsGap"] | components["schemas"]["WsLag"];
+        EventReplayResponse: {
+            channel: string;
+            events: components["schemas"]["WsEventEnvelope"][];
+            /** @description Highest sequence currently retained for this channel. */
+            latestSequence: number;
+            /**
+             * @description Lowest sequence still available via replay. Sequences below this
+             *     are reachable only via the persisted-log offset on disk.
+             */
+            retentionHorizon?: number;
+            /** @description True iff `limit` capped the result (more events available). */
+            truncated?: boolean;
+        };
+        /**
+         * @description Closed enum of allowed tending action types per §8.3.1. Mirrored in
+         *     `tending-actions.yaml`; the daemon rejects any ActionPlan whose
+         *     action `kind` is outside this set. Adding a new kind is a deliberate
+         *     spec bump that lands in both places.
+         * @enum {string}
+         */
+        ActionKind: "agent.ask_status" | "agent.send_marching_orders" | "agent.pause" | "agent.kill_wedged_process" | "reservation.force_release" | "caam.switch_account" | "casr.resume_session" | "git.push_branch" | "swarm.halt" | "review.propose_flip" | "bead.create_blocker";
+        ActionRiskClass: components["schemas"]["ApprovalRiskClass"];
+        /**
+         * @description One typed action inside an ActionPlan. The `kind` is closed; `target`
+         *     and `args` shapes are per-kind (validated by the daemon against the
+         *     action's published schema in tending-actions.yaml).
+         */
+        Action: {
+            kind: components["schemas"]["ActionKind"];
+            /** @description Per-kind target keys (e.g., {agentId}, {branch}). */
+            target: {
+                [key: string]: unknown;
+            };
+            /** @description Per-kind args; opaque at this layer. */
+            args?: {
+                [key: string]: unknown;
+            };
+            /** @description Stable key used to dedupe repeated executions. */
+            idempotencyKey: string;
+            preconditions?: string[];
+            postconditions?: string[];
+        };
+        /**
+         * @description What a tending agent emits to mutate state. The daemon (not the
+         *     model) executes; for each action it verifies preconditions, acquires
+         *     locks, evaluates policy + approvals, dry-runs where possible,
+         *     executes through typed RPCs, then re-reads canonical state to
+         *     verify postconditions.
+         */
+        ActionPlan: {
+            schemaVersion: components["schemas"]["SchemaVersion"];
+            /** @description Owning tending job ID. */
+            jobId: string;
+            /** @description Per-execution run ID (ULID). */
+            runId: string;
+            /** @description One-sentence rationale shown in the Activity panel. */
+            summary: string;
+            /** @description Opaque IDs into audit / pane logs / reservations / detections. */
+            evidenceRefs?: string[];
+            actions: components["schemas"]["Action"][];
+            riskClass: components["schemas"]["ApprovalRiskClass"];
+            /** @description True iff at least one action requires human approval. */
+            requiresApproval?: boolean;
+        };
     };
     responses: {
         /** @description RFC 7807 problem+json error envelope. */
@@ -1378,6 +1610,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Approval"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    replayEvents: {
+        parameters: {
+            query: {
+                /** @description Channel selector (e.g., `project:proj_01`). */
+                channel: string;
+                /** @description Last-known sequence number; replay returns sequence > this. */
+                sinceSequence: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Replayed event window. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventReplayResponse"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    submitActionPlan: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Stable client-generated key (ULID/UUID) for safe retries. The daemon
+                 *     dedupes by key within a sliding window (default 24h) and replays the
+                 *     original status + body. Required on retryable writes; clients that omit
+                 *     it on a write that turns out to be retryable will receive a
+                 *     `precondition-failed` problem on the second attempt.
+                 */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description Project identifier (slug or ULID). */
+                projectId: components["parameters"]["ProjectIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActionPlan"];
+            };
+        };
+        responses: {
+            /** @description ActionPlan accepted; Job tracks execution. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Job"];
                 };
             };
             default: components["responses"]["Problem"];

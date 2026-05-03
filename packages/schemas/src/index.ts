@@ -68,6 +68,22 @@ export type ApprovalScope = components["schemas"]["ApprovalScope"];
 export type ApprovalSource = components["schemas"]["ApprovalSource"];
 export type CommandSpec = components["schemas"]["CommandSpec"];
 
+// WS event stream (§2.6)
+export type WsEventEnvelope = components["schemas"]["WsEventEnvelope"];
+export type WsClientOp = components["schemas"]["WsClientOp"];
+export type WsServerMessage = components["schemas"]["WsServerMessage"];
+export type WsSubscribeOp = components["schemas"]["WsSubscribeOp"];
+export type WsUnsubscribeOp = components["schemas"]["WsUnsubscribeOp"];
+export type WsHeartbeat = components["schemas"]["WsHeartbeat"];
+export type WsGap = components["schemas"]["WsGap"];
+export type WsLag = components["schemas"]["WsLag"];
+export type EventReplayResponse = components["schemas"]["EventReplayResponse"];
+
+// ActionPlan (§8.3.1) — closed action set lives in tending-actions.yaml
+export type ActionPlan = components["schemas"]["ActionPlan"];
+export type Action = components["schemas"]["Action"];
+export type ActionKind = components["schemas"]["ActionKind"];
+
 /** Public package identity. Used in audit + diagnostics. */
 export const HOOPOE_SCHEMAS_PACKAGE_NAME = "@hoopoe/schemas";
 
