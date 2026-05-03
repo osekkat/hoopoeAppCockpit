@@ -63,8 +63,61 @@ export class IpcCommandUnavailableError extends Error {
   }
 }
 
+/**
+ * Security-event payload emitted whenever the registry rejects a command —
+ * either because the id isn't in the contract allowlist (`channel-not-allowlisted`),
+ * an unknown command was dispatched (`command-not-registered`), or the
+ * when-clause context guard failed (`command-not-eligible`).
+ *
+ * Per hp-rflj: "renderer attempts privileged op → preload rejects + logs the
+ * attempt as a security event." The preload boundary is the first line of
+ * defense; this is the second line (the registry sees what got past the
+ * preload) and the one that has access to a logger / audit sink.
+ *
+ * Higher-level wiring (BackendLifecycle / main bootstrap) attaches a callback
+ * that pipes these events into the structured logger at warn level with
+ * `subsystem: "ipc.security"`.
+ */
+export type IpcSecurityEventKind =
+  | "channel-not-allowlisted"
+  | "command-not-registered"
+  | "command-not-eligible";
+
+export interface IpcSecurityEvent {
+  readonly kind: IpcSecurityEventKind;
+  readonly commandId: string;
+  readonly missingContextKeys?: readonly string[];
+  readonly stage: "register" | "dispatch";
+}
+
+export type IpcSecurityEventSink = (event: IpcSecurityEvent) => void;
+
+export interface IpcRegistryOptions {
+  /** Called whenever a registration or dispatch is refused. The sink MUST
+   *  NOT throw — it is invoked just before the registry rethrows the error
+   *  to the caller. Wire it to a structured logger in production; tests
+   *  inject a spy. */
+  readonly onSecurityEvent?: IpcSecurityEventSink;
+}
+
 export class IpcRegistry {
   private readonly registrations = new Map<string, IpcCommandRegistration<unknown, unknown>>();
+  private readonly onSecurityEvent: IpcSecurityEventSink | undefined;
+
+  constructor(options: IpcRegistryOptions = {}) {
+    this.onSecurityEvent = options.onSecurityEvent;
+  }
+
+  private emitSecurityEvent(event: IpcSecurityEvent): void {
+    if (!this.onSecurityEvent) return;
+    try {
+      this.onSecurityEvent(event);
+    } catch {
+      // Defensive: a sink that throws cannot block the throw the caller
+      // is expecting. Swallow — production wiring uses a logger that
+      // doesn't throw.
+    }
+  }
 
   register<Input, Output>(
     registration: IpcCommandRegistration<Input, Output>,
@@ -74,6 +127,11 @@ export class IpcRegistry {
     // prefixes (mock-flywheel.*, internal.*). Adding a new command is a
     // deliberate edit of `src/shared/ipc-contract.ts`.
     if (!isAllowedRegistryCommandId(registration.id)) {
+      this.emitSecurityEvent({
+        kind: "channel-not-allowlisted",
+        commandId: registration.id,
+        stage: "register",
+      });
       throw new IpcContractError({ kind: "channel", attempted: registration.id });
     }
     if (this.registrations.has(registration.id)) {
@@ -115,15 +173,31 @@ export class IpcRegistry {
     // a non-allowlisted ID (shouldn't, since `register()` blocks it), the
     // dispatch path independently checks. Two locks > one lock.
     if (!isAllowedRegistryCommandId(commandId)) {
+      this.emitSecurityEvent({
+        kind: "channel-not-allowlisted",
+        commandId,
+        stage: "dispatch",
+      });
       throw new IpcContractError({ kind: "channel", attempted: commandId });
     }
     const registration = this.registrations.get(commandId);
     if (!registration) {
+      this.emitSecurityEvent({
+        kind: "command-not-registered",
+        commandId,
+        stage: "dispatch",
+      });
       throw new UnknownIpcCommandError(commandId);
     }
     const whenKeys = registration.whenContextKeys ?? [];
     const missing = whenKeys.filter((key) => context[key] !== true);
     if (missing.length > 0) {
+      this.emitSecurityEvent({
+        kind: "command-not-eligible",
+        commandId,
+        missingContextKeys: missing,
+        stage: "dispatch",
+      });
       throw new IpcCommandUnavailableError(commandId, missing);
     }
     const handler = registration.handler as IpcCommandHandler<Input, Output>;
