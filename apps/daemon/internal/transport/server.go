@@ -9,22 +9,24 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/api"
 	jobstore "github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/jobs"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/security"
 )
 
 type Config struct {
-	Build       api.BuildInfo
-	Events      *api.EventHub
-	Jobs        jobstore.Reader
-	Logger      api.Logger
-	Redactor    api.Redactor
-	WSValidator api.WebSocketTokenValidator
-	Stdout      io.Writer
-	Stderr      io.Writer
+	Build               api.BuildInfo
+	Events              *api.EventHub
+	Jobs                jobstore.Reader
+	Logger              api.Logger
+	Redactor            api.Redactor
+	WSValidator         api.WebSocketTokenValidator
+	PublicBindConfirmer security.PublicBindConfirmer
+	Now                 func() time.Time
+	Stdout              io.Writer
+	Stderr              io.Writer
 }
 
 func Run(ctx context.Context, args []string, cfg Config) error {
@@ -35,17 +37,30 @@ func Run(ctx context.Context, args []string, cfg Config) error {
 
 	addr := flags.String("addr", "127.0.0.1:0", "daemon listen address")
 	allowPublicBind := flags.Bool("allow-public-bind", false, "allow non-loopback listen addresses")
+	publicBindToken := flags.String("public-bind-confirmation-token", "", "runtime confirmation token required with -allow-public-bind for public listen addresses")
 	wsToken := flags.String("dev-ws-token", "", "development WebSocket token; empty accepts any token until auth wiring lands")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
-	if err := ValidateListenAddress(*addr, *allowPublicBind); err != nil {
+
+	now := cfg.Now
+	if now == nil {
+		now = time.Now
+	}
+	decision, err := resolveListenDecision(ctx, listenDecisionRequest{
+		Address:            *addr,
+		ConfigAllowsPublic: *allowPublicBind,
+		ConfirmationToken:  *publicBindToken,
+		Confirmer:          cfg.PublicBindConfirmer,
+		Logger:             cfg.Logger,
+	})
+	if err != nil {
 		return err
 	}
 
-	listener, err := net.Listen("tcp", *addr)
+	listener, err := net.Listen("tcp", decision.EffectiveAddress)
 	if err != nil {
-		return fmt.Errorf("listen %s: %w", *addr, err)
+		return fmt.Errorf("listen %s: %w", decision.EffectiveAddress, err)
 	}
 	defer listener.Close()
 
@@ -60,7 +75,9 @@ func Run(ctx context.Context, args []string, cfg Config) error {
 		Logger:      cfg.Logger,
 		Redactor:    cfg.Redactor,
 		WSValidator: wsValidator,
+		Now:         now,
 	})
+	router = api.WithBindSafetyReport(router, security.NewBindReport(decision, now()))
 
 	stdout := cfg.Stdout
 	if stdout == nil {
@@ -90,18 +107,56 @@ func Run(ctx context.Context, args []string, cfg Config) error {
 }
 
 func ValidateListenAddress(addr string, allowPublicBind bool) error {
-	host, _, err := net.SplitHostPort(addr)
+	decision, err := resolveListenDecision(context.Background(), listenDecisionRequest{
+		Address:            addr,
+		ConfigAllowsPublic: allowPublicBind,
+	})
 	if err != nil {
-		return fmt.Errorf("listen address must be host:port: %w", err)
+		return err
 	}
-	if host == "" {
-		host = "0.0.0.0"
+	if decision.PublicExposure {
+		return fmt.Errorf("%w: %s", security.ErrPublicBindNotConfirmed, decision.RequestedAddress)
 	}
-	if allowPublicBind {
-		return nil
+	return nil
+}
+
+type listenDecisionRequest struct {
+	Address            string
+	ConfigAllowsPublic bool
+	ConfirmationToken  string
+	Confirmer          security.PublicBindConfirmer
+	Logger             api.Logger
+}
+
+func resolveListenDecision(ctx context.Context, req listenDecisionRequest) (security.BindDecision, error) {
+	decision, err := security.EvaluateBind(ctx, security.BindRequest{
+		Address:            req.Address,
+		ConfigAllowsPublic: req.ConfigAllowsPublic,
+		ConfirmationToken:  req.ConfirmationToken,
+		Confirmer:          req.Confirmer,
+	})
+	if err != nil {
+		return security.BindDecision{}, err
 	}
-	if host == "localhost" || strings.HasPrefix(host, "127.") || host == "::1" {
-		return nil
+	logBindWarning(ctx, req.Logger, decision)
+	return decision, nil
+}
+
+func logBindWarning(ctx context.Context, logger api.Logger, decision security.BindDecision) {
+	if logger == nil || decision.Warning == nil {
+		return
 	}
-	return fmt.Errorf("refusing public bind %q without -allow-public-bind", addr)
+	logger.Info(ctx, "security_public_bind_warning", map[string]any{
+		"code":                 decision.Warning.Code,
+		"severity":             decision.Warning.Severity,
+		"message":              decision.Warning.Message,
+		"requestedAddress":     decision.RequestedAddress,
+		"effectiveAddress":     decision.EffectiveAddress,
+		"configAllowsPublic":   decision.ConfigAllowsPublic,
+		"runtimeConfirmed":     decision.RuntimeConfirmed,
+		"publicExposure":       decision.PublicExposure,
+		"tailnet":              decision.Tailnet,
+		"loopback":             decision.Loopback,
+		"diagnosticsWarningId": decision.Warning.DismissalID,
+	})
 }
