@@ -1,15 +1,490 @@
 openapi: 3.1.0
 info:
   title: Hoopoe Daemon API
-  version: 0.0.0-pre
+  version: 0.1.0
   description: |
-    Placeholder OpenAPI definition. The seed contract from `plan.md §2.6`
-    (`/v1/health`, `/v1/version`, `/v1/compatibility`, `/v1/capabilities`,
-    `/v1/auth/*`, `/v1/events/replay`, `/v1/jobs`, ...) lands in hp-r3i
-    (Phase 2.5). Codegen for the TS client and Go types is wired into the
-    `bun run build` task at that time so the daemon and desktop never drift.
+    Hoopoe daemon ↔ desktop contract per `plan.md §2.6`.
+
+    Conventions (declared once here, applied across endpoints):
+
+    - **Errors** use RFC 7807 `application/problem+json` (`#/components/schemas/Problem`).
+    - **Idempotency** for retryable writes: clients pass `Idempotency-Key` (a stable
+      ULID/UUID); the daemon dedupes within `IdempotencyKey.windowSeconds` and replays
+      the original response on retry. Required on every non-GET that mutates state.
+    - **Schema versions** every persisted entity declares `schemaVersion`. The daemon
+      runs migrations at startup with backup + rollback (`plan.md §10.3`).
+    - **Capability gating** every UI feature is gated on capability IDs reported by
+      `/v1/capabilities` (§2.8). A capability that parses but cannot satisfy a
+      contract test is `degraded`, not `ok`.
+    - **WS events** the WebSocket envelope is documented as JSON Schema in
+      `events/ws-envelope.schema.json` (sidecar; OpenAPI 3.1 cannot model the
+      event-stream shape adequately).
+    - **Source of truth** this spec is authoritative; both the TS client
+      (`packages/schemas/ts/`) and the Go types (`packages/schemas/go/`) are
+      generated from it. Hand-maintained duplicate shapes in `apps/desktop` or
+      `apps/daemon` are forbidden (`plan.md §3 'Shared'`).
+  license:
+    name: UNLICENSED
 servers:
   - url: http://127.0.0.1:0
-    description: Local SSH-tunneled daemon (placeholder)
-paths: {}
-components: {}
+    description: SSH-tunnel-forwarded local port (steady state)
+  - url: http://127.0.0.1:8765
+    description: Demo / Mock Flywheel Mode (development only)
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: System
+    description: Health, version, compatibility, capability gating.
+  - name: Auth
+    description: Pairing → bearer → WS-token chain (§5.2).
+  - name: Events
+    description: Replayable event stream (HTTP + SSE + WebSocket) with sequence cursors.
+  - name: Jobs
+    description: Long-running job registry (§2.7).
+  - name: Bootstrap
+    description: VPS onboarding wizard surfaces (§6).
+  - name: Projects
+    description: Project registry, activation, gate-readiness.
+  - name: Git
+    description: Read-mostly git surfaces; writes (push) are typed RPCs.
+  - name: Plans
+    description: Planning workspace artifacts.
+  - name: Beads
+    description: Beads view + conversion + polish runs (read via `br --json`).
+  - name: Swarm
+    description: NTM-backed swarm sessions, agent commands, pane streams.
+  - name: Mail
+    description: Agent Mail messages, threads, file reservations.
+  - name: Health
+    description: Code-health snapshots and per-file metrics.
+  - name: Reviews
+    description: Review rounds + finding ledger.
+  - name: Tending
+    description: Scheduled jobs (cron + interval + event + on-demand).
+  - name: Approvals
+    description: Approval queue (Hoopoe-policy + ingested DCG verdicts).
+
+paths:
+  /v1/health:
+    get:
+      tags: [System]
+      operationId: getHealth
+      summary: Liveness + readiness probe.
+      description: |
+        Used by the desktop FSM and by load balancers / SSH-tunnel keepalives.
+        Always returns 200 if the daemon process can serve HTTP. Reports tool /
+        adapter health *without* triggering full capability checks; for capability
+        truth use `/v1/capabilities`.
+      security: []
+      responses:
+        '200':
+          description: Daemon is up.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HealthResponse' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /v1/version:
+    get:
+      tags: [System]
+      operationId: getVersion
+      summary: Daemon build version, commit, and build metadata.
+      description: |
+        Reported in `compatibility` + included on every error envelope so a renderer
+        can correlate failures with a specific binary. Includes signing/SBOM digests
+        recorded at install time (`plan.md §11`).
+      security: []
+      responses:
+        '200':
+          description: Version info.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VersionResponse' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /v1/compatibility:
+    get:
+      tags: [System]
+      operationId: getCompatibility
+      summary: Daemon API version, minimum desktop version, event schema versions, migration state.
+      description: |
+        Authoritative source for "can this desktop build talk to this daemon build."
+        Returns `migrationState` so the desktop can refuse writes during a daemon
+        migration (§10.3). Embeds a capability snapshot at the same point-in-time so
+        clients can correlate API-version skew with capability availability without
+        a second round-trip.
+      security: []
+      responses:
+        '200':
+          description: Compatibility info.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CompatibilityResponse' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /v1/capabilities:
+    get:
+      tags: [System]
+      operationId: getCapabilities
+      summary: Capability registry snapshot — every adapter, every capability ID.
+      description: |
+        Per `plan.md §2.8`: the desktop never assumes a feature exists because a tool
+        is installed. UI buttons, stage routes, and tending jobs all gate on the IDs
+        returned here. A `degraded` capability is rendered with its `fallback`
+        explanation; a `missing` capability is rendered as unavailable + diagnostic.
+
+        Adapter contract tests (§18.3) assert capabilities, not just parser success.
+      parameters:
+        - name: tool
+          in: query
+          required: false
+          description: Filter to a single tool (e.g., `ntm`, `br`, `bv`).
+          schema: { type: string }
+      responses:
+        '200':
+          description: Capability snapshot.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CapabilitiesResponse' }
+        default: { $ref: '#/components/responses/Problem' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: HMAC-signed session token (`plan.md §5.2`)
+      description: |
+        30-day bearer minted by exchanging a single-use pairing token at
+        `/v1/auth/bootstrap/bearer`. Stored on the desktop via Electron
+        `safeStorage.encryptString`. WebSocket connects use a 5-min `wsToken`
+        from `/v1/auth/ws-token` instead.
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: |
+        Stable client-generated key (ULID/UUID) for safe retries. The daemon
+        dedupes by key within a sliding window (default 24h) and replays the
+        original status + body. Required on retryable writes; clients that omit
+        it on a write that turns out to be retryable will receive a
+        `precondition-failed` problem on the second attempt.
+      schema:
+        type: string
+        minLength: 16
+        maxLength: 128
+
+    RequestId:
+      name: X-Request-Id
+      in: header
+      required: false
+      description: Client-supplied request ID; echoed on responses + audit entries.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+
+  responses:
+    Problem:
+      description: RFC 7807 problem+json error envelope.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+  schemas:
+    # ─────────────────────────────────────────────────────────────────────────
+    # Foundational shapes
+    # ─────────────────────────────────────────────────────────────────────────
+
+    Problem:
+      type: object
+      description: |
+        RFC 7807 problem+json. `type` is a daemon-stable URN; `code` is a short
+        machine-readable identifier (e.g., `auth.token_expired`,
+        `capability.missing`). `instance` is a per-incident URI for support
+        deep-links into Diagnostics.
+      required: [type, title, status, code]
+      properties:
+        type:
+          type: string
+          format: uri-reference
+          description: Stable problem-type URN (e.g., `urn:hoopoe:auth/token-expired`).
+        title:
+          type: string
+          description: Short, human-readable summary.
+        status:
+          type: integer
+          minimum: 100
+          maximum: 599
+          description: Mirrors HTTP status.
+        code:
+          type: string
+          description: Machine-readable error code (dot-separated namespace).
+          pattern: '^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$'
+        detail:
+          type: string
+          description: Human-readable explanation; redacted for sensitive fields.
+        instance:
+          type: string
+          format: uri-reference
+          description: Per-incident URI; `urn:hoopoe:incident:<id>` is canonical.
+        requestId:
+          type: string
+          description: Echoes `X-Request-Id` if provided.
+        correlationId:
+          type: string
+          description: Opaque correlation handle (matches audit-log entries).
+        retryable:
+          type: boolean
+          description: True if the client may safely retry with the same Idempotency-Key.
+        retryAfterSeconds:
+          type: integer
+          minimum: 0
+          description: Optional hint for `Retry-After`.
+        capability:
+          type: string
+          description: |
+            For `capability.missing` / `capability.degraded` problems, the
+            capability ID that the operation required.
+        approvalId:
+          type: string
+          description: For `approval.required` problems, the queued approval ID.
+
+    SchemaVersion:
+      type: integer
+      minimum: 1
+      description: Monotonically increasing schema version for a persisted shape.
+
+    Cursor:
+      type: string
+      description: |
+        Opaque pagination cursor. Use the `next` cursor from a list response
+        verbatim; do not parse it. Cursors are stable for ≥24h.
+
+    PageMeta:
+      type: object
+      required: [hasMore]
+      properties:
+        hasMore: { type: boolean }
+        next: { $ref: '#/components/schemas/Cursor' }
+        total:
+          type: integer
+          description: Optional total count; expensive list endpoints omit this.
+
+    Actor:
+      type: object
+      description: Who initiated an action — used in audit + event envelopes.
+      required: [kind]
+      properties:
+        kind:
+          type: string
+          enum: [user, agent, scheduler, system, dcg, approval]
+        id:
+          type: string
+          description: Stable identifier within the actor's namespace.
+        displayName:
+          type: string
+          description: Optional UI-only label; never used for authorization.
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # System endpoints
+    # ─────────────────────────────────────────────────────────────────────────
+
+    HealthResponse:
+      type: object
+      required: [status, daemonId, time]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded, draining]
+        daemonId:
+          type: string
+          description: Stable daemon instance ID; changes on reinstall.
+        time:
+          type: string
+          format: date-time
+        uptimeSeconds:
+          type: integer
+          minimum: 0
+        adapters:
+          type: object
+          additionalProperties:
+            type: string
+            enum: [ok, degraded, missing, unknown]
+          description: |
+            Coarse per-tool adapter status (cheap; no full capability check).
+            For authoritative capability gating call `/v1/capabilities`.
+
+    VersionResponse:
+      type: object
+      required: [daemon, schemaVersion]
+      properties:
+        schemaVersion: { $ref: '#/components/schemas/SchemaVersion' }
+        daemon:
+          type: object
+          required: [version]
+          properties:
+            version: { type: string, description: 'Semver of the daemon binary' }
+            commit: { type: string, description: 'Git SHA of the build' }
+            buildTime: { type: string, format: date-time }
+            channel:
+              type: string
+              enum: [stable, nightly, dev]
+            checksum:
+              type: string
+              description: 'Distribution checksum (matches release manifest)'
+            sbomDigest:
+              type: string
+              description: 'SBOM digest recorded at install time (§11)'
+            signingIdentity:
+              type: string
+              description: 'Signer identity (e.g., "Hoopoe v1 Release Key")'
+            attestationUri:
+              type: string
+              format: uri-reference
+
+    CompatibilityResponse:
+      type: object
+      required: [schemaVersion, daemonApiVersion, minDesktopVersion, eventSchemaVersions, migrationState, capabilities]
+      properties:
+        schemaVersion: { $ref: '#/components/schemas/SchemaVersion' }
+        daemonApiVersion:
+          type: string
+          description: Semver of the OpenAPI contract this daemon implements.
+        minDesktopVersion:
+          type: string
+          description: Minimum compatible desktop semver. Older desktops are warned.
+        eventSchemaVersions:
+          type: object
+          additionalProperties:
+            type: integer
+            minimum: 1
+          description: Per-channel event schemaVersion (channel → schemaVersion int).
+        migrationState:
+          type: string
+          enum: [idle, running, failed, rolled_back]
+          description: |
+            Desktop refuses write actions during `running` and `failed`; shows
+            read-only Diagnostics until `idle` is reported (§11, §10.3).
+        unsupportedClientWarnings:
+          type: array
+          items:
+            type: object
+            required: [code, detail]
+            properties:
+              code:
+                type: string
+                description: e.g., `desktop.below_min_version`
+              detail: { type: string }
+        capabilities:
+          $ref: '#/components/schemas/CapabilitiesResponse'
+          description: Capability snapshot at the same point-in-time.
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Capability registry (§2.8) — coordinated with hp-r33 (PANE 3)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    Capability:
+      type: object
+      description: |
+        One capability slot inside a `ToolCapabilityRegistry`. The map key is the
+        capability ID (e.g., `ntm.sessions.list`); the value is this object.
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded, missing, blocked-by-policy]
+        fallback:
+          type: string
+          description: |
+            Human-readable fallback strategy when status != `ok`. Example:
+            `"tmux capture last"` for `ntm.panes.stream` missing.
+        transport:
+          type: string
+          enum: [websocket, sse, http, stdio, fixture]
+          description: Transport actually being used for this capability when applicable.
+        detail:
+          type: string
+          description: Optional free-text diagnostic; redacted before serialization.
+
+    ToolCapabilityRegistry:
+      type: object
+      required: [tool, version, source, capabilities, lastCheckedAt, fixturesVersion]
+      properties:
+        tool:
+          type: string
+          enum:
+            - ntm
+            - br
+            - bv
+            - agent_mail
+            - git
+            - ru
+            - caam
+            - caut
+            - dcg
+            - casr
+            - pt
+            - srp
+            - sbh
+            - ubs
+            - jsm
+            - jfp
+            - oracle
+            - rch
+            - health_ts
+            - health_py
+            - health_rs
+            - health_go
+            - health_generic
+        version:
+          type: string
+          description: Semver (or vendor version string) of the tool the daemon detected.
+        source:
+          type: string
+          description: |
+            How capabilities were detected. Examples: `"ntm serve"`,
+            `"--robot-* JSON"`, `"CLI"`, `"fixture"`.
+        capabilities:
+          type: object
+          additionalProperties: { $ref: '#/components/schemas/Capability' }
+          description: |
+            Map of capability ID → capability slot. Capability IDs are dotted
+            namespaces (e.g., `ntm.sessions.list`, `bv.robot.triage`). The full
+            list of recognised capability IDs is owned by hp-r33.
+        lastCheckedAt: { type: string, format: date-time }
+        fixturesVersion:
+          type: string
+          description: Phase 0 fixture tag this registry was validated against.
+
+    DegradedModePolicy:
+      type: object
+      description: |
+        Per-feature / per-tending-job degraded-mode contract (§2.8, §8.2). Used to
+        decide whether to block, run read-only, or warn when a required capability
+        is missing.
+      required: [if_missing_required, if_missing_optional, activity_behavior]
+      properties:
+        if_missing_required:
+          type: string
+          enum: [block_job, run_read_only, emit_diagnostic]
+        if_missing_optional:
+          type: string
+          enum: [continue_with_warning, suppress_related_detections]
+        activity_behavior:
+          type: string
+          enum: [silent, diagnostics_only, activity_panel_warning]
+
+    CapabilitiesResponse:
+      type: object
+      required: [schemaVersion, registries, generatedAt]
+      properties:
+        schemaVersion: { $ref: '#/components/schemas/SchemaVersion' }
+        registries:
+          type: array
+          items: { $ref: '#/components/schemas/ToolCapabilityRegistry' }
+        generatedAt: { type: string, format: date-time }
