@@ -1,0 +1,94 @@
+# hp-r3i — codegen drift gate.
+#
+# Runs `bun run --cwd packages/schemas validate` which:
+#   1. Re-runs `openapi-typescript@7.13.0 openapi.yaml` to a temp file and
+#      byte-compares it against `src/generated/openapi.ts`.
+#   2. Re-runs `oapi-codegen@v2.7.0 -config go/cfg.yaml openapi.yaml` to a
+#      temp dir and byte-compares it against `go/schemas.gen.go`.
+#
+# Failure mode: openapi.yaml changed without `bun run --cwd packages/schemas
+# generate` being run (or vice versa). The validator writes a
+# `*.drift` file alongside the committed copy so the diff is inspectable
+# locally and in the failure log.
+#
+# Triggers on changes to `packages/schemas/**` only. The full lint+test
+# matrix in `ci.yml` runs everywhere; this workflow is the focused gate
+# that catches the specific failure mode the schemas package exists to
+# prevent (drift between desktop and daemon).
+
+name: Schemas codegen drift
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "packages/schemas/**"
+      - ".github/workflows/schemas-codegen-drift.yml"
+  pull_request:
+    branches: [master]
+    paths:
+      - "packages/schemas/**"
+      - ".github/workflows/schemas-codegen-drift.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate-codegen:
+    name: TS + Go codegen drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          # Pinned to match `apps/daemon/go.mod` and `packages/schemas/go/go.mod`.
+          # Bump in lock-step with both go.mod files when upgrading.
+          go-version: "1.26"
+          # No go.sum yet for packages/schemas/go (zero deps), so disable cache.
+          cache: false
+
+      - name: Install Bun deps
+        run: bun install --frozen-lockfile
+
+      - name: Validate TS codegen drift
+        run: bun run --cwd packages/schemas validate:ts
+
+      - name: Validate Go codegen drift
+        run: bun run --cwd packages/schemas validate:go
+
+      - name: Schemas typecheck
+        run: bun run --cwd packages/schemas typecheck
+
+      - name: Schemas tests
+        run: bun run --cwd packages/schemas test
+
+      - name: Generated Go module compiles
+        # Sanity: even if drift is clean, the Go output must compile against
+        # its own go.mod. Catches a class of oapi-codegen output bugs that
+        # produce parseable-but-uncompilable Go.
+        run: |
+          cd packages/schemas/go
+          go vet ./...
+          go build ./...
+
+      - name: Surface drift artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: schemas-codegen-drift
+          path: |
+            packages/schemas/src/generated/openapi.ts.drift
+            packages/schemas/go/schemas.gen.go.drift
+          retention-days: 7
+          if-no-files-found: ignore
