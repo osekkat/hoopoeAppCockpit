@@ -10,7 +10,8 @@
       "packages/design-system",
       "packages/fixtures",
       "packages/fixture-replay",
-      "packages/test-evidence"
+      "packages/test-evidence",
+      "packages/slo"
     ],
     "catalog": {
       "@types/bun": "^1.3.13",

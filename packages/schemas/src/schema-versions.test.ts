@@ -66,8 +66,11 @@ const PERSISTED_ENTITIES = [
   // Health snapshots (§7.4)
   "CodeHealthSnapshot",
   "FileHealthMetric",
-  // Provider plugin (§13)
-  "ProviderPluginContract",
+  // Provider plugin (§13) — hp-14zt replaced thin Contract with rich Manifest;
+  // ProviderPluginContract is kept as an alias (`$ref` to ProviderPluginManifest)
+  // for backward compatibility with hp-r3i imports, so the schemaVersion gate
+  // walks the Manifest definition.
+  "ProviderPluginManifest",
   // Capability registry composite (§2.8)
   "CapabilityRegistry",
   // Compatibility report — has its own schemaVersion since /v1/compatibility

@@ -31,7 +31,6 @@ export {
   SloTargetsError,
   type LoadSloTargetsOptions,
   type SloTarget,
-  type SloTargetKind,
   type SloTargets,
 } from "./slo-targets.ts";
 

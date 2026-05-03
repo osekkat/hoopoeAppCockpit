@@ -490,6 +490,161 @@ paths:
               schema: { $ref: '#/components/schemas/Job' }
         default: { $ref: '#/components/responses/Problem' }
 
+  # ─────────────────────────────────────────────────────────────────────────
+  # Provider plugins (§6.2, §13) — abstract VPS provisioning catalog.
+  # Daemon HTTP wrappers around the in-process `schemas.ProviderPlugin`
+  # Go interface (registered via `init()` in plugin packages). v1 ships
+  # with Contabo only (hp-9fo).
+  # ─────────────────────────────────────────────────────────────────────────
+
+  /v1/providers:
+    get:
+      tags: [Bootstrap]
+      operationId: listProviders
+      summary: List registered provider plugins (manifests).
+      description: |
+        Returns every plugin loaded into the running daemon binary. The
+        wizard's "choose a provider" step renders from this list. Empty
+        when no provider plugins are compiled in (existing-VPS first per
+        Guardrail 6 — provider automation never blocks onboarding).
+      responses:
+        '200':
+          description: Provider plugin list.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProviderListResponse' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /v1/providers/{providerId}/regions:
+    parameters:
+      - name: providerId
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/ProviderId' }
+    get:
+      tags: [Bootstrap]
+      operationId: listProviderRegions
+      summary: List regions offered by a provider.
+      responses:
+        '200':
+          description: Region list.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProviderRegionListResponse' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /v1/providers/{providerId}/regions/{regionId}/sizes:
+    parameters:
+      - name: providerId
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/ProviderId' }
+      - name: regionId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Bootstrap]
+      operationId: listProviderSizes
+      summary: List instance sizes available in a region.
+      responses:
+        '200':
+          description: Size list.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProviderSizeListResponse' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /v1/providers/{providerId}/cost-estimate:
+    parameters:
+      - name: providerId
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/ProviderId' }
+    post:
+      tags: [Bootstrap]
+      operationId: estimateProviderMonthlyCost
+      summary: Estimate monthly cost for a region/size combo (read-only POST).
+      description: |
+        Read-only despite being POST — uses POST to carry the request body
+        cleanly. No `Idempotency-Key` required; cost estimates are pure
+        functions of `(region, size, bandwidthTBExpected)` and the catalog
+        version is recorded in the response.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProviderEstimateCostOpts' }
+      responses:
+        '200':
+          description: Cost estimate.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProviderCostEstimate' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /v1/providers/{providerId}/instances:
+    parameters:
+      - name: providerId
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/ProviderId' }
+      - $ref: '#/components/parameters/IdempotencyKey'
+    post:
+      tags: [Bootstrap]
+      operationId: createProviderInstance
+      summary: Provision a new VPS instance (audited as destructive — billable).
+      description: |
+        Creates a new VPS instance via the provider plugin. **Billable** —
+        the renderer surfaces the cost estimate + destroy-flow before
+        invoking. The audit log records actor, timestamp, full opts (with
+        `sshPubKey` redacted to fingerprint), and the resulting
+        `ProviderInstance`. Failure leaves no instance behind on the
+        provider side (plugin contract requirement).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProviderCreateInstanceOpts' }
+      responses:
+        '202':
+          description: |
+            Provisioning accepted. Instance status is `provisioning` until
+            it transitions to `running` via the provider's lifecycle.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProviderInstance' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /v1/providers/{providerId}/instances/{instanceId}:
+    parameters:
+      - name: providerId
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/ProviderId' }
+      - name: instanceId
+        in: path
+        required: true
+        schema: { type: string }
+      - $ref: '#/components/parameters/IdempotencyKey'
+    delete:
+      tags: [Bootstrap]
+      operationId: destroyProviderInstance
+      summary: Destroy a VPS instance (audited as destructive — irreversible).
+      description: |
+        Destroys the named instance via the provider plugin. **Irreversible
+        and billable** (the provider may continue billing for the partial
+        month). Triggers a Hoopoe-policy approval (`policy.provider.destroy`)
+        before invoking the plugin. The audit log records actor,
+        timestamp, plugin response notes.
+      responses:
+        '200':
+          description: Instance destroyed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProviderDestroyResult' }
+        default: { $ref: '#/components/responses/Problem' }
+
   /v1/projects/{projectId}/approvals/{approvalId}/deny:
     parameters:
       - $ref: '#/components/parameters/ProjectIdPath'
@@ -1981,32 +2136,297 @@ components:
           type: array
           items: { $ref: '#/components/schemas/FileHealthMetric' }
 
-    ProviderPluginContract:
+    # ─────────────────────────────────────────────────────────────────────────
+    # Provider plugin contract (§6.2, §13) — abstract VPS-provisioning API
+    # consumed by the wizard catalog + provider registry. Per-method shapes
+    # mirror to packages/schemas/provider-plugin.yaml; the Go interface
+    # `schemas.ProviderPlugin` lives in packages/schemas/go/provider.go.
+    # ─────────────────────────────────────────────────────────────────────────
+
+    ProviderId:
+      type: string
+      description: |
+        Stable plugin identifier (e.g., `contabo`, `hetzner`, `do`, `ovh`,
+        `linode`). Set by the plugin's `init()` registration; the registry
+        rejects duplicate IDs.
+      pattern: '^[a-z][a-z0-9_-]*$'
+      minLength: 1
+      maxLength: 64
+
+    ProviderAuthMode:
+      type: string
+      description: |
+        How the user authenticates with the provider. CAAM holds the
+        credential material; Hoopoe never stores provider API tokens
+        directly (Guardrail 11 generalised — same principle: third-party
+        secrets live in CAAM, not in Hoopoe config).
+      enum: [api-token, oauth, basic-auth]
+
+    ProviderPluginManifest:
       type: object
       description: |
-        Surface a provider-automation plugin (Contabo / OVH / etc.) declares
-        to the daemon during VPS onboarding. Provider plugins are PHASE 13
-        work (§6.2 + §13) — this entity is here so the daemon can validate
-        provider plugin manifests against a known shape from day one.
-      required: [providerId, displayName, schemaVersion, capabilities]
+        Self-describing manifest a provider plugin returns from its
+        `Manifest()` method. Surfaces in the wizard's "choose a provider"
+        step and in Diagnostics. Plugins ship as Go packages compiled into
+        the daemon binary; v1 ships with Contabo only (`hp-9fo`), with the
+        registry open for OVH / Hetzner / DigitalOcean follow-ups.
+      required: [schemaVersion, providerId, displayName, authMode, capabilities]
       properties:
         schemaVersion: { $ref: '#/components/schemas/SchemaVersion' }
-        providerId: { type: string, description: 'e.g., `contabo`, `ovh`.' }
-        displayName: { type: string }
+        providerId: { $ref: '#/components/schemas/ProviderId' }
+        displayName: { type: string, description: 'e.g., "Contabo Cloud VPS".' }
+        homepage:
+          type: string
+          format: uri
+          description: 'Customer-facing landing page; surfaced as the "Visit website" link.'
+        authMode: { $ref: '#/components/schemas/ProviderAuthMode' }
         capabilities:
           type: array
+          description: |
+            Coarse capability flags the plugin opts into. Methods absent
+            from this set are treated as unsupported (returning
+            `provider.method_unsupported` in `problem+json`).
           items:
             type: string
             enum:
+              - vps.list-regions
+              - vps.list-sizes
               - vps.create
               - vps.destroy
-              - vps.list
+              - vps.estimate-cost
               - vps.snapshot
               - vps.resize
               - dns.update
               - billing.fetch
-        regions:
+        defaultRegion:
+          type: string
+          description: 'Region ID to preselect in the wizard.'
+        defaultImage:
+          type: string
+          description: |
+            Provider-specific image ID for "Ubuntu 24.04+ LTS"; used when
+            the user accepts defaults in the create wizard.
+        notes:
+          type: string
+          description: |
+            Free-text human-readable note (e.g., "billing in EUR; minimum
+            30-day commitment"). Surfaced in Diagnostics + the wizard.
+
+    ProviderRegion:
+      type: object
+      description: One geographic region offered by a provider.
+      required: [id, name, country, available]
+      properties:
+        id:
+          type: string
+          description: Provider-specific region ID (e.g., `eu-central-1`).
+        name:
+          type: string
+          description: Human-readable label (e.g., "Frankfurt, Germany").
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code (e.g., `DE`).
+          pattern: '^[A-Z]{2}$'
+        city:
+          type: string
+          description: 'Optional city label (e.g., "Frankfurt").'
+        available:
+          type: boolean
+          description: 'True when the region is currently provisioning instances.'
+        notes:
+          type: string
+
+    ProviderStorageType:
+      type: string
+      enum: [NVMe, SSD, HDD]
+
+    ProviderSizeTier:
+      type: string
+      description: |
+        Sizing recommendation per §6.2. The wizard renders a "recommended"
+        chip on `recommended` sizes and a "minimum" chip on `minimum`
+        sizes; intermediate sizes are `workable`.
+      enum: [recommended, workable, minimum]
+
+    ProviderSize:
+      type: object
+      description: One instance size (CPU / RAM / disk / bandwidth + monthly cost).
+      required: [id, cpuVCores, ramGB, storageGB, storageType, bandwidthTB, monthlyUSD, tier]
+      properties:
+        id: { type: string }
+        cpuVCores: { type: integer, minimum: 1 }
+        ramGB: { type: integer, minimum: 1 }
+        storageGB: { type: integer, minimum: 1 }
+        storageType: { $ref: '#/components/schemas/ProviderStorageType' }
+        bandwidthTB:
+          type: integer
+          minimum: 0
+          description: 'Included monthly bandwidth in TB; 0 means unmetered.'
+        monthlyUSD:
+          type: number
+          minimum: 0
+          description: 'List price the customer is charged per month.'
+        tier: { $ref: '#/components/schemas/ProviderSizeTier' }
+        recommended:
+          type: boolean
+          description: |
+            Convenience flag matching `tier == 'recommended'`. Both are
+            populated for clients that prefer either form.
+
+    ProviderCreateInstanceOpts:
+      type: object
+      description: |
+        Inputs to `createInstance`. The SSH public key is the OpenSSH-format
+        material the wizard generated (or imported from CAAM); the daemon
+        never sees the matching private key.
+      required: [region, size, sshPubKey, name, imageId]
+      properties:
+        region: { type: string, description: 'Region ID from `listRegions`.' }
+        size: { type: string, description: 'Size ID from `listSizes`.' }
+        sshPubKey:
+          type: string
+          description: |
+            OpenSSH-format public key (`ssh-ed25519 ...` or `ssh-rsa ...`).
+            The daemon validates the format before forwarding to the plugin.
+        name:
+          type: string
+          description: 'Human-friendly instance name (e.g., `hoopoe-acfs-2026-05-04`).'
+          pattern: '^[a-zA-Z0-9._-]+$'
+          minLength: 1
+          maxLength: 128
+        imageId:
+          type: string
+          description: |
+            Provider-specific image ID (Ubuntu 24.04+ default per §6.5).
+            Defaults to `ProviderPluginManifest.defaultImage` when empty.
+        tags:
+          type: object
+          additionalProperties: { type: string }
+          description: 'Optional provider-specific tag map (audit / cost-allocation).'
+
+    ProviderInstanceStatus:
+      type: string
+      enum: [provisioning, running, failed, destroyed]
+
+    ProviderInstance:
+      type: object
+      description: |
+        Result of `createInstance` (and the steady-state shape after
+        provisioning succeeds). The IP may be unset while
+        `status == provisioning`.
+      required: [instanceId, status, createdAt, region, size, monthlyUSD]
+      properties:
+        instanceId: { type: string }
+        ip:
+          type: string
+          description: 'IPv4 or IPv6 address; empty until status == running.'
+        status: { $ref: '#/components/schemas/ProviderInstanceStatus' }
+        createdAt: { type: string, format: date-time }
+        region: { type: string }
+        size: { type: string }
+        monthlyUSD:
+          type: number
+          minimum: 0
+          description: 'Actual billing cost the user will see.'
+        providerInstanceUrl:
+          type: string
+          format: uri
+          description: 'Optional deep-link into the provider dashboard.'
+
+    ProviderDestroyResult:
+      type: object
+      required: [ok, instanceId]
+      properties:
+        ok: { type: boolean }
+        instanceId: { type: string }
+        notes:
+          type: string
+          description: |
+            Optional free-text from the provider (e.g., "instance destroyed,
+            backup retained for 7 days").
+
+    ProviderEstimateCostOpts:
+      type: object
+      required: [region, size]
+      properties:
+        region: { type: string }
+        size: { type: string }
+        bandwidthTBExpected:
+          type: number
+          minimum: 0
+          description: 'Expected monthly bandwidth in TB; defaults to 1 if omitted.'
+
+    ProviderCostLineItem:
+      type: object
+      required: [label, usd]
+      properties:
+        label:
+          type: string
+          description: |
+            Cost component (e.g., `compute`, `bandwidth`, `storage`,
+            `datacenter-surcharge`). Plugins should keep this stable across
+            calls so renderer caches don't churn.
+        usd: { type: number, minimum: 0 }
+
+    ProviderCostEstimate:
+      type: object
+      description: |
+        Output of `estimateMonthlyCost`. The `usd` total must match the
+        sum of `breakdown[].usd` (renderer asserts this).
+      required: [usd, breakdown, catalogVersion, estimatedAt]
+      properties:
+        usd:
+          type: number
+          minimum: 0
+          description: 'Total expected monthly cost in USD.'
+        currency:
+          type: string
+          description: |
+            Currency the provider actually bills in (e.g., `USD`, `EUR`).
+            Hoopoe always normalizes the displayed value to USD; this
+            field surfaces the original for cost-transparency.
+          pattern: '^[A-Z]{3}$'
+        breakdown:
           type: array
-          items: { type: string }
-        defaultImage: { type: string }
-        notes: { type: string }
+          items: { $ref: '#/components/schemas/ProviderCostLineItem' }
+        catalogVersion:
+          type: string
+          description: |
+            Stable identifier of the catalog snapshot used for this
+            estimate (e.g., `contabo-2026-05-04T00:00`). Lets the wizard
+            invalidate stale estimates when the provider repriced.
+        estimatedAt: { type: string, format: date-time }
+
+    # Backward-compatible alias — hp-r3i shipped the thin contract under
+    # this name; the migration plan (provider-plugin.yaml + READMEs)
+    # references the new manifest. Kept as an alias so existing TS imports
+    # (`type ProviderPluginContract`) still resolve.
+    ProviderPluginContract:
+      $ref: '#/components/schemas/ProviderPluginManifest'
+
+    ProviderListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ProviderPluginManifest' }
+
+    ProviderRegionListResponse:
+      type: object
+      required: [providerId, items]
+      properties:
+        providerId: { $ref: '#/components/schemas/ProviderId' }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ProviderRegion' }
+
+    ProviderSizeListResponse:
+      type: object
+      required: [providerId, regionId, items]
+      properties:
+        providerId: { $ref: '#/components/schemas/ProviderId' }
+        regionId: { type: string }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ProviderSize' }

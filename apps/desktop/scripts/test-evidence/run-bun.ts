@@ -79,9 +79,12 @@ function attachSloAndCleanNames(
       const target = sloTargets.targets[parsed.sloTarget];
       if (target !== undefined) {
         const observed = r.durationMs;
+        const declared = target.target.kind === "boolean"
+          ? String(target.target.expected)
+          : target.target.declared;
         next.slo = {
           target: target.id,
-          declared: target.declared,
+          declared,
           observed,
           passed: evaluateAgainst(target, observed),
         };

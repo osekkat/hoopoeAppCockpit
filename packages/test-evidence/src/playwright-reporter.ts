@@ -81,9 +81,12 @@ class HoopoeEvidenceReporter implements Reporter {
       const target = this.sloTargets.targets[parsed.sloTarget];
       if (target !== undefined) {
         const observed = durationMs;
+        const declared = target.target.kind === "boolean"
+          ? String(target.target.expected)
+          : target.target.declared;
         out.slo = {
           target: target.id,
-          declared: target.declared,
+          declared,
           observed,
           passed: evaluateAgainst(target, observed),
         };

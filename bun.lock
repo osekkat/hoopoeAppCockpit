@@ -89,9 +89,21 @@
         "typescript": "catalog:",
       },
     },
+    "packages/slo": {
+      "name": "@hoopoe/slo",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "@types/node": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/test-evidence": {
       "name": "@hoopoe/test-evidence",
       "version": "0.0.0",
+      "dependencies": {
+        "@hoopoe/slo": "workspace:*",
+      },
       "devDependencies": {
         "@playwright/test": "^1.59.1",
         "@types/bun": "catalog:",
@@ -168,6 +180,8 @@
     "@hoopoe/fixtures": ["@hoopoe/fixtures@workspace:packages/fixtures"],
 
     "@hoopoe/schemas": ["@hoopoe/schemas@workspace:packages/schemas"],
+
+    "@hoopoe/slo": ["@hoopoe/slo@workspace:packages/slo"],
 
     "@hoopoe/test-evidence": ["@hoopoe/test-evidence@workspace:packages/test-evidence"],
 

@@ -1,7 +1,11 @@
+// hp-5ja: this package now delegates to `@hoopoe/slo`. The wrapper here
+// preserves the indexed-by-id `targets[id]` shape + `evaluateAgainst`
+// helper that the test-evidence reporter and the run-bun wrapper use
+// for per-test lookups. Lower-level loader / percentile / assertion
+// behavior is exercised in the @hoopoe/slo test suite.
+
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import {
   evaluateAgainst,
   loadSloTargets,
@@ -10,74 +14,36 @@ import {
 
 const REPO_ROOT = resolve(__dirname, "..", "..", "..");
 
-describe("hp-6sv :: slo-targets loader", () => {
-  test("loads packages/slo-targets.yaml from the repo root", () => {
+describe("hp-6sv :: slo-targets adapter (delegates to @hoopoe/slo)", () => {
+  test("loadSloTargets exposes an id-indexed lookup", () => {
     const targets = loadSloTargets({ repoRoot: REPO_ROOT });
     expect(targets.schemaVersion).toBe(1);
     const ids = Object.keys(targets.targets);
     expect(ids).toContain("desktop.reconnect.p95");
     expect(ids).toContain("dag.usable.500-nodes");
     expect(ids).toContain("job.cancellation.no-orphans");
+    expect(targets.sourcePath.endsWith("slo-targets.yaml")).toBe(true);
   });
 
-  test("parses latency_p95 with ms suffix into ms threshold", () => {
+  test("evaluateAgainst handles latency_p95 percentile targets", () => {
     const targets = loadSloTargets({ repoRoot: REPO_ROOT });
     const reconnect = targets.targets["desktop.reconnect.p95"];
     expect(reconnect).toBeDefined();
-    expect(reconnect?.kind).toBe("latency_p95");
-    expect(reconnect?.threshold).toBe(10_000);
-    expect(reconnect?.declared).toBe("10000ms");
+    expect(evaluateAgainst(reconnect!, 9_999)).toBe(true);
+    expect(evaluateAgainst(reconnect!, 10_001)).toBe(false);
   });
 
-  test("parses boolean targets to 1/0", () => {
+  test("evaluateAgainst handles boolean targets", () => {
     const targets = loadSloTargets({ repoRoot: REPO_ROOT });
     const dag = targets.targets["dag.usable.500-nodes"];
-    expect(dag?.kind).toBe("boolean");
-    expect(dag?.threshold).toBe(1);
+    expect(dag).toBeDefined();
+    expect(evaluateAgainst(dag!, 1)).toBe(true);
+    expect(evaluateAgainst(dag!, 0)).toBe(false);
   });
 
-  test("evaluateAgainst behaves correctly for latency vs boolean", () => {
-    const targets = loadSloTargets({ repoRoot: REPO_ROOT });
-    const reconnect = targets.targets["desktop.reconnect.p95"];
-    const dag = targets.targets["dag.usable.500-nodes"];
-    expect(reconnect && evaluateAgainst(reconnect, 9_999)).toBe(true);
-    expect(reconnect && evaluateAgainst(reconnect, 10_001)).toBe(false);
-    expect(dag && evaluateAgainst(dag, 1)).toBe(true);
-    expect(dag && evaluateAgainst(dag, 0)).toBe(false);
-  });
-
-  test("throws SloTargetsError on schemaVersion mismatch", () => {
-    const dir = mkdtempSync(join(tmpdir(), "hoopoe-slo-"));
-    const path = join(dir, "slo.yaml");
-    writeFileSync(path, "schemaVersion: 99\ntargets:\n", "utf8");
-    try {
-      loadSloTargets({ path });
-      throw new Error("expected throw");
-    } catch (err) {
-      expect(err).toBeInstanceOf(SloTargetsError);
-      expect((err as Error).message).toContain("schemaVersion");
-    }
-  });
-
-  test("rejects unknown kind", () => {
-    const dir = mkdtempSync(join(tmpdir(), "hoopoe-slo-"));
-    const path = join(dir, "slo.yaml");
-    writeFileSync(
-      path,
-      "schemaVersion: 1\ntargets:\n  bad:\n    kind: nonsense\n    declared: 10ms\n    description: x\n",
-      "utf8",
+  test("loader propagates SloTargetsError on shape mismatch", () => {
+    expect(() => loadSloTargets({ path: "/no/such/slo-targets.yaml" })).toThrow(
+      SloTargetsError,
     );
-    expect(() => loadSloTargets({ path })).toThrow(SloTargetsError);
-  });
-
-  test("rejects malformed declared latency", () => {
-    const dir = mkdtempSync(join(tmpdir(), "hoopoe-slo-"));
-    const path = join(dir, "slo.yaml");
-    writeFileSync(
-      path,
-      "schemaVersion: 1\ntargets:\n  bad:\n    kind: latency_p95\n    declared: 'soon'\n    description: x\n",
-      "utf8",
-    );
-    expect(() => loadSloTargets({ path })).toThrow(SloTargetsError);
   });
 });

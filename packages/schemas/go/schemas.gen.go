@@ -545,6 +545,132 @@ func (e ProjectLifecycleState) Valid() bool {
 	}
 }
 
+// Defines values for ProviderAuthMode.
+const (
+	ApiToken  ProviderAuthMode = "api-token"
+	BasicAuth ProviderAuthMode = "basic-auth"
+	Oauth     ProviderAuthMode = "oauth"
+)
+
+// Valid indicates whether the value is a known member of the ProviderAuthMode enum.
+func (e ProviderAuthMode) Valid() bool {
+	switch e {
+	case ApiToken:
+		return true
+	case BasicAuth:
+		return true
+	case Oauth:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProviderInstanceStatus.
+const (
+	Destroyed    ProviderInstanceStatus = "destroyed"
+	Failed       ProviderInstanceStatus = "failed"
+	Provisioning ProviderInstanceStatus = "provisioning"
+	Running      ProviderInstanceStatus = "running"
+)
+
+// Valid indicates whether the value is a known member of the ProviderInstanceStatus enum.
+func (e ProviderInstanceStatus) Valid() bool {
+	switch e {
+	case Destroyed:
+		return true
+	case Failed:
+		return true
+	case Provisioning:
+		return true
+	case Running:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProviderPluginManifestCapabilities.
+const (
+	BillingFetch    ProviderPluginManifestCapabilities = "billing.fetch"
+	DnsUpdate       ProviderPluginManifestCapabilities = "dns.update"
+	VpsCreate       ProviderPluginManifestCapabilities = "vps.create"
+	VpsDestroy      ProviderPluginManifestCapabilities = "vps.destroy"
+	VpsEstimateCost ProviderPluginManifestCapabilities = "vps.estimate-cost"
+	VpsListRegions  ProviderPluginManifestCapabilities = "vps.list-regions"
+	VpsListSizes    ProviderPluginManifestCapabilities = "vps.list-sizes"
+	VpsResize       ProviderPluginManifestCapabilities = "vps.resize"
+	VpsSnapshot     ProviderPluginManifestCapabilities = "vps.snapshot"
+)
+
+// Valid indicates whether the value is a known member of the ProviderPluginManifestCapabilities enum.
+func (e ProviderPluginManifestCapabilities) Valid() bool {
+	switch e {
+	case BillingFetch:
+		return true
+	case DnsUpdate:
+		return true
+	case VpsCreate:
+		return true
+	case VpsDestroy:
+		return true
+	case VpsEstimateCost:
+		return true
+	case VpsListRegions:
+		return true
+	case VpsListSizes:
+		return true
+	case VpsResize:
+		return true
+	case VpsSnapshot:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProviderSizeTier.
+const (
+	Minimum     ProviderSizeTier = "minimum"
+	Recommended ProviderSizeTier = "recommended"
+	Workable    ProviderSizeTier = "workable"
+)
+
+// Valid indicates whether the value is a known member of the ProviderSizeTier enum.
+func (e ProviderSizeTier) Valid() bool {
+	switch e {
+	case Minimum:
+		return true
+	case Recommended:
+		return true
+	case Workable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProviderStorageType.
+const (
+	HDD  ProviderStorageType = "HDD"
+	NVMe ProviderStorageType = "NVMe"
+	SSD  ProviderStorageType = "SSD"
+)
+
+// Valid indicates whether the value is a known member of the ProviderStorageType enum.
+func (e ProviderStorageType) Valid() bool {
+	switch e {
+	case HDD:
+		return true
+	case NVMe:
+		return true
+	case SSD:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ToolId.
 const (
 	AgentMail     ToolId = "agent_mail"
@@ -1310,6 +1436,234 @@ type ProjectRepoRef struct {
 	VpsClonePath *string `json:"vpsClonePath,omitempty"`
 }
 
+// ProviderAuthMode How the user authenticates with the provider. CAAM holds the
+// credential material; Hoopoe never stores provider API tokens
+// directly (Guardrail 11 generalised — same principle: third-party
+// secrets live in CAAM, not in Hoopoe config).
+type ProviderAuthMode string
+
+// ProviderCostEstimate Output of `estimateMonthlyCost`. The `usd` total must match the
+// sum of `breakdown[].usd` (renderer asserts this).
+type ProviderCostEstimate struct {
+	Breakdown []ProviderCostLineItem `json:"breakdown"`
+
+	// CatalogVersion Stable identifier of the catalog snapshot used for this
+	// estimate (e.g., `contabo-2026-05-04T00:00`). Lets the wizard
+	// invalidate stale estimates when the provider repriced.
+	CatalogVersion string `json:"catalogVersion"`
+
+	// Currency Currency the provider actually bills in (e.g., `USD`, `EUR`).
+	// Hoopoe always normalizes the displayed value to USD; this
+	// field surfaces the original for cost-transparency.
+	Currency    *string   `json:"currency,omitempty"`
+	EstimatedAt time.Time `json:"estimatedAt"`
+
+	// Usd Total expected monthly cost in USD.
+	Usd float32 `json:"usd"`
+}
+
+// ProviderCostLineItem defines model for ProviderCostLineItem.
+type ProviderCostLineItem struct {
+	// Label Cost component (e.g., `compute`, `bandwidth`, `storage`,
+	// `datacenter-surcharge`). Plugins should keep this stable across
+	// calls so renderer caches don't churn.
+	Label string  `json:"label"`
+	Usd   float32 `json:"usd"`
+}
+
+// ProviderCreateInstanceOpts Inputs to `createInstance`. The SSH public key is the OpenSSH-format
+// material the wizard generated (or imported from CAAM); the daemon
+// never sees the matching private key.
+type ProviderCreateInstanceOpts struct {
+	// ImageId Provider-specific image ID (Ubuntu 24.04+ default per §6.5).
+	// Defaults to `ProviderPluginManifest.defaultImage` when empty.
+	ImageId string `json:"imageId"`
+
+	// Name Human-friendly instance name (e.g., `hoopoe-acfs-2026-05-04`).
+	Name string `json:"name"`
+
+	// Region Region ID from `listRegions`.
+	Region string `json:"region"`
+
+	// Size Size ID from `listSizes`.
+	Size string `json:"size"`
+
+	// SshPubKey OpenSSH-format public key (`ssh-ed25519 ...` or `ssh-rsa ...`).
+	// The daemon validates the format before forwarding to the plugin.
+	SshPubKey string `json:"sshPubKey"`
+
+	// Tags Optional provider-specific tag map (audit / cost-allocation).
+	Tags *map[string]string `json:"tags,omitempty"`
+}
+
+// ProviderDestroyResult defines model for ProviderDestroyResult.
+type ProviderDestroyResult struct {
+	InstanceId string `json:"instanceId"`
+
+	// Notes Optional free-text from the provider (e.g., "instance destroyed,
+	// backup retained for 7 days").
+	Notes *string `json:"notes,omitempty"`
+	Ok    bool    `json:"ok"`
+}
+
+// ProviderEstimateCostOpts defines model for ProviderEstimateCostOpts.
+type ProviderEstimateCostOpts struct {
+	// BandwidthTBExpected Expected monthly bandwidth in TB; defaults to 1 if omitted.
+	BandwidthTBExpected *float32 `json:"bandwidthTBExpected,omitempty"`
+	Region              string   `json:"region"`
+	Size                string   `json:"size"`
+}
+
+// ProviderId Stable plugin identifier (e.g., `contabo`, `hetzner`, `do`, `ovh`,
+// `linode`). Set by the plugin's `init()` registration; the registry
+// rejects duplicate IDs.
+type ProviderId = string
+
+// ProviderInstance Result of `createInstance` (and the steady-state shape after
+// provisioning succeeds). The IP may be unset while
+// `status == provisioning`.
+type ProviderInstance struct {
+	CreatedAt  time.Time `json:"createdAt"`
+	InstanceId string    `json:"instanceId"`
+
+	// Ip IPv4 or IPv6 address; empty until status == running.
+	Ip *string `json:"ip,omitempty"`
+
+	// MonthlyUSD Actual billing cost the user will see.
+	MonthlyUSD float32 `json:"monthlyUSD"`
+
+	// ProviderInstanceUrl Optional deep-link into the provider dashboard.
+	ProviderInstanceUrl *string                `json:"providerInstanceUrl,omitempty"`
+	Region              string                 `json:"region"`
+	Size                string                 `json:"size"`
+	Status              ProviderInstanceStatus `json:"status"`
+}
+
+// ProviderInstanceStatus defines model for ProviderInstanceStatus.
+type ProviderInstanceStatus string
+
+// ProviderListResponse defines model for ProviderListResponse.
+type ProviderListResponse struct {
+	Items []ProviderPluginManifest `json:"items"`
+}
+
+// ProviderPluginManifest Self-describing manifest a provider plugin returns from its
+// `Manifest()` method. Surfaces in the wizard's "choose a provider"
+// step and in Diagnostics. Plugins ship as Go packages compiled into
+// the daemon binary; v1 ships with Contabo only (`hp-9fo`), with the
+// registry open for OVH / Hetzner / DigitalOcean follow-ups.
+type ProviderPluginManifest struct {
+	// AuthMode How the user authenticates with the provider. CAAM holds the
+	// credential material; Hoopoe never stores provider API tokens
+	// directly (Guardrail 11 generalised — same principle: third-party
+	// secrets live in CAAM, not in Hoopoe config).
+	AuthMode ProviderAuthMode `json:"authMode"`
+
+	// Capabilities Coarse capability flags the plugin opts into. Methods absent
+	// from this set are treated as unsupported (returning
+	// `provider.method_unsupported` in `problem+json`).
+	Capabilities []ProviderPluginManifestCapabilities `json:"capabilities"`
+
+	// DefaultImage Provider-specific image ID for "Ubuntu 24.04+ LTS"; used when
+	// the user accepts defaults in the create wizard.
+	DefaultImage *string `json:"defaultImage,omitempty"`
+
+	// DefaultRegion Region ID to preselect in the wizard.
+	DefaultRegion *string `json:"defaultRegion,omitempty"`
+
+	// DisplayName e.g., "Contabo Cloud VPS".
+	DisplayName string `json:"displayName"`
+
+	// Homepage Customer-facing landing page; surfaced as the "Visit website" link.
+	Homepage *string `json:"homepage,omitempty"`
+
+	// Notes Free-text human-readable note (e.g., "billing in EUR; minimum
+	// 30-day commitment"). Surfaced in Diagnostics + the wizard.
+	Notes *string `json:"notes,omitempty"`
+
+	// ProviderId Stable plugin identifier (e.g., `contabo`, `hetzner`, `do`, `ovh`,
+	// `linode`). Set by the plugin's `init()` registration; the registry
+	// rejects duplicate IDs.
+	ProviderId ProviderId `json:"providerId"`
+
+	// SchemaVersion Monotonically increasing schema version for a persisted shape.
+	SchemaVersion SchemaVersion `json:"schemaVersion"`
+}
+
+// ProviderPluginManifestCapabilities defines model for ProviderPluginManifest.Capabilities.
+type ProviderPluginManifestCapabilities string
+
+// ProviderRegion One geographic region offered by a provider.
+type ProviderRegion struct {
+	// Available True when the region is currently provisioning instances.
+	Available bool `json:"available"`
+
+	// City Optional city label (e.g., "Frankfurt").
+	City *string `json:"city,omitempty"`
+
+	// Country ISO 3166-1 alpha-2 country code (e.g., `DE`).
+	Country string `json:"country"`
+
+	// Id Provider-specific region ID (e.g., `eu-central-1`).
+	Id string `json:"id"`
+
+	// Name Human-readable label (e.g., "Frankfurt, Germany").
+	Name  string  `json:"name"`
+	Notes *string `json:"notes,omitempty"`
+}
+
+// ProviderRegionListResponse defines model for ProviderRegionListResponse.
+type ProviderRegionListResponse struct {
+	Items []ProviderRegion `json:"items"`
+
+	// ProviderId Stable plugin identifier (e.g., `contabo`, `hetzner`, `do`, `ovh`,
+	// `linode`). Set by the plugin's `init()` registration; the registry
+	// rejects duplicate IDs.
+	ProviderId ProviderId `json:"providerId"`
+}
+
+// ProviderSize One instance size (CPU / RAM / disk / bandwidth + monthly cost).
+type ProviderSize struct {
+	// BandwidthTB Included monthly bandwidth in TB; 0 means unmetered.
+	BandwidthTB int    `json:"bandwidthTB"`
+	CpuVCores   int    `json:"cpuVCores"`
+	Id          string `json:"id"`
+
+	// MonthlyUSD List price the customer is charged per month.
+	MonthlyUSD float32 `json:"monthlyUSD"`
+	RamGB      int     `json:"ramGB"`
+
+	// Recommended Convenience flag matching `tier == 'recommended'`. Both are
+	// populated for clients that prefer either form.
+	Recommended *bool               `json:"recommended,omitempty"`
+	StorageGB   int                 `json:"storageGB"`
+	StorageType ProviderStorageType `json:"storageType"`
+
+	// Tier Sizing recommendation per §6.2. The wizard renders a "recommended"
+	// chip on `recommended` sizes and a "minimum" chip on `minimum`
+	// sizes; intermediate sizes are `workable`.
+	Tier ProviderSizeTier `json:"tier"`
+}
+
+// ProviderSizeListResponse defines model for ProviderSizeListResponse.
+type ProviderSizeListResponse struct {
+	Items []ProviderSize `json:"items"`
+
+	// ProviderId Stable plugin identifier (e.g., `contabo`, `hetzner`, `do`, `ovh`,
+	// `linode`). Set by the plugin's `init()` registration; the registry
+	// rejects duplicate IDs.
+	ProviderId ProviderId `json:"providerId"`
+	RegionId   string     `json:"regionId"`
+}
+
+// ProviderSizeTier Sizing recommendation per §6.2. The wizard renders a "recommended"
+// chip on `recommended` sizes and a "minimum" chip on `minimum`
+// sizes; intermediate sizes are `workable`.
+type ProviderSizeTier string
+
+// ProviderStorageType defines model for ProviderStorageType.
+type ProviderStorageType string
+
 // SchemaVersion Monotonically increasing schema version for a persisted shape.
 type SchemaVersion = int
 
@@ -1514,6 +1868,26 @@ type SubmitActionPlanParams struct {
 	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
 }
 
+// CreateProviderInstanceParams defines parameters for CreateProviderInstance.
+type CreateProviderInstanceParams struct {
+	// IdempotencyKey Stable client-generated key (ULID/UUID) for safe retries. The daemon
+	// dedupes by key within a sliding window (default 24h) and replays the
+	// original status + body. Required on retryable writes; clients that omit
+	// it on a write that turns out to be retryable will receive a
+	// `precondition-failed` problem on the second attempt.
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// DestroyProviderInstanceParams defines parameters for DestroyProviderInstance.
+type DestroyProviderInstanceParams struct {
+	// IdempotencyKey Stable client-generated key (ULID/UUID) for safe retries. The daemon
+	// dedupes by key within a sliding window (default 24h) and replays the
+	// original status + body. Required on retryable writes; clients that omit
+	// it on a write that turns out to be retryable will receive a
+	// `precondition-failed` problem on the second attempt.
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
 // CancelJobJSONRequestBody defines body for CancelJob for application/json ContentType.
 type CancelJobJSONRequestBody = JobCancelRequest
 
@@ -1525,3 +1899,9 @@ type DenyApprovalJSONRequestBody = ApprovalDecisionRequest
 
 // SubmitActionPlanJSONRequestBody defines body for SubmitActionPlan for application/json ContentType.
 type SubmitActionPlanJSONRequestBody = ActionPlan
+
+// EstimateProviderMonthlyCostJSONRequestBody defines body for EstimateProviderMonthlyCost for application/json ContentType.
+type EstimateProviderMonthlyCostJSONRequestBody = ProviderEstimateCostOpts
+
+// CreateProviderInstanceJSONRequestBody defines body for CreateProviderInstance for application/json ContentType.
+type CreateProviderInstanceJSONRequestBody = ProviderCreateInstanceOpts

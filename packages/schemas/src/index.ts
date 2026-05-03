@@ -98,11 +98,29 @@ export type PaneStreamEvent = components["schemas"]["PaneStreamEvent"];
 export type BudgetPolicy = components["schemas"]["BudgetPolicy"];
 export type BuildQueuePolicy = components["schemas"]["BuildQueuePolicy"];
 
-// Code health (§7.4, §11) + ProviderPluginContract (§13)
+// Code health (§7.4, §11)
 export type CodeHealthSnapshot = components["schemas"]["CodeHealthSnapshot"];
 export type FileHealthMetric = components["schemas"]["FileHealthMetric"];
 export type HealthDimension = components["schemas"]["HealthDimension"];
+
+// Provider plugin contract (§6.2, §13) — hp-14zt
+// `ProviderPluginContract` is a backward-compatible alias for the hp-r3i name;
+// new consumers should prefer `ProviderPluginManifest`.
 export type ProviderPluginContract = components["schemas"]["ProviderPluginContract"];
+export type ProviderPluginManifest = components["schemas"]["ProviderPluginManifest"];
+export type ProviderId = components["schemas"]["ProviderId"];
+export type ProviderAuthMode = components["schemas"]["ProviderAuthMode"];
+export type ProviderRegion = components["schemas"]["ProviderRegion"];
+export type ProviderSize = components["schemas"]["ProviderSize"];
+export type ProviderStorageType = components["schemas"]["ProviderStorageType"];
+export type ProviderSizeTier = components["schemas"]["ProviderSizeTier"];
+export type ProviderCreateInstanceOpts = components["schemas"]["ProviderCreateInstanceOpts"];
+export type ProviderInstance = components["schemas"]["ProviderInstance"];
+export type ProviderInstanceStatus = components["schemas"]["ProviderInstanceStatus"];
+export type ProviderDestroyResult = components["schemas"]["ProviderDestroyResult"];
+export type ProviderEstimateCostOpts = components["schemas"]["ProviderEstimateCostOpts"];
+export type ProviderCostEstimate = components["schemas"]["ProviderCostEstimate"];
+export type ProviderCostLineItem = components["schemas"]["ProviderCostLineItem"];
 
 /** Public package identity. Used in audit + diagnostics. */
 export const HOOPOE_SCHEMAS_PACKAGE_NAME = "@hoopoe/schemas";

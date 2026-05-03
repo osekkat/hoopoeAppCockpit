@@ -377,6 +377,165 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List registered provider plugins (manifests).
+         * @description Returns every plugin loaded into the running daemon binary. The
+         *     wizard's "choose a provider" step renders from this list. Empty
+         *     when no provider plugins are compiled in (existing-VPS first per
+         *     Guardrail 6 — provider automation never blocks onboarding).
+         */
+        get: operations["listProviders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/providers/{providerId}/regions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                providerId: components["schemas"]["ProviderId"];
+            };
+            cookie?: never;
+        };
+        /** List regions offered by a provider. */
+        get: operations["listProviderRegions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/providers/{providerId}/regions/{regionId}/sizes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                providerId: components["schemas"]["ProviderId"];
+                regionId: string;
+            };
+            cookie?: never;
+        };
+        /** List instance sizes available in a region. */
+        get: operations["listProviderSizes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/providers/{providerId}/cost-estimate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                providerId: components["schemas"]["ProviderId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Estimate monthly cost for a region/size combo (read-only POST).
+         * @description Read-only despite being POST — uses POST to carry the request body
+         *     cleanly. No `Idempotency-Key` required; cost estimates are pure
+         *     functions of `(region, size, bandwidthTBExpected)` and the catalog
+         *     version is recorded in the response.
+         */
+        post: operations["estimateProviderMonthlyCost"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/providers/{providerId}/instances": {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Stable client-generated key (ULID/UUID) for safe retries. The daemon
+                 *     dedupes by key within a sliding window (default 24h) and replays the
+                 *     original status + body. Required on retryable writes; clients that omit
+                 *     it on a write that turns out to be retryable will receive a
+                 *     `precondition-failed` problem on the second attempt.
+                 */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                providerId: components["schemas"]["ProviderId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Provision a new VPS instance (audited as destructive — billable).
+         * @description Creates a new VPS instance via the provider plugin. **Billable** —
+         *     the renderer surfaces the cost estimate + destroy-flow before
+         *     invoking. The audit log records actor, timestamp, full opts (with
+         *     `sshPubKey` redacted to fingerprint), and the resulting
+         *     `ProviderInstance`. Failure leaves no instance behind on the
+         *     provider side (plugin contract requirement).
+         */
+        post: operations["createProviderInstance"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/providers/{providerId}/instances/{instanceId}": {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Stable client-generated key (ULID/UUID) for safe retries. The daemon
+                 *     dedupes by key within a sliding window (default 24h) and replays the
+                 *     original status + body. Required on retryable writes; clients that omit
+                 *     it on a write that turns out to be retryable will receive a
+                 *     `precondition-failed` problem on the second attempt.
+                 */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                providerId: components["schemas"]["ProviderId"];
+                instanceId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Destroy a VPS instance (audited as destructive — irreversible).
+         * @description Destroys the named instance via the provider plugin. **Irreversible
+         *     and billable** (the provider may continue billing for the partial
+         *     month). Triggers a Hoopoe-policy approval (`policy.provider.destroy`)
+         *     before invoking the plugin. The audit log records actor,
+         *     timestamp, plugin response notes.
+         */
+        delete: operations["destroyProviderInstance"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/projects/{projectId}/approvals/{approvalId}/deny": {
         parameters: {
             query?: never;
@@ -1433,20 +1592,207 @@ export interface components {
             files: components["schemas"]["FileHealthMetric"][];
         };
         /**
-         * @description Surface a provider-automation plugin (Contabo / OVH / etc.) declares
-         *     to the daemon during VPS onboarding. Provider plugins are PHASE 13
-         *     work (§6.2 + §13) — this entity is here so the daemon can validate
-         *     provider plugin manifests against a known shape from day one.
+         * @description Stable plugin identifier (e.g., `contabo`, `hetzner`, `do`, `ovh`,
+         *     `linode`). Set by the plugin's `init()` registration; the registry
+         *     rejects duplicate IDs.
          */
-        ProviderPluginContract: {
+        ProviderId: string;
+        /**
+         * @description How the user authenticates with the provider. CAAM holds the
+         *     credential material; Hoopoe never stores provider API tokens
+         *     directly (Guardrail 11 generalised — same principle: third-party
+         *     secrets live in CAAM, not in Hoopoe config).
+         * @enum {string}
+         */
+        ProviderAuthMode: "api-token" | "oauth" | "basic-auth";
+        /**
+         * @description Self-describing manifest a provider plugin returns from its
+         *     `Manifest()` method. Surfaces in the wizard's "choose a provider"
+         *     step and in Diagnostics. Plugins ship as Go packages compiled into
+         *     the daemon binary; v1 ships with Contabo only (`hp-9fo`), with the
+         *     registry open for OVH / Hetzner / DigitalOcean follow-ups.
+         */
+        ProviderPluginManifest: {
             schemaVersion: components["schemas"]["SchemaVersion"];
-            /** @description e.g., `contabo`, `ovh`. */
-            providerId: string;
+            providerId: components["schemas"]["ProviderId"];
+            /** @description e.g., "Contabo Cloud VPS". */
             displayName: string;
-            capabilities: ("vps.create" | "vps.destroy" | "vps.list" | "vps.snapshot" | "vps.resize" | "dns.update" | "billing.fetch")[];
-            regions?: string[];
+            /**
+             * Format: uri
+             * @description Customer-facing landing page; surfaced as the "Visit website" link.
+             */
+            homepage?: string;
+            authMode: components["schemas"]["ProviderAuthMode"];
+            /**
+             * @description Coarse capability flags the plugin opts into. Methods absent
+             *     from this set are treated as unsupported (returning
+             *     `provider.method_unsupported` in `problem+json`).
+             */
+            capabilities: ("vps.list-regions" | "vps.list-sizes" | "vps.create" | "vps.destroy" | "vps.estimate-cost" | "vps.snapshot" | "vps.resize" | "dns.update" | "billing.fetch")[];
+            /** @description Region ID to preselect in the wizard. */
+            defaultRegion?: string;
+            /**
+             * @description Provider-specific image ID for "Ubuntu 24.04+ LTS"; used when
+             *     the user accepts defaults in the create wizard.
+             */
             defaultImage?: string;
+            /**
+             * @description Free-text human-readable note (e.g., "billing in EUR; minimum
+             *     30-day commitment"). Surfaced in Diagnostics + the wizard.
+             */
             notes?: string;
+        };
+        /** @description One geographic region offered by a provider. */
+        ProviderRegion: {
+            /** @description Provider-specific region ID (e.g., `eu-central-1`). */
+            id: string;
+            /** @description Human-readable label (e.g., "Frankfurt, Germany"). */
+            name: string;
+            /** @description ISO 3166-1 alpha-2 country code (e.g., `DE`). */
+            country: string;
+            /** @description Optional city label (e.g., "Frankfurt"). */
+            city?: string;
+            /** @description True when the region is currently provisioning instances. */
+            available: boolean;
+            notes?: string;
+        };
+        /** @enum {string} */
+        ProviderStorageType: "NVMe" | "SSD" | "HDD";
+        /**
+         * @description Sizing recommendation per §6.2. The wizard renders a "recommended"
+         *     chip on `recommended` sizes and a "minimum" chip on `minimum`
+         *     sizes; intermediate sizes are `workable`.
+         * @enum {string}
+         */
+        ProviderSizeTier: "recommended" | "workable" | "minimum";
+        /** @description One instance size (CPU / RAM / disk / bandwidth + monthly cost). */
+        ProviderSize: {
+            id: string;
+            cpuVCores: number;
+            ramGB: number;
+            storageGB: number;
+            storageType: components["schemas"]["ProviderStorageType"];
+            /** @description Included monthly bandwidth in TB; 0 means unmetered. */
+            bandwidthTB: number;
+            /** @description List price the customer is charged per month. */
+            monthlyUSD: number;
+            tier: components["schemas"]["ProviderSizeTier"];
+            /**
+             * @description Convenience flag matching `tier == 'recommended'`. Both are
+             *     populated for clients that prefer either form.
+             */
+            recommended?: boolean;
+        };
+        /**
+         * @description Inputs to `createInstance`. The SSH public key is the OpenSSH-format
+         *     material the wizard generated (or imported from CAAM); the daemon
+         *     never sees the matching private key.
+         */
+        ProviderCreateInstanceOpts: {
+            /** @description Region ID from `listRegions`. */
+            region: string;
+            /** @description Size ID from `listSizes`. */
+            size: string;
+            /**
+             * @description OpenSSH-format public key (`ssh-ed25519 ...` or `ssh-rsa ...`).
+             *     The daemon validates the format before forwarding to the plugin.
+             */
+            sshPubKey: string;
+            /** @description Human-friendly instance name (e.g., `hoopoe-acfs-2026-05-04`). */
+            name: string;
+            /**
+             * @description Provider-specific image ID (Ubuntu 24.04+ default per §6.5).
+             *     Defaults to `ProviderPluginManifest.defaultImage` when empty.
+             */
+            imageId: string;
+            /** @description Optional provider-specific tag map (audit / cost-allocation). */
+            tags?: {
+                [key: string]: string;
+            };
+        };
+        /** @enum {string} */
+        ProviderInstanceStatus: "provisioning" | "running" | "failed" | "destroyed";
+        /**
+         * @description Result of `createInstance` (and the steady-state shape after
+         *     provisioning succeeds). The IP may be unset while
+         *     `status == provisioning`.
+         */
+        ProviderInstance: {
+            instanceId: string;
+            /** @description IPv4 or IPv6 address; empty until status == running. */
+            ip?: string;
+            status: components["schemas"]["ProviderInstanceStatus"];
+            /** Format: date-time */
+            createdAt: string;
+            region: string;
+            size: string;
+            /** @description Actual billing cost the user will see. */
+            monthlyUSD: number;
+            /**
+             * Format: uri
+             * @description Optional deep-link into the provider dashboard.
+             */
+            providerInstanceUrl?: string;
+        };
+        ProviderDestroyResult: {
+            ok: boolean;
+            instanceId: string;
+            /**
+             * @description Optional free-text from the provider (e.g., "instance destroyed,
+             *     backup retained for 7 days").
+             */
+            notes?: string;
+        };
+        ProviderEstimateCostOpts: {
+            region: string;
+            size: string;
+            /** @description Expected monthly bandwidth in TB; defaults to 1 if omitted. */
+            bandwidthTBExpected?: number;
+        };
+        ProviderCostLineItem: {
+            /**
+             * @description Cost component (e.g., `compute`, `bandwidth`, `storage`,
+             *     `datacenter-surcharge`). Plugins should keep this stable across
+             *     calls so renderer caches don't churn.
+             */
+            label: string;
+            usd: number;
+        };
+        /**
+         * @description Output of `estimateMonthlyCost`. The `usd` total must match the
+         *     sum of `breakdown[].usd` (renderer asserts this).
+         */
+        ProviderCostEstimate: {
+            /** @description Total expected monthly cost in USD. */
+            usd: number;
+            /**
+             * @description Currency the provider actually bills in (e.g., `USD`, `EUR`).
+             *     Hoopoe always normalizes the displayed value to USD; this
+             *     field surfaces the original for cost-transparency.
+             */
+            currency?: string;
+            breakdown: components["schemas"]["ProviderCostLineItem"][];
+            /**
+             * @description Stable identifier of the catalog snapshot used for this
+             *     estimate (e.g., `contabo-2026-05-04T00:00`). Lets the wizard
+             *     invalidate stale estimates when the provider repriced.
+             */
+            catalogVersion: string;
+            /** Format: date-time */
+            estimatedAt: string;
+        };
+        ProviderPluginContract: components["schemas"]["ProviderPluginManifest"];
+        ProviderListResponse: {
+            items: components["schemas"]["ProviderPluginManifest"][];
+        };
+        ProviderRegionListResponse: {
+            providerId: components["schemas"]["ProviderId"];
+            items: components["schemas"]["ProviderRegion"][];
+        };
+        ProviderSizeListResponse: {
+            providerId: components["schemas"]["ProviderId"];
+            regionId: string;
+            items: components["schemas"]["ProviderSize"][];
         };
     };
     responses: {
@@ -1910,6 +2256,173 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Job"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    listProviders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Provider plugin list. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderListResponse"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    listProviderRegions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                providerId: components["schemas"]["ProviderId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Region list. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderRegionListResponse"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    listProviderSizes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                providerId: components["schemas"]["ProviderId"];
+                regionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Size list. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderSizeListResponse"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    estimateProviderMonthlyCost: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                providerId: components["schemas"]["ProviderId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderEstimateCostOpts"];
+            };
+        };
+        responses: {
+            /** @description Cost estimate. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderCostEstimate"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    createProviderInstance: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Stable client-generated key (ULID/UUID) for safe retries. The daemon
+                 *     dedupes by key within a sliding window (default 24h) and replays the
+                 *     original status + body. Required on retryable writes; clients that omit
+                 *     it on a write that turns out to be retryable will receive a
+                 *     `precondition-failed` problem on the second attempt.
+                 */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                providerId: components["schemas"]["ProviderId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderCreateInstanceOpts"];
+            };
+        };
+        responses: {
+            /**
+             * @description Provisioning accepted. Instance status is `provisioning` until
+             *     it transitions to `running` via the provider's lifecycle.
+             */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderInstance"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    destroyProviderInstance: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Stable client-generated key (ULID/UUID) for safe retries. The daemon
+                 *     dedupes by key within a sliding window (default 24h) and replays the
+                 *     original status + body. Required on retryable writes; clients that omit
+                 *     it on a write that turns out to be retryable will receive a
+                 *     `precondition-failed` problem on the second attempt.
+                 */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                providerId: components["schemas"]["ProviderId"];
+                instanceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Instance destroyed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderDestroyResult"];
                 };
             };
             default: components["responses"]["Problem"];

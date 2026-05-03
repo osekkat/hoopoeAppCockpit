@@ -8,8 +8,11 @@ exactly one envelope under
 > Bead: `hp-6sv` — Test runner config + JSON evidence emitter.
 
 See also: `docs/testing.md` for the user-facing tag taxonomy + run
-commands, and `packages/slo-targets.yaml` for the §10.5 SLO source of
-truth.
+commands. SLO targets live at `packages/slo-targets.yaml`; the
+canonical loader + percentile-aware assertion API ships in
+[`@hoopoe/slo`](../slo/README.md) (hp-5ja) — this package only carries
+the indexed-by-id lookup + per-test `evaluateAgainst` helper used by
+the test-evidence reporters.
 
 ## Public API
 

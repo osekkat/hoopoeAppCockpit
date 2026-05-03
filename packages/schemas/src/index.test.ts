@@ -270,6 +270,101 @@ test("SwarmSession + Agent + FileReservation + PaneStreamEvent compile against �
   expect(chunk.offsetBytes).toBe(12_500);
 });
 
+test("ProviderPluginManifest + Region/Size/Instance/CostEstimate compile against §6.2/§13 shapes", () => {
+  // ProviderPluginManifest — what a plugin returns from its Manifest() Go method.
+  const manifest: import("./index.ts").ProviderPluginManifest = {
+    schemaVersion: 1,
+    providerId: "contabo",
+    displayName: "Contabo Cloud VPS",
+    homepage: "https://contabo.com",
+    authMode: "api-token",
+    capabilities: ["vps.list-regions", "vps.list-sizes", "vps.create", "vps.destroy", "vps.estimate-cost"],
+    defaultRegion: "eu-central-1",
+    defaultImage: "ubuntu-24.04",
+    notes: "billing in EUR; minimum 30-day commitment",
+  };
+  expect(manifest.providerId).toBe("contabo");
+  expect(manifest.authMode).toBe("api-token");
+
+  // Region — geographic offering.
+  const region: import("./index.ts").ProviderRegion = {
+    id: "eu-central-1",
+    name: "Frankfurt, Germany",
+    country: "DE",
+    city: "Frankfurt",
+    available: true,
+  };
+  expect(region.country).toMatch(/^[A-Z]{2}$/);
+
+  // Size with §6.2 tier; recommended is the convenience flag matching tier.
+  const size: import("./index.ts").ProviderSize = {
+    id: "cloud-vps-50",
+    cpuVCores: 8,
+    ramGB: 64,
+    storageGB: 1500,
+    storageType: "NVMe",
+    bandwidthTB: 32,
+    monthlyUSD: 56,
+    tier: "recommended",
+    recommended: true,
+  };
+  expect(size.ramGB).toBe(64);
+  expect(size.tier).toBe("recommended");
+
+  // CreateInstanceOpts — the wizard collects these.
+  const opts: import("./index.ts").ProviderCreateInstanceOpts = {
+    region: "eu-central-1",
+    size: "cloud-vps-50",
+    sshPubKey: "ssh-ed25519 AAAA... user@host",
+    name: "hoopoe-acfs-2026-05-04",
+    imageId: "ubuntu-24.04",
+  };
+  expect(opts.name).toMatch(/^[a-zA-Z0-9._-]+$/);
+
+  // Instance — provider response after createInstance.
+  const inst: import("./index.ts").ProviderInstance = {
+    instanceId: "inst_01HXK",
+    ip: "203.0.113.42",
+    status: "provisioning",
+    createdAt: "2026-05-04T00:00:00Z",
+    region: "eu-central-1",
+    size: "cloud-vps-50",
+    monthlyUSD: 56,
+  };
+  expect(inst.status).toBe("provisioning");
+
+  // CostEstimate — pure-function output; breakdown sums to total.
+  const estimate: import("./index.ts").ProviderCostEstimate = {
+    usd: 56,
+    currency: "EUR",
+    breakdown: [
+      { label: "compute", usd: 48 },
+      { label: "bandwidth", usd: 6 },
+      { label: "storage", usd: 2 },
+    ],
+    catalogVersion: "contabo-2026-05-04T00:00",
+    estimatedAt: "2026-05-04T00:00:00Z",
+  };
+  const sum = estimate.breakdown.reduce((acc, item) => acc + item.usd, 0);
+  expect(sum).toBe(estimate.usd);
+});
+
+test("ProviderPluginContract is a backward-compat alias for ProviderPluginManifest (hp-14zt → hp-r3i)", () => {
+  // Compile-time check: an instance assigned as ProviderPluginManifest must
+  // also be assignable as ProviderPluginContract (and vice versa). Catches
+  // accidental drift if the alias gets unaliased without a migration plan.
+  const m: import("./index.ts").ProviderPluginManifest = {
+    schemaVersion: 1,
+    providerId: "contabo",
+    displayName: "Contabo Cloud VPS",
+    authMode: "api-token",
+    capabilities: ["vps.create"],
+  };
+  const c: import("./index.ts").ProviderPluginContract = m;
+  const m2: import("./index.ts").ProviderPluginManifest = c;
+  expect(m2.providerId).toBe("contabo");
+});
+
 test("CompatibilityReport embeds CapabilityRegistry + structured MigrationState", () => {
   const report: CompatibilityReport = {
     schemaVersion: 1,
