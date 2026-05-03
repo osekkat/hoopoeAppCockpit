@@ -1,0 +1,11 @@
+// Go workspace per hp-r3i — exposes the generated daemon API types
+// (`packages/schemas/go`) to consuming modules (`apps/daemon`) without
+// requiring each consumer to maintain its own `replace` directive.
+//
+// Adding a new Go module under the repo? Add it to `use (...)` below.
+go 1.26
+
+use (
+	./apps/daemon
+	./packages/schemas/go
+)
