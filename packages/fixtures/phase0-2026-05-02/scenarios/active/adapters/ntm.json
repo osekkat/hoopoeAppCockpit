@@ -1,0 +1,7 @@
+{
+  "tool": "ntm",
+  "present": false,
+  "skipReason": "missing binary on PATH: ntm",
+  "captures": {},
+  "capturedAt": "2026-05-03T22:11:53Z"
+}

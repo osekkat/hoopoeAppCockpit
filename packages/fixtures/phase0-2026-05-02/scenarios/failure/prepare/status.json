@@ -1,0 +1,6 @@
+{
+  "label": "prepare-failure",
+  "capturedAt": "2026-05-03T22:11:55Z",
+  "skipped": true,
+  "reason": "no command supplied"
+}

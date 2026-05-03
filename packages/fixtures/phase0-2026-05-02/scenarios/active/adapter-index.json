@@ -1,0 +1,25 @@
+{
+  "scenario": "active",
+  "mode": "real-vps",
+  "adapters": [
+    "git",
+    "br",
+    "bv",
+    "ntm",
+    "agent_mail",
+    "rch",
+    "caam",
+    "dcg",
+    "caut",
+    "casr",
+    "srp",
+    "sbh",
+    "pt",
+    "ubs",
+    "jsm",
+    "jfp",
+    "ru",
+    "health",
+    "oracle"
+  ]
+}

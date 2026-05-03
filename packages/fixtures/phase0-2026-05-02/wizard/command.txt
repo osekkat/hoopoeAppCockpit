@@ -1,0 +1,1 @@
+echo "manual wizard pending — see hp-jvm follow-up"

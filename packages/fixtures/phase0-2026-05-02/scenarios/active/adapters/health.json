@@ -1,0 +1,18 @@
+{
+  "tool": "health",
+  "present": true,
+  "capabilities": {
+    "health.coverage": {
+      "status": "untested",
+      "notes": "language-specific runners attempted best-effort"
+    },
+    "health.complexity": {
+      "status": "untested"
+    }
+  },
+  "captures": {},
+  "errors": [
+    "lizard not on PATH"
+  ],
+  "capturedAt": "2026-05-03T22:11:54Z"
+}

@@ -1,0 +1,35 @@
+{
+  "tool": "agent_mail",
+  "present": true,
+  "binPath": "/home/admin/mcp_agent_mail/am",
+  "version": "am 0.2.51",
+  "capabilities": {
+    "agent_mail.messages.read": {
+      "status": "ok"
+    },
+    "agent_mail.messages.send": {
+      "status": "ok"
+    },
+    "agent_mail.reservations.list": {
+      "status": "ok"
+    }
+  },
+  "captures": {
+    "help": {
+      "argv": [
+        "am",
+        "--help"
+      ],
+      "exit": 0,
+      "durationMs": 113,
+      "stdoutBytes": 2392,
+      "stderrBytes": 0,
+      "stdoutText": "MCP Agent Mail CLI (Rust)\n\nUsage: am [COMMAND]\n\nCommands:\n  serve-http                  \n  serve-stdio                 \n  check-inbox                 Check agent inbox for unread messages (for git hooks and editor integrations)\n  check                       Run the unified local pre-release quality gate\n  ci                          Run CI quality gates (format, lint, build, test)\n  bench                       Run native CLI benchmarks\n  lint                        \n  typecheck                   \n  e2e                         Run E2E test suites\n  share                       \n  archive                     \n  guard                       \n  file_reservations           \n  acks                        \n  list-acks                   \n  migrate                     \n  list-projects               \n  clear-and-reset-everything  \n  config                      \n  amctl                       \n  am-run                      \n  projects                    \n  mail                        \n  products                    \n  docs                        \n  doctor                      \n  agents                      \n  tooling                     \n  macros                      Composite workflow macros (session boot, thread prep, reservation cycles, contact handshake)\n  contacts                    Contact request/approve/reject/policy lifecycle\n  beads                       Query beads (issue tracker) status for the current project\n  setup                       Detect coding agents and configure MCP server connections\n  golden                      Capture, verify, and inspect deterministic golden CLI artifacts\n  flake-triage                Flake triage: scan artifacts, reproduce failures, detect flaky tests\n  atc                         ATC maintenance and backfill workflows\n  robot                       Agent-optimized commands with TOON/JSON/Markdown output\n  legacy                      Legacy Python installation detection, migration/import, and status\n  upgrade                     Upgrade helper: detect legacy install, import data, refresh setup\n  self-update                 Check for updates or self-update the binary\n  service                     Cross-platform service management (systemd on Linux, launchd on macOS)\n  help                        Print this message or the help of the given subcommand(s)\n\nOptions:\n  -h, --help     Print help\n  -V, --version  Print version\n",
+      "stderrText": "",
+      "truncated": false,
+      "redacted": false,
+      "tags": []
+    }
+  },
+  "capturedAt": "2026-05-03T22:11:57Z"
+}

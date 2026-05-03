@@ -1,0 +1,7 @@
+{
+  "tool": "jsm",
+  "present": false,
+  "skipReason": "missing binary on PATH: jsm",
+  "captures": {},
+  "capturedAt": "2026-05-03T22:11:57Z"
+}

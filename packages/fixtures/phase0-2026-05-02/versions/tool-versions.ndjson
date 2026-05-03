@@ -1,0 +1,20 @@
+{"tool":"acfs","present":true,"binPath":"/usr/local/bin/acfs","version":"0.7.0"}
+{"tool":"git","present":true,"binPath":"/usr/bin/git","version":"git version 2.53.0"}
+{"tool":"br","present":false,"binPath":null,"version":null}
+{"tool":"bv","present":false,"binPath":null,"version":null}
+{"tool":"ntm","present":false,"binPath":null,"version":null}
+{"tool":"agent_mail","present":true,"binPath":"/home/admin/mcp_agent_mail/am","version":"am 0.2.51"}
+{"tool":"rch","present":false,"binPath":null,"version":null}
+{"tool":"caam","present":false,"binPath":null,"version":null}
+{"tool":"dcg","present":false,"binPath":null,"version":null}
+{"tool":"caut","present":false,"binPath":null,"version":null}
+{"tool":"casr","present":false,"binPath":null,"version":null}
+{"tool":"srp","present":false,"binPath":null,"version":null}
+{"tool":"sbh","present":false,"binPath":null,"version":null}
+{"tool":"pt","present":false,"binPath":null,"version":null}
+{"tool":"ubs","present":false,"binPath":null,"version":null}
+{"tool":"jsm","present":false,"binPath":null,"version":null}
+{"tool":"jfp","present":false,"binPath":null,"version":null}
+{"tool":"ru","present":false,"binPath":null,"version":null}
+{"tool":"health","present":false,"binPath":null,"version":null}
+{"tool":"oracle","present":false,"binPath":null,"version":null}

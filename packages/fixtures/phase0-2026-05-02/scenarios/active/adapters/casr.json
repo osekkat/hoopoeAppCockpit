@@ -1,0 +1,7 @@
+{
+  "tool": "casr",
+  "present": false,
+  "skipReason": "missing binary on PATH: casr",
+  "captures": {},
+  "capturedAt": "2026-05-03T22:11:54Z"
+}

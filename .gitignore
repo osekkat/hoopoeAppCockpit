@@ -53,3 +53,6 @@ apps/daemon/coverage.out
 /p[0-9]_*.txt
 /p[0-9][0-9]_*.txt
 /review_*.txt
+
+# Phase 0 evidence-pack landing zones (raw tarballs; extracted tree is committed)
+packages/fixtures/phase0-*/incoming/

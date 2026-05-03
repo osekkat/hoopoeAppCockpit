@@ -1,0 +1,63 @@
+{
+  "packVersion": "0.1.0",
+  "createdAt": "2026-05-03T22:11:58Z",
+  "mode": "real-vps",
+  "realVpsAcceptance": true,
+  "fixturesVersion": "phase0-2026-05-02",
+  "vpsId": "research-spike-2026-05-04",
+  "projectDir": "/home/admin/Projects/nexusAudio",
+  "scenarios": [
+    "fresh",
+    "active",
+    "failure"
+  ],
+  "adapterTools": [
+    "git",
+    "br",
+    "bv",
+    "ntm",
+    "agent_mail",
+    "rch",
+    "caam",
+    "dcg",
+    "caut",
+    "casr",
+    "srp",
+    "sbh",
+    "pt",
+    "ubs",
+    "jsm",
+    "jfp",
+    "ru",
+    "health",
+    "oracle"
+  ],
+  "versionTools": [
+    "acfs",
+    "git",
+    "br",
+    "bv",
+    "ntm",
+    "agent_mail",
+    "rch",
+    "caam",
+    "dcg",
+    "caut",
+    "casr",
+    "srp",
+    "sbh",
+    "pt",
+    "ubs",
+    "jsm",
+    "jfp",
+    "ru",
+    "health",
+    "oracle"
+  ],
+  "humanGatedBeads": [
+    "hp-r7i",
+    "hp-jvm",
+    "hp-7cs"
+  ],
+  "closePolicy": "Close hp-r7i, hp-jvm, hp-7cs, then hp-vtwm only after a verifier-passing real-VPS pack lands in packages/fixtures/phase0-2026-05-02/."
+}

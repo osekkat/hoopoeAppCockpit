@@ -1,0 +1,7 @@
+{
+  "tool": "sbh",
+  "present": false,
+  "skipReason": "missing binary on PATH: sbh",
+  "captures": {},
+  "capturedAt": "2026-05-03T22:11:51Z"
+}
