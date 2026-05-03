@@ -127,7 +127,9 @@ func TestWebSocketAcceptsValidToken(t *testing.T) {
 	defer server.Close()
 
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/v1/events/ws?wsToken=secret"
-	conn, _, err := websocket.Dial(context.Background(), wsURL, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
 	if err != nil {
 		t.Fatalf("websocket dial with valid token: %v", err)
 	}
@@ -136,7 +138,9 @@ func TestWebSocketAcceptsValidToken(t *testing.T) {
 
 func TestSlowConsumerReceivesLagEvent(t *testing.T) {
 	hub := NewEventHub(EventHubConfig{SubscriberCapacity: 1})
-	sub := hub.Subscribe(context.Background(), []string{"project:test"})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sub := hub.Subscribe(ctx, []string{"project:test"})
 	defer sub.Close()
 
 	hub.Publish(PublishInput{Channel: "project:test", Type: "first", Data: map[string]any{"n": 1}})
