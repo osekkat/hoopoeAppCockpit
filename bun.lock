@@ -98,6 +98,15 @@
         "typescript": "catalog:",
       },
     },
+    "packages/tending-actions": {
+      "name": "@hoopoe/tending-actions",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "@types/node": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/test-evidence": {
       "name": "@hoopoe/test-evidence",
       "version": "0.0.0",
@@ -182,6 +191,8 @@
     "@hoopoe/schemas": ["@hoopoe/schemas@workspace:packages/schemas"],
 
     "@hoopoe/slo": ["@hoopoe/slo@workspace:packages/slo"],
+
+    "@hoopoe/tending-actions": ["@hoopoe/tending-actions@workspace:packages/tending-actions"],
 
     "@hoopoe/test-evidence": ["@hoopoe/test-evidence@workspace:packages/test-evidence"],
 

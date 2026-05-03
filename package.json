@@ -11,7 +11,8 @@
       "packages/fixtures",
       "packages/fixture-replay",
       "packages/test-evidence",
-      "packages/slo"
+      "packages/slo",
+      "packages/tending-actions"
     ],
     "catalog": {
       "@types/bun": "^1.3.13",

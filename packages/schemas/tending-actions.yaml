@@ -43,6 +43,10 @@ actions:
       type: object
       properties:
         prompt: { type: string }
+    preconditions:
+      - 'ntm.snapshot reports agent.pane is alive'
+    postconditions:
+      - 'agent_mail.fetch_inbox returns a status reply within the bounded window OR an idle marker is recorded in audit'
 
   agent.send_marching_orders:
     description: |
@@ -62,6 +66,12 @@ actions:
       properties:
         marchingOrdersBody: { type: string }
         forceOverwrite: { type: boolean, default: false }
+    preconditions:
+      - 'ntm.snapshot reports agent.pane is alive'
+      - 'agent has no destructive action in flight'
+    postconditions:
+      - 'ntm.send-marching-orders RPC returned ok'
+      - 'audit log records the new marching-orders body hash for this agent'
 
   agent.pause:
     description: |
@@ -80,6 +90,11 @@ actions:
       properties:
         reason: { type: string }
         until: { type: string, format: date-time }
+    preconditions:
+      - 'agent is not already paused (job-registry state)'
+    postconditions:
+      - 'tending pre-scripts skip the agent on the next tick'
+      - 'pause record visible in /v1/tending/agents'
 
   agent.kill_wedged_process:
     description: |
@@ -99,6 +114,13 @@ actions:
       properties:
         graceSeconds: { type: integer, minimum: 0, maximum: 60, default: 5 }
         reason: { type: string }
+    preconditions:
+      - 'pt reports the agent.worker process group is alive'
+      - 'wedged-evidence threshold has been crossed in the detection layer'
+    postconditions:
+      - 'pt reports the process group no longer exists'
+      - 'ntm.snapshot no longer lists the agent as running'
+      - 'any held file_reservations were released or transferred per policy'
 
   reservation.force_release:
     description: |
@@ -118,6 +140,12 @@ actions:
       properties:
         reason: { type: string }
         notifyHoldingAgent: { type: boolean, default: true }
+    preconditions:
+      - 'agent_mail.reservations reports the reservation as still held'
+      - 'holding agent is verifiably gone (no inbox activity past stale-threshold OR pane is dead)'
+    postconditions:
+      - 'agent_mail.reservations no longer reports the reservation'
+      - 'release notice posted in the bead.thread (visible via agent_mail.fetch_inbox)'
 
   caam.switch_account:
     description: |
@@ -137,6 +165,12 @@ actions:
       type: object
       properties:
         reason: { type: string }
+    preconditions:
+      - 'caam reports targetAccountId is registered AND not rate-limited'
+      - 'rate-limit signal is present on the current account'
+    postconditions:
+      - 'caam reports the agent is now bound to targetAccountId'
+      - 'agent pane resumes producing output within the bounded resume window'
 
   casr.resume_session:
     description: |
@@ -154,6 +188,11 @@ actions:
       type: object
       properties:
         reason: { type: string }
+    preconditions:
+      - 'casr reports the session is suspended (not active, not deleted)'
+    postconditions:
+      - 'casr reports the target CLI is now driving the session'
+      - 'session context (last N exchanges) is preserved in the resumed CLI'
 
   git.push_branch:
     description: |
@@ -174,6 +213,11 @@ actions:
       properties:
         expectedSha: { type: string, description: 'Local HEAD that must land on origin.' }
         force: { type: boolean, default: false }
+    preconditions:
+      - 'local branch tip equals expectedSha (git rev-parse HEAD)'
+      - 'remote ref state has been re-read since the last push attempt for this branch'
+    postconditions:
+      - 'git ls-remote on origin reports the branch ref equal to expectedSha (NOT trusting git push stdout)'
 
   swarm.halt:
     description: |
@@ -192,6 +236,13 @@ actions:
       required: [reason]
       properties:
         reason: { type: string }
+    preconditions:
+      - 'swarm.session reports the swarm is in a haltable state (running or paused)'
+    postconditions:
+      - 'swarm.session reports state=halted'
+      - 'every agent in the swarm is paused or terminated per policy'
+      - 'build queue is paused for the swarm'
+      - 'audit log records the halt event with reason + actor'
 
   review.propose_flip:
     description: |
@@ -212,6 +263,12 @@ actions:
       properties:
         rationale: { type: string }
         readyBeadCount: { type: integer, minimum: 0 }
+    preconditions:
+      - 'project state is swarm_running'
+      - 'br.ready report is below the configured threshold for the project'
+    postconditions:
+      - 'an Approval is queued in /v1/approvals with kind=review.flip'
+      - 'no project state change has happened (the flip itself waits for approval)'
 
   bead.create_blocker:
     description: |
@@ -235,3 +292,8 @@ actions:
         description: { type: string }
         priority: { type: integer, minimum: 0, maximum: 4, default: 1 }
         issueType: { enum: [task, bug, feature, epic, question, docs] }
+    preconditions:
+      - 'br.show sourceBeadId returns a non-closed bead'
+    postconditions:
+      - 'br.show on the new bead id returns the requested title + priority'
+      - 'br.dep list reports the new bead blocks sourceBeadId'
