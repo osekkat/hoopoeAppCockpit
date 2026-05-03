@@ -1,5 +1,14 @@
 # Hoopoe Phase 0/1 review findings
 
+## Mock-code finder — p3
+- Files scanned: 16 (15 requested files/globs plus immediate renderer data dependency `apps/desktop/src/renderer/data/stage-data.ts`).
+- Mock paths classified: 10 appropriate / 1 implicit (finding filed below).
+- Fixed inline: `4d24133` (`[review/p3-mock-finder] warn on production mock flywheel startup`).
+- Recommended next-bead candidates: P2 "Make stage source metadata come from daemon/mock RPC responses, not static healthy-hour imports"; P2 "Add production-build smoke asserting fixture fallback cannot activate for non-demo projects".
+
+## mock-code — [MEDIUM] Stage source metadata can claim healthy-hour for non-healthy mock scenarios
+**Where:** `apps/desktop/src/renderer/data/stage-data.ts:210`   **Issue:** `sourceFor()` always reads statically imported `healthy-hour/meta.json` for both `daemon-rpc` and `fixture-fallback` payloads. If the Mock Flywheel client is swapped to `wedged-pane`, `rate-limited-no-caam`, or another scenario, the Beads/Swarm mock banner remains visible but can show healthy-hour source metadata while rendering a different scenario's data. That makes mock-vs-real explicit, but the operator-facing audit label can drift from the actual mock source.   **Suggested fix:** carry source metadata in the daemon/mock RPC payloads, or have the stage data layer request `mock-flywheel.scenario.info` plus scenario meta over IPC; keep the static healthy-hour import only for the explicit bridge-missing fallback for `local-demo` / `mock-flywheel-project`.   **Reviewer:** p3   **Round:** mock-finder
+
 ## Phase 1.5 cross-review summary — p3
 - Shas reviewed: `36c72a0` hp-0non, `0001957` hp-2ae3, `a215d95` hp-6obn, `d009cb8` hp-2qgx, `b915cdb` hp-411d.
 - New findings filed: CRITICAL 0, HIGH 2, MEDIUM 2, LOW 0. Fixes shipped: none; no CRITICAL was found.
