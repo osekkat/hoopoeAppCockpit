@@ -23,10 +23,13 @@ import type { components } from "./generated/openapi.ts";
  */
 export type Problem = components["schemas"]["Problem"];
 export type Capability = components["schemas"]["Capability"];
-export type ToolCapabilityRegistry = components["schemas"]["ToolCapabilityRegistry"];
+export type CapabilityStatus = components["schemas"]["CapabilityStatus"];
+export type ToolId = components["schemas"]["ToolId"];
+export type ToolReport = components["schemas"]["ToolReport"];
 export type DegradedModePolicy = components["schemas"]["DegradedModePolicy"];
-export type CapabilitiesResponse = components["schemas"]["CapabilitiesResponse"];
-export type CompatibilityResponse = components["schemas"]["CompatibilityResponse"];
+export type CapabilityRegistry = components["schemas"]["CapabilityRegistry"];
+export type CompatibilityReport = components["schemas"]["CompatibilityReport"];
+export type MigrationState = components["schemas"]["MigrationState"];
 export type HealthResponse = components["schemas"]["HealthResponse"];
 export type VersionResponse = components["schemas"]["VersionResponse"];
 export type Actor = components["schemas"]["Actor"];

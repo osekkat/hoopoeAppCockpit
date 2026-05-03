@@ -202,7 +202,7 @@ export interface components {
                 attestationUri?: string;
             };
         };
-        CompatibilityResponse: {
+        CompatibilityReport: {
             schemaVersion: components["schemas"]["SchemaVersion"];
             /** @description Semver of the OpenAPI contract this daemon implements. */
             daemonApiVersion: string;
@@ -213,26 +213,69 @@ export interface components {
                 [key: string]: number;
             };
             /**
-             * @description Desktop refuses write actions during `running` and `failed`; shows
-             *     read-only Diagnostics until `idle` is reported (§11, §10.3).
-             * @enum {string}
+             * @description Structured migration state per §10.3. Desktop refuses write actions
+             *     while `phase` is `running` or `failed`; shows read-only Diagnostics
+             *     until `idle` is reported.
              */
-            migrationState: "idle" | "running" | "failed" | "rolled_back";
-            unsupportedClientWarnings?: {
-                /** @description e.g., `desktop.below_min_version` */
-                code: string;
-                detail: string;
-            }[];
+            migrationState: components["schemas"]["MigrationState"];
+            /**
+             * @description Free-form human-readable warnings (e.g., "desktop 0.0.5 below
+             *     minimum 0.1.0; please update"). Renderer surfaces these in the
+             *     top-bar.
+             */
+            unsupportedClientWarnings?: string[];
             /** @description Capability snapshot at the same point-in-time. */
-            capabilities: components["schemas"]["CapabilitiesResponse"];
+            capabilities: components["schemas"]["CapabilityRegistry"];
         };
         /**
-         * @description One capability slot inside a `ToolCapabilityRegistry`. The map key is the
+         * @description Structured daemon-migration state (§10.3). The renderer can pick the
+         *     coarse `phase` enum for chrome state OR the detailed
+         *     `schemaVersion`/`appliedAt`/`pending` fields for Diagnostics ("schema 7
+         *     of 9 applied; pending: foo, bar"). Both stay consistent.
+         */
+        MigrationState: {
+            /** @description Currently applied schema version. */
+            schemaVersion: number;
+            /**
+             * Format: date-time
+             * @description When the most recent migration step finished.
+             */
+            appliedAt: string;
+            /** @description Identifiers of unapplied migrations (empty in steady state). */
+            pending: string[];
+            /**
+             * @description Optional coarse phase. Always derivable from the structured fields
+             *     (`pending == [] → idle` etc.); included so renderer chrome can pick
+             *     it without computing.
+             * @enum {string}
+             */
+            phase?: "idle" | "running" | "failed" | "rolled_back";
+        };
+        /**
+         * @description Closed enum of tools the capability registry knows about. New
+         *     ecosystem health probes (e.g., `health_zig`) require an explicit
+         *     spec bump per §10.3; the daemon-side checker uses a `health_*`
+         *     prefix-match for forward-compat input validation.
+         * @enum {string}
+         */
+        ToolId: "ntm" | "br" | "bv" | "agent_mail" | "git" | "ru" | "caam" | "caut" | "dcg" | "casr" | "pt" | "srp" | "sbh" | "ubs" | "jsm" | "jfp" | "oracle" | "rch" | "health_ts" | "health_py" | "health_rs" | "health_go" | "health_generic";
+        /**
+         * @description - `ok` — capability satisfied a contract test.
+         *     - `degraded` — works via fallback transport / partial output.
+         *     - `missing` — tool reports the capability is absent.
+         *     - `blocked-by-policy` — present but disallowed by config.
+         *     - `untested` — daemon could not probe in this snapshot; renderer
+         *       buckets with `missing` (unavailable) but Diagnostics distinguishes
+         *       the two.
+         * @enum {string}
+         */
+        CapabilityStatus: "ok" | "degraded" | "missing" | "blocked-by-policy" | "untested";
+        /**
+         * @description One capability slot inside a `ToolReport`. The map key is the
          *     capability ID (e.g., `ntm.sessions.list`); the value is this object.
          */
         Capability: {
-            /** @enum {string} */
-            status: "ok" | "degraded" | "missing" | "blocked-by-policy";
+            status: components["schemas"]["CapabilityStatus"];
             /**
              * @description Human-readable fallback strategy when status != `ok`. Example:
              *     `"tmux capture last"` for `ntm.panes.stream` missing.
@@ -243,13 +286,20 @@ export interface components {
              * @enum {string}
              */
             transport?: "websocket" | "sse" | "http" | "stdio" | "fixture";
-            /** @description Optional free-text diagnostic; redacted before serialization. */
-            detail?: string;
+            /**
+             * @description Adapter free-text. Surfaced in Diagnostics. Not redacted at the
+             *     field name (redaction happens at the audit/log boundary, hp-je1p);
+             *     do not put secrets here.
+             */
+            notes?: string;
         };
-        ToolCapabilityRegistry: {
-            /** @enum {string} */
-            tool: "ntm" | "br" | "bv" | "agent_mail" | "git" | "ru" | "caam" | "caut" | "dcg" | "casr" | "pt" | "srp" | "sbh" | "ubs" | "jsm" | "jfp" | "oracle" | "rch" | "health_ts" | "health_py" | "health_rs" | "health_go" | "health_generic";
-            /** @description Semver (or vendor version string) of the tool the daemon detected. */
+        /**
+         * @description One tool's slice of the capability registry. Compose into
+         *     `CapabilityRegistry.tools` keyed by ToolId.
+         */
+        ToolReport: {
+            tool: components["schemas"]["ToolId"];
+            /** @description Semver (or vendor version string) of the tool. Empty if unknown. */
             version: string;
             /**
              * @description How capabilities were detected. Examples: `"ntm serve"`,
@@ -270,23 +320,49 @@ export interface components {
             fixturesVersion: string;
         };
         /**
-         * @description Per-feature / per-tending-job degraded-mode contract (§2.8, §8.2). Used to
-         *     decide whether to block, run read-only, or warn when a required capability
-         *     is missing.
+         * @description Per-feature / per-tending-job degraded-mode contract (§2.8, §8.2). Used
+         *     to decide whether to block, run read-only, or warn when a required
+         *     capability is missing. Field names are camelCase (matching the rest of
+         *     the spec); enum values are snake_case (they are tokens, not keys).
          */
         DegradedModePolicy: {
             /** @enum {string} */
-            if_missing_required: "block_job" | "run_read_only" | "emit_diagnostic";
+            ifMissingRequired: "block_job" | "run_read_only" | "emit_diagnostic";
             /** @enum {string} */
-            if_missing_optional: "continue_with_warning" | "suppress_related_detections";
+            ifMissingOptional: "continue_with_warning" | "suppress_related_detections";
             /** @enum {string} */
-            activity_behavior: "silent" | "diagnostics_only" | "activity_panel_warning";
+            activityBehavior: "silent" | "diagnostics_only" | "activity_panel_warning";
         };
-        CapabilitiesResponse: {
+        /**
+         * @description Authoritative capability snapshot returned by `/v1/capabilities`. The
+         *     `tools` map is keyed by ToolId so renderer code can do
+         *     `registry.tools.git.capabilities['git.push']` in O(1) without scanning
+         *     an array.
+         */
+        CapabilityRegistry: {
             schemaVersion: components["schemas"]["SchemaVersion"];
-            registries: components["schemas"]["ToolCapabilityRegistry"][];
-            /** Format: date-time */
-            generatedAt: string;
+            /**
+             * Format: date-time
+             * @description When this composite was assembled (single timestamp across all tools).
+             */
+            snapshotAt: string;
+            /** @description Cross-reference with `/v1/compatibility.daemonApiVersion`. */
+            daemonApiVersion: string;
+            /**
+             * @description Dominant fixtures tag for the snapshot. Per-tool tags can diverge
+             *     (each `ToolReport.fixturesVersion` is authoritative for that tool);
+             *     this is the most-common tag, used for top-level Diagnostics labels.
+             */
+            fixturesVersion: string;
+            /**
+             * @description Map of ToolId → ToolReport. OpenAPI cannot fully constrain object
+             *     keys to a closed enum; the daemon enforces `ToolId` membership at
+             *     serialization. Missing tools are absent from the map (not present
+             *     with `null`).
+             */
+            tools: {
+                [key: string]: components["schemas"]["ToolReport"];
+            };
         };
     };
     responses: {
@@ -375,7 +451,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CompatibilityResponse"];
+                    "application/json": components["schemas"]["CompatibilityReport"];
                 };
             };
             default: components["responses"]["Problem"];
@@ -399,7 +475,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CapabilitiesResponse"];
+                    "application/json": components["schemas"]["CapabilityRegistry"];
                 };
             };
             default: components["responses"]["Problem"];

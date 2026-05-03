@@ -121,7 +121,7 @@ paths:
           description: Compatibility info.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/CompatibilityResponse' }
+              schema: { $ref: '#/components/schemas/CompatibilityReport' }
         default: { $ref: '#/components/responses/Problem' }
 
   /v1/capabilities:
@@ -147,7 +147,7 @@ paths:
           description: Capability snapshot.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/CapabilitiesResponse' }
+              schema: { $ref: '#/components/schemas/CapabilityRegistry' }
         default: { $ref: '#/components/responses/Problem' }
 
 components:
@@ -347,7 +347,7 @@ components:
               type: string
               format: uri-reference
 
-    CompatibilityResponse:
+    CompatibilityReport:
       type: object
       required: [schemaVersion, daemonApiVersion, minDesktopVersion, eventSchemaVersions, migrationState, capabilities]
       properties:
@@ -365,39 +365,107 @@ components:
             minimum: 1
           description: Per-channel event schemaVersion (channel → schemaVersion int).
         migrationState:
+          $ref: '#/components/schemas/MigrationState'
+          description: |
+            Structured migration state per §10.3. Desktop refuses write actions
+            while `phase` is `running` or `failed`; shows read-only Diagnostics
+            until `idle` is reported.
+        unsupportedClientWarnings:
+          type: array
+          description: |
+            Free-form human-readable warnings (e.g., "desktop 0.0.5 below
+            minimum 0.1.0; please update"). Renderer surfaces these in the
+            top-bar.
+          items: { type: string }
+        capabilities:
+          $ref: '#/components/schemas/CapabilityRegistry'
+          description: Capability snapshot at the same point-in-time.
+
+    MigrationState:
+      type: object
+      description: |
+        Structured daemon-migration state (§10.3). The renderer can pick the
+        coarse `phase` enum for chrome state OR the detailed
+        `schemaVersion`/`appliedAt`/`pending` fields for Diagnostics ("schema 7
+        of 9 applied; pending: foo, bar"). Both stay consistent.
+      required: [schemaVersion, appliedAt, pending]
+      properties:
+        schemaVersion:
+          type: integer
+          minimum: 0
+          description: Currently applied schema version.
+        appliedAt:
+          type: string
+          format: date-time
+          description: When the most recent migration step finished.
+        pending:
+          type: array
+          items: { type: string }
+          description: Identifiers of unapplied migrations (empty in steady state).
+        phase:
           type: string
           enum: [idle, running, failed, rolled_back]
           description: |
-            Desktop refuses write actions during `running` and `failed`; shows
-            read-only Diagnostics until `idle` is reported (§11, §10.3).
-        unsupportedClientWarnings:
-          type: array
-          items:
-            type: object
-            required: [code, detail]
-            properties:
-              code:
-                type: string
-                description: e.g., `desktop.below_min_version`
-              detail: { type: string }
-        capabilities:
-          $ref: '#/components/schemas/CapabilitiesResponse'
-          description: Capability snapshot at the same point-in-time.
+            Optional coarse phase. Always derivable from the structured fields
+            (`pending == [] → idle` etc.); included so renderer chrome can pick
+            it without computing.
 
     # ─────────────────────────────────────────────────────────────────────────
     # Capability registry (§2.8) — coordinated with hp-r33 (PANE 3)
     # ─────────────────────────────────────────────────────────────────────────
 
+    ToolId:
+      type: string
+      description: |
+        Closed enum of tools the capability registry knows about. New
+        ecosystem health probes (e.g., `health_zig`) require an explicit
+        spec bump per §10.3; the daemon-side checker uses a `health_*`
+        prefix-match for forward-compat input validation.
+      enum:
+        - ntm
+        - br
+        - bv
+        - agent_mail
+        - git
+        - ru
+        - caam
+        - caut
+        - dcg
+        - casr
+        - pt
+        - srp
+        - sbh
+        - ubs
+        - jsm
+        - jfp
+        - oracle
+        - rch
+        - health_ts
+        - health_py
+        - health_rs
+        - health_go
+        - health_generic
+
+    CapabilityStatus:
+      type: string
+      description: |
+        - `ok` — capability satisfied a contract test.
+        - `degraded` — works via fallback transport / partial output.
+        - `missing` — tool reports the capability is absent.
+        - `blocked-by-policy` — present but disallowed by config.
+        - `untested` — daemon could not probe in this snapshot; renderer
+          buckets with `missing` (unavailable) but Diagnostics distinguishes
+          the two.
+      enum: [ok, degraded, missing, blocked-by-policy, untested]
+
     Capability:
       type: object
       description: |
-        One capability slot inside a `ToolCapabilityRegistry`. The map key is the
+        One capability slot inside a `ToolReport`. The map key is the
         capability ID (e.g., `ntm.sessions.list`); the value is this object.
       required: [status]
       properties:
-        status:
-          type: string
-          enum: [ok, degraded, missing, blocked-by-policy]
+        status: { $ref: '#/components/schemas/CapabilityStatus' }
         fallback:
           type: string
           description: |
@@ -407,43 +475,24 @@ components:
           type: string
           enum: [websocket, sse, http, stdio, fixture]
           description: Transport actually being used for this capability when applicable.
-        detail:
+        notes:
           type: string
-          description: Optional free-text diagnostic; redacted before serialization.
+          description: |
+            Adapter free-text. Surfaced in Diagnostics. Not redacted at the
+            field name (redaction happens at the audit/log boundary, hp-je1p);
+            do not put secrets here.
 
-    ToolCapabilityRegistry:
+    ToolReport:
       type: object
+      description: |
+        One tool's slice of the capability registry. Compose into
+        `CapabilityRegistry.tools` keyed by ToolId.
       required: [tool, version, source, capabilities, lastCheckedAt, fixturesVersion]
       properties:
-        tool:
-          type: string
-          enum:
-            - ntm
-            - br
-            - bv
-            - agent_mail
-            - git
-            - ru
-            - caam
-            - caut
-            - dcg
-            - casr
-            - pt
-            - srp
-            - sbh
-            - ubs
-            - jsm
-            - jfp
-            - oracle
-            - rch
-            - health_ts
-            - health_py
-            - health_rs
-            - health_go
-            - health_generic
+        tool: { $ref: '#/components/schemas/ToolId' }
         version:
           type: string
-          description: Semver (or vendor version string) of the tool the daemon detected.
+          description: Semver (or vendor version string) of the tool. Empty if unknown.
         source:
           type: string
           description: |
@@ -464,27 +513,52 @@ components:
     DegradedModePolicy:
       type: object
       description: |
-        Per-feature / per-tending-job degraded-mode contract (§2.8, §8.2). Used to
-        decide whether to block, run read-only, or warn when a required capability
-        is missing.
-      required: [if_missing_required, if_missing_optional, activity_behavior]
+        Per-feature / per-tending-job degraded-mode contract (§2.8, §8.2). Used
+        to decide whether to block, run read-only, or warn when a required
+        capability is missing. Field names are camelCase (matching the rest of
+        the spec); enum values are snake_case (they are tokens, not keys).
+      required: [ifMissingRequired, ifMissingOptional, activityBehavior]
       properties:
-        if_missing_required:
+        ifMissingRequired:
           type: string
           enum: [block_job, run_read_only, emit_diagnostic]
-        if_missing_optional:
+        ifMissingOptional:
           type: string
           enum: [continue_with_warning, suppress_related_detections]
-        activity_behavior:
+        activityBehavior:
           type: string
           enum: [silent, diagnostics_only, activity_panel_warning]
 
-    CapabilitiesResponse:
+    CapabilityRegistry:
       type: object
-      required: [schemaVersion, registries, generatedAt]
+      description: |
+        Authoritative capability snapshot returned by `/v1/capabilities`. The
+        `tools` map is keyed by ToolId so renderer code can do
+        `registry.tools.git.capabilities['git.push']` in O(1) without scanning
+        an array.
+      required: [schemaVersion, snapshotAt, daemonApiVersion, fixturesVersion, tools]
       properties:
         schemaVersion: { $ref: '#/components/schemas/SchemaVersion' }
-        registries:
-          type: array
-          items: { $ref: '#/components/schemas/ToolCapabilityRegistry' }
-        generatedAt: { type: string, format: date-time }
+        snapshotAt:
+          type: string
+          format: date-time
+          description: When this composite was assembled (single timestamp across all tools).
+        daemonApiVersion:
+          type: string
+          description: Cross-reference with `/v1/compatibility.daemonApiVersion`.
+        fixturesVersion:
+          type: string
+          description: |
+            Dominant fixtures tag for the snapshot. Per-tool tags can diverge
+            (each `ToolReport.fixturesVersion` is authoritative for that tool);
+            this is the most-common tag, used for top-level Diagnostics labels.
+        tools:
+          type: object
+          description: |
+            Map of ToolId → ToolReport. OpenAPI cannot fully constrain object
+            keys to a closed enum; the daemon enforces `ToolId` membership at
+            serialization. Missing tools are absent from the map (not present
+            with `null`).
+          additionalProperties: { $ref: '#/components/schemas/ToolReport' }
+          propertyNames:
+            $ref: '#/components/schemas/ToolId'
