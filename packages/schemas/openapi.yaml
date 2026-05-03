@@ -1701,3 +1701,312 @@ components:
         requiresApproval:
           type: boolean
           description: 'True iff at least one action requires human approval.'
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Swarm + Agents (§7.3, §8) — NTM-backed sessions and per-agent state.
+    # ─────────────────────────────────────────────────────────────────────────
+
+    SwarmSessionState:
+      type: string
+      enum: [pending, launching, running, halting, halted, completed, failed]
+
+    AgentState:
+      type: string
+      description: |
+        Tracked by the tending scheduler from canonical NTM + br + Agent Mail
+        signals. Composite: a `wedged` agent might also be `rate_limited`;
+        the scheduler picks the dominant label.
+      enum:
+        - launching
+        - working
+        - idle
+        - waiting_approval
+        - rate_limited
+        - wedged
+        - paused
+        - completed
+        - failed
+
+    SwarmLaunchComposition:
+      type: object
+      description: |
+        One agent slot in a SwarmLaunchSpec. The composition picker (§7.3)
+        builds a list of these before launching.
+      required: [program, role]
+      properties:
+        program:
+          type: string
+          description: 'Agent CLI (`claude-code`, `codex-cli`, `gemini-cli`, `ntm`).'
+        model:
+          type: string
+          description: 'Specific model id (e.g., `claude-opus-4-7`, `gpt-5-codex`).'
+        role:
+          type: string
+          description: 'Agent role label (e.g., `worker`, `tender`, `orchestrator-chat`).'
+        skills:
+          type: array
+          items: { type: string }
+          description: 'Skill IDs to load via jsm/jfp (e.g., `vibing-with-ntm`).'
+        marchingOrdersTemplate:
+          type: string
+          description: 'Optional template ID for per-agent marching orders.'
+
+    SwarmLaunchSpec:
+      type: object
+      description: |
+        Frozen launch plan for a swarm. Composed in the picker, persisted as
+        an artifact, and replayable for forensics. NTM + jsm pins are
+        captured so the launch is reproducible.
+      required: [schemaVersion, projectId, composition, requestedBy, requestedAt]
+      properties:
+        schemaVersion: { $ref: '#/components/schemas/SchemaVersion' }
+        projectId: { type: string }
+        beadSelector:
+          type: object
+          description: 'Which beads the swarm targets (filter expression or explicit list).'
+          properties:
+            mode: { enum: [explicit, ready_set, recipe], type: string }
+            beadIds:
+              type: array
+              items: { type: string }
+            recipe: { type: string }
+        composition:
+          type: array
+          items: { $ref: '#/components/schemas/SwarmLaunchComposition' }
+        budgetPolicyId: { type: string }
+        buildQueuePolicyId: { type: string }
+        skillsLockSha:
+          type: string
+          description: |
+            SHA-256 of `.hoopoe/skills.lock.json` at launch. Reproducible
+            tending requires this match on relaunch.
+        requestedBy: { $ref: '#/components/schemas/Actor' }
+        requestedAt: { type: string, format: date-time }
+
+    SwarmSession:
+      type: object
+      description: |
+        One running (or completed) NTM-backed swarm session. Read from
+        canonical NTM + br state; the daemon does not duplicate session
+        truth.
+      required: [id, projectId, state, schemaVersion, launchSpecRef]
+      properties:
+        schemaVersion: { $ref: '#/components/schemas/SchemaVersion' }
+        id: { type: string, description: 'Swarm ID (ULID).' }
+        projectId: { type: string }
+        state: { $ref: '#/components/schemas/SwarmSessionState' }
+        launchSpecRef:
+          type: string
+          description: 'ArtifactRef ID for the frozen SwarmLaunchSpec.'
+        launchedAt: { type: string, format: date-time }
+        haltedAt: { type: string, format: date-time }
+        completedAt: { type: string, format: date-time }
+        agentCount: { type: integer, minimum: 0 }
+        beadCount: { type: integer, minimum: 0 }
+        tmuxSession: { type: string, description: 'NTM/tmux session name.' }
+
+    Agent:
+      type: object
+      description: |
+        One agent within a swarm session. Composed from NTM pane state +
+        Agent Mail identity + br claim activity. Snapshotted into the
+        renderer; canonical truth is reread on demand.
+      required: [id, swarmId, name, program, model, state, schemaVersion]
+      properties:
+        schemaVersion: { $ref: '#/components/schemas/SchemaVersion' }
+        id: { type: string }
+        swarmId: { type: string }
+        name:
+          type: string
+          description: 'Agent Mail name (e.g., "RedMountain"); stable across the session.'
+        program:
+          type: string
+          description: 'CLI program (`claude-code`, `codex-cli`, etc.).'
+        model: { type: string }
+        role: { type: string }
+        state: { $ref: '#/components/schemas/AgentState' }
+        currentBeadId: { type: string }
+        lastOutputAt: { type: string, format: date-time }
+        rateLimitInfo:
+          type: object
+          properties:
+            provider: { type: string }
+            resetAt: { type: string, format: date-time }
+            severity:
+              type: string
+              enum: [low, medium, high]
+        accountId:
+          type: string
+          description: 'CAAM account currently bound to this agent.'
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # File reservations (Agent Mail) + PaneStreamEvent (NTM)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    FileReservation:
+      type: object
+      description: |
+        Advisory lease over a file glob held by an agent (Agent Mail). The
+        daemon mirrors but does not own this — Agent Mail is canonical.
+      required: [id, projectId, agentName, paths, exclusive, acquiredAt, expiresAt, schemaVersion]
+      properties:
+        schemaVersion: { $ref: '#/components/schemas/SchemaVersion' }
+        id: { type: string }
+        projectId: { type: string }
+        agentName: { type: string, description: 'Agent Mail identity.' }
+        paths:
+          type: array
+          items: { type: string }
+          description: 'Glob patterns covered by the reservation.'
+        exclusive:
+          type: boolean
+          description: 'False allows shared (advisory-multi-reader) reservations.'
+        reason:
+          type: string
+          description: 'Free-text; bead ID is the convention.'
+        acquiredAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+
+    PaneStreamEvent:
+      type: object
+      description: |
+        Chunked pane output stream for diagnostics (`Show raw pane`, §7.3
+        Guardrail 12). Each chunk has a byte offset so a renderer can
+        attach mid-stream and replay from disk later.
+      required: [agentId, chunkId, offsetBytes, time, content, schemaVersion]
+      properties:
+        schemaVersion: { $ref: '#/components/schemas/SchemaVersion' }
+        agentId: { type: string }
+        chunkId: { type: string, description: 'Sortable ULID.' }
+        offsetBytes:
+          type: integer
+          minimum: 0
+          description: 'Cumulative bytes from start of pane log.'
+        time: { type: string, format: date-time }
+        content:
+          type: string
+          description: 'UTF-8 decoded chunk; binary panes are base64-wrapped.'
+        truncated:
+          type: boolean
+          description: 'True iff the chunk was capped at max-chunk-size.'
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Budget + Build queue policies (§2.7, §8.5)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    BudgetPolicy:
+      type: object
+      description: |
+        Per-project budget caps surfaced before swarm launch. Tending uses
+        them to issue rate-limit detections; the renderer surfaces them in
+        the launch wizard with a warning if a swarm would exceed projected
+        spend.
+      required: [id, projectId, schemaVersion]
+      properties:
+        schemaVersion: { $ref: '#/components/schemas/SchemaVersion' }
+        id: { type: string }
+        projectId: { type: string }
+        dailyMaxUsd: { type: number, minimum: 0 }
+        weeklyMaxUsd: { type: number, minimum: 0 }
+        perAgentMaxUsd: { type: number, minimum: 0 }
+        rateLimitWarningPct:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: 'Fraction (0–1) of cap at which a warning is emitted.'
+        notes: { type: string }
+
+    BuildQueuePolicy:
+      type: object
+      description: |
+        Per-project build/test queue policy (§2.7). Bounds concurrency,
+        cache reuse, dedupe behavior, and known-flake handling.
+      required: [id, projectId, schemaVersion]
+      properties:
+        schemaVersion: { $ref: '#/components/schemas/SchemaVersion' }
+        id: { type: string }
+        projectId: { type: string }
+        maxConcurrentBuilds: { type: integer, minimum: 1, maximum: 64, default: 4 }
+        maxConcurrentTests: { type: integer, minimum: 1, maximum: 64, default: 4 }
+        cacheReuseAllowed: { type: boolean, default: true }
+        dedupeEquivalentCommands: { type: boolean, default: true }
+        flakeRetryCount: { type: integer, minimum: 0, maximum: 5, default: 1 }
+        rchPreferred:
+          type: boolean
+          default: true
+          description: 'When true, the daemon prefers `rch exec` for builds.'
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Code health (§7.4, §11) + Provider plugin contract (§13)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    HealthDimension:
+      type: string
+      enum: [coverage, complexity, churn, hotspot, lint, security]
+
+    FileHealthMetric:
+      type: object
+      description: |
+        One health metric for a file inside a project. Stored in time-series
+        snapshots; rendered as the per-file pill in the Hardening stage.
+      required: [path, dimension, value, schemaVersion]
+      properties:
+        schemaVersion: { $ref: '#/components/schemas/SchemaVersion' }
+        path: { type: string, description: 'Repo-relative path.' }
+        dimension: { $ref: '#/components/schemas/HealthDimension' }
+        value: { type: number, description: 'Dimension-specific scale.' }
+        rank: { type: integer, minimum: 1, description: 'Hotspot rank (1 = worst).' }
+        notes: { type: string }
+
+    CodeHealthSnapshot:
+      type: object
+      description: |
+        Composite project-level health snapshot per §7.4. Captures the
+        aggregate health-pill state in the top bar plus the per-file
+        contributors.
+      required: [id, projectId, schemaVersion, snapshotAt, dimensions, files]
+      properties:
+        schemaVersion: { $ref: '#/components/schemas/SchemaVersion' }
+        id: { type: string }
+        projectId: { type: string }
+        snapshotAt: { type: string, format: date-time }
+        dimensions:
+          type: object
+          description: 'Aggregate per-dimension scores (0–10) for the project.'
+          additionalProperties:
+            type: number
+            minimum: 0
+            maximum: 10
+        files:
+          type: array
+          items: { $ref: '#/components/schemas/FileHealthMetric' }
+
+    ProviderPluginContract:
+      type: object
+      description: |
+        Surface a provider-automation plugin (Contabo / OVH / etc.) declares
+        to the daemon during VPS onboarding. Provider plugins are PHASE 13
+        work (§6.2 + §13) — this entity is here so the daemon can validate
+        provider plugin manifests against a known shape from day one.
+      required: [providerId, displayName, schemaVersion, capabilities]
+      properties:
+        schemaVersion: { $ref: '#/components/schemas/SchemaVersion' }
+        providerId: { type: string, description: 'e.g., `contabo`, `ovh`.' }
+        displayName: { type: string }
+        capabilities:
+          type: array
+          items:
+            type: string
+            enum:
+              - vps.create
+              - vps.destroy
+              - vps.list
+              - vps.snapshot
+              - vps.resize
+              - dns.update
+              - billing.fetch
+        regions:
+          type: array
+          items: { type: string }
+        defaultImage: { type: string }
+        notes: { type: string }

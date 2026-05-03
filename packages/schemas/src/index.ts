@@ -84,6 +84,26 @@ export type ActionPlan = components["schemas"]["ActionPlan"];
 export type Action = components["schemas"]["Action"];
 export type ActionKind = components["schemas"]["ActionKind"];
 
+// Swarm + Agent + FileReservation + PaneStreamEvent (§7.3, §8)
+export type SwarmSession = components["schemas"]["SwarmSession"];
+export type SwarmSessionState = components["schemas"]["SwarmSessionState"];
+export type SwarmLaunchSpec = components["schemas"]["SwarmLaunchSpec"];
+export type SwarmLaunchComposition = components["schemas"]["SwarmLaunchComposition"];
+export type Agent = components["schemas"]["Agent"];
+export type AgentState = components["schemas"]["AgentState"];
+export type FileReservation = components["schemas"]["FileReservation"];
+export type PaneStreamEvent = components["schemas"]["PaneStreamEvent"];
+
+// Budget + build queue policies (§2.7, §8.5)
+export type BudgetPolicy = components["schemas"]["BudgetPolicy"];
+export type BuildQueuePolicy = components["schemas"]["BuildQueuePolicy"];
+
+// Code health (§7.4, §11) + ProviderPluginContract (§13)
+export type CodeHealthSnapshot = components["schemas"]["CodeHealthSnapshot"];
+export type FileHealthMetric = components["schemas"]["FileHealthMetric"];
+export type HealthDimension = components["schemas"]["HealthDimension"];
+export type ProviderPluginContract = components["schemas"]["ProviderPluginContract"];
+
 /** Public package identity. Used in audit + diagnostics. */
 export const HOOPOE_SCHEMAS_PACKAGE_NAME = "@hoopoe/schemas";
 

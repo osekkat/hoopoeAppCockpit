@@ -221,6 +221,55 @@ test("ActionPlan with one git.push_branch action narrows correctly (§8.3.1)", (
   expect(plan.actions[0]?.kind).toBe("git.push_branch");
 });
 
+test("SwarmSession + Agent + FileReservation + PaneStreamEvent compile against §7.3/§8 shapes", () => {
+  const swarm: import("./index.ts").SwarmSession = {
+    schemaVersion: 1,
+    id: "sw_01",
+    projectId: "proj_01",
+    state: "running",
+    launchSpecRef: "art_01",
+    launchedAt: "2026-05-04T00:00:00Z",
+    agentCount: 5,
+    beadCount: 12,
+  };
+  expect(swarm.state).toBe("running");
+
+  const agent: import("./index.ts").Agent = {
+    schemaVersion: 1,
+    id: "ag_7",
+    swarmId: "sw_01",
+    name: "RedMountain",
+    program: "claude-code",
+    model: "claude-opus-4-7",
+    state: "rate_limited",
+    rateLimitInfo: { provider: "anthropic", severity: "medium" },
+  };
+  expect(agent.state).toBe("rate_limited");
+
+  const res: import("./index.ts").FileReservation = {
+    schemaVersion: 1,
+    id: "res_01",
+    projectId: "proj_01",
+    agentName: "RedMountain",
+    paths: ["packages/schemas/**"],
+    exclusive: true,
+    reason: "hp-r3i",
+    acquiredAt: "2026-05-04T00:00:00Z",
+    expiresAt: "2026-05-04T02:00:00Z",
+  };
+  expect(res.paths[0]).toBe("packages/schemas/**");
+
+  const chunk: import("./index.ts").PaneStreamEvent = {
+    schemaVersion: 1,
+    agentId: "ag_7",
+    chunkId: "chk_01",
+    offsetBytes: 12_500,
+    time: "2026-05-04T00:00:00Z",
+    content: "[hp-r3i] commit 7/n landed",
+  };
+  expect(chunk.offsetBytes).toBe(12_500);
+});
+
 test("CompatibilityReport embeds CapabilityRegistry + structured MigrationState", () => {
   const report: CompatibilityReport = {
     schemaVersion: 1,

@@ -1212,6 +1212,242 @@ export interface components {
             /** @description True iff at least one action requires human approval. */
             requiresApproval?: boolean;
         };
+        /** @enum {string} */
+        SwarmSessionState: "pending" | "launching" | "running" | "halting" | "halted" | "completed" | "failed";
+        /**
+         * @description Tracked by the tending scheduler from canonical NTM + br + Agent Mail
+         *     signals. Composite: a `wedged` agent might also be `rate_limited`;
+         *     the scheduler picks the dominant label.
+         * @enum {string}
+         */
+        AgentState: "launching" | "working" | "idle" | "waiting_approval" | "rate_limited" | "wedged" | "paused" | "completed" | "failed";
+        /**
+         * @description One agent slot in a SwarmLaunchSpec. The composition picker (§7.3)
+         *     builds a list of these before launching.
+         */
+        SwarmLaunchComposition: {
+            /** @description Agent CLI (`claude-code`, `codex-cli`, `gemini-cli`, `ntm`). */
+            program: string;
+            /** @description Specific model id (e.g., `claude-opus-4-7`, `gpt-5-codex`). */
+            model?: string;
+            /** @description Agent role label (e.g., `worker`, `tender`, `orchestrator-chat`). */
+            role: string;
+            /** @description Skill IDs to load via jsm/jfp (e.g., `vibing-with-ntm`). */
+            skills?: string[];
+            /** @description Optional template ID for per-agent marching orders. */
+            marchingOrdersTemplate?: string;
+        };
+        /**
+         * @description Frozen launch plan for a swarm. Composed in the picker, persisted as
+         *     an artifact, and replayable for forensics. NTM + jsm pins are
+         *     captured so the launch is reproducible.
+         */
+        SwarmLaunchSpec: {
+            schemaVersion: components["schemas"]["SchemaVersion"];
+            projectId: string;
+            /** @description Which beads the swarm targets (filter expression or explicit list). */
+            beadSelector?: {
+                /** @enum {string} */
+                mode?: "explicit" | "ready_set" | "recipe";
+                beadIds?: string[];
+                recipe?: string;
+            };
+            composition: components["schemas"]["SwarmLaunchComposition"][];
+            budgetPolicyId?: string;
+            buildQueuePolicyId?: string;
+            /**
+             * @description SHA-256 of `.hoopoe/skills.lock.json` at launch. Reproducible
+             *     tending requires this match on relaunch.
+             */
+            skillsLockSha?: string;
+            requestedBy: components["schemas"]["Actor"];
+            /** Format: date-time */
+            requestedAt: string;
+        };
+        /**
+         * @description One running (or completed) NTM-backed swarm session. Read from
+         *     canonical NTM + br state; the daemon does not duplicate session
+         *     truth.
+         */
+        SwarmSession: {
+            schemaVersion: components["schemas"]["SchemaVersion"];
+            /** @description Swarm ID (ULID). */
+            id: string;
+            projectId: string;
+            state: components["schemas"]["SwarmSessionState"];
+            /** @description ArtifactRef ID for the frozen SwarmLaunchSpec. */
+            launchSpecRef: string;
+            /** Format: date-time */
+            launchedAt?: string;
+            /** Format: date-time */
+            haltedAt?: string;
+            /** Format: date-time */
+            completedAt?: string;
+            agentCount?: number;
+            beadCount?: number;
+            /** @description NTM/tmux session name. */
+            tmuxSession?: string;
+        };
+        /**
+         * @description One agent within a swarm session. Composed from NTM pane state +
+         *     Agent Mail identity + br claim activity. Snapshotted into the
+         *     renderer; canonical truth is reread on demand.
+         */
+        Agent: {
+            schemaVersion: components["schemas"]["SchemaVersion"];
+            id: string;
+            swarmId: string;
+            /** @description Agent Mail name (e.g., "RedMountain"); stable across the session. */
+            name: string;
+            /** @description CLI program (`claude-code`, `codex-cli`, etc.). */
+            program: string;
+            model: string;
+            role?: string;
+            state: components["schemas"]["AgentState"];
+            currentBeadId?: string;
+            /** Format: date-time */
+            lastOutputAt?: string;
+            rateLimitInfo?: {
+                provider?: string;
+                /** Format: date-time */
+                resetAt?: string;
+                /** @enum {string} */
+                severity?: "low" | "medium" | "high";
+            };
+            /** @description CAAM account currently bound to this agent. */
+            accountId?: string;
+        };
+        /**
+         * @description Advisory lease over a file glob held by an agent (Agent Mail). The
+         *     daemon mirrors but does not own this — Agent Mail is canonical.
+         */
+        FileReservation: {
+            schemaVersion: components["schemas"]["SchemaVersion"];
+            id: string;
+            projectId: string;
+            /** @description Agent Mail identity. */
+            agentName: string;
+            /** @description Glob patterns covered by the reservation. */
+            paths: string[];
+            /** @description False allows shared (advisory-multi-reader) reservations. */
+            exclusive: boolean;
+            /** @description Free-text; bead ID is the convention. */
+            reason?: string;
+            /** Format: date-time */
+            acquiredAt: string;
+            /** Format: date-time */
+            expiresAt: string;
+        };
+        /**
+         * @description Chunked pane output stream for diagnostics (`Show raw pane`, §7.3
+         *     Guardrail 12). Each chunk has a byte offset so a renderer can
+         *     attach mid-stream and replay from disk later.
+         */
+        PaneStreamEvent: {
+            schemaVersion: components["schemas"]["SchemaVersion"];
+            agentId: string;
+            /** @description Sortable ULID. */
+            chunkId: string;
+            /** @description Cumulative bytes from start of pane log. */
+            offsetBytes: number;
+            /** Format: date-time */
+            time: string;
+            /** @description UTF-8 decoded chunk; binary panes are base64-wrapped. */
+            content: string;
+            /** @description True iff the chunk was capped at max-chunk-size. */
+            truncated?: boolean;
+        };
+        /**
+         * @description Per-project budget caps surfaced before swarm launch. Tending uses
+         *     them to issue rate-limit detections; the renderer surfaces them in
+         *     the launch wizard with a warning if a swarm would exceed projected
+         *     spend.
+         */
+        BudgetPolicy: {
+            schemaVersion: components["schemas"]["SchemaVersion"];
+            id: string;
+            projectId: string;
+            dailyMaxUsd?: number;
+            weeklyMaxUsd?: number;
+            perAgentMaxUsd?: number;
+            /** @description Fraction (0–1) of cap at which a warning is emitted. */
+            rateLimitWarningPct?: number;
+            notes?: string;
+        };
+        /**
+         * @description Per-project build/test queue policy (§2.7). Bounds concurrency,
+         *     cache reuse, dedupe behavior, and known-flake handling.
+         */
+        BuildQueuePolicy: {
+            schemaVersion: components["schemas"]["SchemaVersion"];
+            id: string;
+            projectId: string;
+            /** @default 4 */
+            maxConcurrentBuilds: number;
+            /** @default 4 */
+            maxConcurrentTests: number;
+            /** @default true */
+            cacheReuseAllowed: boolean;
+            /** @default true */
+            dedupeEquivalentCommands: boolean;
+            /** @default 1 */
+            flakeRetryCount: number;
+            /**
+             * @description When true, the daemon prefers `rch exec` for builds.
+             * @default true
+             */
+            rchPreferred: boolean;
+        };
+        /** @enum {string} */
+        HealthDimension: "coverage" | "complexity" | "churn" | "hotspot" | "lint" | "security";
+        /**
+         * @description One health metric for a file inside a project. Stored in time-series
+         *     snapshots; rendered as the per-file pill in the Hardening stage.
+         */
+        FileHealthMetric: {
+            schemaVersion: components["schemas"]["SchemaVersion"];
+            /** @description Repo-relative path. */
+            path: string;
+            dimension: components["schemas"]["HealthDimension"];
+            /** @description Dimension-specific scale. */
+            value: number;
+            /** @description Hotspot rank (1 = worst). */
+            rank?: number;
+            notes?: string;
+        };
+        /**
+         * @description Composite project-level health snapshot per §7.4. Captures the
+         *     aggregate health-pill state in the top bar plus the per-file
+         *     contributors.
+         */
+        CodeHealthSnapshot: {
+            schemaVersion: components["schemas"]["SchemaVersion"];
+            id: string;
+            projectId: string;
+            /** Format: date-time */
+            snapshotAt: string;
+            /** @description Aggregate per-dimension scores (0–10) for the project. */
+            dimensions: {
+                [key: string]: number;
+            };
+            files: components["schemas"]["FileHealthMetric"][];
+        };
+        /**
+         * @description Surface a provider-automation plugin (Contabo / OVH / etc.) declares
+         *     to the daemon during VPS onboarding. Provider plugins are PHASE 13
+         *     work (§6.2 + §13) — this entity is here so the daemon can validate
+         *     provider plugin manifests against a known shape from day one.
+         */
+        ProviderPluginContract: {
+            schemaVersion: components["schemas"]["SchemaVersion"];
+            /** @description e.g., `contabo`, `ovh`. */
+            providerId: string;
+            displayName: string;
+            capabilities: ("vps.create" | "vps.destroy" | "vps.list" | "vps.snapshot" | "vps.resize" | "dns.update" | "billing.fetch")[];
+            regions?: string[];
+            defaultImage?: string;
+            notes?: string;
+        };
     };
     responses: {
         /** @description RFC 7807 problem+json error envelope. */
