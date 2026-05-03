@@ -31,6 +31,15 @@ import { useShellUiStore } from "../../store.ts";
 const RECENT_LIMIT = 5;
 const VISIBLE_RESULT_LIMIT = 8;
 
+// Stable DOM ids so the search input's `aria-activedescendant` can point
+// at exactly the option the model considers active (review-finding p3:
+// "CommandPalette host lacks modal focus containment"). Screen readers
+// announce the active option as the user arrows up/down.
+const COMMAND_PALETTE_LISTBOX_ID = "hh-command-palette-listbox";
+const COMMAND_PALETTE_LABEL_ID = "hh-command-palette-title";
+const optionIdForCommand = (commandId: string): string =>
+  `hh-command-palette-option-${commandId.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
+
 export interface CommandPaletteHostProps {
   readonly open: boolean;
   readonly projectId: string | undefined;
@@ -55,6 +64,15 @@ export function CommandPaletteHost({
   const [query, setQuery] = useState("");
   const [activeCommandId, setActiveCommandId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  // Trigger element captured at open time so we can restore focus on close
+  // (review-finding p3: "CommandPalette host lacks modal focus containment").
+  // Without this, Escape returns the user to document.body and screen readers
+  // lose place.
+  const triggerRef = useRef<HTMLElement | null>(null);
+  // Modal subtree root — referenced by the focus-trap logic to discover
+  // the first/last focusable descendants on Tab/Shift+Tab.
+  const modalRef = useRef<HTMLElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const commands = useMemo<readonly ShellCommand[]>(() => buildShellCommands(), []);
   const activeStageId: ShellRouteId | undefined = useMemo(
@@ -90,7 +108,28 @@ export function CommandPaletteHost({
     if (!open) {
       setQuery("");
       setActiveCommandId(null);
+      // Restore focus to whatever invoked the palette (typically the
+      // top-bar Command button). Guard against the trigger having been
+      // removed from the DOM in the interim.
+      const trigger = triggerRef.current;
+      triggerRef.current = null;
+      if (
+        trigger &&
+        typeof trigger.focus === "function" &&
+        document.contains(trigger)
+      ) {
+        trigger.focus();
+      }
       return;
+    }
+    // Capture the active element AT OPEN TIME so Escape (or selection)
+    // returns focus to the right control.
+    const activeOnOpen = document.activeElement;
+    if (
+      activeOnOpen instanceof HTMLElement &&
+      typeof activeOnOpen.focus === "function"
+    ) {
+      triggerRef.current = activeOnOpen;
     }
     const id = window.requestAnimationFrame(() => {
       inputRef.current?.focus();
@@ -163,6 +202,33 @@ export function CommandPaletteHost({
       if (event.key === "Enter" && model.activeCommand !== null) {
         event.preventDefault();
         executeCommand(model.activeCommand);
+        return;
+      }
+      // Focus trap: Tab and Shift+Tab cycle within the modal. Without
+      // this, native Tab order takes the user back into the underlying
+      // app surface even though the dialog is `aria-modal="true"` —
+      // screen readers and keyboard users would experience a broken
+      // modal contract. Native cycling works between input and the
+      // focused option button + Close button; we manually wrap the
+      // edges (first→last on Shift+Tab, last→first on Tab).
+      if (event.key !== "Tab") return;
+      const root = modalRef.current;
+      if (!root) return;
+      const focusables = collectFocusable(root);
+      if (focusables.length === 0) return;
+      const first = focusables[0]!;
+      const last = focusables[focusables.length - 1]!;
+      const active = document.activeElement;
+      if (event.shiftKey) {
+        if (active === first || !root.contains(active)) {
+          event.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (active === last || !root.contains(active)) {
+          event.preventDefault();
+          first.focus();
+        }
       }
     },
     [executeCommand, model, onClose],
@@ -185,34 +251,48 @@ export function CommandPaletteHost({
         type="button"
       />
       <section
-        aria-label="Command palette"
+        aria-labelledby={COMMAND_PALETTE_LABEL_ID}
         aria-modal="true"
         className="hh-command-palette"
+        ref={modalRef}
         role="dialog"
       >
         <header className="hh-command-palette-header">
-          <h2 className="hh-command-palette-title">Command palette</h2>
+          <h2 className="hh-command-palette-title" id={COMMAND_PALETTE_LABEL_ID}>
+            Command palette
+          </h2>
           <button
             aria-label="Close command palette"
             className="hh-command-palette-close"
             onClick={onClose}
+            ref={closeButtonRef}
             type="button"
           >
             Close
           </button>
         </header>
         <input
+          aria-activedescendant={
+            model.activeCommand !== null
+              ? optionIdForCommand(model.activeCommand.id)
+              : undefined
+          }
+          aria-autocomplete="list"
+          aria-controls={COMMAND_PALETTE_LISTBOX_ID}
           aria-label="Search commands"
           className="hh-command-palette-input"
           onChange={(event) => setQuery(event.currentTarget.value)}
           placeholder={model.placeholder}
           ref={inputRef}
+          role="combobox"
+          aria-expanded={model.items.length > 0}
           type="search"
           value={query}
         />
         <div
           aria-label="Matched commands"
           className="hh-command-palette-list"
+          id={COMMAND_PALETTE_LISTBOX_ID}
           role="listbox"
         >
           {model.emptyState !== null ? (
@@ -250,6 +330,7 @@ function CommandPaletteItem({ item, onExecute, onPointerEnter }: CommandPaletteI
       className="hh-command-palette-item"
       data-active={item.active}
       data-command-id={item.command.id}
+      id={optionIdForCommand(item.command.id)}
       onClick={() => onExecute(item.command)}
       onPointerEnter={() => onPointerEnter(item.command.id)}
       role="option"
@@ -305,3 +386,29 @@ function renderHighlighted(
 }
 
 export const COMMAND_PALETTE_RECENT_LIMIT = RECENT_LIMIT;
+
+/** Walk the modal subtree for elements that should receive Tab focus.
+ *  Mirrors the WAI-ARIA "tabbable" definition: anchors / buttons / inputs /
+ *  selects / textareas / `[tabindex]` not equal to `-1`, excluding `disabled`
+ *  controls. Used by the focus trap to determine the wrap targets on
+ *  Tab / Shift+Tab. Pure DOM read; no side effects. */
+function collectFocusable(root: HTMLElement): HTMLElement[] {
+  const selector = [
+    "a[href]",
+    "button:not([disabled])",
+    "input:not([disabled])",
+    "select:not([disabled])",
+    "textarea:not([disabled])",
+    "[tabindex]",
+  ].join(",");
+  const all = Array.from(root.querySelectorAll<HTMLElement>(selector));
+  return all.filter((node) => {
+    if (node.hasAttribute("disabled")) return false;
+    const tabIndexAttr = node.getAttribute("tabindex");
+    if (tabIndexAttr !== null && Number.parseInt(tabIndexAttr, 10) < 0) {
+      return false;
+    }
+    if (node.getAttribute("aria-hidden") === "true") return false;
+    return true;
+  });
+}
