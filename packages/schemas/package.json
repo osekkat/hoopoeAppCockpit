@@ -8,7 +8,11 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "build": "echo 'OpenAPI codegen lands in Phase 2.5 (hp-r3i); no-op for hp-xru smoke'",
+    "build": "bun run generate",
+    "generate": "bun run generate:ts",
+    "generate:ts": "bunx --bun openapi-typescript@7.13.0 openapi.yaml --output src/generated/openapi.ts",
+    "validate": "bun run validate:ts",
+    "validate:ts": "bun scripts/validate-ts-codegen.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "bun test"
   },

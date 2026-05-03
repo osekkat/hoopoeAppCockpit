@@ -1,12 +1,60 @@
-// `@hoopoe/schemas` is the source of truth for Hoopoe's API shapes.
+// `@hoopoe/schemas` is the source of truth for Hoopoe's daemon API shapes.
 //
-// Phase 2.5 (hp-r3i) lands the real layout:
-//   - openapi.yaml — authoritative OpenAPI definition.
-//   - generated/ts/ — TS client (consumed by `@hoopoe/desktop`).
-//   - generated/go/ — Go types (consumed by `@hoopoe/daemon`).
+// Layout (hp-r3i):
+//   - openapi.yaml                        — authoritative OpenAPI 3.1 spec.
+//   - src/generated/openapi.ts            — openapi-typescript output (committed; CI gate detects drift).
+//   - src/index.ts                        — public entry: re-exports + small runtime helpers.
+//   - go/                                 — separate Go module with oapi-codegen output.
 //
-// For hp-xru this file just exposes a constant so the workspace has
-// something to type-check.
+// Consumers import named types from here, e.g.:
+//   import type { components, paths, Problem } from "@hoopoe/schemas";
+//
+// Runtime helpers live in this file because they need to ship next to the
+// types that describe them (and because consumers want them in both the
+// renderer and the daemon-shim layer).
 
+export type { components, operations, paths } from "./generated/openapi.ts";
+
+import type { components } from "./generated/openapi.ts";
+
+/**
+ * Bare aliases for the most commonly-used component schemas. Keep this list
+ * short; full namespace access is `components["schemas"]["..."]`.
+ */
+export type Problem = components["schemas"]["Problem"];
+export type Capability = components["schemas"]["Capability"];
+export type ToolCapabilityRegistry = components["schemas"]["ToolCapabilityRegistry"];
+export type DegradedModePolicy = components["schemas"]["DegradedModePolicy"];
+export type CapabilitiesResponse = components["schemas"]["CapabilitiesResponse"];
+export type CompatibilityResponse = components["schemas"]["CompatibilityResponse"];
+export type HealthResponse = components["schemas"]["HealthResponse"];
+export type VersionResponse = components["schemas"]["VersionResponse"];
+export type Actor = components["schemas"]["Actor"];
+export type PageMeta = components["schemas"]["PageMeta"];
+
+/** Public package identity. Used in audit + diagnostics. */
 export const HOOPOE_SCHEMAS_PACKAGE_NAME = "@hoopoe/schemas";
-export const HOOPOE_OPENAPI_VERSION = "0.0.0-pre";
+
+/** Matches `info.version` in `openapi.yaml`. Bump on any breaking spec change. */
+export const HOOPOE_OPENAPI_VERSION = "0.1.0";
+
+/**
+ * RFC 7807 problem+json content type. Use when checking `Content-Type` on
+ * error responses.
+ */
+export const PROBLEM_JSON_CONTENT_TYPE = "application/problem+json";
+
+/**
+ * Runtime predicate: is this value a Problem? Cheap shape check; use before
+ * narrowing without trusting the wire. Returns false for null/undefined.
+ */
+export function isProblem(value: unknown): value is Problem {
+  if (value === null || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v.type === "string" &&
+    typeof v.title === "string" &&
+    typeof v.status === "number" &&
+    typeof v.code === "string"
+  );
+}
