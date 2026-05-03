@@ -178,10 +178,24 @@ export const INTERNAL_IPC_COMMAND_PREFIXES = [
 
 export type InternalIpcCommandPrefix = (typeof INTERNAL_IPC_COMMAND_PREFIXES)[number];
 
+/** Sane shape for the suffix after `mock-flywheel.` / `internal.`. Refuses
+ *  empty suffix, control chars, whitespace, path-traversal segments, and
+ *  unicode that isn't lowercase ASCII / digits / dots / hyphens. The fuzz
+ *  harness (preload.fuzz.test.ts P5) found pre-fix `startsWith` was happy
+ *  with `"mock-flywheel.\nfoo"`, `"internal.../../etc/passwd"`, and
+ *  `"mock-flywheel."` (just the prefix) — all defense-in-depth holes
+ *  closed here. */
+const ALLOWED_INTERNAL_SUFFIX = /^[a-z][a-zA-Z0-9.-]*$/;
+
 export function isAllowedRegistryCommandId(commandId: string): boolean {
+  if (typeof commandId !== "string" || commandId.length === 0) return false;
   if (PRELOAD_IPC_CHANNEL_VALUES.has(commandId)) return true;
   for (const prefix of INTERNAL_IPC_COMMAND_PREFIXES) {
-    if (commandId.startsWith(prefix)) return true;
+    if (!commandId.startsWith(prefix)) continue;
+    const suffix = commandId.slice(prefix.length);
+    if (suffix.length === 0) return false;
+    if (suffix.includes("..")) return false; // path-traversal guard
+    return ALLOWED_INTERNAL_SUFFIX.test(suffix);
   }
   return false;
 }
