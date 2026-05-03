@@ -98,6 +98,255 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List projects this VPS hosts. */
+        get: operations["listProjects"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{projectId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project identifier (slug or ULID). */
+                projectId: components["parameters"]["ProjectIdPath"];
+            };
+            cookie?: never;
+        };
+        /** Get a single project by ID. */
+        get: operations["getProject"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{projectId}/readiness": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project identifier (slug or ULID). */
+                projectId: components["parameters"]["ProjectIdPath"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Gate-readiness state — which §4.2 invariants pass / fail.
+         * @description Used by the stage chrome to gate Plan → Beads → Swarm → Hardening
+         *     transitions. Each gate reports its individual checks so Diagnostics can
+         *     explain "what's missing" without a separate round-trip.
+         */
+        get: operations["getProjectReadiness"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{projectId}/plans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project identifier (slug or ULID). */
+                projectId: components["parameters"]["ProjectIdPath"];
+            };
+            cookie?: never;
+        };
+        /** List plans for a project (locked + draft). */
+        get: operations["listPlans"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{projectId}/beads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project identifier (slug or ULID). */
+                projectId: components["parameters"]["ProjectIdPath"];
+            };
+            cookie?: never;
+        };
+        /** List beads for a project. */
+        get: operations["listBeads"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{projectId}/beads/{beadId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project identifier (slug or ULID). */
+                projectId: components["parameters"]["ProjectIdPath"];
+                /** @description Beads ID (e.g., `hp-r3i`). */
+                beadId: string;
+            };
+            cookie?: never;
+        };
+        /** Get a single bead, with edges. */
+        get: operations["getBead"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List jobs (queued / running / waiting_approval / terminal). */
+        get: operations["listJobs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/jobs/{jobId}/cancel": {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Stable client-generated key (ULID/UUID) for safe retries. The daemon
+                 *     dedupes by key within a sliding window (default 24h) and replays the
+                 *     original status + body. Required on retryable writes; clients that omit
+                 *     it on a write that turns out to be retryable will receive a
+                 *     `precondition-failed` problem on the second attempt.
+                 */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                jobId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel a job (SIGTERM → grace → SIGKILL on the process group). */
+        post: operations["cancelJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{projectId}/approvals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project identifier (slug or ULID). */
+                projectId: components["parameters"]["ProjectIdPath"];
+            };
+            cookie?: never;
+        };
+        /** List pending + recently-decided approvals for a project. */
+        get: operations["listApprovals"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{projectId}/approvals/{approvalId}/approve": {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Stable client-generated key (ULID/UUID) for safe retries. The daemon
+                 *     dedupes by key within a sliding window (default 24h) and replays the
+                 *     original status + body. Required on retryable writes; clients that omit
+                 *     it on a write that turns out to be retryable will receive a
+                 *     `precondition-failed` problem on the second attempt.
+                 */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description Project identifier (slug or ULID). */
+                projectId: components["parameters"]["ProjectIdPath"];
+                approvalId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve a pending approval. */
+        post: operations["approveApproval"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{projectId}/approvals/{approvalId}/deny": {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Stable client-generated key (ULID/UUID) for safe retries. The daemon
+                 *     dedupes by key within a sliding window (default 24h) and replays the
+                 *     original status + body. Required on retryable writes; clients that omit
+                 *     it on a write that turns out to be retryable will receive a
+                 *     `precondition-failed` problem on the second attempt.
+                 */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description Project identifier (slug or ULID). */
+                projectId: components["parameters"]["ProjectIdPath"];
+                approvalId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Deny a pending approval. */
+        post: operations["denyApproval"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -364,6 +613,373 @@ export interface components {
                 [key: string]: components["schemas"]["ToolReport"];
             };
         };
+        /** @enum {string} */
+        VpsLifecycleState: "unconfigured" | "ssh_verified" | "daemon_running" | "tools_installed" | "ready";
+        /** @description The single VPS this Hoopoe install pairs with (per ADR-0001 v1). */
+        VpsHost: {
+            schemaVersion: components["schemas"]["SchemaVersion"];
+            /** @description Stable VPS identifier (ULID). */
+            id: string;
+            hostname?: string;
+            ipAddress?: string;
+            sshUser?: string;
+            lifecycleState: components["schemas"]["VpsLifecycleState"];
+            /** Format: date-time */
+            firstConnectedAt?: string;
+            /** Format: date-time */
+            lastReachableAt?: string;
+            /** Format: date-time */
+            toolVersionsRecordedAt?: string;
+            notes?: string;
+        };
+        /** @enum {string} */
+        ProjectLifecycleState: "imported" | "planning" | "plan_finalized" | "beads_created" | "beads_finalized" | "swarm_running" | "hardening_rounds" | "quality_gates" | "completed";
+        ProjectRepoRef: {
+            /**
+             * @description Origin URL of the canonical Git remote (e.g.,
+             *     `git@github.com:user/repo.git`). NEVER the VPS path; the VPS clone
+             *     and desktop mirror are sync targets.
+             */
+            origin: string;
+            /** @description Default branch the project tracks. */
+            branch: string;
+            /** @description Working clone path on the VPS (`/data/projects/<project>/`). */
+            vpsClonePath?: string;
+            /** @description Read-only sync mirror path on the desktop (§7.7). */
+            desktopMirrorPath?: string;
+            /** Format: date-time */
+            lastFetchedAt?: string;
+        };
+        /**
+         * @description One project on this VPS. Lifecycle states + gate invariants are
+         *     canonical (§4); the daemon never lets a stage flip until the gate
+         *     invariants pass.
+         */
+        Project: {
+            schemaVersion: components["schemas"]["SchemaVersion"];
+            id: string;
+            /** @description URL-safe project slug (used in routes + Activity panel). */
+            slug: string;
+            /** @description Human-readable project name. */
+            name: string;
+            /** @description ID of the VpsHost hosting this project. */
+            vpsId: string;
+            repo: components["schemas"]["ProjectRepoRef"];
+            lifecycleState: components["schemas"]["ProjectLifecycleState"];
+            /** @description Whether AGENTS.md was found on import. */
+            agentsManifestPresent?: boolean;
+            /** @description Whether the project has a populated `.hoopoe/` directory. */
+            hoopoeInitialized?: boolean;
+            toolDetectionDone?: boolean;
+            /** Format: date-time */
+            importedAt?: string;
+            /** Format: date-time */
+            lastActivityAt?: string;
+        };
+        ProjectListResponse: {
+            items: components["schemas"]["Project"][];
+            page: components["schemas"]["PageMeta"];
+        };
+        /**
+         * @description Named gate per §4.2. Used to key `ProjectReadiness.gates`.
+         * @enum {string}
+         */
+        ProjectGate: "vps_ready" | "project_imported" | "plan_locked" | "beads_created" | "beads_finalized" | "launch_ready" | "hardening_ready" | "ship_ready";
+        /**
+         * @description One named precondition for a gate. `ok` when satisfied; otherwise
+         *     `detail` explains what's missing in human-readable form.
+         */
+        GateCheck: {
+            /** @description Stable check ID, e.g., `agents_md_present`. */
+            id: string;
+            ok: boolean;
+            detail?: string;
+        };
+        ProjectReadinessGate: {
+            gate: components["schemas"]["ProjectGate"];
+            /** @description True iff all `checks` pass. */
+            satisfied: boolean;
+            checks: components["schemas"]["GateCheck"][];
+            blockingCount?: number;
+        };
+        /**
+         * @description Composite readiness snapshot per §4.2. `gates` is keyed in canonical
+         *     order; the desktop renders them as a checklist with the first failing
+         *     gate highlighted.
+         */
+        ProjectReadiness: {
+            schemaVersion: components["schemas"]["SchemaVersion"];
+            projectId: string;
+            currentLifecycleState?: components["schemas"]["ProjectLifecycleState"];
+            gates: components["schemas"]["ProjectReadinessGate"][];
+            /** Format: date-time */
+            checkedAt: string;
+        };
+        /** @enum {string} */
+        PlanLifecycleState: "draft" | "refining" | "locked" | "archived";
+        /**
+         * @description Composite quality score for a plan (`§7.1`). Each dimension scored
+         *     0–10; scoring rubric in `docs/planning/quality-rubric.md` (TBD).
+         */
+        PlanQualityScore: {
+            overall: number;
+            /** @description Per-dimension scores (e.g., `clarity`, `coverage`, `risk_surfacing`). */
+            dimensions: {
+                [key: string]: number;
+            };
+            /** Format: date-time */
+            scoredAt: string;
+            scorerActor?: components["schemas"]["Actor"];
+        };
+        /**
+         * @description A planning artifact for a project. Stored as markdown under
+         *     `.hoopoe/plans/<plan-id>/` in the project repo.
+         */
+        Plan: {
+            schemaVersion: components["schemas"]["SchemaVersion"];
+            id: string;
+            projectId: string;
+            title?: string;
+            state: components["schemas"]["PlanLifecycleState"];
+            /** @description Number of refinement rounds completed. */
+            roundCount?: number;
+            latestQuality?: components["schemas"]["PlanQualityScore"];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            lockedAt?: string;
+            /**
+             * @description Pointer to the artifact bundle (audit log, model raws, traces).
+             *     Resolves through the daemon's artifact registry.
+             */
+            artifactsRef?: string;
+        };
+        PlanListResponse: {
+            items: components["schemas"]["Plan"][];
+            page: components["schemas"]["PageMeta"];
+        };
+        /** @enum {string} */
+        BeadStatus: "open" | "in_progress" | "blocked" | "closed" | "deleted";
+        /** @enum {string} */
+        BeadIssueType: "task" | "bug" | "feature" | "epic" | "question" | "docs";
+        /** @description 0=critical, 1=high, 2=medium, 3=low, 4=backlog. */
+        BeadPriority: number;
+        BeadDependencyEdge: {
+            /** @description The other bead ID. */
+            id: string;
+            /** @description Cached title for UI without round-trip. */
+            title?: string;
+            /** @enum {string} */
+            dependencyType: "blocks" | "parent" | "related";
+            status?: components["schemas"]["BeadStatus"];
+            priority?: components["schemas"]["BeadPriority"];
+        };
+        /**
+         * @description One bead from `br`. Edges are cached snapshots; the canonical edge
+         *     truth lives in `.beads/issues.jsonl`.
+         */
+        Bead: {
+            schemaVersion: components["schemas"]["SchemaVersion"];
+            /** @description Beads ID, e.g., `hp-r3i`. */
+            id: string;
+            title: string;
+            description?: string;
+            status: components["schemas"]["BeadStatus"];
+            priority: components["schemas"]["BeadPriority"];
+            issueType: components["schemas"]["BeadIssueType"];
+            sourceRepo?: string;
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            updatedAt?: string;
+            createdBy?: string;
+            dependencies?: components["schemas"]["BeadDependencyEdge"][];
+            dependents?: components["schemas"]["BeadDependencyEdge"][];
+        };
+        BeadListResponse: {
+            items: components["schemas"]["Bead"][];
+            page: components["schemas"]["PageMeta"];
+        };
+        /**
+         * @description Composite quality score for a set of beads (post-conversion / polish
+         *     rounds). Per `§7.2`.
+         */
+        BeadSetQuality: {
+            overall: number;
+            /** @description Plan-to-bead coverage ratio. */
+            coverage?: number;
+            clarityAvg?: number;
+            testabilityAvg?: number;
+            readyFrontierSize?: number;
+            /** Format: date-time */
+            scoredAt: string;
+        };
+        /** @enum {string} */
+        JobStatus: "queued" | "running" | "waiting_approval" | "canceling" | "succeeded" | "failed" | "interrupted";
+        /**
+         * @description Stable handle to a daemon-managed artifact (logs, plan outputs,
+         *     conversion traces, health snapshots, review findings, bootstrap
+         *     logs). Resolved via the artifact registry on demand.
+         */
+        ArtifactRef: {
+            id: string;
+            /** @enum {string} */
+            kind: "log" | "plan_artifact" | "conversion_trace" | "health_snapshot" | "review_finding" | "bootstrap_log" | "misc";
+            sizeBytes?: number;
+            contentType?: string;
+            sha256?: string;
+            /** Format: date-time */
+            createdAt?: string;
+        };
+        /**
+         * @description One long-running job in the daemon's registry (§2.7). `argvDigest`
+         *     and `envDigest` are blake3 hashes — full argv/env are recorded in the
+         *     artifact registry, redacted on the way out.
+         */
+        Job: {
+            schemaVersion: components["schemas"]["SchemaVersion"];
+            /** @description Sortable ULID for the job. */
+            id: string;
+            /**
+             * @description Job kind (e.g., `bootstrap.acfs`, `plan.candidate.generate`,
+             *     `swarm.spawn`, `health.snapshot`, `tend.swarm`,
+             *     `build.run`, `test.run`).
+             */
+            type: string;
+            status: components["schemas"]["JobStatus"];
+            projectId?: string;
+            actor?: components["schemas"]["Actor"];
+            /** @description Hash of the normalized argv. */
+            argvDigest?: string;
+            /** @description Hash of the relevant env keys. */
+            envDigest?: string;
+            cwd?: string;
+            /** Format: date-time */
+            startedAt?: string;
+            /** Format: date-time */
+            completedAt?: string;
+            durationMs?: number;
+            exitCode?: number;
+            /**
+             * @description Stable hash of the failure signature (test name, stack frames),
+             *     used to detect repeated failures across reruns (§2.7).
+             */
+            failureFingerprint?: string;
+            artifacts?: components["schemas"]["ArtifactRef"][];
+            /** @description Set when status is `waiting_approval`. */
+            approvalId?: string;
+        };
+        JobListResponse: {
+            items: components["schemas"]["Job"][];
+            page: components["schemas"]["PageMeta"];
+        };
+        JobCancelRequest: {
+            /** @description Optional human-readable note. */
+            reason?: string;
+            /**
+             * @description SIGTERM → SIGKILL escalation window.
+             * @default 5
+             */
+            graceSeconds: number;
+        };
+        /**
+         * @description Typed representation of an action the daemon would execute (or has
+         *     executed). Used by Approval, Job audit, and tending ActionPlans
+         *     (`packages/schemas/tending-actions.yaml`). The daemon — not the model
+         *     or renderer — is the executor.
+         */
+        CommandSpec: {
+            /**
+             * @description Action kind. The closed set lives in `tending-actions.yaml`;
+             *     examples include `git.push_branch`, `agent.send_marching_orders`,
+             *     `reservation.force_release`, `caam.switch_account`.
+             */
+            kind: string;
+            /**
+             * @description Action-specific target keys (e.g., `{agentId}`, `{branch}`,
+             *     `{reservationId}`). Schema is per-action; the daemon validates
+             *     against the action's published shape.
+             */
+            target: {
+                [key: string]: unknown;
+            };
+            /** @description Action-specific args; opaque at this layer. */
+            args?: {
+                [key: string]: unknown;
+            };
+            /** @description Stable key used to dedupe repeated executions. */
+            idempotencyKey?: string;
+            /** @description Human-readable preconditions verified before execution. */
+            preconditions?: string[];
+            /** @description Human-readable postconditions verified after execution. */
+            postconditions?: string[];
+        };
+        /** @enum {string} */
+        ApprovalRiskClass: "low" | "medium" | "high" | "critical";
+        /**
+         * @description How wide the approval applies. `once` only authorizes the requested
+         *     execution; `this_bead` applies to identical kind+target within the
+         *     bead; etc.
+         * @enum {string}
+         */
+        ApprovalScope: "once" | "this_bead" | "this_swarm" | "this_project_session";
+        /** @enum {string} */
+        ApprovalState: "pending" | "approved" | "denied" | "expired" | "revoked";
+        /**
+         * @description Where the approval originated — Hoopoe-policy approvals from the
+         *     daemon, or DCG verdicts ingested via the agent boundary (§5.3).
+         * @enum {string}
+         */
+        ApprovalSource: "hoopoe_policy" | "dcg";
+        ApprovalDecisionRequest: {
+            decisionActor: components["schemas"]["Actor"];
+            note?: string;
+            scope?: components["schemas"]["ApprovalScope"];
+        };
+        /**
+         * @description Durable approval record (§5.3). Approvals live in one queue regardless
+         *     of source; the renderer surfaces both Hoopoe-policy and DCG-ingested
+         *     approvals with their `source` rule attached.
+         */
+        Approval: {
+            schemaVersion: components["schemas"]["SchemaVersion"];
+            id: string;
+            projectId?: string;
+            beadId?: string;
+            swarmId?: string;
+            agentId?: string;
+            state: components["schemas"]["ApprovalState"];
+            source: components["schemas"]["ApprovalSource"];
+            requestedAction: components["schemas"]["CommandSpec"];
+            /** @description Who requested the approval (user, agent, tending job). */
+            requestActor: components["schemas"]["Actor"];
+            reason?: string;
+            /**
+             * @description Opaque IDs pointing into audit log / pane logs / detection records.
+             *     Resolved client-side via the artifact registry on click.
+             */
+            evidenceRefs?: string[];
+            riskClass: components["schemas"]["ApprovalRiskClass"];
+            scope: components["schemas"]["ApprovalScope"];
+            /**
+             * @description The Hoopoe policy ID or DCG rule ID that required this approval.
+             *     Surfaced in Diagnostics so the user knows WHY they're being asked.
+             */
+            policyRule?: string;
+            /** Format: date-time */
+            requestedAt: string;
+            /** Format: date-time */
+            expiresAt?: string;
+            /** Format: date-time */
+            decidedAt?: string;
+            /** @description Set when state ≠ pending. */
+            decisionActor?: components["schemas"]["Actor"];
+            decisionNote?: string;
+        };
+        ApprovalListResponse: {
+            items: components["schemas"]["Approval"][];
+            page: components["schemas"]["PageMeta"];
+        };
     };
     responses: {
         /** @description RFC 7807 problem+json error envelope. */
@@ -387,6 +1003,8 @@ export interface components {
         IdempotencyKey: string;
         /** @description Client-supplied request ID; echoed on responses + audit entries. */
         RequestId: string;
+        /** @description Project identifier (slug or ULID). */
+        ProjectIdPath: string;
     };
     requestBodies: never;
     headers: never;
@@ -476,6 +1094,328 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CapabilityRegistry"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    listProjects: {
+        parameters: {
+            query?: {
+                cursor?: components["schemas"]["Cursor"];
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Project list (paginated). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectListResponse"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getProject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project identifier (slug or ULID). */
+                projectId: components["parameters"]["ProjectIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Project. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getProjectReadiness: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project identifier (slug or ULID). */
+                projectId: components["parameters"]["ProjectIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Readiness snapshot. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectReadiness"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    listPlans: {
+        parameters: {
+            query?: {
+                cursor?: components["schemas"]["Cursor"];
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description Project identifier (slug or ULID). */
+                projectId: components["parameters"]["ProjectIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Plan list (paginated). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanListResponse"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    listBeads: {
+        parameters: {
+            query?: {
+                /** @description Filter by bead status (multi-value supported). */
+                status?: components["schemas"]["BeadStatus"][];
+                cursor?: components["schemas"]["Cursor"];
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description Project identifier (slug or ULID). */
+                projectId: components["parameters"]["ProjectIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Bead list (paginated). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BeadListResponse"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getBead: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project identifier (slug or ULID). */
+                projectId: components["parameters"]["ProjectIdPath"];
+                /** @description Beads ID (e.g., `hp-r3i`). */
+                beadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Bead. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Bead"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    listJobs: {
+        parameters: {
+            query?: {
+                /** @description Filter by job status (multi-value). */
+                status?: components["schemas"]["JobStatus"][];
+                projectId?: string;
+                cursor?: components["schemas"]["Cursor"];
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Job list (paginated). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobListResponse"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    cancelJob: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Stable client-generated key (ULID/UUID) for safe retries. The daemon
+                 *     dedupes by key within a sliding window (default 24h) and replays the
+                 *     original status + body. Required on retryable writes; clients that omit
+                 *     it on a write that turns out to be retryable will receive a
+                 *     `precondition-failed` problem on the second attempt.
+                 */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                jobId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["JobCancelRequest"];
+            };
+        };
+        responses: {
+            /** @description Cancel acknowledged. Final state arrives via the job event channel. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Job"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    listApprovals: {
+        parameters: {
+            query?: {
+                /** @description Filter by approval state. */
+                state?: components["schemas"]["ApprovalState"][];
+                cursor?: components["schemas"]["Cursor"];
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description Project identifier (slug or ULID). */
+                projectId: components["parameters"]["ProjectIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Approval list (paginated). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApprovalListResponse"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    approveApproval: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Stable client-generated key (ULID/UUID) for safe retries. The daemon
+                 *     dedupes by key within a sliding window (default 24h) and replays the
+                 *     original status + body. Required on retryable writes; clients that omit
+                 *     it on a write that turns out to be retryable will receive a
+                 *     `precondition-failed` problem on the second attempt.
+                 */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description Project identifier (slug or ULID). */
+                projectId: components["parameters"]["ProjectIdPath"];
+                approvalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApprovalDecisionRequest"];
+            };
+        };
+        responses: {
+            /** @description Approval decided. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Approval"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    denyApproval: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Stable client-generated key (ULID/UUID) for safe retries. The daemon
+                 *     dedupes by key within a sliding window (default 24h) and replays the
+                 *     original status + body. Required on retryable writes; clients that omit
+                 *     it on a write that turns out to be retryable will receive a
+                 *     `precondition-failed` problem on the second attempt.
+                 */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description Project identifier (slug or ULID). */
+                projectId: components["parameters"]["ProjectIdPath"];
+                approvalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApprovalDecisionRequest"];
+            };
+        };
+        responses: {
+            /** @description Approval decided. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Approval"];
                 };
             };
             default: components["responses"]["Problem"];

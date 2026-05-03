@@ -110,6 +110,61 @@ test("MigrationState carries structured + optional phase (per WhiteCreek delta 3
   expect(state.phase).toBe("running");
 });
 
+test("Project + Bead + Job + Approval entity schemas compile against the §4/§5 shapes", () => {
+  // Compile-time + runtime smoke: each entity accepts its required fields and
+  // the discriminator-style enums narrow correctly. If openapi-typescript
+  // changes a field shape, this test breaks loudly.
+  const project: import("./index.ts").Project = {
+    schemaVersion: 1,
+    id: "proj_01",
+    slug: "demo",
+    name: "Demo project",
+    vpsId: "vps_01",
+    repo: { origin: "git@github.com:org/repo.git", branch: "main" },
+    lifecycleState: "imported",
+  };
+  expect(project.lifecycleState).toBe("imported");
+
+  const bead: import("./index.ts").Bead = {
+    schemaVersion: 1,
+    id: "hp-r3i",
+    title: "packages/schemas keystone",
+    status: "in_progress",
+    priority: 1,
+    issueType: "epic",
+  };
+  expect(bead.id).toBe("hp-r3i");
+
+  const job: import("./index.ts").Job = {
+    schemaVersion: 1,
+    id: "job_01HXK...",
+    type: "build.run",
+    status: "running",
+  };
+  expect(job.status).toBe("running");
+
+  const cmd: import("./index.ts").CommandSpec = {
+    kind: "git.push_branch",
+    target: { branch: "feature/x" },
+    idempotencyKey: "tend:push:feature/x:2026-05-04",
+    preconditions: ["branch exists"],
+    postconditions: ["origin contains commit"],
+  };
+  const approval: import("./index.ts").Approval = {
+    schemaVersion: 1,
+    id: "apv_01",
+    state: "pending",
+    source: "hoopoe_policy",
+    requestedAction: cmd,
+    requestActor: { kind: "agent", id: "ag_7" },
+    riskClass: "medium",
+    scope: "this_bead",
+    requestedAt: "2026-05-04T00:00:00Z",
+  };
+  expect(approval.requestedAction.kind).toBe("git.push_branch");
+  expect(approval.source).toBe("hoopoe_policy");
+});
+
 test("CompatibilityReport embeds CapabilityRegistry + structured MigrationState", () => {
   const report: CompatibilityReport = {
     schemaVersion: 1,

@@ -150,6 +150,298 @@ paths:
               schema: { $ref: '#/components/schemas/CapabilityRegistry' }
         default: { $ref: '#/components/responses/Problem' }
 
+  # ─────────────────────────────────────────────────────────────────────────
+  # Projects (§4.1, §4.2) — read-mostly; activation flips canonical state.
+  # ─────────────────────────────────────────────────────────────────────────
+
+  /v1/projects:
+    get:
+      tags: [Projects]
+      operationId: listProjects
+      summary: List projects this VPS hosts.
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema: { $ref: '#/components/schemas/Cursor' }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        '200':
+          description: Project list (paginated).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectListResponse' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /v1/projects/{projectId}:
+    parameters:
+      - $ref: '#/components/parameters/ProjectIdPath'
+    get:
+      tags: [Projects]
+      operationId: getProject
+      summary: Get a single project by ID.
+      responses:
+        '200':
+          description: Project.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Project' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /v1/projects/{projectId}/readiness:
+    parameters:
+      - $ref: '#/components/parameters/ProjectIdPath'
+    get:
+      tags: [Projects]
+      operationId: getProjectReadiness
+      summary: Gate-readiness state — which §4.2 invariants pass / fail.
+      description: |
+        Used by the stage chrome to gate Plan → Beads → Swarm → Hardening
+        transitions. Each gate reports its individual checks so Diagnostics can
+        explain "what's missing" without a separate round-trip.
+      responses:
+        '200':
+          description: Readiness snapshot.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectReadiness' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Plans (§7.1) — read; create/lock land in subsequent commits.
+  # ─────────────────────────────────────────────────────────────────────────
+
+  /v1/projects/{projectId}/plans:
+    parameters:
+      - $ref: '#/components/parameters/ProjectIdPath'
+    get:
+      tags: [Plans]
+      operationId: listPlans
+      summary: List plans for a project (locked + draft).
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema: { $ref: '#/components/schemas/Cursor' }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        '200':
+          description: Plan list (paginated).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlanListResponse' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Beads — read via `br --json` adapter; mutations via /v1/beads/{id}.
+  # ─────────────────────────────────────────────────────────────────────────
+
+  /v1/projects/{projectId}/beads:
+    parameters:
+      - $ref: '#/components/parameters/ProjectIdPath'
+    get:
+      tags: [Beads]
+      operationId: listBeads
+      summary: List beads for a project.
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: Filter by bead status (multi-value supported).
+          explode: true
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/BeadStatus' }
+        - name: cursor
+          in: query
+          required: false
+          schema: { $ref: '#/components/schemas/Cursor' }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+      responses:
+        '200':
+          description: Bead list (paginated).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BeadListResponse' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /v1/projects/{projectId}/beads/{beadId}:
+    parameters:
+      - $ref: '#/components/parameters/ProjectIdPath'
+      - name: beadId
+        in: path
+        required: true
+        description: Beads ID (e.g., `hp-r3i`).
+        schema: { type: string, pattern: '^[a-z0-9-]+$' }
+    get:
+      tags: [Beads]
+      operationId: getBead
+      summary: Get a single bead, with edges.
+      responses:
+        '200':
+          description: Bead.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Bead' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Jobs (§2.7) — long-running daemon work registry.
+  # ─────────────────────────────────────────────────────────────────────────
+
+  /v1/jobs:
+    get:
+      tags: [Jobs]
+      operationId: listJobs
+      summary: List jobs (queued / running / waiting_approval / terminal).
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: Filter by job status (multi-value).
+          explode: true
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/JobStatus' }
+        - name: projectId
+          in: query
+          required: false
+          schema: { type: string }
+        - name: cursor
+          in: query
+          required: false
+          schema: { $ref: '#/components/schemas/Cursor' }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        '200':
+          description: Job list (paginated).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/JobListResponse' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /v1/jobs/{jobId}/cancel:
+    parameters:
+      - name: jobId
+        in: path
+        required: true
+        schema: { type: string }
+      - $ref: '#/components/parameters/IdempotencyKey'
+    post:
+      tags: [Jobs]
+      operationId: cancelJob
+      summary: Cancel a job (SIGTERM → grace → SIGKILL on the process group).
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/JobCancelRequest' }
+      responses:
+        '202':
+          description: Cancel acknowledged. Final state arrives via the job event channel.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Job' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Approvals (§5.3) — Hoopoe-policy + ingested DCG verdicts in one queue.
+  # ─────────────────────────────────────────────────────────────────────────
+
+  /v1/projects/{projectId}/approvals:
+    parameters:
+      - $ref: '#/components/parameters/ProjectIdPath'
+    get:
+      tags: [Approvals]
+      operationId: listApprovals
+      summary: List pending + recently-decided approvals for a project.
+      parameters:
+        - name: state
+          in: query
+          required: false
+          description: Filter by approval state.
+          explode: true
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/ApprovalState' }
+        - name: cursor
+          in: query
+          required: false
+          schema: { $ref: '#/components/schemas/Cursor' }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        '200':
+          description: Approval list (paginated).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApprovalListResponse' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /v1/projects/{projectId}/approvals/{approvalId}/approve:
+    parameters:
+      - $ref: '#/components/parameters/ProjectIdPath'
+      - name: approvalId
+        in: path
+        required: true
+        schema: { type: string }
+      - $ref: '#/components/parameters/IdempotencyKey'
+    post:
+      tags: [Approvals]
+      operationId: approveApproval
+      summary: Approve a pending approval.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApprovalDecisionRequest' }
+      responses:
+        '200':
+          description: Approval decided.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Approval' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /v1/projects/{projectId}/approvals/{approvalId}/deny:
+    parameters:
+      - $ref: '#/components/parameters/ProjectIdPath'
+      - name: approvalId
+        in: path
+        required: true
+        schema: { type: string }
+      - $ref: '#/components/parameters/IdempotencyKey'
+    post:
+      tags: [Approvals]
+      operationId: denyApproval
+      summary: Deny a pending approval.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApprovalDecisionRequest' }
+      responses:
+        '200':
+          description: Approval decided.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Approval' }
+        default: { $ref: '#/components/responses/Problem' }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -187,6 +479,17 @@ components:
         type: string
         minLength: 1
         maxLength: 128
+
+    ProjectIdPath:
+      name: projectId
+      in: path
+      required: true
+      description: Project identifier (slug or ULID).
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: '^[A-Za-z0-9_\-]+$'
 
   responses:
     Problem:
@@ -562,3 +865,507 @@ components:
           additionalProperties: { $ref: '#/components/schemas/ToolReport' }
           propertyNames:
             $ref: '#/components/schemas/ToolId'
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # VPS + Project domain (§4.1, §4.2, §6)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    VpsLifecycleState:
+      type: string
+      enum: [unconfigured, ssh_verified, daemon_running, tools_installed, ready]
+
+    VpsHost:
+      type: object
+      description: |
+        The single VPS this Hoopoe install pairs with (per ADR-0001 v1).
+      required: [id, lifecycleState, schemaVersion]
+      properties:
+        schemaVersion: { $ref: '#/components/schemas/SchemaVersion' }
+        id: { type: string, description: 'Stable VPS identifier (ULID).' }
+        hostname: { type: string }
+        ipAddress: { type: string }
+        sshUser: { type: string }
+        lifecycleState: { $ref: '#/components/schemas/VpsLifecycleState' }
+        firstConnectedAt: { type: string, format: date-time }
+        lastReachableAt: { type: string, format: date-time }
+        toolVersionsRecordedAt: { type: string, format: date-time }
+        notes: { type: string }
+
+    ProjectLifecycleState:
+      type: string
+      enum:
+        - imported
+        - planning
+        - plan_finalized
+        - beads_created
+        - beads_finalized
+        - swarm_running
+        - hardening_rounds
+        - quality_gates
+        - completed
+
+    ProjectRepoRef:
+      type: object
+      required: [origin, branch]
+      properties:
+        origin:
+          type: string
+          description: |
+            Origin URL of the canonical Git remote (e.g.,
+            `git@github.com:user/repo.git`). NEVER the VPS path; the VPS clone
+            and desktop mirror are sync targets.
+        branch: { type: string, description: 'Default branch the project tracks.' }
+        vpsClonePath:
+          type: string
+          description: 'Working clone path on the VPS (`/data/projects/<project>/`).'
+        desktopMirrorPath:
+          type: string
+          description: 'Read-only sync mirror path on the desktop (§7.7).'
+        lastFetchedAt: { type: string, format: date-time }
+
+    Project:
+      type: object
+      description: |
+        One project on this VPS. Lifecycle states + gate invariants are
+        canonical (§4); the daemon never lets a stage flip until the gate
+        invariants pass.
+      required: [id, slug, name, vpsId, repo, lifecycleState, schemaVersion]
+      properties:
+        schemaVersion: { $ref: '#/components/schemas/SchemaVersion' }
+        id: { type: string }
+        slug:
+          type: string
+          description: 'URL-safe project slug (used in routes + Activity panel).'
+        name: { type: string, description: 'Human-readable project name.' }
+        vpsId: { type: string, description: 'ID of the VpsHost hosting this project.' }
+        repo: { $ref: '#/components/schemas/ProjectRepoRef' }
+        lifecycleState: { $ref: '#/components/schemas/ProjectLifecycleState' }
+        agentsManifestPresent:
+          type: boolean
+          description: 'Whether AGENTS.md was found on import.'
+        hoopoeInitialized:
+          type: boolean
+          description: 'Whether the project has a populated `.hoopoe/` directory.'
+        toolDetectionDone: { type: boolean }
+        importedAt: { type: string, format: date-time }
+        lastActivityAt: { type: string, format: date-time }
+
+    ProjectListResponse:
+      type: object
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Project' }
+        page: { $ref: '#/components/schemas/PageMeta' }
+
+    ProjectGate:
+      type: string
+      description: |
+        Named gate per §4.2. Used to key `ProjectReadiness.gates`.
+      enum:
+        - vps_ready
+        - project_imported
+        - plan_locked
+        - beads_created
+        - beads_finalized
+        - launch_ready
+        - hardening_ready
+        - ship_ready
+
+    GateCheck:
+      type: object
+      description: |
+        One named precondition for a gate. `ok` when satisfied; otherwise
+        `detail` explains what's missing in human-readable form.
+      required: [id, ok]
+      properties:
+        id: { type: string, description: 'Stable check ID, e.g., `agents_md_present`.' }
+        ok: { type: boolean }
+        detail: { type: string }
+
+    ProjectReadinessGate:
+      type: object
+      required: [gate, satisfied, checks]
+      properties:
+        gate: { $ref: '#/components/schemas/ProjectGate' }
+        satisfied:
+          type: boolean
+          description: 'True iff all `checks` pass.'
+        checks:
+          type: array
+          items: { $ref: '#/components/schemas/GateCheck' }
+        blockingCount: { type: integer, minimum: 0 }
+
+    ProjectReadiness:
+      type: object
+      description: |
+        Composite readiness snapshot per §4.2. `gates` is keyed in canonical
+        order; the desktop renders them as a checklist with the first failing
+        gate highlighted.
+      required: [projectId, schemaVersion, gates, checkedAt]
+      properties:
+        schemaVersion: { $ref: '#/components/schemas/SchemaVersion' }
+        projectId: { type: string }
+        currentLifecycleState: { $ref: '#/components/schemas/ProjectLifecycleState' }
+        gates:
+          type: array
+          items: { $ref: '#/components/schemas/ProjectReadinessGate' }
+        checkedAt: { type: string, format: date-time }
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Plans (§7.1)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    PlanLifecycleState:
+      type: string
+      enum: [draft, refining, locked, archived]
+
+    PlanQualityScore:
+      type: object
+      description: |
+        Composite quality score for a plan (`§7.1`). Each dimension scored
+        0–10; scoring rubric in `docs/planning/quality-rubric.md` (TBD).
+      required: [overall, dimensions, scoredAt]
+      properties:
+        overall: { type: number, minimum: 0, maximum: 10 }
+        dimensions:
+          type: object
+          additionalProperties:
+            type: number
+            minimum: 0
+            maximum: 10
+          description: 'Per-dimension scores (e.g., `clarity`, `coverage`, `risk_surfacing`).'
+        scoredAt: { type: string, format: date-time }
+        scorerActor: { $ref: '#/components/schemas/Actor' }
+
+    Plan:
+      type: object
+      description: |
+        A planning artifact for a project. Stored as markdown under
+        `.hoopoe/plans/<plan-id>/` in the project repo.
+      required: [id, projectId, schemaVersion, state, createdAt]
+      properties:
+        schemaVersion: { $ref: '#/components/schemas/SchemaVersion' }
+        id: { type: string }
+        projectId: { type: string }
+        title: { type: string }
+        state: { $ref: '#/components/schemas/PlanLifecycleState' }
+        roundCount:
+          type: integer
+          minimum: 0
+          description: 'Number of refinement rounds completed.'
+        latestQuality:
+          $ref: '#/components/schemas/PlanQualityScore'
+        createdAt: { type: string, format: date-time }
+        lockedAt: { type: string, format: date-time }
+        artifactsRef:
+          type: string
+          description: |
+            Pointer to the artifact bundle (audit log, model raws, traces).
+            Resolves through the daemon's artifact registry.
+
+    PlanListResponse:
+      type: object
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Plan' }
+        page: { $ref: '#/components/schemas/PageMeta' }
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Beads (read via `br --robot-*` adapter)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    BeadStatus:
+      type: string
+      enum: [open, in_progress, blocked, closed, deleted]
+
+    BeadIssueType:
+      type: string
+      enum: [task, bug, feature, epic, question, docs]
+
+    BeadPriority:
+      type: integer
+      description: '0=critical, 1=high, 2=medium, 3=low, 4=backlog.'
+      minimum: 0
+      maximum: 4
+
+    BeadDependencyEdge:
+      type: object
+      required: [id, dependencyType]
+      properties:
+        id: { type: string, description: 'The other bead ID.' }
+        title: { type: string, description: 'Cached title for UI without round-trip.' }
+        dependencyType:
+          type: string
+          enum: [blocks, parent, related]
+        status: { $ref: '#/components/schemas/BeadStatus' }
+        priority: { $ref: '#/components/schemas/BeadPriority' }
+
+    Bead:
+      type: object
+      description: |
+        One bead from `br`. Edges are cached snapshots; the canonical edge
+        truth lives in `.beads/issues.jsonl`.
+      required: [id, title, status, priority, issueType, schemaVersion]
+      properties:
+        schemaVersion: { $ref: '#/components/schemas/SchemaVersion' }
+        id: { type: string, description: 'Beads ID, e.g., `hp-r3i`.' }
+        title: { type: string }
+        description: { type: string }
+        status: { $ref: '#/components/schemas/BeadStatus' }
+        priority: { $ref: '#/components/schemas/BeadPriority' }
+        issueType: { $ref: '#/components/schemas/BeadIssueType' }
+        sourceRepo: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        createdBy: { type: string }
+        dependencies:
+          type: array
+          items: { $ref: '#/components/schemas/BeadDependencyEdge' }
+        dependents:
+          type: array
+          items: { $ref: '#/components/schemas/BeadDependencyEdge' }
+
+    BeadListResponse:
+      type: object
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Bead' }
+        page: { $ref: '#/components/schemas/PageMeta' }
+
+    BeadSetQuality:
+      type: object
+      description: |
+        Composite quality score for a set of beads (post-conversion / polish
+        rounds). Per `§7.2`.
+      required: [overall, scoredAt]
+      properties:
+        overall: { type: number, minimum: 0, maximum: 10 }
+        coverage:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: 'Plan-to-bead coverage ratio.'
+        clarityAvg: { type: number, minimum: 0, maximum: 10 }
+        testabilityAvg: { type: number, minimum: 0, maximum: 10 }
+        readyFrontierSize: { type: integer, minimum: 0 }
+        scoredAt: { type: string, format: date-time }
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Jobs (§2.7) + ArtifactRef
+    # ─────────────────────────────────────────────────────────────────────────
+
+    JobStatus:
+      type: string
+      enum: [queued, running, waiting_approval, canceling, succeeded, failed, interrupted]
+
+    ArtifactRef:
+      type: object
+      description: |
+        Stable handle to a daemon-managed artifact (logs, plan outputs,
+        conversion traces, health snapshots, review findings, bootstrap
+        logs). Resolved via the artifact registry on demand.
+      required: [id, kind]
+      properties:
+        id: { type: string }
+        kind:
+          type: string
+          enum:
+            - log
+            - plan_artifact
+            - conversion_trace
+            - health_snapshot
+            - review_finding
+            - bootstrap_log
+            - misc
+        sizeBytes: { type: integer, minimum: 0 }
+        contentType: { type: string }
+        sha256: { type: string }
+        createdAt: { type: string, format: date-time }
+
+    Job:
+      type: object
+      description: |
+        One long-running job in the daemon's registry (§2.7). `argvDigest`
+        and `envDigest` are blake3 hashes — full argv/env are recorded in the
+        artifact registry, redacted on the way out.
+      required: [id, type, status, schemaVersion]
+      properties:
+        schemaVersion: { $ref: '#/components/schemas/SchemaVersion' }
+        id: { type: string, description: 'Sortable ULID for the job.' }
+        type:
+          type: string
+          description: |
+            Job kind (e.g., `bootstrap.acfs`, `plan.candidate.generate`,
+            `swarm.spawn`, `health.snapshot`, `tend.swarm`,
+            `build.run`, `test.run`).
+        status: { $ref: '#/components/schemas/JobStatus' }
+        projectId: { type: string }
+        actor: { $ref: '#/components/schemas/Actor' }
+        argvDigest: { type: string, description: 'Hash of the normalized argv.' }
+        envDigest: { type: string, description: 'Hash of the relevant env keys.' }
+        cwd: { type: string }
+        startedAt: { type: string, format: date-time }
+        completedAt: { type: string, format: date-time }
+        durationMs: { type: integer, minimum: 0 }
+        exitCode: { type: integer }
+        failureFingerprint:
+          type: string
+          description: |
+            Stable hash of the failure signature (test name, stack frames),
+            used to detect repeated failures across reruns (§2.7).
+        artifacts:
+          type: array
+          items: { $ref: '#/components/schemas/ArtifactRef' }
+        approvalId:
+          type: string
+          description: 'Set when status is `waiting_approval`.'
+
+    JobListResponse:
+      type: object
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Job' }
+        page: { $ref: '#/components/schemas/PageMeta' }
+
+    JobCancelRequest:
+      type: object
+      properties:
+        reason: { type: string, description: 'Optional human-readable note.' }
+        graceSeconds:
+          type: integer
+          minimum: 0
+          maximum: 60
+          default: 5
+          description: 'SIGTERM → SIGKILL escalation window.'
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # CommandSpec + Approval (§5.3)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    CommandSpec:
+      type: object
+      description: |
+        Typed representation of an action the daemon would execute (or has
+        executed). Used by Approval, Job audit, and tending ActionPlans
+        (`packages/schemas/tending-actions.yaml`). The daemon — not the model
+        or renderer — is the executor.
+      required: [kind, target]
+      properties:
+        kind:
+          type: string
+          description: |
+            Action kind. The closed set lives in `tending-actions.yaml`;
+            examples include `git.push_branch`, `agent.send_marching_orders`,
+            `reservation.force_release`, `caam.switch_account`.
+        target:
+          type: object
+          description: |
+            Action-specific target keys (e.g., `{agentId}`, `{branch}`,
+            `{reservationId}`). Schema is per-action; the daemon validates
+            against the action's published shape.
+          additionalProperties: true
+        args:
+          type: object
+          description: 'Action-specific args; opaque at this layer.'
+          additionalProperties: true
+        idempotencyKey:
+          type: string
+          description: 'Stable key used to dedupe repeated executions.'
+        preconditions:
+          type: array
+          items: { type: string }
+          description: 'Human-readable preconditions verified before execution.'
+        postconditions:
+          type: array
+          items: { type: string }
+          description: 'Human-readable postconditions verified after execution.'
+
+    ApprovalRiskClass:
+      type: string
+      enum: [low, medium, high, critical]
+
+    ApprovalScope:
+      type: string
+      description: |
+        How wide the approval applies. `once` only authorizes the requested
+        execution; `this_bead` applies to identical kind+target within the
+        bead; etc.
+      enum: [once, this_bead, this_swarm, this_project_session]
+
+    ApprovalState:
+      type: string
+      enum: [pending, approved, denied, expired, revoked]
+
+    ApprovalSource:
+      type: string
+      description: |
+        Where the approval originated — Hoopoe-policy approvals from the
+        daemon, or DCG verdicts ingested via the agent boundary (§5.3).
+      enum: [hoopoe_policy, dcg]
+
+    ApprovalDecisionRequest:
+      type: object
+      required: [decisionActor]
+      properties:
+        decisionActor: { $ref: '#/components/schemas/Actor' }
+        note: { type: string }
+        scope: { $ref: '#/components/schemas/ApprovalScope' }
+
+    Approval:
+      type: object
+      description: |
+        Durable approval record (§5.3). Approvals live in one queue regardless
+        of source; the renderer surfaces both Hoopoe-policy and DCG-ingested
+        approvals with their `source` rule attached.
+      required: [id, schemaVersion, state, source, requestedAction, requestActor, riskClass, scope, requestedAt]
+      properties:
+        schemaVersion: { $ref: '#/components/schemas/SchemaVersion' }
+        id: { type: string }
+        projectId: { type: string }
+        beadId: { type: string }
+        swarmId: { type: string }
+        agentId: { type: string }
+        state: { $ref: '#/components/schemas/ApprovalState' }
+        source: { $ref: '#/components/schemas/ApprovalSource' }
+        requestedAction: { $ref: '#/components/schemas/CommandSpec' }
+        requestActor:
+          $ref: '#/components/schemas/Actor'
+          description: 'Who requested the approval (user, agent, tending job).'
+        reason: { type: string }
+        evidenceRefs:
+          type: array
+          items: { type: string }
+          description: |
+            Opaque IDs pointing into audit log / pane logs / detection records.
+            Resolved client-side via the artifact registry on click.
+        riskClass: { $ref: '#/components/schemas/ApprovalRiskClass' }
+        scope: { $ref: '#/components/schemas/ApprovalScope' }
+        policyRule:
+          type: string
+          description: |
+            The Hoopoe policy ID or DCG rule ID that required this approval.
+            Surfaced in Diagnostics so the user knows WHY they're being asked.
+        requestedAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+        decidedAt: { type: string, format: date-time }
+        decisionActor:
+          $ref: '#/components/schemas/Actor'
+          description: 'Set when state ≠ pending.'
+        decisionNote: { type: string }
+
+    ApprovalListResponse:
+      type: object
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Approval' }
+        page: { $ref: '#/components/schemas/PageMeta' }

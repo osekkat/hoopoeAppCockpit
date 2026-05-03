@@ -34,6 +34,39 @@ export type HealthResponse = components["schemas"]["HealthResponse"];
 export type VersionResponse = components["schemas"]["VersionResponse"];
 export type Actor = components["schemas"]["Actor"];
 export type PageMeta = components["schemas"]["PageMeta"];
+export type Cursor = components["schemas"]["Cursor"];
+
+// VPS + Project domain (§4)
+export type VpsHost = components["schemas"]["VpsHost"];
+export type VpsLifecycleState = components["schemas"]["VpsLifecycleState"];
+export type Project = components["schemas"]["Project"];
+export type ProjectLifecycleState = components["schemas"]["ProjectLifecycleState"];
+export type ProjectRepoRef = components["schemas"]["ProjectRepoRef"];
+export type ProjectGate = components["schemas"]["ProjectGate"];
+export type ProjectReadiness = components["schemas"]["ProjectReadiness"];
+
+// Plans + Beads (§7.1, §7.2)
+export type Plan = components["schemas"]["Plan"];
+export type PlanLifecycleState = components["schemas"]["PlanLifecycleState"];
+export type PlanQualityScore = components["schemas"]["PlanQualityScore"];
+export type Bead = components["schemas"]["Bead"];
+export type BeadStatus = components["schemas"]["BeadStatus"];
+export type BeadIssueType = components["schemas"]["BeadIssueType"];
+export type BeadPriority = components["schemas"]["BeadPriority"];
+export type BeadSetQuality = components["schemas"]["BeadSetQuality"];
+
+// Jobs + Artifacts (§2.7)
+export type Job = components["schemas"]["Job"];
+export type JobStatus = components["schemas"]["JobStatus"];
+export type ArtifactRef = components["schemas"]["ArtifactRef"];
+
+// Approvals + CommandSpec (§5.3)
+export type Approval = components["schemas"]["Approval"];
+export type ApprovalState = components["schemas"]["ApprovalState"];
+export type ApprovalRiskClass = components["schemas"]["ApprovalRiskClass"];
+export type ApprovalScope = components["schemas"]["ApprovalScope"];
+export type ApprovalSource = components["schemas"]["ApprovalSource"];
+export type CommandSpec = components["schemas"]["CommandSpec"];
 
 /** Public package identity. Used in audit + diagnostics. */
 export const HOOPOE_SCHEMAS_PACKAGE_NAME = "@hoopoe/schemas";

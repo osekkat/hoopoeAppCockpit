@@ -11,6 +11,240 @@ const (
 	BearerAuthScopes bearerAuthContextKey = "bearerAuth.Scopes"
 )
 
+// Defines values for ActorKind.
+const (
+	ActorKindAgent     ActorKind = "agent"
+	ActorKindApproval  ActorKind = "approval"
+	ActorKindDcg       ActorKind = "dcg"
+	ActorKindScheduler ActorKind = "scheduler"
+	ActorKindSystem    ActorKind = "system"
+	ActorKindUser      ActorKind = "user"
+)
+
+// Valid indicates whether the value is a known member of the ActorKind enum.
+func (e ActorKind) Valid() bool {
+	switch e {
+	case ActorKindAgent:
+		return true
+	case ActorKindApproval:
+		return true
+	case ActorKindDcg:
+		return true
+	case ActorKindScheduler:
+		return true
+	case ActorKindSystem:
+		return true
+	case ActorKindUser:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ApprovalRiskClass.
+const (
+	Critical ApprovalRiskClass = "critical"
+	High     ApprovalRiskClass = "high"
+	Low      ApprovalRiskClass = "low"
+	Medium   ApprovalRiskClass = "medium"
+)
+
+// Valid indicates whether the value is a known member of the ApprovalRiskClass enum.
+func (e ApprovalRiskClass) Valid() bool {
+	switch e {
+	case Critical:
+		return true
+	case High:
+		return true
+	case Low:
+		return true
+	case Medium:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ApprovalScope.
+const (
+	Once               ApprovalScope = "once"
+	ThisBead           ApprovalScope = "this_bead"
+	ThisProjectSession ApprovalScope = "this_project_session"
+	ThisSwarm          ApprovalScope = "this_swarm"
+)
+
+// Valid indicates whether the value is a known member of the ApprovalScope enum.
+func (e ApprovalScope) Valid() bool {
+	switch e {
+	case Once:
+		return true
+	case ThisBead:
+		return true
+	case ThisProjectSession:
+		return true
+	case ThisSwarm:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ApprovalSource.
+const (
+	ApprovalSourceDcg          ApprovalSource = "dcg"
+	ApprovalSourceHoopoePolicy ApprovalSource = "hoopoe_policy"
+)
+
+// Valid indicates whether the value is a known member of the ApprovalSource enum.
+func (e ApprovalSource) Valid() bool {
+	switch e {
+	case ApprovalSourceDcg:
+		return true
+	case ApprovalSourceHoopoePolicy:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ApprovalState.
+const (
+	Approved ApprovalState = "approved"
+	Denied   ApprovalState = "denied"
+	Expired  ApprovalState = "expired"
+	Pending  ApprovalState = "pending"
+	Revoked  ApprovalState = "revoked"
+)
+
+// Valid indicates whether the value is a known member of the ApprovalState enum.
+func (e ApprovalState) Valid() bool {
+	switch e {
+	case Approved:
+		return true
+	case Denied:
+		return true
+	case Expired:
+		return true
+	case Pending:
+		return true
+	case Revoked:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ArtifactRefKind.
+const (
+	BootstrapLog    ArtifactRefKind = "bootstrap_log"
+	ConversionTrace ArtifactRefKind = "conversion_trace"
+	HealthSnapshot  ArtifactRefKind = "health_snapshot"
+	Log             ArtifactRefKind = "log"
+	Misc            ArtifactRefKind = "misc"
+	PlanArtifact    ArtifactRefKind = "plan_artifact"
+	ReviewFinding   ArtifactRefKind = "review_finding"
+)
+
+// Valid indicates whether the value is a known member of the ArtifactRefKind enum.
+func (e ArtifactRefKind) Valid() bool {
+	switch e {
+	case BootstrapLog:
+		return true
+	case ConversionTrace:
+		return true
+	case HealthSnapshot:
+		return true
+	case Log:
+		return true
+	case Misc:
+		return true
+	case PlanArtifact:
+		return true
+	case ReviewFinding:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BeadDependencyEdgeDependencyType.
+const (
+	Blocks  BeadDependencyEdgeDependencyType = "blocks"
+	Parent  BeadDependencyEdgeDependencyType = "parent"
+	Related BeadDependencyEdgeDependencyType = "related"
+)
+
+// Valid indicates whether the value is a known member of the BeadDependencyEdgeDependencyType enum.
+func (e BeadDependencyEdgeDependencyType) Valid() bool {
+	switch e {
+	case Blocks:
+		return true
+	case Parent:
+		return true
+	case Related:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BeadIssueType.
+const (
+	Bug      BeadIssueType = "bug"
+	Docs     BeadIssueType = "docs"
+	Epic     BeadIssueType = "epic"
+	Feature  BeadIssueType = "feature"
+	Question BeadIssueType = "question"
+	Task     BeadIssueType = "task"
+)
+
+// Valid indicates whether the value is a known member of the BeadIssueType enum.
+func (e BeadIssueType) Valid() bool {
+	switch e {
+	case Bug:
+		return true
+	case Docs:
+		return true
+	case Epic:
+		return true
+	case Feature:
+		return true
+	case Question:
+		return true
+	case Task:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BeadStatus.
+const (
+	Blocked    BeadStatus = "blocked"
+	Closed     BeadStatus = "closed"
+	Deleted    BeadStatus = "deleted"
+	InProgress BeadStatus = "in_progress"
+	Open       BeadStatus = "open"
+)
+
+// Valid indicates whether the value is a known member of the BeadStatus enum.
+func (e BeadStatus) Valid() bool {
+	switch e {
+	case Blocked:
+		return true
+	case Closed:
+		return true
+	case Deleted:
+		return true
+	case InProgress:
+		return true
+	case Open:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CapabilityTransport.
 const (
 	Fixture   CapabilityTransport = "fixture"
@@ -110,24 +344,156 @@ func (e HealthResponseStatus) Valid() bool {
 	}
 }
 
+// Defines values for JobStatus.
+const (
+	JobStatusCanceling       JobStatus = "canceling"
+	JobStatusFailed          JobStatus = "failed"
+	JobStatusInterrupted     JobStatus = "interrupted"
+	JobStatusQueued          JobStatus = "queued"
+	JobStatusRunning         JobStatus = "running"
+	JobStatusSucceeded       JobStatus = "succeeded"
+	JobStatusWaitingApproval JobStatus = "waiting_approval"
+)
+
+// Valid indicates whether the value is a known member of the JobStatus enum.
+func (e JobStatus) Valid() bool {
+	switch e {
+	case JobStatusCanceling:
+		return true
+	case JobStatusFailed:
+		return true
+	case JobStatusInterrupted:
+		return true
+	case JobStatusQueued:
+		return true
+	case JobStatusRunning:
+		return true
+	case JobStatusSucceeded:
+		return true
+	case JobStatusWaitingApproval:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for MigrationStatePhase.
 const (
-	Failed     MigrationStatePhase = "failed"
-	Idle       MigrationStatePhase = "idle"
-	RolledBack MigrationStatePhase = "rolled_back"
-	Running    MigrationStatePhase = "running"
+	MigrationStatePhaseFailed     MigrationStatePhase = "failed"
+	MigrationStatePhaseIdle       MigrationStatePhase = "idle"
+	MigrationStatePhaseRolledBack MigrationStatePhase = "rolled_back"
+	MigrationStatePhaseRunning    MigrationStatePhase = "running"
 )
 
 // Valid indicates whether the value is a known member of the MigrationStatePhase enum.
 func (e MigrationStatePhase) Valid() bool {
 	switch e {
-	case Failed:
+	case MigrationStatePhaseFailed:
 		return true
-	case Idle:
+	case MigrationStatePhaseIdle:
 		return true
-	case RolledBack:
+	case MigrationStatePhaseRolledBack:
 		return true
-	case Running:
+	case MigrationStatePhaseRunning:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PlanLifecycleState.
+const (
+	Archived PlanLifecycleState = "archived"
+	Draft    PlanLifecycleState = "draft"
+	Locked   PlanLifecycleState = "locked"
+	Refining PlanLifecycleState = "refining"
+)
+
+// Valid indicates whether the value is a known member of the PlanLifecycleState enum.
+func (e PlanLifecycleState) Valid() bool {
+	switch e {
+	case Archived:
+		return true
+	case Draft:
+		return true
+	case Locked:
+		return true
+	case Refining:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProjectGate.
+const (
+	ProjectGateBeadsCreated    ProjectGate = "beads_created"
+	ProjectGateBeadsFinalized  ProjectGate = "beads_finalized"
+	ProjectGateHardeningReady  ProjectGate = "hardening_ready"
+	ProjectGateLaunchReady     ProjectGate = "launch_ready"
+	ProjectGatePlanLocked      ProjectGate = "plan_locked"
+	ProjectGateProjectImported ProjectGate = "project_imported"
+	ProjectGateShipReady       ProjectGate = "ship_ready"
+	ProjectGateVpsReady        ProjectGate = "vps_ready"
+)
+
+// Valid indicates whether the value is a known member of the ProjectGate enum.
+func (e ProjectGate) Valid() bool {
+	switch e {
+	case ProjectGateBeadsCreated:
+		return true
+	case ProjectGateBeadsFinalized:
+		return true
+	case ProjectGateHardeningReady:
+		return true
+	case ProjectGateLaunchReady:
+		return true
+	case ProjectGatePlanLocked:
+		return true
+	case ProjectGateProjectImported:
+		return true
+	case ProjectGateShipReady:
+		return true
+	case ProjectGateVpsReady:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProjectLifecycleState.
+const (
+	ProjectLifecycleStateBeadsCreated    ProjectLifecycleState = "beads_created"
+	ProjectLifecycleStateBeadsFinalized  ProjectLifecycleState = "beads_finalized"
+	ProjectLifecycleStateCompleted       ProjectLifecycleState = "completed"
+	ProjectLifecycleStateHardeningRounds ProjectLifecycleState = "hardening_rounds"
+	ProjectLifecycleStateImported        ProjectLifecycleState = "imported"
+	ProjectLifecycleStatePlanFinalized   ProjectLifecycleState = "plan_finalized"
+	ProjectLifecycleStatePlanning        ProjectLifecycleState = "planning"
+	ProjectLifecycleStateQualityGates    ProjectLifecycleState = "quality_gates"
+	ProjectLifecycleStateSwarmRunning    ProjectLifecycleState = "swarm_running"
+)
+
+// Valid indicates whether the value is a known member of the ProjectLifecycleState enum.
+func (e ProjectLifecycleState) Valid() bool {
+	switch e {
+	case ProjectLifecycleStateBeadsCreated:
+		return true
+	case ProjectLifecycleStateBeadsFinalized:
+		return true
+	case ProjectLifecycleStateCompleted:
+		return true
+	case ProjectLifecycleStateHardeningRounds:
+		return true
+	case ProjectLifecycleStateImported:
+		return true
+	case ProjectLifecycleStatePlanFinalized:
+		return true
+	case ProjectLifecycleStatePlanning:
+		return true
+	case ProjectLifecycleStateQualityGates:
+		return true
+	case ProjectLifecycleStateSwarmRunning:
 		return true
 	default:
 		return false
@@ -236,6 +602,174 @@ func (e VersionResponseDaemonChannel) Valid() bool {
 	}
 }
 
+// Actor Who initiated an action — used in audit + event envelopes.
+type Actor struct {
+	// DisplayName Optional UI-only label; never used for authorization.
+	DisplayName *string `json:"displayName,omitempty"`
+
+	// Id Stable identifier within the actor's namespace.
+	Id   *string   `json:"id,omitempty"`
+	Kind ActorKind `json:"kind"`
+}
+
+// ActorKind defines model for Actor.Kind.
+type ActorKind string
+
+// Approval Durable approval record (§5.3). Approvals live in one queue regardless
+// of source; the renderer surfaces both Hoopoe-policy and DCG-ingested
+// approvals with their `source` rule attached.
+type Approval struct {
+	AgentId   *string    `json:"agentId,omitempty"`
+	BeadId    *string    `json:"beadId,omitempty"`
+	DecidedAt *time.Time `json:"decidedAt,omitempty"`
+
+	// DecisionActor Who initiated an action — used in audit + event envelopes.
+	DecisionActor *Actor  `json:"decisionActor,omitempty"`
+	DecisionNote  *string `json:"decisionNote,omitempty"`
+
+	// EvidenceRefs Opaque IDs pointing into audit log / pane logs / detection records.
+	// Resolved client-side via the artifact registry on click.
+	EvidenceRefs *[]string  `json:"evidenceRefs,omitempty"`
+	ExpiresAt    *time.Time `json:"expiresAt,omitempty"`
+	Id           string     `json:"id"`
+
+	// PolicyRule The Hoopoe policy ID or DCG rule ID that required this approval.
+	// Surfaced in Diagnostics so the user knows WHY they're being asked.
+	PolicyRule *string `json:"policyRule,omitempty"`
+	ProjectId  *string `json:"projectId,omitempty"`
+	Reason     *string `json:"reason,omitempty"`
+
+	// RequestActor Who initiated an action — used in audit + event envelopes.
+	RequestActor Actor `json:"requestActor"`
+
+	// RequestedAction Typed representation of an action the daemon would execute (or has
+	// executed). Used by Approval, Job audit, and tending ActionPlans
+	// (`packages/schemas/tending-actions.yaml`). The daemon — not the model
+	// or renderer — is the executor.
+	RequestedAction CommandSpec       `json:"requestedAction"`
+	RequestedAt     time.Time         `json:"requestedAt"`
+	RiskClass       ApprovalRiskClass `json:"riskClass"`
+
+	// SchemaVersion Monotonically increasing schema version for a persisted shape.
+	SchemaVersion SchemaVersion `json:"schemaVersion"`
+
+	// Scope How wide the approval applies. `once` only authorizes the requested
+	// execution; `this_bead` applies to identical kind+target within the
+	// bead; etc.
+	Scope ApprovalScope `json:"scope"`
+
+	// Source Where the approval originated — Hoopoe-policy approvals from the
+	// daemon, or DCG verdicts ingested via the agent boundary (§5.3).
+	Source  ApprovalSource `json:"source"`
+	State   ApprovalState  `json:"state"`
+	SwarmId *string        `json:"swarmId,omitempty"`
+}
+
+// ApprovalDecisionRequest defines model for ApprovalDecisionRequest.
+type ApprovalDecisionRequest struct {
+	// DecisionActor Who initiated an action — used in audit + event envelopes.
+	DecisionActor Actor   `json:"decisionActor"`
+	Note          *string `json:"note,omitempty"`
+
+	// Scope How wide the approval applies. `once` only authorizes the requested
+	// execution; `this_bead` applies to identical kind+target within the
+	// bead; etc.
+	Scope *ApprovalScope `json:"scope,omitempty"`
+}
+
+// ApprovalListResponse defines model for ApprovalListResponse.
+type ApprovalListResponse struct {
+	Items []Approval `json:"items"`
+	Page  PageMeta   `json:"page"`
+}
+
+// ApprovalRiskClass defines model for ApprovalRiskClass.
+type ApprovalRiskClass string
+
+// ApprovalScope How wide the approval applies. `once` only authorizes the requested
+// execution; `this_bead` applies to identical kind+target within the
+// bead; etc.
+type ApprovalScope string
+
+// ApprovalSource Where the approval originated — Hoopoe-policy approvals from the
+// daemon, or DCG verdicts ingested via the agent boundary (§5.3).
+type ApprovalSource string
+
+// ApprovalState defines model for ApprovalState.
+type ApprovalState string
+
+// ArtifactRef Stable handle to a daemon-managed artifact (logs, plan outputs,
+// conversion traces, health snapshots, review findings, bootstrap
+// logs). Resolved via the artifact registry on demand.
+type ArtifactRef struct {
+	ContentType *string         `json:"contentType,omitempty"`
+	CreatedAt   *time.Time      `json:"createdAt,omitempty"`
+	Id          string          `json:"id"`
+	Kind        ArtifactRefKind `json:"kind"`
+	Sha256      *string         `json:"sha256,omitempty"`
+	SizeBytes   *int            `json:"sizeBytes,omitempty"`
+}
+
+// ArtifactRefKind defines model for ArtifactRef.Kind.
+type ArtifactRefKind string
+
+// Bead One bead from `br`. Edges are cached snapshots; the canonical edge
+// truth lives in `.beads/issues.jsonl`.
+type Bead struct {
+	CreatedAt    *time.Time            `json:"createdAt,omitempty"`
+	CreatedBy    *string               `json:"createdBy,omitempty"`
+	Dependencies *[]BeadDependencyEdge `json:"dependencies,omitempty"`
+	Dependents   *[]BeadDependencyEdge `json:"dependents,omitempty"`
+	Description  *string               `json:"description,omitempty"`
+
+	// Id Beads ID, e.g., `hp-r3i`.
+	Id        string        `json:"id"`
+	IssueType BeadIssueType `json:"issueType"`
+
+	// Priority 0=critical, 1=high, 2=medium, 3=low, 4=backlog.
+	Priority BeadPriority `json:"priority"`
+
+	// SchemaVersion Monotonically increasing schema version for a persisted shape.
+	SchemaVersion SchemaVersion `json:"schemaVersion"`
+	SourceRepo    *string       `json:"sourceRepo,omitempty"`
+	Status        BeadStatus    `json:"status"`
+	Title         string        `json:"title"`
+	UpdatedAt     *time.Time    `json:"updatedAt,omitempty"`
+}
+
+// BeadDependencyEdge defines model for BeadDependencyEdge.
+type BeadDependencyEdge struct {
+	DependencyType BeadDependencyEdgeDependencyType `json:"dependencyType"`
+
+	// Id The other bead ID.
+	Id string `json:"id"`
+
+	// Priority 0=critical, 1=high, 2=medium, 3=low, 4=backlog.
+	Priority *BeadPriority `json:"priority,omitempty"`
+	Status   *BeadStatus   `json:"status,omitempty"`
+
+	// Title Cached title for UI without round-trip.
+	Title *string `json:"title,omitempty"`
+}
+
+// BeadDependencyEdgeDependencyType defines model for BeadDependencyEdge.DependencyType.
+type BeadDependencyEdgeDependencyType string
+
+// BeadIssueType defines model for BeadIssueType.
+type BeadIssueType string
+
+// BeadListResponse defines model for BeadListResponse.
+type BeadListResponse struct {
+	Items []Bead   `json:"items"`
+	Page  PageMeta `json:"page"`
+}
+
+// BeadPriority 0=critical, 1=high, 2=medium, 3=low, 4=backlog.
+type BeadPriority = int
+
+// BeadStatus defines model for BeadStatus.
+type BeadStatus string
+
 // Capability One capability slot inside a `ToolReport`. The map key is the
 // capability ID (e.g., `ntm.sessions.list`); the value is this object.
 type Capability struct {
@@ -299,6 +833,34 @@ type CapabilityRegistry struct {
 //     the two.
 type CapabilityStatus string
 
+// CommandSpec Typed representation of an action the daemon would execute (or has
+// executed). Used by Approval, Job audit, and tending ActionPlans
+// (`packages/schemas/tending-actions.yaml`). The daemon — not the model
+// or renderer — is the executor.
+type CommandSpec struct {
+	// Args Action-specific args; opaque at this layer.
+	Args *map[string]interface{} `json:"args,omitempty"`
+
+	// IdempotencyKey Stable key used to dedupe repeated executions.
+	IdempotencyKey *string `json:"idempotencyKey,omitempty"`
+
+	// Kind Action kind. The closed set lives in `tending-actions.yaml`;
+	// examples include `git.push_branch`, `agent.send_marching_orders`,
+	// `reservation.force_release`, `caam.switch_account`.
+	Kind string `json:"kind"`
+
+	// Postconditions Human-readable postconditions verified after execution.
+	Postconditions *[]string `json:"postconditions,omitempty"`
+
+	// Preconditions Human-readable preconditions verified before execution.
+	Preconditions *[]string `json:"preconditions,omitempty"`
+
+	// Target Action-specific target keys (e.g., `{agentId}`, `{branch}`,
+	// `{reservationId}`). Schema is per-action; the daemon validates
+	// against the action's published shape.
+	Target map[string]interface{} `json:"target"`
+}
+
 // CompatibilityReport defines model for CompatibilityReport.
 type CompatibilityReport struct {
 	// Capabilities Authoritative capability snapshot returned by `/v1/capabilities`. The
@@ -331,6 +893,20 @@ type CompatibilityReport struct {
 	UnsupportedClientWarnings *[]string `json:"unsupportedClientWarnings,omitempty"`
 }
 
+// Cursor Opaque pagination cursor. Use the `next` cursor from a list response
+// verbatim; do not parse it. Cursors are stable for ≥24h.
+type Cursor = string
+
+// GateCheck One named precondition for a gate. `ok` when satisfied; otherwise
+// `detail` explains what's missing in human-readable form.
+type GateCheck struct {
+	Detail *string `json:"detail,omitempty"`
+
+	// Id Stable check ID, e.g., `agents_md_present`.
+	Id string `json:"id"`
+	Ok bool   `json:"ok"`
+}
+
 // HealthResponse defines model for HealthResponse.
 type HealthResponse struct {
 	// Adapters Coarse per-tool adapter status (cheap; no full capability check).
@@ -349,6 +925,64 @@ type HealthResponseAdapters string
 
 // HealthResponseStatus defines model for HealthResponse.Status.
 type HealthResponseStatus string
+
+// Job One long-running job in the daemon's registry (§2.7). `argvDigest`
+// and `envDigest` are blake3 hashes — full argv/env are recorded in the
+// artifact registry, redacted on the way out.
+type Job struct {
+	// Actor Who initiated an action — used in audit + event envelopes.
+	Actor *Actor `json:"actor,omitempty"`
+
+	// ApprovalId Set when status is `waiting_approval`.
+	ApprovalId *string `json:"approvalId,omitempty"`
+
+	// ArgvDigest Hash of the normalized argv.
+	ArgvDigest  *string        `json:"argvDigest,omitempty"`
+	Artifacts   *[]ArtifactRef `json:"artifacts,omitempty"`
+	CompletedAt *time.Time     `json:"completedAt,omitempty"`
+	Cwd         *string        `json:"cwd,omitempty"`
+	DurationMs  *int           `json:"durationMs,omitempty"`
+
+	// EnvDigest Hash of the relevant env keys.
+	EnvDigest *string `json:"envDigest,omitempty"`
+	ExitCode  *int    `json:"exitCode,omitempty"`
+
+	// FailureFingerprint Stable hash of the failure signature (test name, stack frames),
+	// used to detect repeated failures across reruns (§2.7).
+	FailureFingerprint *string `json:"failureFingerprint,omitempty"`
+
+	// Id Sortable ULID for the job.
+	Id        string  `json:"id"`
+	ProjectId *string `json:"projectId,omitempty"`
+
+	// SchemaVersion Monotonically increasing schema version for a persisted shape.
+	SchemaVersion SchemaVersion `json:"schemaVersion"`
+	StartedAt     *time.Time    `json:"startedAt,omitempty"`
+	Status        JobStatus     `json:"status"`
+
+	// Type Job kind (e.g., `bootstrap.acfs`, `plan.candidate.generate`,
+	// `swarm.spawn`, `health.snapshot`, `tend.swarm`,
+	// `build.run`, `test.run`).
+	Type string `json:"type"`
+}
+
+// JobCancelRequest defines model for JobCancelRequest.
+type JobCancelRequest struct {
+	// GraceSeconds SIGTERM → SIGKILL escalation window.
+	GraceSeconds *int `json:"graceSeconds,omitempty"`
+
+	// Reason Optional human-readable note.
+	Reason *string `json:"reason,omitempty"`
+}
+
+// JobListResponse defines model for JobListResponse.
+type JobListResponse struct {
+	Items []Job    `json:"items"`
+	Page  PageMeta `json:"page"`
+}
+
+// JobStatus defines model for JobStatus.
+type JobStatus string
 
 // MigrationState Structured daemon-migration state (§10.3). The renderer can pick the
 // coarse `phase` enum for chrome state OR the detailed
@@ -374,6 +1008,63 @@ type MigrationState struct {
 // (`pending == [] → idle` etc.); included so renderer chrome can pick
 // it without computing.
 type MigrationStatePhase string
+
+// PageMeta defines model for PageMeta.
+type PageMeta struct {
+	HasMore bool `json:"hasMore"`
+
+	// Next Opaque pagination cursor. Use the `next` cursor from a list response
+	// verbatim; do not parse it. Cursors are stable for ≥24h.
+	Next *Cursor `json:"next,omitempty"`
+
+	// Total Optional total count; expensive list endpoints omit this.
+	Total *int `json:"total,omitempty"`
+}
+
+// Plan A planning artifact for a project. Stored as markdown under
+// `.hoopoe/plans/<plan-id>/` in the project repo.
+type Plan struct {
+	// ArtifactsRef Pointer to the artifact bundle (audit log, model raws, traces).
+	// Resolves through the daemon's artifact registry.
+	ArtifactsRef *string   `json:"artifactsRef,omitempty"`
+	CreatedAt    time.Time `json:"createdAt"`
+	Id           string    `json:"id"`
+
+	// LatestQuality Composite quality score for a plan (`§7.1`). Each dimension scored
+	// 0–10; scoring rubric in `docs/planning/quality-rubric.md` (TBD).
+	LatestQuality *PlanQualityScore `json:"latestQuality,omitempty"`
+	LockedAt      *time.Time        `json:"lockedAt,omitempty"`
+	ProjectId     string            `json:"projectId"`
+
+	// RoundCount Number of refinement rounds completed.
+	RoundCount *int `json:"roundCount,omitempty"`
+
+	// SchemaVersion Monotonically increasing schema version for a persisted shape.
+	SchemaVersion SchemaVersion      `json:"schemaVersion"`
+	State         PlanLifecycleState `json:"state"`
+	Title         *string            `json:"title,omitempty"`
+}
+
+// PlanLifecycleState defines model for PlanLifecycleState.
+type PlanLifecycleState string
+
+// PlanListResponse defines model for PlanListResponse.
+type PlanListResponse struct {
+	Items []Plan   `json:"items"`
+	Page  PageMeta `json:"page"`
+}
+
+// PlanQualityScore Composite quality score for a plan (`§7.1`). Each dimension scored
+// 0–10; scoring rubric in `docs/planning/quality-rubric.md` (TBD).
+type PlanQualityScore struct {
+	// Dimensions Per-dimension scores (e.g., `clarity`, `coverage`, `risk_surfacing`).
+	Dimensions map[string]float32 `json:"dimensions"`
+	Overall    float32            `json:"overall"`
+	ScoredAt   time.Time          `json:"scoredAt"`
+
+	// ScorerActor Who initiated an action — used in audit + event envelopes.
+	ScorerActor *Actor `json:"scorerActor,omitempty"`
+}
 
 // Problem RFC 7807 problem+json. `type` is a daemon-stable URN; `code` is a short
 // machine-readable identifier (e.g., `auth.token_expired`,
@@ -416,6 +1107,90 @@ type Problem struct {
 
 	// Type Stable problem-type URN (e.g., `urn:hoopoe:auth/token-expired`).
 	Type string `json:"type"`
+}
+
+// Project One project on this VPS. Lifecycle states + gate invariants are
+// canonical (§4); the daemon never lets a stage flip until the gate
+// invariants pass.
+type Project struct {
+	// AgentsManifestPresent Whether AGENTS.md was found on import.
+	AgentsManifestPresent *bool `json:"agentsManifestPresent,omitempty"`
+
+	// HoopoeInitialized Whether the project has a populated `.hoopoe/` directory.
+	HoopoeInitialized *bool                 `json:"hoopoeInitialized,omitempty"`
+	Id                string                `json:"id"`
+	ImportedAt        *time.Time            `json:"importedAt,omitempty"`
+	LastActivityAt    *time.Time            `json:"lastActivityAt,omitempty"`
+	LifecycleState    ProjectLifecycleState `json:"lifecycleState"`
+
+	// Name Human-readable project name.
+	Name string         `json:"name"`
+	Repo ProjectRepoRef `json:"repo"`
+
+	// SchemaVersion Monotonically increasing schema version for a persisted shape.
+	SchemaVersion SchemaVersion `json:"schemaVersion"`
+
+	// Slug URL-safe project slug (used in routes + Activity panel).
+	Slug              string `json:"slug"`
+	ToolDetectionDone *bool  `json:"toolDetectionDone,omitempty"`
+
+	// VpsId ID of the VpsHost hosting this project.
+	VpsId string `json:"vpsId"`
+}
+
+// ProjectGate Named gate per §4.2. Used to key `ProjectReadiness.gates`.
+type ProjectGate string
+
+// ProjectLifecycleState defines model for ProjectLifecycleState.
+type ProjectLifecycleState string
+
+// ProjectListResponse defines model for ProjectListResponse.
+type ProjectListResponse struct {
+	Items []Project `json:"items"`
+	Page  PageMeta  `json:"page"`
+}
+
+// ProjectReadiness Composite readiness snapshot per §4.2. `gates` is keyed in canonical
+// order; the desktop renders them as a checklist with the first failing
+// gate highlighted.
+type ProjectReadiness struct {
+	CheckedAt             time.Time              `json:"checkedAt"`
+	CurrentLifecycleState *ProjectLifecycleState `json:"currentLifecycleState,omitempty"`
+	Gates                 []ProjectReadinessGate `json:"gates"`
+	ProjectId             string                 `json:"projectId"`
+
+	// SchemaVersion Monotonically increasing schema version for a persisted shape.
+	SchemaVersion SchemaVersion `json:"schemaVersion"`
+}
+
+// ProjectReadinessGate defines model for ProjectReadinessGate.
+type ProjectReadinessGate struct {
+	BlockingCount *int        `json:"blockingCount,omitempty"`
+	Checks        []GateCheck `json:"checks"`
+
+	// Gate Named gate per §4.2. Used to key `ProjectReadiness.gates`.
+	Gate ProjectGate `json:"gate"`
+
+	// Satisfied True iff all `checks` pass.
+	Satisfied bool `json:"satisfied"`
+}
+
+// ProjectRepoRef defines model for ProjectRepoRef.
+type ProjectRepoRef struct {
+	// Branch Default branch the project tracks.
+	Branch string `json:"branch"`
+
+	// DesktopMirrorPath Read-only sync mirror path on the desktop (§7.7).
+	DesktopMirrorPath *string    `json:"desktopMirrorPath,omitempty"`
+	LastFetchedAt     *time.Time `json:"lastFetchedAt,omitempty"`
+
+	// Origin Origin URL of the canonical Git remote (e.g.,
+	// `git@github.com:user/repo.git`). NEVER the VPS path; the VPS clone
+	// and desktop mirror are sync targets.
+	Origin string `json:"origin"`
+
+	// VpsClonePath Working clone path on the VPS (`/data/projects/<project>/`).
+	VpsClonePath *string `json:"vpsClonePath,omitempty"`
 }
 
 // SchemaVersion Monotonically increasing schema version for a persisted shape.
@@ -483,6 +1258,12 @@ type VersionResponse struct {
 // VersionResponseDaemonChannel defines model for VersionResponse.Daemon.Channel.
 type VersionResponseDaemonChannel string
 
+// IdempotencyKey defines model for IdempotencyKey.
+type IdempotencyKey = string
+
+// ProjectIdPath defines model for ProjectIdPath.
+type ProjectIdPath = string
+
 // bearerAuthContextKey is the context key for bearerAuth security scheme
 type bearerAuthContextKey string
 
@@ -491,3 +1272,79 @@ type GetCapabilitiesParams struct {
 	// Tool Filter to a single tool (e.g., `ntm`, `br`, `bv`).
 	Tool *string `form:"tool,omitempty" json:"tool,omitempty"`
 }
+
+// ListJobsParams defines parameters for ListJobs.
+type ListJobsParams struct {
+	// Status Filter by job status (multi-value).
+	Status    *[]JobStatus `form:"status,omitempty" json:"status,omitempty"`
+	ProjectId *string      `form:"projectId,omitempty" json:"projectId,omitempty"`
+	Cursor    *Cursor      `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit     *int         `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// CancelJobParams defines parameters for CancelJob.
+type CancelJobParams struct {
+	// IdempotencyKey Stable client-generated key (ULID/UUID) for safe retries. The daemon
+	// dedupes by key within a sliding window (default 24h) and replays the
+	// original status + body. Required on retryable writes; clients that omit
+	// it on a write that turns out to be retryable will receive a
+	// `precondition-failed` problem on the second attempt.
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// ListProjectsParams defines parameters for ListProjects.
+type ListProjectsParams struct {
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// ListApprovalsParams defines parameters for ListApprovals.
+type ListApprovalsParams struct {
+	// State Filter by approval state.
+	State  *[]ApprovalState `form:"state,omitempty" json:"state,omitempty"`
+	Cursor *Cursor          `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit  *int             `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// ApproveApprovalParams defines parameters for ApproveApproval.
+type ApproveApprovalParams struct {
+	// IdempotencyKey Stable client-generated key (ULID/UUID) for safe retries. The daemon
+	// dedupes by key within a sliding window (default 24h) and replays the
+	// original status + body. Required on retryable writes; clients that omit
+	// it on a write that turns out to be retryable will receive a
+	// `precondition-failed` problem on the second attempt.
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// DenyApprovalParams defines parameters for DenyApproval.
+type DenyApprovalParams struct {
+	// IdempotencyKey Stable client-generated key (ULID/UUID) for safe retries. The daemon
+	// dedupes by key within a sliding window (default 24h) and replays the
+	// original status + body. Required on retryable writes; clients that omit
+	// it on a write that turns out to be retryable will receive a
+	// `precondition-failed` problem on the second attempt.
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// ListBeadsParams defines parameters for ListBeads.
+type ListBeadsParams struct {
+	// Status Filter by bead status (multi-value supported).
+	Status *[]BeadStatus `form:"status,omitempty" json:"status,omitempty"`
+	Cursor *Cursor       `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit  *int          `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// ListPlansParams defines parameters for ListPlans.
+type ListPlansParams struct {
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// CancelJobJSONRequestBody defines body for CancelJob for application/json ContentType.
+type CancelJobJSONRequestBody = JobCancelRequest
+
+// ApproveApprovalJSONRequestBody defines body for ApproveApproval for application/json ContentType.
+type ApproveApprovalJSONRequestBody = ApprovalDecisionRequest
+
+// DenyApprovalJSONRequestBody defines body for DenyApproval for application/json ContentType.
+type DenyApprovalJSONRequestBody = ApprovalDecisionRequest
