@@ -92,6 +92,118 @@ test("AuthBridge: bootstrap rejection raises a redacted error (no token leakage)
   ).rejects.toBeInstanceOf(AuthBridgeRedactedError);
 });
 
+test("AuthBridge: exchangePairingForBearer aborts a wedged daemon within requestTimeoutMs", async () => {
+  // Fetch impl that hangs forever unless the caller-supplied AbortSignal
+  // fires; mirrors the "daemon reachable on loopback but stuck at the
+  // HTTP layer" failure mode flagged in review-findings.md L377.
+  const fetchImpl = ((_url: string | URL, init?: RequestInit) =>
+    new Promise<Response>((_resolve, reject) => {
+      const signal = init?.signal;
+      if (!signal) {
+        // No signal means the fix is missing; never resolve so the test
+        // surfaces a hang rather than passing silently.
+        return;
+      }
+      const onAbort = () => {
+        const error = new Error("aborted") as Error & { code?: string };
+        error.name = "AbortError";
+        reject(error);
+      };
+      if (signal.aborted) {
+        onAbort();
+        return;
+      }
+      signal.addEventListener("abort", onAbort, { once: true });
+    })) as unknown as typeof fetch;
+
+  const auth = new AuthBridge({
+    registryPath,
+    secretStorage: new InMemorySecretStorage(),
+    fetchImpl,
+    requestTimeoutMs: 25,
+  });
+
+  const start = Date.now();
+  await expect(
+    auth.exchangePairingForBearer({
+      daemonBaseUrl: "http://127.0.0.1:3779",
+      pairingToken: "ABCDEFGHJKLM",
+    }),
+  ).rejects.toBeInstanceOf(AuthBridgeRedactedError);
+  const elapsed = Date.now() - start;
+  expect(elapsed).toBeGreaterThanOrEqual(20);
+  expect(elapsed).toBeLessThan(2_000);
+});
+
+test("AuthBridge: issueWsToken aborts a wedged daemon within requestTimeoutMs", async () => {
+  const fetchImpl = ((_url: string | URL, init?: RequestInit) =>
+    new Promise<Response>((_resolve, reject) => {
+      const signal = init?.signal;
+      if (!signal) return;
+      const onAbort = () => {
+        const error = new Error("aborted") as Error & { code?: string };
+        error.name = "AbortError";
+        reject(error);
+      };
+      if (signal.aborted) {
+        onAbort();
+        return;
+      }
+      signal.addEventListener("abort", onAbort, { once: true });
+    })) as unknown as typeof fetch;
+
+  const auth = new AuthBridge({
+    registryPath,
+    secretStorage: new InMemorySecretStorage(),
+    fetchImpl,
+    requestTimeoutMs: 25,
+  });
+
+  await expect(
+    auth.issueWsToken({
+      daemonBaseUrl: "http://127.0.0.1:3779",
+      bearerToken: "fixture-bearer",
+    }),
+  ).rejects.toBeInstanceOf(AuthBridgeRedactedError);
+});
+
+test("AuthBridge: timeout error message contains no token-shaped substring", async () => {
+  const fetchImpl = ((_url: string | URL, init?: RequestInit) =>
+    new Promise<Response>((_resolve, reject) => {
+      const signal = init?.signal;
+      if (!signal) return;
+      signal.addEventListener(
+        "abort",
+        () => {
+          const error = new Error("aborted") as Error & { code?: string };
+          error.name = "AbortError";
+          reject(error);
+        },
+        { once: true },
+      );
+    })) as unknown as typeof fetch;
+
+  const auth = new AuthBridge({
+    registryPath,
+    secretStorage: new InMemorySecretStorage(),
+    fetchImpl,
+    requestTimeoutMs: 25,
+  });
+
+  let thrown: Error | null = null;
+  try {
+    await auth.exchangePairingForBearer({
+      daemonBaseUrl: "http://127.0.0.1:3779",
+      pairingToken: "ABCDEFGHJKLM",
+    });
+  } catch (error) {
+    thrown = error as Error;
+  }
+  expect(thrown).toBeInstanceOf(AuthBridgeRedactedError);
+  expect(thrown?.message).toContain("timed out");
+  expect(thrown?.message).not.toContain("ABCDEFGHJKLM");
+});
+
 test("AuthBridge: WS-token request sets Authorization: Bearer header", async () => {
   const fakeWs = "fixture-wstoken-5min";
   const recordedHeaders: Record<string, string>[] = [];
