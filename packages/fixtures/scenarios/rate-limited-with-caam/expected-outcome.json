@@ -3,7 +3,7 @@
     "kind": "synthetic",
     "scenario": "rate-limited-with-caam",
     "fixturesVersion": "phase0-2026-05-02",
-    "capturedAt": "2026-05-02T22:17:37Z",
+    "capturedAt": "2026-05-02T23:29:34Z",
     "source": "build-scenarios.sh",
     "notes": "Provider rate limit; CAAM alternative available. Pre-script detects; ActionPlan: caam.switch_account; agent resumes after switch."
   },

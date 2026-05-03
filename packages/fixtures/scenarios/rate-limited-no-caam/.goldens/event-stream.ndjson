@@ -1,0 +1,5 @@
+{"event":{"channel":"agent_state","payload":{"agent":"GreenBear","kind":"rate_limited","retry_after_s":1800},"seq":1,"ts":"2026-05-02T19:58:00Z","type":"agent.errored"},"index":0,"kind":"event"}
+{"event":{"channel":"caut","payload":{"percent":100,"provider":"claude","reset_at":"2026-05-02T20:28:00Z"},"seq":2,"ts":"2026-05-02T19:58:01Z","type":"caut.usage_changed"},"index":1,"kind":"event"}
+{"event":{"channel":"caam","payload":{"alternatives":0,"available_accounts":1},"seq":3,"ts":"2026-05-02T19:58:02Z","type":"caam.account_status"},"index":2,"kind":"event"}
+{"cursors":{"agent_state":1,"caam":3,"caut":2},"kind":"end-cursors"}
+{"cursors":{"agent_state":1,"caam":3,"caut":2},"kind":"derived-cursors"}

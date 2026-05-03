@@ -1,0 +1,6 @@
+{"event":{"channel":"swarm","payload":{"alive":4,"queued_beads":12,"wedged":0},"seq":1,"ts":"2026-05-02T19:50:00Z","type":"swarm.tick"},"index":0,"kind":"event"}
+{"event":{"channel":"agent_state","payload":{"agent":"BlueHill","bead":"hp-k6r","from":"IDLE","to":"TYPING"},"seq":2,"ts":"2026-05-02T19:51:30Z","type":"agent.state_changed"},"index":1,"kind":"event"}
+{"event":{"channel":"beads","payload":{"actor":"FuchsiaPond","from":"open","id":"hp-ara","to":"in_progress"},"seq":3,"ts":"2026-05-02T19:52:00Z","type":"bead.status_changed"},"index":2,"kind":"event"}
+{"event":{"channel":"audit","payload":{"actor":"FuchsiaStone","id":"hp-6v3","reason":"snapshot script ready"},"seq":4,"ts":"2026-05-02T19:54:43Z","type":"bead.closed"},"index":3,"kind":"event"}
+{"cursors":{"agent_state":2,"audit":4,"beads":3,"swarm":1},"kind":"end-cursors"}
+{"cursors":{"agent_state":2,"audit":4,"beads":3,"swarm":1},"kind":"derived-cursors"}

@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hoopoe.local/conformance/ntm.schema.json",
+  "title": "ntm normalized adapter output",
+  "type": "object",
+  "required": ["tool", "source", "state", "exit", "argv", "capabilities", "payload"],
+  "properties": {
+    "tool": { "const": "ntm" },
+    "source": { "enum": ["fixture", "local"] },
+    "state": { "type": "string" },
+    "exit": { "type": "integer" },
+    "argv": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "capabilities": { "type": "object" },
+    "payload": {
+      "type": "object",
+      "required": ["success", "sessions", "tools"],
+      "properties": {
+        "success": { "type": "boolean" },
+        "sessions": {
+          "anyOf": [
+            { "type": "array" },
+            { "type": "null" }
+          ]
+        },
+        "tools": { "type": "array" },
+        "agent_mail": {
+          "anyOf": [
+            { "type": "object" },
+            { "type": "null" }
+          ]
+        }
+      }
+    }
+  }
+}

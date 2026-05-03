@@ -3,7 +3,7 @@
     "kind": "synthetic",
     "scenario": "healthy-hour",
     "fixturesVersion": "phase0-2026-05-02",
-    "capturedAt": "2026-05-02T22:17:37Z",
+    "capturedAt": "2026-05-02T23:29:34Z",
     "source": "build-scenarios.sh",
     "notes": "Healthy hour: 4 active panes, no wedging, no rate-limit, mail quiet, no stale reservations."
   },

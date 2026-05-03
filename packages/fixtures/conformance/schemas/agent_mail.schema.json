@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hoopoe.local/conformance/agent_mail.schema.json",
+  "title": "Agent Mail normalized adapter output",
+  "type": "object",
+  "required": ["tool", "source", "state", "exit", "argv", "capabilities", "payload"],
+  "properties": {
+    "tool": { "const": "agent_mail" },
+    "source": { "enum": ["fixture", "local"] },
+    "state": { "type": "string" },
+    "exit": { "type": "integer" },
+    "argv": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "capabilities": { "type": "object" },
+    "payload": {
+      "type": "object",
+      "required": ["helpBanner", "mcpEvidence", "stdoutText"],
+      "properties": {
+        "helpBanner": { "type": "boolean" },
+        "mcpEvidence": { "type": "boolean" },
+        "stdoutText": { "type": "string" }
+      }
+    }
+  }
+}

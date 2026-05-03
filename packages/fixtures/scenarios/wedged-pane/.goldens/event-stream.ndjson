@@ -1,0 +1,6 @@
+{"event":{"channel":"swarm","payload":{"agent":"GreenBear","from":"TYPING","to":"TOOL_USE"},"seq":1,"ts":"2026-05-02T19:42:11Z","type":"agent.state_changed"},"index":0,"kind":"event"}
+{"event":{"channel":"swarm","payload":{"alive":3,"warnings":["GreenBear no progress 8m"],"wedged":0},"seq":2,"ts":"2026-05-02T19:50:00Z","type":"swarm.tick"},"index":1,"kind":"event"}
+{"event":{"channel":"swarm","payload":{"alive":3,"warnings":["GreenBear no progress 13m"],"wedged":0},"seq":3,"ts":"2026-05-02T19:55:00Z","type":"swarm.tick"},"index":2,"kind":"event"}
+{"event":{"channel":"swarm","payload":{"agent":"GreenBear","evidence":"partial line; tool_use stuck","idle_s":1080,"wedge_threshold_s":600},"seq":4,"ts":"2026-05-02T20:00:11Z","type":"agent.classified_wedged"},"index":3,"kind":"event"}
+{"cursors":{"swarm":4},"kind":"end-cursors"}
+{"cursors":{"swarm":4},"kind":"derived-cursors"}

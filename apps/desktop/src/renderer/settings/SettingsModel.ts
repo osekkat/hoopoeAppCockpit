@@ -346,7 +346,7 @@ function readDotted(obj: Record<string, unknown>, key: string): unknown {
   const parts = key.split(".");
   let cur: unknown = obj;
   for (const p of parts) {
-    if (cur == null || typeof cur !== "object") return undefined;
+    if (cur === null || cur === undefined || typeof cur !== "object") return undefined;
     cur = (cur as Record<string, unknown>)[p];
   }
   return cur;

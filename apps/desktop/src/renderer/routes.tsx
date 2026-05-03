@@ -7,6 +7,8 @@ import {
 } from "@tanstack/react-router";
 import { RootLayout } from "./shell/RootLayout.tsx";
 import { ProjectPickerRoute, StageRoute } from "./shell/routes.tsx";
+import { useShellUiStore, resolveShellLaunchTarget } from "./store.ts";
+import { routeForStage } from "./topbar/project-switcher-model.ts";
 
 const rootRoute = createRootRoute({
   component: RootLayout,
@@ -15,6 +17,14 @@ const rootRoute = createRootRoute({
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
+  beforeLoad: () => {
+    const launchTarget = resolveShellLaunchTarget(useShellUiStore.getState());
+    if (!launchTarget) return;
+    throw redirect({
+      to: routeForStage(launchTarget.stageId),
+      params: { projectId: launchTarget.projectId },
+    });
+  },
   component: ProjectPickerRoute,
 });
 

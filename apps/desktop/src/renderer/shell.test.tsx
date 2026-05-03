@@ -14,6 +14,7 @@ import {
 } from "./stages.ts";
 import {
   createDefaultProjectViewState,
+  resolveShellLaunchTarget,
   useShellUiStore,
   type ShellProjectSummary,
 } from "./store.ts";
@@ -92,6 +93,43 @@ test("shell UI store persists activity drawer and route memory state", () => {
   expect(
     useShellUiStore.getState().projectViewStateById["local-demo"]?.lastStageId,
   ).toBe("bead");
+});
+
+test("shell launch target restores the persisted project and stage from root", () => {
+  const projects: readonly ShellProjectSummary[] = [
+    projectFixture({
+      id: "demo-a",
+      pinned: false,
+      lastActivatedAt: "2026-05-02T10:00:00.000Z",
+    }),
+    projectFixture({
+      id: "demo-b",
+      pinned: false,
+      lastActivatedAt: "2026-05-02T12:00:00.000Z",
+    }),
+  ];
+
+  expect(
+    resolveShellLaunchTarget({
+      activeProjectId: null,
+      lastProjectId: "demo-a",
+      lastStageId: "plan",
+      projectViewStateById: {
+        "demo-a": { ...createDefaultProjectViewState(), lastStageId: "swarm" },
+      },
+      projects,
+    }),
+  ).toEqual({ projectId: "demo-a", stageId: "swarm" });
+
+  expect(
+    resolveShellLaunchTarget({
+      activeProjectId: null,
+      lastProjectId: "removed-demo",
+      lastStageId: "bead",
+      projectViewStateById: {},
+      projects,
+    }),
+  ).toEqual({ projectId: "demo-b", stageId: "bead" });
 });
 
 test("project switcher model preserves pinned order and fuzzy-searches separators", () => {

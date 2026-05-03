@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hoopoe.local/conformance/caut.schema.json",
+  "title": "caut normalized adapter output",
+  "type": "object",
+  "required": ["tool", "source", "state", "exit", "argv", "capabilities", "payload"],
+  "properties": {
+    "tool": { "const": "caut" },
+    "source": { "enum": ["fixture", "local"] },
+    "state": { "type": "string" },
+    "exit": { "type": "integer" },
+    "argv": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "capabilities": { "type": "object" },
+    "payload": {
+      "type": "object",
+      "required": ["usage", "providers"],
+      "properties": {
+        "usage": { "type": "object" },
+        "providers": {
+          "anyOf": [
+            { "type": "array" },
+            { "type": "null" }
+          ]
+        }
+      }
+    }
+  }
+}

@@ -3,7 +3,7 @@
     "kind": "synthetic",
     "scenario": "wedged-pane",
     "fixturesVersion": "phase0-2026-05-02",
-    "capturedAt": "2026-05-02T22:17:37Z",
+    "capturedAt": "2026-05-02T23:29:34Z",
     "source": "build-scenarios.sh",
     "notes": "Wedged agent: idle 18m, tool_use mid-call, holds reservation. Pre-script detects wedge; agent woken; ActionPlan: agent.ask_status first, then agent.kill_wedged_process if no response, then reservation.force_release."
   },

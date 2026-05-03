@@ -3,7 +3,7 @@
     "kind": "synthetic",
     "scenario": "rate-limited-no-caam",
     "fixturesVersion": "phase0-2026-05-02",
-    "capturedAt": "2026-05-02T22:17:37Z",
+    "capturedAt": "2026-05-02T23:29:34Z",
     "source": "build-scenarios.sh",
     "notes": "Provider rate limit, no CAAM alternative. Pre-script detects; ActionPlan: agent.pause; surface to user with retry_after countdown."
   },

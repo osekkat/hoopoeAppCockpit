@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hoopoe.local/conformance/bv.schema.json",
+  "title": "bv normalized adapter output",
+  "type": "object",
+  "required": ["tool", "source", "state", "exit", "argv", "capabilities", "payload"],
+  "properties": {
+    "tool": { "const": "bv" },
+    "source": { "enum": ["fixture", "local"] },
+    "state": { "type": "string" },
+    "exit": { "type": "integer" },
+    "argv": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "capabilities": { "type": "object" },
+    "payload": {
+      "type": "object",
+      "required": ["bottlenecks", "recommendations", "summary", "rawFormat"],
+      "properties": {
+        "bottlenecks": { "type": "array" },
+        "recommendations": { "type": "array" },
+        "summary": { "type": "object" },
+        "rawFormat": { "type": "string" }
+      }
+    }
+  }
+}

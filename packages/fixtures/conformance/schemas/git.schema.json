@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hoopoe.local/conformance/git.schema.json",
+  "title": "git normalized adapter output",
+  "type": "object",
+  "required": ["tool", "source", "state", "exit", "argv", "capabilities", "payload"],
+  "properties": {
+    "tool": { "const": "git" },
+    "source": { "enum": ["fixture", "local"] },
+    "state": { "type": "string" },
+    "exit": { "type": "integer" },
+    "argv": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "capabilities": { "type": "object" },
+    "payload": {
+      "type": "object",
+      "required": ["branch", "entries"],
+      "properties": {
+        "branch": {
+          "type": "object",
+          "required": ["oid", "head"],
+          "properties": {
+            "oid": { "type": "string", "minLength": 7 },
+            "head": { "type": "string", "minLength": 1 },
+            "upstream": { "type": "string" },
+            "ab": { "type": "string" }
+          }
+        },
+        "entries": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}
