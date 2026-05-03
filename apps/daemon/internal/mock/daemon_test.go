@@ -1,10 +1,12 @@
 package mock
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -51,14 +53,28 @@ func TestMockDaemonSmoke(t *testing.T) {
 
 	var jobsResponse struct {
 		Jobs []struct {
-			ID     string `json:"id"`
-			Kind   string `json:"kind"`
-			Status string `json:"status"`
+			ID        string `json:"id"`
+			Kind      string `json:"kind"`
+			Status    string `json:"status"`
+			Artifacts []struct {
+				Kind string `json:"kind"`
+				URI  string `json:"uri"`
+			} `json:"artifacts"`
 		} `json:"jobs"`
 	}
 	getJSON(t, server.URL+"/v1/jobs", &jobsResponse)
 	if len(jobsResponse.Jobs) != 1 || jobsResponse.Jobs[0].Kind != "mock.flywheel.scenario" {
 		t.Fatalf("unexpected jobs response: %+v", jobsResponse)
+	}
+	if !hasArtifact(jobsResponse.Jobs[0].Artifacts, "mock.prepare_transcript") {
+		t.Fatalf("mock prepare transcript artifact missing: %+v", jobsResponse.Jobs[0].Artifacts)
+	}
+	logChunk, err := daemon.Jobs.ReadLog(context.Background(), jobsResponse.Jobs[0].ID, 0, 1<<20)
+	if err != nil {
+		t.Fatalf("read mock job log: %v", err)
+	}
+	if !strings.Contains(string(logChunk.Data), "--- prepare/transcript.txt ---") {
+		t.Fatalf("mock job log does not include prepare transcript: %q", string(logChunk.Data))
 	}
 
 	var replay struct {
@@ -116,6 +132,18 @@ func getJSON(t *testing.T, url string, target any) {
 	if err := json.NewDecoder(resp.Body).Decode(target); err != nil {
 		t.Fatalf("decode %s: %v", url, err)
 	}
+}
+
+func hasArtifact(artifacts []struct {
+	Kind string `json:"kind"`
+	URI  string `json:"uri"`
+}, kind string) bool {
+	for _, artifact := range artifacts {
+		if artifact.Kind == kind {
+			return strings.HasPrefix(artifact.URI, "fixture://")
+		}
+	}
+	return false
 }
 
 func phase0Root() string {

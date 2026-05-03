@@ -3,6 +3,8 @@ package mock
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -36,6 +38,7 @@ func NewJobReader(scenario *fixtures.Phase0Scenario, now func() time.Time) *JobR
 			CreatedAt: stamp,
 		},
 	}
+	artifacts = append(artifacts, scenarioFileArtifacts(jobID, scenario, stamp)...)
 	return &JobReader{
 		jobs: []jobs.Job{{
 			ID:            jobID,
@@ -51,13 +54,69 @@ func NewJobReader(scenario *fixtures.Phase0Scenario, now func() time.Time) *JobR
 			UpdatedAt: stamp,
 		}},
 		logs: map[string][]byte{
-			jobID: []byte(fmt.Sprintf("mock flywheel scenario=%s fixturesVersion=%s adapters=%d\n",
-				scenario.Manifest.Scenario, scenario.Manifest.FixturesVersion, len(scenario.Manifest.Adapters))),
+			jobID: buildScenarioLog(scenario),
 		},
 		artifacts: map[string][]jobs.Artifact{
 			jobID: artifacts,
 		},
 	}
+}
+
+type scenarioArtifactSpec struct {
+	suffix   string
+	kind     string
+	relative string
+}
+
+var scenarioArtifactSpecs = []scenarioArtifactSpec{
+	{suffix: "prepare_command", kind: "mock.prepare_command", relative: filepath.Join("prepare", "command.txt")},
+	{suffix: "prepare_status", kind: "mock.prepare_status", relative: filepath.Join("prepare", "status.json")},
+	{suffix: "prepare_transcript", kind: "mock.prepare_transcript", relative: filepath.Join("prepare", "transcript.txt")},
+	{suffix: "snapshot_stdout", kind: "mock.snapshot_stdout", relative: "snapshot.stdout"},
+	{suffix: "snapshot_stderr", kind: "mock.snapshot_stderr", relative: "snapshot.stderr"},
+}
+
+func scenarioFileArtifacts(jobID string, scenario *fixtures.Phase0Scenario, stamp time.Time) []jobs.Artifact {
+	artifacts := make([]jobs.Artifact, 0, len(scenarioArtifactSpecs))
+	for _, spec := range scenarioArtifactSpecs {
+		path := filepath.Join(scenario.Manifest.ScenarioDir, spec.relative)
+		if info, err := os.Stat(path); err != nil || info.IsDir() {
+			continue
+		}
+		artifacts = append(artifacts, jobs.Artifact{
+			ID:        "artifact_" + jobID + "_" + spec.suffix,
+			Kind:      spec.kind,
+			URI:       fixtureURI(scenario, spec.relative),
+			CreatedAt: stamp,
+		})
+	}
+	return artifacts
+}
+
+func buildScenarioLog(scenario *fixtures.Phase0Scenario) []byte {
+	var b strings.Builder
+	fmt.Fprintf(&b, "mock flywheel scenario=%s fixturesVersion=%s adapters=%d\n",
+		scenario.Manifest.Scenario, scenario.Manifest.FixturesVersion, len(scenario.Manifest.Adapters))
+	for _, relative := range []string{
+		filepath.Join("prepare", "transcript.txt"),
+		"snapshot.stdout",
+		"snapshot.stderr",
+	} {
+		body, err := os.ReadFile(filepath.Join(scenario.Manifest.ScenarioDir, relative))
+		if err != nil {
+			continue
+		}
+		fmt.Fprintf(&b, "\n--- %s ---\n", relative)
+		b.Write(body)
+		if len(body) == 0 || body[len(body)-1] != '\n' {
+			b.WriteByte('\n')
+		}
+	}
+	return []byte(b.String())
+}
+
+func fixtureURI(scenario *fixtures.Phase0Scenario, relative string) string {
+	return "fixture://" + scenario.Manifest.FixturesVersion + "/scenarios/" + scenario.Manifest.Scenario + "/" + filepath.ToSlash(relative)
 }
 
 func (r *JobReader) List(_ context.Context, filter jobs.ListFilter) ([]jobs.Job, error) {
