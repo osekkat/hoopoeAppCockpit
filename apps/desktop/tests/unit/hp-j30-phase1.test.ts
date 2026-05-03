@@ -15,6 +15,7 @@ import {
 import {
   EXPECTED_PHASE1_MOCK_TOKENS,
   assertNoProductionEndpoints,
+  createStructuredLogger,
   createPhase1MockFlywheelHarness,
   createPhase1TestLogger,
 } from "../../src/test-utils/index.ts";
@@ -97,6 +98,10 @@ test("hp-j30 settings: user/project overlays hot-apply and relaunch keys log rea
   const projectFile = Path.join(root, "project", ".hoopoe", "settings.json");
   const changes: SettingsChangeEvent[] = [];
   const relaunchReasons: string[] = [];
+  const structured = createStructuredLogger({
+    suite: "hp-j30.real-service",
+    testId: "settings-bridge-atomic-write",
+  });
   logger.start({
     userFile: "tmp:user/settings.json",
     projectFile: "tmp:project/.hoopoe/settings.json",
@@ -115,15 +120,20 @@ test("hp-j30 settings: user/project overlays hot-apply and relaunch keys log rea
   });
 
   logger.phase("act");
-  bridge.setUserSettings({
-    client: { activeStage: "beads", activityPanelOpen: true },
-    desktop: { updateChannel: "nightly", updateChannelConfiguredByUser: true },
+  await structured.step("settings-bridge.atomic-write", async () => {
+    bridge.setUserSettings({
+      client: { activeStage: "beads", activityPanelOpen: true },
+      desktop: { updateChannel: "nightly", updateChannelConfiguredByUser: true },
+    });
+    bridge.setProjectSettings({
+      client: { activeStage: "swarm" },
+      daemon: { daemonBinaryPath: "/opt/hoopoe/bin/daemon" },
+    });
+    await waitForMicrotask();
+  }, {
+    userFile: "tmp:user/settings.json",
+    projectFile: "tmp:project/.hoopoe/settings.json",
   });
-  bridge.setProjectSettings({
-    client: { activeStage: "swarm" },
-    daemon: { daemonBinaryPath: "/opt/hoopoe/bin/daemon" },
-  });
-  await waitForMicrotask();
 
   logger.phase("assert");
   expect(bridge.resolved().client.activeStage).toBe("swarm");
@@ -133,6 +143,20 @@ test("hp-j30 settings: user/project overlays hot-apply and relaunch keys log rea
   expect(relaunchReasons[0]).toContain("daemon.daemonBinaryPath");
   expect(changes.flatMap((event) => event.changedKeys)).toContain("client.activeStage");
   expect(readSettingsJson(projectFile).schemaVersion).toBe(1);
+  structured.stepSync("settings-bridge.fs-assert", () => {
+    expect(FS.existsSync(userFile)).toBe(true);
+    expect(FS.existsSync(projectFile)).toBe(true);
+    expect(
+      FS.readdirSync(Path.dirname(userFile)).filter((name) => name.endsWith(".tmp")),
+    ).toEqual([]);
+    expect(
+      FS.readdirSync(Path.dirname(projectFile)).filter((name) => name.endsWith(".tmp")),
+    ).toEqual([]);
+  });
+  logger.snapshot("settings.structured-real-service-log", {
+    entries: structured.entries().length,
+    lastStatus: structured.entries().at(-1)?.status ?? null,
+  });
   logger.end("passed", { changeEvents: changes.length });
 });
 
@@ -240,24 +264,30 @@ test("hp-j30 Mock Flywheel harness: fixture corpus boots daemon-shaped RPC and r
   logger.phase("setup");
   const harness = createPhase1MockFlywheelHarness({ scenarioId: "healthy-hour" });
 
-  logger.phase("act");
-  const ready = await harness.assertReady();
-  const auth = harness.authRoundTrip();
-  const replay = await harness.collectReplayEvents();
-  logger.snapshot("mock-flywheel.ready", ready);
-  logger.snapshot("mock-flywheel.replay", {
-    eventCount: replay.events.length,
-    channels: Object.keys(replay.cursors).toSorted(),
-  });
+  try {
+    logger.phase("act");
+    const ready = await harness.assertReady();
+    const auth = await harness.authRoundTrip();
+    const replay = await harness.collectReplayEvents();
+    logger.snapshot("mock-flywheel.ready", ready);
+    logger.snapshot("mock-flywheel.replay", {
+      eventCount: replay.events.length,
+      channels: Object.keys(replay.cursors).toSorted(),
+    });
 
-  logger.phase("assert");
-  expect(harness.availableScenarioIds()).toContain("healthy-hour");
-  expect(auth).toEqual(EXPECTED_PHASE1_MOCK_TOKENS);
-  expect(ready.healthEnvironment).toBe("mock-flywheel");
-  expect(ready.projectId).toBe("mock-flywheel-project");
-  expect(replay.events.length).toBeGreaterThan(0);
-  expect(Object.keys(replay.cursors).length).toBeGreaterThan(0);
-  logger.end("passed");
+    logger.phase("assert");
+    expect(harness.availableScenarioIds()).toContain("healthy-hour");
+    expect(auth).toEqual(EXPECTED_PHASE1_MOCK_TOKENS);
+    expect(ready.healthEnvironment).toBe("mock-flywheel");
+    expect(ready.projectId).toBe("mock-flywheel-project");
+    expect(replay.events.length).toBeGreaterThan(0);
+    expect(Object.keys(replay.cursors).length).toBeGreaterThan(0);
+    expect(harness.ipcRegistry.size()).toBeGreaterThan(0);
+    logger.end("passed");
+  } finally {
+    harness.close();
+    expect(harness.ipcRegistry.size()).toBe(0);
+  }
 });
 
 test("hp-j30 update + DMG smoke: channel state transitions and build help stay wired", async () => {
