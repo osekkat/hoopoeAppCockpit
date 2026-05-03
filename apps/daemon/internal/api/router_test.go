@@ -159,6 +159,196 @@ func TestSlowConsumerReceivesLagEvent(t *testing.T) {
 	}
 }
 
+func TestEventSequencesArePerChannel(t *testing.T) {
+	hub := NewEventHub(EventHubConfig{})
+
+	firstProject := hub.Publish(PublishInput{Channel: "project:test", Type: "project.changed", Data: map[string]any{"n": 1}})
+	firstActivity := hub.Publish(PublishInput{Channel: "activity:test", Type: "activity.appended", Data: map[string]any{"n": 1}})
+	secondProject := hub.Publish(PublishInput{Channel: "project:test", Type: "project.changed", Data: map[string]any{"n": 2}})
+
+	if firstProject.Sequence != 1 {
+		t.Fatalf("first project sequence = %d, want 1", firstProject.Sequence)
+	}
+	if firstActivity.Sequence != 1 {
+		t.Fatalf("first activity sequence = %d, want 1", firstActivity.Sequence)
+	}
+	if secondProject.Sequence != 2 {
+		t.Fatalf("second project sequence = %d, want 2", secondProject.Sequence)
+	}
+}
+
+func TestReplayEndpointReturnsMissedEventsAfterDisconnect(t *testing.T) {
+	now := time.Unix(100, 0).UTC()
+	hub := NewEventHub(EventHubConfig{
+		ReplayCapacity: 16,
+		Now: func() time.Time {
+			return now
+		},
+	})
+	seen := hub.Publish(PublishInput{Channel: "project:test", Type: "project.ready", Data: map[string]any{"n": 1}})
+	now = now.Add(10 * time.Minute)
+	missedOne := hub.Publish(PublishInput{Channel: "project:test", Type: "bead.changed", Data: map[string]any{"n": 2}})
+	missedTwo := hub.Publish(PublishInput{Channel: "project:test", Type: "agent.changed", Data: map[string]any{"n": 3}})
+	hub.Publish(PublishInput{Channel: "activity:test", Type: "activity.appended", Data: map[string]any{"n": 4}})
+
+	router := NewRouter(Config{Events: hub})
+	req := httptest.NewRequest(http.MethodGet, "/v1/events/replay?channel=project:test&sinceSequence=1", nil)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	var body ReplayResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode replay response: %v", err)
+	}
+	if body.Gap {
+		t.Fatal("replay response reported an unexpected gap")
+	}
+	if body.SinceSequence != seen.Sequence {
+		t.Fatalf("sinceSequence = %d, want %d", body.SinceSequence, seen.Sequence)
+	}
+	if len(body.Events) != 2 {
+		t.Fatalf("replayed events length = %d, want 2: %#v", len(body.Events), body.Events)
+	}
+	if body.Events[0].EventID != missedOne.EventID || body.Events[1].EventID != missedTwo.EventID {
+		t.Fatalf("replayed event IDs = [%s %s], want [%s %s]", body.Events[0].EventID, body.Events[1].EventID, missedOne.EventID, missedTwo.EventID)
+	}
+}
+
+func TestWebSocketSubscribeEnvelopeSnapshotsThenLiveDeltas(t *testing.T) {
+	hub := NewEventHub(EventHubConfig{})
+	replayed := hub.Publish(PublishInput{Channel: "project:test", Type: "project.ready", Data: map[string]any{"n": 1}})
+	server := httptest.NewServer(NewRouter(Config{Events: hub}))
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	conn := dialEventWebSocket(t, ctx, server)
+	defer conn.Close(websocket.StatusNormalClosure, "test complete")
+
+	currentSchemaVersion := schemaVersion
+	if err := writeWebSocketJSON(ctx, conn, subscribeRequest{
+		Op:            "subscribe",
+		Channels:      []string{"project:test"},
+		Cursors:       map[string]uint64{"project:test": 0},
+		SchemaVersion: &currentSchemaVersion,
+	}); err != nil {
+		t.Fatalf("write subscribe envelope: %v", err)
+	}
+
+	var snapshot struct {
+		Op       string   `json:"op"`
+		Snapshot Snapshot `json:"snapshot"`
+	}
+	readWebSocketJSON(t, ctx, conn, &snapshot)
+	if snapshot.Op != "snapshot" {
+		t.Fatalf("websocket op = %q, want snapshot", snapshot.Op)
+	}
+	projectSnapshot := snapshot.Snapshot.Channels["project:test"]
+	if len(projectSnapshot.Replayed) != 1 || projectSnapshot.Replayed[0].EventID != replayed.EventID {
+		t.Fatalf("snapshot replayed = %#v, want event %s", projectSnapshot.Replayed, replayed.EventID)
+	}
+
+	live := hub.Publish(PublishInput{Channel: "project:test", Type: "bead.changed", Data: map[string]any{"n": 2}})
+	var delta Event
+	readWebSocketJSON(t, ctx, conn, &delta)
+	if delta.EventID != live.EventID || delta.Sequence != 2 || delta.Type != "bead.changed" {
+		t.Fatalf("live delta = %+v, want %+v", delta, live)
+	}
+}
+
+func TestWebSocketSubscribeEmitsGapForStaleCursor(t *testing.T) {
+	hub := NewEventHub(EventHubConfig{ReplayCapacity: 2})
+	hub.Publish(PublishInput{Channel: "project:test", Type: "first", Data: map[string]any{"n": 1}})
+	hub.Publish(PublishInput{Channel: "project:test", Type: "second", Data: map[string]any{"n": 2}})
+	hub.Publish(PublishInput{Channel: "project:test", Type: "third", Data: map[string]any{"n": 3}})
+	hub.Publish(PublishInput{Channel: "project:test", Type: "fourth", Data: map[string]any{"n": 4}})
+	server := httptest.NewServer(NewRouter(Config{Events: hub}))
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	conn := dialEventWebSocket(t, ctx, server)
+	defer conn.Close(websocket.StatusNormalClosure, "test complete")
+
+	currentSchemaVersion := schemaVersion
+	if err := writeWebSocketJSON(ctx, conn, subscribeRequest{
+		Op:            "subscribe",
+		Channels:      []string{"project:test"},
+		Cursors:       map[string]uint64{"project:test": 1},
+		SchemaVersion: &currentSchemaVersion,
+	}); err != nil {
+		t.Fatalf("write subscribe envelope: %v", err)
+	}
+
+	var snapshot struct {
+		Op       string   `json:"op"`
+		Snapshot Snapshot `json:"snapshot"`
+	}
+	readWebSocketJSON(t, ctx, conn, &snapshot)
+	if !snapshot.Snapshot.Channels["project:test"].Gap {
+		t.Fatalf("snapshot gap = false, want true: %+v", snapshot.Snapshot.Channels["project:test"])
+	}
+
+	var gap Event
+	readWebSocketJSON(t, ctx, conn, &gap)
+	if gap.Type != "_gap" || gap.Channel != "project:test" {
+		t.Fatalf("gap event = %+v, want project:test _gap", gap)
+	}
+	data, ok := gap.Data.(map[string]any)
+	if !ok {
+		t.Fatalf("gap data type = %T, want map[string]any", gap.Data)
+	}
+	if data["repair"] != "replayEvents" || data["from"] != float64(2) || data["to"] != float64(2) {
+		t.Fatalf("gap data = %#v, want from=2 to=2 repair=replayEvents", data)
+	}
+}
+
+func TestWebSocketSubscribeSchemaMismatchEmitsCompatibilityWarning(t *testing.T) {
+	hub := NewEventHub(EventHubConfig{})
+	server := httptest.NewServer(NewRouter(Config{Events: hub}))
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	conn := dialEventWebSocket(t, ctx, server)
+	defer conn.Close(websocket.StatusNormalClosure, "test complete")
+
+	olderSchemaVersion := schemaVersion - 1
+	if err := writeWebSocketJSON(ctx, conn, subscribeRequest{
+		Op:            "subscribe",
+		Channels:      []string{"project:test"},
+		Cursors:       map[string]uint64{"project:test": 0},
+		SchemaVersion: &olderSchemaVersion,
+	}); err != nil {
+		t.Fatalf("write subscribe envelope: %v", err)
+	}
+
+	var snapshot struct {
+		Op string `json:"op"`
+	}
+	readWebSocketJSON(t, ctx, conn, &snapshot)
+	if snapshot.Op != "snapshot" {
+		t.Fatalf("websocket op = %q, want snapshot", snapshot.Op)
+	}
+
+	var warning Event
+	readWebSocketJSON(t, ctx, conn, &warning)
+	if warning.Channel != "_system" || warning.Type != "_compatibility_warning" {
+		t.Fatalf("warning event = %+v, want _system _compatibility_warning", warning)
+	}
+	data, ok := warning.Data.(map[string]any)
+	if !ok {
+		t.Fatalf("warning data type = %T, want map[string]any", warning.Data)
+	}
+	if data["clientSchemaVersion"] != float64(olderSchemaVersion) || data["serverSchemaVersion"] != float64(schemaVersion) {
+		t.Fatalf("warning data = %#v, want client/server schema versions", data)
+	}
+}
+
 type staticJobReader struct {
 	jobs []jobstore.Job
 }
@@ -209,5 +399,29 @@ func TestParseChannelsDropsUnsafeNames(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("parseChannels[%d] = %q, want %q", i, got[i], want[i])
 		}
+	}
+}
+
+func dialEventWebSocket(t *testing.T, ctx context.Context, server *httptest.Server) *websocket.Conn {
+	t.Helper()
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/v1/events/ws"
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		t.Fatalf("websocket dial: %v", err)
+	}
+	return conn
+}
+
+func readWebSocketJSON(t *testing.T, ctx context.Context, conn *websocket.Conn, target any) {
+	t.Helper()
+	messageType, body, err := conn.Read(ctx)
+	if err != nil {
+		t.Fatalf("read websocket message: %v", err)
+	}
+	if messageType != websocket.MessageText {
+		t.Fatalf("websocket message type = %v, want text", messageType)
+	}
+	if err := json.Unmarshal(body, target); err != nil {
+		t.Fatalf("decode websocket message %s: %v", string(body), err)
 	}
 }

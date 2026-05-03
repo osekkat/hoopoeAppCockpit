@@ -68,6 +68,13 @@ type server struct {
 	now         func() time.Time
 }
 
+type subscribeRequest struct {
+	Op            string            `json:"op"`
+	Channels      []string          `json:"channels"`
+	Cursors       map[string]uint64 `json:"cursors"`
+	SchemaVersion *int              `json:"schemaVersion,omitempty"`
+}
+
 // NewRouter returns the daemon HTTP router. It includes both /health and
 // /v1/health because early bootstrap probes use the short path while the seed
 // API contract uses the versioned path.
@@ -236,6 +243,11 @@ func (s *server) handleEventSSE(w http.ResponseWriter, r *http.Request) {
 		s.writeProblem(w, http.StatusBadRequest, "invalid cursors", err.Error())
 		return
 	}
+	clientSchemaVersion, err := parseSchemaVersion(r.URL.Query().Get("schemaVersion"))
+	if err != nil {
+		s.writeProblem(w, http.StatusBadRequest, "invalid schemaVersion", err.Error())
+		return
+	}
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -250,8 +262,17 @@ func (s *server) handleEventSSE(w http.ResponseWriter, r *http.Request) {
 	sub := s.events.Subscribe(r.Context(), channels)
 	defer sub.Close()
 
-	s.writeSSE(w, "snapshot", s.events.Snapshot(channels, cursors))
+	snapshot, gaps := s.events.SnapshotWithGaps(channels, cursors)
+	s.writeSSE(w, "snapshot", snapshot)
 	flusher.Flush()
+	if clientSchemaVersion != nil && *clientSchemaVersion < schemaVersion {
+		s.writeSSE(w, "_compatibility_warning", s.events.CompatibilityWarning(*clientSchemaVersion))
+		flusher.Flush()
+	}
+	for _, ev := range gaps {
+		s.writeSSE(w, ev.Type, ev)
+		flusher.Flush()
+	}
 
 	heartbeat := time.NewTicker(25 * time.Second)
 	defer heartbeat.Stop()
@@ -289,22 +310,32 @@ func (s *server) handleEventWS(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close(websocket.StatusNormalClosure, "daemon stream closed")
 
-	channels := parseChannels(r.URL.Query().Get("channels"))
-	cursors, err := parseCursorMap(r.URL.Query().Get("cursors"))
+	subscribe, err := s.webSocketSubscribeRequest(r.Context(), r, conn)
 	if err != nil {
-		_ = conn.Close(websocket.StatusPolicyViolation, "invalid cursors")
+		_ = conn.Close(websocket.StatusPolicyViolation, err.Error())
 		return
 	}
 
-	sub := s.events.Subscribe(r.Context(), channels)
+	ctx := conn.CloseRead(r.Context())
+	sub := s.events.Subscribe(ctx, subscribe.Channels)
 	defer sub.Close()
 
-	ctx := conn.CloseRead(r.Context())
+	snapshot, gaps := s.events.SnapshotWithGaps(subscribe.Channels, subscribe.Cursors)
 	if err := writeWebSocketJSON(ctx, conn, map[string]any{
 		"op":       "snapshot",
-		"snapshot": s.events.Snapshot(channels, cursors),
+		"snapshot": snapshot,
 	}); err != nil {
 		return
+	}
+	if subscribe.SchemaVersion != nil && *subscribe.SchemaVersion < schemaVersion {
+		if err := writeWebSocketJSON(ctx, conn, s.events.CompatibilityWarning(*subscribe.SchemaVersion)); err != nil {
+			return
+		}
+	}
+	for _, ev := range gaps {
+		if err := writeWebSocketJSON(ctx, conn, ev); err != nil {
+			return
+		}
 	}
 
 	heartbeat := time.NewTicker(25 * time.Second)
@@ -335,6 +366,57 @@ func writeWebSocketJSON(ctx context.Context, conn *websocket.Conn, payload any) 
 		return err
 	}
 	return conn.Write(ctx, websocket.MessageText, body)
+}
+
+func (s *server) webSocketSubscribeRequest(ctx context.Context, r *http.Request, conn *websocket.Conn) (subscribeRequest, error) {
+	query := r.URL.Query()
+	channelsRaw := firstQueryValue(query, "channels")
+	cursorsRaw := firstQueryValue(query, "cursors")
+	schemaVersionRaw := firstQueryValue(query, "schemaVersion")
+	if channelsRaw != "" || cursorsRaw != "" || schemaVersionRaw != "" {
+		cursors, err := parseCursorMap(cursorsRaw)
+		if err != nil {
+			return subscribeRequest{}, err
+		}
+		clientSchemaVersion, err := parseSchemaVersion(schemaVersionRaw)
+		if err != nil {
+			return subscribeRequest{}, err
+		}
+		return subscribeRequest{
+			Op:            "subscribe",
+			Channels:      parseChannels(channelsRaw),
+			Cursors:       cursors,
+			SchemaVersion: clientSchemaVersion,
+		}, nil
+	}
+
+	messageType, body, err := conn.Read(ctx)
+	if err != nil {
+		return subscribeRequest{}, fmt.Errorf("read subscribe envelope: %w", err)
+	}
+	if messageType != websocket.MessageText {
+		return subscribeRequest{}, fmt.Errorf("subscribe envelope must be a text message")
+	}
+	var req subscribeRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		return subscribeRequest{}, fmt.Errorf("subscribe envelope must be JSON")
+	}
+	if req.Op != "subscribe" {
+		return subscribeRequest{}, fmt.Errorf("first websocket message must be op=subscribe")
+	}
+	req.Channels = normalizeChannels(req.Channels)
+	if req.Cursors == nil {
+		req.Cursors = map[string]uint64{}
+	}
+	return req, nil
+}
+
+func firstQueryValue(values map[string][]string, key string) string {
+	parts := values[key]
+	if len(parts) == 0 {
+		return ""
+	}
+	return parts[0]
 }
 
 func (s *server) writeSSE(w http.ResponseWriter, eventType string, payload any) {
@@ -401,6 +483,44 @@ func parseCursorMap(raw string) (map[string]uint64, error) {
 		return map[string]uint64{}, nil
 	}
 	return cursors, nil
+}
+
+func parseSchemaVersion(raw string) (*int, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	value, err := strconv.ParseUint(raw, 10, 31)
+	if err != nil {
+		return nil, fmt.Errorf("schemaVersion must be an unsigned integer")
+	}
+	parsed := int(value)
+	return &parsed, nil
+}
+
+func normalizeChannels(raw []string) []string {
+	if len(raw) == 0 {
+		return []string{"_system"}
+	}
+	channels := make([]string, 0, len(raw))
+	seen := map[string]struct{}{}
+	for _, part := range raw {
+		channel := strings.TrimSpace(part)
+		if channel == "" {
+			continue
+		}
+		if !safeEventChannel(channel) {
+			continue
+		}
+		if _, ok := seen[channel]; ok {
+			continue
+		}
+		seen[channel] = struct{}{}
+		channels = append(channels, channel)
+	}
+	if len(channels) == 0 {
+		return []string{"_system"}
+	}
+	return channels
 }
 
 func remoteHost(remote string) string {

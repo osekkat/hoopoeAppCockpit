@@ -39,7 +39,7 @@ type EventHub struct {
 	now                func() time.Time
 	replayCapacity     int
 	subscriberCapacity int
-	nextSequence       uint64
+	sequences          map[string]uint64
 	events             []Event
 	subscribers        map[uint64]*subscriber
 	nextSubscriberID   uint64
@@ -104,7 +104,7 @@ func NewEventHub(cfg EventHubConfig) *EventHub {
 		now:                now,
 		replayCapacity:     replayCapacity,
 		subscriberCapacity: subscriberCapacity,
-		nextSequence:       1,
+		sequences:          make(map[string]uint64),
 		events:             make([]Event, 0, replayCapacity),
 		subscribers:        make(map[uint64]*subscriber),
 	}
@@ -124,14 +124,13 @@ func (h *EventHub) Publish(input PublishInput) Event {
 		SchemaVersion: schemaVersion,
 		Channel:       input.Channel,
 		Type:          input.Type,
-		Sequence:      h.nextSequence,
+		Sequence:      h.nextSequenceLocked(input.Channel),
 		Time:          h.now().UTC().Format(time.RFC3339Nano),
 		Actor:         input.Actor,
 		CausationID:   input.CausationID,
 		CorrelationID: input.CorrelationID,
 		Data:          input.Data,
 	}
-	h.nextSequence++
 	h.events = append(h.events, ev)
 	if len(h.events) > h.replayCapacity {
 		copy(h.events, h.events[len(h.events)-h.replayCapacity:])
@@ -152,6 +151,46 @@ func (h *EventHub) Publish(input PublishInput) Event {
 }
 
 func (h *EventHub) Replay(channel string, since uint64) ([]Event, bool) {
+	window := h.replayWindow(channel, since)
+	return window.Events, window.Gap
+}
+
+func (h *EventHub) Snapshot(channels []string, cursors map[string]uint64) Snapshot {
+	snap, _ := h.SnapshotWithGaps(channels, cursors)
+	return snap
+}
+
+func (h *EventHub) SnapshotWithGaps(channels []string, cursors map[string]uint64) (Snapshot, []Event) {
+	if len(channels) == 0 {
+		channels = []string{"_system"}
+	}
+	if cursors == nil {
+		cursors = map[string]uint64{}
+	}
+	snap := Snapshot{
+		SchemaVersion: schemaVersion,
+		Time:          h.now().UTC().Format(time.RFC3339Nano),
+		Channels:      make(map[string]ChannelSnapshot, len(channels)),
+	}
+	gaps := make([]Event, 0)
+	for _, channel := range channels {
+		cursor := cursors[channel]
+		window := h.replayWindow(channel, cursor)
+		snap.Channels[channel] = ChannelSnapshot{
+			LastSequence: window.LastSequence,
+			Cursor:       cursor,
+			Replayed:     window.Events,
+			Gap:          window.Gap,
+			Repair:       repairForGap(window.Gap),
+		}
+		if window.Gap {
+			gaps = append(gaps, h.gapEvent(channel, cursor, window))
+		}
+	}
+	return snap, gaps
+}
+
+func (h *EventHub) replayWindow(channel string, since uint64) replayWindow {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
@@ -168,43 +207,32 @@ func (h *EventHub) Replay(channel string, since uint64) ([]Event, bool) {
 			out = append(out, ev)
 		}
 	}
-	gap := oldest > 0 && since > 0 && since < oldest-1
-	return out, gap
-}
-
-func (h *EventHub) Snapshot(channels []string, cursors map[string]uint64) Snapshot {
-	snap := Snapshot{
-		SchemaVersion: schemaVersion,
-		Time:          h.now().UTC().Format(time.RFC3339Nano),
-		Channels:      make(map[string]ChannelSnapshot, len(channels)),
+	last := h.sequences[channel]
+	gap := false
+	switch {
+	case since == 0:
+	case oldest > 0:
+		gap = since < oldest-1
+	case last > since:
+		gap = true
 	}
-	for _, channel := range channels {
-		cursor := cursors[channel]
-		replayed, gap := h.Replay(channel, cursor)
-		snap.Channels[channel] = ChannelSnapshot{
-			LastSequence: h.lastSequence(channel),
-			Cursor:       cursor,
-			Replayed:     replayed,
-			Gap:          gap,
-			Repair:       repairForGap(gap),
-		}
+	return replayWindow{
+		Events:         out,
+		Gap:            gap,
+		OldestRetained: oldest,
+		LastSequence:   last,
 	}
-	return snap
 }
 
 func (h *EventHub) Heartbeat() Event {
-	h.mu.RLock()
-	sequence := h.nextSequence - 1
-	h.mu.RUnlock()
-	return Event{
-		EventID:       newEventID(),
-		SchemaVersion: schemaVersion,
-		Channel:       "_system",
-		Type:          "heartbeat",
-		Sequence:      sequence,
-		Time:          h.now().UTC().Format(time.RFC3339Nano),
-		Data:          map[string]any{"ok": true},
-	}
+	return h.transientEvent("_system", "heartbeat", map[string]any{"ok": true})
+}
+
+func (h *EventHub) CompatibilityWarning(clientSchemaVersion int) Event {
+	return h.transientEvent("_system", "_compatibility_warning", map[string]any{
+		"clientSchemaVersion": clientSchemaVersion,
+		"serverSchemaVersion": schemaVersion,
+	})
 }
 
 func (h *EventHub) Subscribe(ctx context.Context, channels []string) *Subscriber {
@@ -282,16 +310,54 @@ func (h *EventHub) lagEvent(ev Event) Event {
 	}
 }
 
-func (h *EventHub) lastSequence(channel string) uint64 {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	var last uint64
-	for _, ev := range h.events {
-		if ev.Channel == channel && ev.Sequence > last {
-			last = ev.Sequence
-		}
+func (h *EventHub) nextSequenceLocked(channel string) uint64 {
+	h.sequences[channel]++
+	return h.sequences[channel]
+}
+
+func (h *EventHub) transientEvent(channel string, eventType string, data any) Event {
+	h.mu.Lock()
+	sequence := h.nextSequenceLocked(channel)
+	h.mu.Unlock()
+	return Event{
+		EventID:       newEventID(),
+		SchemaVersion: schemaVersion,
+		Channel:       channel,
+		Type:          eventType,
+		Sequence:      sequence,
+		Time:          h.now().UTC().Format(time.RFC3339Nano),
+		Data:          data,
 	}
-	return last
+}
+
+type replayWindow struct {
+	Events         []Event
+	Gap            bool
+	OldestRetained uint64
+	LastSequence   uint64
+}
+
+func (h *EventHub) gapEvent(channel string, cursor uint64, window replayWindow) Event {
+	from := cursor + 1
+	to := window.LastSequence
+	if window.OldestRetained > 0 {
+		to = window.OldestRetained - 1
+	}
+	return Event{
+		EventID:       newEventID(),
+		SchemaVersion: schemaVersion,
+		Channel:       channel,
+		Type:          "_gap",
+		Sequence:      window.LastSequence,
+		Time:          h.now().UTC().Format(time.RFC3339Nano),
+		Data: map[string]any{
+			"from":           from,
+			"to":             to,
+			"repair":         "replayEvents",
+			"oldestRetained": window.OldestRetained,
+			"lastSequence":   window.LastSequence,
+		},
+	}
 }
 
 func repairForGap(gap bool) string {
