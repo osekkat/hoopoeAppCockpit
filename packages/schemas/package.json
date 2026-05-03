@@ -9,10 +9,12 @@
   },
   "scripts": {
     "build": "bun run generate",
-    "generate": "bun run generate:ts",
+    "generate": "bun run generate:ts && bun run generate:go",
     "generate:ts": "bunx --bun openapi-typescript@7.13.0 openapi.yaml --output src/generated/openapi.ts",
-    "validate": "bun run validate:ts",
+    "generate:go": "bun scripts/gen-go.ts",
+    "validate": "bun run validate:ts && bun run validate:go",
     "validate:ts": "bun scripts/validate-ts-codegen.ts",
+    "validate:go": "bun scripts/validate-go-codegen.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "bun test"
   },

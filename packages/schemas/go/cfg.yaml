@@ -1,0 +1,28 @@
+# oapi-codegen v2 config for the Hoopoe daemon API.
+#
+# Generates Go *types* only — no server stubs, no client. The daemon picks its
+# HTTP framework (chi today, echo / fiber later if needed) and binds typed
+# handlers to these types itself, so the schema package stays decoupled from
+# transport choices.
+#
+# Run: `bun run --cwd packages/schemas generate:go`
+# Regenerator pins the oapi-codegen version inside the gen-go script (so a
+# stray `go install oapi-codegen@latest` doesn't quietly drift output between
+# committers).
+package: schemas
+output: schemas.gen.go
+
+generate:
+  models: true
+  client: false
+  chi-server: false
+  echo-server: false
+  embedded-spec: false
+  strict-server: false
+
+# Treat unknown formats as their primitive type (string / number) instead of
+# erroring. Lets us keep things like `format: uri-reference` in the spec
+# without a custom format-mapping dance.
+output-options:
+  skip-prune: false
+  skip-fmt: false
