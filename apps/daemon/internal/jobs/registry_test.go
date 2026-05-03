@@ -4,9 +4,13 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/process"
+	schemas "github.com/hoopoe-cockpit/hoopoe/packages/schemas/go"
 )
 
 func TestCreateIsIdempotent(t *testing.T) {
@@ -185,6 +189,105 @@ func TestRestartRecoveryReattachesLiveProcess(t *testing.T) {
 	}
 }
 
+func TestRestartRecoveryUsesProcessManagerSnapshot(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	store := FileStore{Path: filepath.Join(dir, "jobs.json")}
+	reg, err := NewFileRegistry(ctx, store, filepath.Join(dir, "logs"))
+	if err != nil {
+		t.Fatalf("new registry: %v", err)
+	}
+	job, err := reg.Create(ctx, CreateRequest{ID: "job_recover_manager", Kind: "health.go"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	_, err = reg.Lease(ctx, LeaseRequest{JobID: job.ID, Holder: "worker-a", Duration: time.Hour})
+	if err != nil {
+		t.Fatalf("lease: %v", err)
+	}
+
+	manager := process.NewManager()
+	rec, err := manager.Start(ctx, process.Spec{JobID: job.ID, Path: requireSleep(t), Args: []string{"30"}})
+	if err != nil {
+		t.Fatalf("start process: %v", err)
+	}
+	defer func() {
+		_, _ = manager.Kill(context.Background(), job.ID)
+	}()
+	_, err = reg.AttachProcess(ctx, job.ID, ProcessRef{
+		JobID:     rec.JobID,
+		PID:       rec.PID,
+		PGID:      rec.PGID,
+		PTY:       rec.PTY,
+		StartedAt: rec.StartedAt,
+	})
+	if err != nil {
+		t.Fatalf("attach process: %v", err)
+	}
+
+	restarted, err := NewFileRegistry(ctx, store, filepath.Join(dir, "logs"))
+	if err != nil {
+		t.Fatalf("restart registry: %v", err)
+	}
+	live, err := manager.List(ctx)
+	if err != nil {
+		t.Fatalf("list processes: %v", err)
+	}
+	changed, err := restarted.RecoverInterrupted(ctx, processRefs(live))
+	if err != nil {
+		t.Fatalf("recover: %v", err)
+	}
+	if len(changed) != 1 || changed[0].Status != StatusRunning {
+		t.Fatalf("changed = %+v", changed)
+	}
+	got, err := restarted.Get(ctx, job.ID)
+	if err != nil {
+		t.Fatalf("get recovered: %v", err)
+	}
+	if !got.HasLiveProcess() || got.Process.PGID != rec.PGID || got.Process.ReattachedAt == nil {
+		t.Fatalf("registry did not reattach manager-owned process: %+v", got.Process)
+	}
+}
+
+func TestJobEntityMapsToGeneratedSchema(t *testing.T) {
+	started := mustTime("2026-05-03T20:00:00Z")
+	completed := mustTime("2026-05-03T20:00:01.500Z")
+	job := Job{
+		ID:            "job_schema",
+		Kind:          "health.snapshot",
+		SchemaVersion: SchemaVersion,
+		Status:        StatusFailed,
+		Failure:       &Failure{Code: "health.failed", FailureFingerprint: "sha256:failure"},
+		Artifacts: []Artifact{{
+			ID:        "artifact_health",
+			Kind:      string(schemas.HealthSnapshot),
+			URI:       "fixture://health.json",
+			Digest:    "0123456789abcdef",
+			CreatedAt: started,
+		}},
+		StartedAt:   &started,
+		CompletedAt: &completed,
+	}
+
+	wire := job.ToSchema()
+	if wire.Id != job.ID || wire.Type != job.Kind || wire.Status != schemas.JobStatusFailed || wire.SchemaVersion != SchemaVersion {
+		t.Fatalf("bad generated job shape: %+v", wire)
+	}
+	if wire.DurationMs == nil || *wire.DurationMs != 1500 {
+		t.Fatalf("durationMs = %v, want 1500", wire.DurationMs)
+	}
+	if wire.FailureFingerprint == nil || *wire.FailureFingerprint != "sha256:failure" {
+		t.Fatalf("failureFingerprint = %v", wire.FailureFingerprint)
+	}
+	if wire.Artifacts == nil || len(*wire.Artifacts) != 1 {
+		t.Fatalf("artifacts = %+v, want one", wire.Artifacts)
+	}
+	artifact := (*wire.Artifacts)[0]
+	if artifact.Kind != schemas.HealthSnapshot || artifact.Sha256 == nil || *artifact.Sha256 != "0123456789abcdef" {
+		t.Fatalf("bad generated artifact shape: %+v", artifact)
+	}
+}
+
 func TestChunkedLogReadsByOffset(t *testing.T) {
 	ctx := context.Background()
 	reg := newTestRegistry(t)
@@ -238,6 +341,29 @@ func newTestRegistry(t *testing.T) *FileRegistry {
 	}
 	reg.SetClock(fixedClock("2026-05-03T20:00:00Z"))
 	return reg
+}
+
+func processRefs(records []process.Record) []ProcessRef {
+	refs := make([]ProcessRef, 0, len(records))
+	for _, rec := range records {
+		refs = append(refs, ProcessRef{
+			JobID:     rec.JobID,
+			PID:       rec.PID,
+			PGID:      rec.PGID,
+			PTY:       rec.PTY,
+			StartedAt: rec.StartedAt,
+		})
+	}
+	return refs
+}
+
+func requireSleep(t *testing.T) string {
+	t.Helper()
+	sleep, err := exec.LookPath("sleep")
+	if err != nil {
+		t.Skip("sleep command not available")
+	}
+	return sleep
 }
 
 func fixedClock(value string) func() time.Time {

@@ -2,9 +2,10 @@
 
 This note records the hp-gkk substrate invariants now enforced by
 `apps/daemon/internal/jobs` and `apps/daemon/internal/process`. The OpenAPI
-schema remains authoritative once hp-r3i emits generated Go types; these
-packages are the daemon-owned implementation boundary used by HTTP handlers,
-schedulers, and process runners.
+schema is authoritative for the wire shape; `jobs.Job.ToSchema` maps the
+daemon's internal persisted entity to the generated `schemas.Job` type from
+`packages/schemas/go`. These packages are the daemon-owned implementation
+boundary used by HTTP handlers, schedulers, and process runners.
 
 ## Interfaces
 
@@ -76,13 +77,13 @@ The initial unit coverage asserts:
 
 - idempotent create returns the same job for the same key and rejects mismatched
   reuse;
+- the internal job entity maps to the generated OpenAPI `schemas.Job` shape;
 - lease, heartbeat, complete, and file-backed reload preserve state;
 - restart recovery marks missing live processes interrupted;
-- restart recovery reattaches live processes;
+- restart recovery reattaches live processes from the process manager snapshot;
 - chunked log reads honor offsets;
 - resource semaphores block at capacity and respect context cancellation;
 - process start rejects missing job IDs;
 - one process per job is enforced;
 - stop terminates a child process group without leaving the child alive;
 - process adoption records a live PID/PGID for restart reconciliation.
-

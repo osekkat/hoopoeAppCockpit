@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"time"
+
+	schemas "github.com/hoopoe-cockpit/hoopoe/packages/schemas/go"
 )
 
 // SchemaVersion is the persisted job entity schema version.
@@ -89,8 +91,21 @@ type Artifact struct {
 	CreatedAt time.Time `json:"createdAt"`
 }
 
-// Job is the durable registry entity. Field names mirror the OpenAPI contract
-// that hp-r3i will generate; keep tags stable.
+func (a Artifact) ToSchema() schemas.ArtifactRef {
+	createdAt := a.CreatedAt.UTC()
+	out := schemas.ArtifactRef{
+		Id:        a.ID,
+		Kind:      artifactRefKind(a.Kind),
+		CreatedAt: &createdAt,
+	}
+	if a.Digest != "" {
+		out.Sha256 = stringPtr(a.Digest)
+	}
+	return out
+}
+
+// Job is the durable registry entity. Internal lease, process, and audit fields
+// are daemon-only; ToSchema returns the OpenAPI wire shape.
 type Job struct {
 	ID             string        `json:"id"`
 	Kind           string        `json:"kind"`
@@ -109,6 +124,40 @@ type Job struct {
 	UpdatedAt      time.Time     `json:"updatedAt"`
 	StartedAt      *time.Time    `json:"startedAt,omitempty"`
 	CompletedAt    *time.Time    `json:"completedAt,omitempty"`
+}
+
+func (j Job) ToSchema() schemas.Job {
+	out := schemas.Job{
+		Id:            j.ID,
+		SchemaVersion: j.SchemaVersion,
+		Status:        schemas.JobStatus(j.Status),
+		Type:          j.Kind,
+		StartedAt:     copyTimePtr(j.StartedAt),
+		CompletedAt:   copyTimePtr(j.CompletedAt),
+	}
+	if j.Failure != nil && j.Failure.FailureFingerprint != "" {
+		out.FailureFingerprint = stringPtr(j.Failure.FailureFingerprint)
+	}
+	if j.StartedAt != nil && j.CompletedAt != nil && !j.CompletedAt.Before(*j.StartedAt) {
+		duration := int(j.CompletedAt.Sub(*j.StartedAt).Milliseconds())
+		out.DurationMs = &duration
+	}
+	if len(j.Artifacts) > 0 {
+		artifacts := make([]schemas.ArtifactRef, 0, len(j.Artifacts))
+		for _, artifact := range j.Artifacts {
+			artifacts = append(artifacts, artifact.ToSchema())
+		}
+		out.Artifacts = &artifacts
+	}
+	return out
+}
+
+func JobsToSchema(jobs []Job) []schemas.Job {
+	out := make([]schemas.Job, 0, len(jobs))
+	for _, job := range jobs {
+		out = append(out, job.ToSchema())
+	}
+	return out
 }
 
 // HasLiveProcess reports whether the job is attached to a child process.
@@ -181,6 +230,26 @@ type LogChunk struct {
 	NextOffset int64  `json:"nextOffset"`
 	Data       []byte `json:"data"`
 	EOF        bool   `json:"eof"`
+}
+
+func artifactRefKind(kind string) schemas.ArtifactRefKind {
+	candidate := schemas.ArtifactRefKind(kind)
+	if candidate.Valid() {
+		return candidate
+	}
+	return schemas.Misc
+}
+
+func copyTimePtr(value *time.Time) *time.Time {
+	if value == nil {
+		return nil
+	}
+	copied := value.UTC()
+	return &copied
+}
+
+func stringPtr(value string) *string {
+	return &value
 }
 
 // Reader is the narrow surface the HTTP /v1/jobs read handlers consume.
