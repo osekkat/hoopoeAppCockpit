@@ -15,6 +15,9 @@ import {
   removeSavedEnvironmentSecret,
   type DesktopSecretStorage,
 } from "../vendored/t3code/clientPersistence.ts";
+import { AuthBridgeRedactedError } from "./AuthBridgeRedactedError.ts";
+
+export { AuthBridgeRedactedError };
 
 export interface AuthBridgeOptions {
   readonly registryPath: string;
@@ -30,18 +33,6 @@ export interface ExchangePairingForBearerInput {
 export interface IssueWsTokenInput {
   readonly daemonBaseUrl: string;
   readonly bearerToken: string;
-}
-
-export class AuthBridgeRedactedError extends Error {
-  constructor(message: string) {
-    // Caller-visible message must never contain a token; this guard catches
-    // accidental concatenation at construction time.
-    if (message.includes("eyJ") || message.includes("hp-bearer-")) {
-      throw new Error("AuthBridge error message contained a token-like string");
-    }
-    super(message);
-    this.name = "AuthBridgeRedactedError";
-  }
 }
 
 export class AuthBridge {
