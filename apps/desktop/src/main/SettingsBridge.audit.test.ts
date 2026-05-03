@@ -25,6 +25,7 @@ import {
 import {
   type SettingsActor,
   type SettingsAuditEntry,
+  type SyncSettingsAuditBatchSink,
   type SyncSettingsAuditSink,
 } from "./SettingsAuditTrail.ts";
 
@@ -238,4 +239,125 @@ test("when no auditSink is provided, set* path completes normally (back-compat)"
   });
   bridge.setUserSettings({ desktop: { updateChannel: "nightly" } });
   expect(bridge.resolved().desktop.updateChannel).toBe("nightly");
+});
+
+// ── 7. Phase 1.5 cross-review: transactional batch sink (multi-key) ───────
+
+test("auditBatchSink: multi-key change is delivered as a single transactional batch", () => {
+  const batches: SettingsAuditEntry[][] = [];
+  const batchSink: SyncSettingsAuditBatchSink = (entries) => {
+    batches.push([...entries]);
+  };
+  const bridge = new SettingsBridge({
+    paths: { userFile, projectFile },
+    auditBatchSink: batchSink,
+  });
+
+  bridge.setUserSettings({
+    desktop: {
+      updateChannel: "nightly",
+      serverExposureMode: "network-accessible",
+    },
+  });
+
+  expect(batches).toHaveLength(1);
+  const keys = batches[0]!.map((entry) => entry.key).toSorted();
+  expect(keys).toEqual(["desktop.serverExposureMode", "desktop.updateChannel"]);
+});
+
+test("auditBatchSink: rejection rolls back ALL audit rows AND the in-memory delta", () => {
+  let invocations = 0;
+  const batchSink: SyncSettingsAuditBatchSink = (entries) => {
+    invocations += 1;
+    if (entries.length >= 2) {
+      throw new Error("simulated transactional batch rejection");
+    }
+  };
+  const bridge = new SettingsBridge({
+    paths: { userFile, projectFile },
+    auditBatchSink: batchSink,
+  });
+
+  const before = bridge.resolved();
+
+  let thrown: unknown = null;
+  try {
+    bridge.setUserSettings({
+      desktop: {
+        updateChannel: "nightly",
+        serverExposureMode: "network-accessible",
+      },
+    });
+  } catch (error) {
+    thrown = error;
+  }
+
+  expect(thrown).toBeInstanceOf(SettingsAuditWriteError);
+  expect(invocations).toBe(1);
+
+  // Resolved snapshot fully unchanged — both keys still at default.
+  expect(bridge.resolved()).toEqual(before);
+  expect(bridge.resolved().desktop.updateChannel).toBe("latest");
+  expect(bridge.resolved().desktop.serverExposureMode).toBe("local-only");
+
+  // Disk file was never created (settings write happens after audit).
+  let diskBlob: string | null = null;
+  try {
+    const FS = require("node:fs") as typeof import("node:fs");
+    diskBlob = FS.readFileSync(userFile, "utf8");
+  } catch {
+    diskBlob = null;
+  }
+  expect(diskBlob).toBeNull();
+});
+
+test("auditBatchSink: a single-key change still uses the batch sink (unified path)", () => {
+  const batches: SettingsAuditEntry[][] = [];
+  const batchSink: SyncSettingsAuditBatchSink = (entries) => {
+    batches.push([...entries]);
+  };
+  const bridge = new SettingsBridge({
+    paths: { userFile, projectFile },
+    auditBatchSink: batchSink,
+  });
+
+  bridge.setUserSettings({ desktop: { updateChannel: "nightly" } });
+
+  expect(batches).toHaveLength(1);
+  expect(batches[0]).toHaveLength(1);
+  expect(batches[0]![0]?.key).toBe("desktop.updateChannel");
+});
+
+test("auditBatchSink: a non-security-relevant change emits zero batches", () => {
+  const batches: SettingsAuditEntry[][] = [];
+  const batchSink: SyncSettingsAuditBatchSink = (entries) => {
+    batches.push([...entries]);
+  };
+  const bridge = new SettingsBridge({
+    paths: { userFile, projectFile },
+    auditBatchSink: batchSink,
+  });
+
+  bridge.setUserSettings({ daemon: { logLevel: "warn" } });
+
+  expect(batches).toEqual([]);
+});
+
+test("auditBatchSink takes precedence over the legacy per-entry sink", () => {
+  const perEntryEntries: SettingsAuditEntry[] = [];
+  const batches: SettingsAuditEntry[][] = [];
+  const bridge = new SettingsBridge({
+    paths: { userFile, projectFile },
+    auditSink: (entry) => {
+      perEntryEntries.push(entry);
+    },
+    auditBatchSink: (entries) => {
+      batches.push([...entries]);
+    },
+  });
+
+  bridge.setUserSettings({ desktop: { updateChannel: "nightly" } });
+
+  expect(batches).toHaveLength(1);
+  expect(perEntryEntries).toHaveLength(0);
 });

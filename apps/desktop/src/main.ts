@@ -17,12 +17,58 @@ import {
   defaultUserSettingsPath,
   projectSettingsPath,
 } from "./main/SettingsBridge.ts";
+import {
+  createJsonlBatchAuditSink,
+  type SettingsActor,
+} from "./main/SettingsAuditTrail.ts";
 import { AuthBridge } from "./main/AuthBridge.ts";
 import { resolveDesktopRuntimeInfo } from "./vendored/t3code/runtimeArch.ts";
 import {
   resolveDefaultDesktopUpdateChannel,
 } from "./vendored/t3code/updateChannels.ts";
 import type { DesktopSecretStorage } from "./vendored/t3code/clientPersistence.ts";
+
+/** Production-tier audit sink lives at `<homeDir>/.hoopoe/audit.jsonl`.
+ *  Append-only, newline-delimited JSON, atomic at the FS level for typical
+ *  settings batches (POSIX `O_APPEND` ≤ PIPE_BUF / 4 KiB). */
+export function defaultSettingsAuditPath(homeDir: string): string {
+  return Path.join(homeDir, ".hoopoe", "audit.jsonl");
+}
+
+/** Default actor stamped on audit entries when the call site doesn't pass
+ *  one — captures the desktop-main composition root as the caller of last
+ *  resort. Callers crossing IPC SHOULD pass an explicit actor with the
+ *  renderer-window id; reaching this default is itself a finding. */
+const DESKTOP_MAIN_DEFAULT_ACTOR: SettingsActor = {
+  kind: "system",
+  id: "desktop:main",
+  source: "ipc",
+};
+
+export interface ComposedSettingsBridgeInput {
+  readonly homeDir: string;
+  readonly projectRoot?: string;
+  readonly relaunch?: (reason: string) => void;
+}
+
+/** Compose the production SettingsBridge with the durable JSONL audit sink
+ *  and the desktop-main default actor. Extracted so `bootstrapDesktop` and
+ *  the Phase 1.5 bootstrap-integration test exercise the same wiring. */
+export function composeProductionSettingsBridge(
+  input: ComposedSettingsBridgeInput,
+): SettingsBridge {
+  return new SettingsBridge({
+    paths: {
+      userFile: defaultUserSettingsPath(input.homeDir),
+      projectFile: input.projectRoot ? projectSettingsPath(input.projectRoot) : null,
+    },
+    auditBatchSink: createJsonlBatchAuditSink({
+      filePath: defaultSettingsAuditPath(input.homeDir),
+    }),
+    defaultActor: DESKTOP_MAIN_DEFAULT_ACTOR,
+    ...(input.relaunch ? { relaunch: input.relaunch } : {}),
+  });
+}
 
 export interface DesktopBootstrapInput {
   readonly homeDir: string;
@@ -59,11 +105,9 @@ export async function bootstrapDesktop(
     runningUnderArm64Translation: input.runningUnderArm64Translation ?? false,
   });
 
-  const settings = new SettingsBridge({
-    paths: {
-      userFile: defaultUserSettingsPath(input.homeDir),
-      projectFile: input.projectRoot ? projectSettingsPath(input.projectRoot) : null,
-    },
+  const settings = composeProductionSettingsBridge({
+    homeDir: input.homeDir,
+    ...(input.projectRoot ? { projectRoot: input.projectRoot } : {}),
     ...(input.relaunch ? { relaunch: input.relaunch } : {}),
   });
 

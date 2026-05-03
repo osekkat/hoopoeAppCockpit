@@ -43,6 +43,7 @@ import {
   redactAuditEntry,
   type SettingsActor,
   type SettingsAuditEntry,
+  type SyncSettingsAuditBatchSink,
   type SyncSettingsAuditSink,
 } from "./SettingsAuditTrail.ts";
 
@@ -220,6 +221,7 @@ export class SettingsBridge {
   private hotReloadCount = 0;
 
   private readonly auditSink: SyncSettingsAuditSink | null;
+  private readonly auditBatchSink: SyncSettingsAuditBatchSink | null;
   private readonly defaultActor: SettingsActor;
   private readonly nowImpl: () => string;
 
@@ -227,12 +229,21 @@ export class SettingsBridge {
     readonly paths: SettingsBridgePaths;
     readonly relaunch?: (reason: string) => void;
     readonly logger?: SettingsBridgeLogger;
-    /** Sink for security-relevant `setting_changed` audit entries (hp-6obn).
-     *  When omitted, audit is silently disabled — appropriate for tests +
-     *  contexts that don't yet wire a durable audit log. Production
-     *  composition root MUST provide one (default: append-only JSONL at
-     *  `<userFile dir>/audit.jsonl`). */
+    /** Per-entry sink for security-relevant `setting_changed` audit entries
+     *  (hp-6obn). Non-transactional: a multi-key write that succeeds for
+     *  entry K1 but fails for K2 leaves K1 committed. Prefer
+     *  `auditBatchSink` for production. When omitted, audit is silently
+     *  disabled — appropriate for tests + contexts that don't yet wire a
+     *  durable audit log. */
     readonly auditSink?: SyncSettingsAuditSink;
+    /** Transactional batch sink for security-relevant `setting_changed`
+     *  audit entries (Phase 1.5 cross-review fix). Receives all entries
+     *  from a single setUserSettings / setProjectSettings call and either
+     *  commits them all or commits none. When both `auditSink` and
+     *  `auditBatchSink` are supplied, the batch sink wins. Production
+     *  composition root MUST provide a batch sink — default
+     *  `createJsonlBatchAuditSink({ filePath: <homeDir>/.hoopoe/audit.jsonl })`. */
+    readonly auditBatchSink?: SyncSettingsAuditBatchSink;
     /** Default actor stamped onto every audit entry (hp-6obn). Overridable
      *  per-call by passing `options.actor` to setUserSettings / setProjectSettings. */
     readonly defaultActor?: SettingsActor;
@@ -243,6 +254,7 @@ export class SettingsBridge {
     this.logger = input.logger ?? noopLogger;
     this.relaunchImpl = input.relaunch ?? defaultRelaunch;
     this.auditSink = input.auditSink ?? null;
+    this.auditBatchSink = input.auditBatchSink ?? null;
     this.defaultActor = input.defaultActor ?? DEFAULT_AUDIT_ACTOR;
     this.nowImpl = input.now ?? (() => new Date().toISOString());
     this.userPartial = readVersionedPartial(this.paths.userFile, this.logger, "user");
@@ -492,21 +504,32 @@ export class SettingsBridge {
     });
   }
 
-  /** hp-6obn: walk SECURITY_RELEVANT_SETTING_KEYS, build a redacted audit
-   *  entry per changed key, and send to the sink synchronously. Throws on
-   *  the first sink rejection so the calling set*Settings can roll back
-   *  before any disk write. No-op when no audit sink is wired. */
+  /** hp-6obn + Phase 1.5 cross-review: walk SECURITY_RELEVANT_SETTING_KEYS,
+   *  build the full redacted audit batch, then commit it through the
+   *  configured sink synchronously.
+   *
+   *  Sink dispatch:
+   *    - `auditBatchSink`: called once with all entries; transactional
+   *      (sink either commits all or commits none).
+   *    - `auditSink` (legacy per-entry): called per entry; non-transactional
+   *      — kept for backward compatibility with hp-6obn callers that haven't
+   *      migrated. Fails on the first rejection.
+   *
+   *  Throws `SettingsAuditWriteError` on any sink rejection so the calling
+   *  set*Settings can roll back the in-flight setting change before any
+   *  disk write. No-op when no audit sink is wired. */
   private auditDelta(
     before: HoopoeSettings,
     after: HoopoeSettings,
     tier: SettingsTier,
     actorOverride?: SettingsActor,
   ): void {
-    if (!this.auditSink) return;
+    if (this.auditBatchSink === null && this.auditSink === null) return;
     const actor = actorOverride ?? this.defaultActor;
     const ts = this.nowImpl();
     const beforeRecord = before as unknown as Record<string, unknown>;
     const afterRecord = after as unknown as Record<string, unknown>;
+    const entries: SettingsAuditEntry[] = [];
     for (const key of SECURITY_RELEVANT_SETTING_KEYS) {
       const oldValue = readDottedKey(beforeRecord, key);
       const newValue = readDottedKey(afterRecord, key);
@@ -520,18 +543,42 @@ export class SettingsBridge {
         tier,
         ts,
       };
-      const redacted = redactAuditEntry(rawEntry);
+      entries.push(redactAuditEntry(rawEntry));
+    }
+    if (entries.length === 0) return;
+
+    if (this.auditBatchSink !== null) {
       try {
-        this.auditSink(redacted);
+        this.auditBatchSink(entries);
       } catch (error) {
         const cause = error instanceof Error ? error : new Error(String(error));
         const critical = this.logger.critical ?? this.logger.warn;
         critical("settings.audit-sink-rejected", {
-          key,
+          keys: entries.map((entry) => entry.key),
           tier,
           cause: cause.message,
         });
-        throw new SettingsAuditWriteError({ entry: redacted, tier, cause });
+        throw new SettingsAuditWriteError({ entry: entries[0]!, tier, cause });
+      }
+      return;
+    }
+
+    // Legacy per-entry path. Non-transactional by definition; intentional
+    // for backward compatibility — production code should pass
+    // `auditBatchSink` instead.
+    const sink = this.auditSink!;
+    for (const entry of entries) {
+      try {
+        sink(entry);
+      } catch (error) {
+        const cause = error instanceof Error ? error : new Error(String(error));
+        const critical = this.logger.critical ?? this.logger.warn;
+        critical("settings.audit-sink-rejected", {
+          key: entry.key,
+          tier,
+          cause: cause.message,
+        });
+        throw new SettingsAuditWriteError({ entry, tier, cause });
       }
     }
   }

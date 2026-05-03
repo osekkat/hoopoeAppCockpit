@@ -112,6 +112,17 @@ export type SettingsAuditSink = (entry: SettingsAuditEntry) => void | Promise<vo
  *  with async sinks (network logger / DB) must own their own buffering. */
 export type SyncSettingsAuditSink = (entry: SettingsAuditEntry) => void;
 
+/** Transactional batch sink (Phase 1.5 cross-review fix). Receives ALL
+ *  entries from a single setUserSettings / setProjectSettings call and
+ *  either commits them all or commits none — if the sink throws, no audit
+ *  rows are persisted. SettingsBridge prefers this sink over the per-entry
+ *  `SyncSettingsAuditSink` because per-entry sinks are inherently
+ *  non-transactional (a successful first-call commit cannot be rolled back
+ *  if a later call fails). */
+export type SyncSettingsAuditBatchSink = (
+  entries: readonly SettingsAuditEntry[],
+) => void;
+
 /** Defense-in-depth value redactor (hp-6obn + Guardrail 11). Runs against
  *  `oldValue` / `newValue` strings before they reach the sink. The curated
  *  `SECURITY_RELEVANT_SETTING_KEYS` list intentionally excludes secret-bearing
@@ -276,6 +287,28 @@ export async function auditResolvedTreeDelta(
     if (entry) emitted.push(entry);
   }
   return emitted;
+}
+
+/** Production batch sink. Appends each entry as a single newline-delimited
+ *  JSON line under `<homeDir>/.hoopoe/audit.jsonl` (or whatever path the
+ *  composition root chooses). POSIX guarantees `O_APPEND` writes ≤ PIPE_BUF
+ *  (4 KiB) are atomic w.r.t. concurrent appenders, so a typical settings
+ *  batch (1-10 entries × ~300 bytes) is written all-or-nothing at the file
+ *  system level. The parent directory is created on demand.
+ *
+ *  Throws on disk-write failure; SettingsBridge surfaces the throw as a
+ *  `SettingsAuditWriteError` and rolls back the in-flight setting change. */
+export function createJsonlBatchAuditSink(input: {
+  readonly filePath: string;
+}): SyncSettingsAuditBatchSink {
+  return (entries) => {
+    if (entries.length === 0) return;
+    const FS = require("node:fs") as typeof import("node:fs");
+    const Path = require("node:path") as typeof import("node:path");
+    FS.mkdirSync(Path.dirname(input.filePath), { recursive: true });
+    const blob = `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`;
+    FS.appendFileSync(input.filePath, blob, { encoding: "utf8" });
+  };
 }
 
 /** Build an in-memory sink — useful for tests + Activity-panel ingestion
