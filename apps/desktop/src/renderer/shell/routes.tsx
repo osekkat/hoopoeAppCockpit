@@ -6,6 +6,8 @@ import {
   projectDisplayName,
   type ShellRouteId,
 } from "../stages.ts";
+import { BeadsStage } from "../stages/Beads/BeadsStage.tsx";
+import { SwarmStage } from "../stages/Swarm/SwarmStage.tsx";
 import { useShellUiStore } from "../store.ts";
 import { formatRelativeActivation, routeForStage } from "../topbar/project-switcher-model.ts";
 import { EmptyStage } from "./empty-stage.tsx";
@@ -71,7 +73,13 @@ export function StageRoute({ stageId }: { readonly stageId: ShellRouteId }) {
         projectName={projectName}
         breadcrumb={stageId === "diag" ? ["Diagnostics"] : [stage.label]}
       />
-      <EmptyStage stageId={stageId} />
+      {stageId === "bead" ? (
+        <BeadsStage projectId={projectId} />
+      ) : stageId === "swarm" ? (
+        <SwarmStage projectId={projectId} />
+      ) : (
+        <EmptyStage stageId={stageId} />
+      )}
     </section>
   );
 }

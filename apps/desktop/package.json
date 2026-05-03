@@ -17,6 +17,7 @@
   "dependencies": {
     "@hoopoe/design-system": "workspace:*",
     "@hoopoe/fixtures": "workspace:*",
+    "@tanstack/react-query": "^5.100.8",
     "@tanstack/react-router": "^1.0.0",
     "electron": "40.9.3",
     "electron-updater": "^6.6.2",
