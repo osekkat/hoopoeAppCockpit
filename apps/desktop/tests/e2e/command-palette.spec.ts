@@ -45,7 +45,11 @@ test.describe("hp-2qgx command palette e2e", () => {
     await expect(palette.getByRole("listbox", { name: "Matched commands" })).toBeVisible();
 
     logger.phase("assert", { surface: "command-palette", check: "fuzzy-search" });
-    const search = palette.getByRole("searchbox", { name: "Search commands" });
+    // The input is `<input role="combobox">` per the WAI-ARIA combobox
+    // pattern (combobox + aria-controls + aria-activedescendant + aria-
+    // expanded), set in commit 7fd6fe3. The native `searchbox` role is
+    // overridden by the explicit `combobox` role.
+    const search = palette.getByRole("combobox", { name: "Search commands" });
     await expect(search).toBeFocused();
     await search.fill("swarm");
     const swarmOption = palette.getByRole("option", { name: /Go to Swarm/i });

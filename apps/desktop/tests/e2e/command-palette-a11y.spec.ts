@@ -53,7 +53,11 @@ test.describe("command-palette a11y — modal focus containment", () => {
     await trigger.click();
     const palette = page.getByRole("dialog", { name: /command palette/i });
     await expect(palette).toBeVisible();
-    const search = palette.getByRole("searchbox", { name: "Search commands" });
+    // `<input role="combobox">` per the WAI-ARIA combobox pattern this
+    // very test is exercising (combobox + aria-controls + aria-active-
+    // descendant + aria-expanded). The native `searchbox` role is
+    // overridden by the explicit `combobox` role on the input.
+    const search = palette.getByRole("combobox", { name: "Search commands" });
     await expect(search).toBeFocused();
     logger.phase("assert", { surface: "palette", check: "open + initial focus" });
 

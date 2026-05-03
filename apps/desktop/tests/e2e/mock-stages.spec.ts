@@ -41,7 +41,15 @@ test.describe("hp-0non Mock Flywheel stage data", () => {
     await expect(page.getByText("STAGE 03")).toBeVisible();
     await expect(page.getByText("healthy-hour").first()).toBeVisible();
     await expect(page.getByText("hoopoe-implementation")).toBeVisible();
-    await expect(page.getByText("GreenBear")).toBeVisible();
+    // Two `GreenBear` strings exist by design: a comma-joined list under
+    // the bead-board (`<span>{agents.join(", ")}</span>`) and the agent
+    // tile inside the session group (`<strong>{agent.agent}</strong>`
+    // under `aria-label="hoopoe-implementation"`). Scope to the session
+    // group — that's the assertion we actually care about: GreenBear is
+    // on the grid for this session.
+    await expect(
+      page.getByLabel("hoopoe-implementation").getByText("GreenBear"),
+    ).toBeVisible();
     await expect(page.getByText("hoopoe-intro").first()).toBeVisible();
     await expect(page.getByText(/raw terminal|terminal scrollback/i)).toHaveCount(0);
     logger.assertion("swarm-stage.fixture-visible", {
