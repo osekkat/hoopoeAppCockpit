@@ -151,6 +151,44 @@ The generated Go is types-only — no chi/echo/gin server stubs, no client. The 
 
 - **`events/ws-envelope.schema.json`** — standalone JSON Schema for `WsEventEnvelope`, `WsClientOp`, `WsServerMessage`, `WsHeartbeat`, `WsGap`, `WsLag`. Mirrors the same shapes as `components.WsEventEnvelope` etc. so AsyncAPI / replay-tools that don't read OpenAPI can pin against the contract.
 - **`tending-actions.yaml`** — authoritative closed list of ActionKind values with per-kind `target` / `args` JSON Schemas, `riskClass`, and `requiresApprovalDefault`. The OpenAPI `ActionKind` enum is a mirror; the spec's contract is "any unknown kind is rejected at validation" — adding a new kind requires a same-commit change to both files.
+- **`provider-plugin.yaml`** — authoritative documentation of the 5 typed methods every VPS-provisioning plugin implements (`listRegions`, `listSizes`, `estimateMonthlyCost`, `createInstance`, `destroyInstance`). Per-method JSON Schema fragments `$ref` into `openapi.yaml` component schemas. The Go interface (`schemas.ProviderPlugin`) lives in `go/provider.go`. v1 ships with Contabo only (`hp-9fo`); future Hetzner / DigitalOcean / OVH / Linode plugins implement the same interface.
+
+## Add a new provider plugin
+
+Plugins ship as Go packages compiled into the daemon binary; the registry is open via package-init. To add a new provider (e.g., Hetzner):
+
+1. **Implement the Go interface.** In `apps/daemon/internal/providers/hetzner/`:
+   ```go
+   import schemas "github.com/hoopoe-cockpit/hoopoe/packages/schemas/go"
+
+   type plugin struct{ /* http client, api token via CAAM, etc. */ }
+
+   var _ schemas.ProviderPlugin = (*plugin)(nil)
+
+   func (p *plugin) Manifest() schemas.ProviderPluginManifest { ... }
+   func (p *plugin) ListRegions(ctx context.Context) ([]schemas.ProviderRegion, error) { ... }
+   func (p *plugin) ListSizes(ctx context.Context, regionID string) ([]schemas.ProviderSize, error) { ... }
+   func (p *plugin) EstimateMonthlyCost(ctx context.Context, opts schemas.ProviderEstimateCostOpts) (*schemas.ProviderCostEstimate, error) { ... }
+   func (p *plugin) CreateInstance(ctx context.Context, opts schemas.ProviderCreateInstanceOpts) (*schemas.ProviderInstance, error) { ... }
+   func (p *plugin) DestroyInstance(ctx context.Context, instanceID string) (*schemas.ProviderDestroyResult, error) { ... }
+
+   func init() { providers.Register(&plugin{}) }
+   ```
+
+2. **Honor the contract invariants** (documented in `go/provider.go` + `provider-plugin.yaml`):
+   - `Manifest().Capabilities` declares only the methods you implement; calling an undeclared method returns `ErrProviderMethodUnsupported` (the daemon translates to a `provider.method_unsupported` problem+json).
+   - `CreateInstance` MUST clean up on failure — no orphaned billable resources. If the provider partially created an instance, destroy it before returning the error.
+   - `DestroyInstance` MUST be idempotent — a second call against an already-destroyed ID returns `&schemas.ProviderDestroyResult{Ok: true, InstanceId: id}`, not an error.
+   - `EstimateMonthlyCost` MUST be a pure function for fixed `CatalogVersion` — same `(region, size, bandwidthTBExpected)` always returns the same result while the catalog version is unchanged.
+   - The cost-estimate `Breakdown` must sum to `Usd` (the renderer asserts this).
+
+3. **Use CAAM for credentials.** Provider API tokens MUST live in CAAM, never in Hoopoe config (Guardrail 11 generalised: third-party secrets live in CAAM). The plugin's auth bootstrap fetches the token from CAAM at first use.
+
+4. **Redact secrets in logs.** The hp-lxs structured logger has stable pattern IDs for SSH keys (`ssh-pubkey-fingerprint`), provider API tokens (`provider-key-*`), and pairing tokens. Emit log fields per the `loggingFields` declared in `provider-plugin.yaml` for each method; the redactor rewrites secret material before the entry hits a transport.
+
+5. **Update the docs.** If the new plugin opts into a method not yet listed in `provider-plugin.yaml`'s `optionalCapabilities` (e.g., a new `vps.snapshot`), the schema work belongs in a separate bead — coordinate via Agent Mail before extending the closed contract.
+
+6. **Add a contract test.** Mirror `packages/schemas/go/provider_test.go`'s `mockProvider` pattern with your real plugin (or a fixture-backed mock) and assert: ListRegions returns ≥1 region; cost estimate breakdown sums to total; create→destroy is idempotent; manifest capabilities match what's declared.
 
 ## Spec version
 
