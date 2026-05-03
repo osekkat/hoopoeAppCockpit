@@ -1,4 +1,4 @@
-// Package main hosts the Hoopoe Go daemon entry point.
+// Package main hosts the hoopoed daemon entry point.
 package main
 
 import (
@@ -28,7 +28,7 @@ func main() {
 		Stdout: os.Stdout,
 		Stderr: os.Stderr,
 	}); err != nil {
-		log.Printf("hoopoe daemon failed: %v", err)
+		log.Printf("hoopoed failed: %v", err)
 		os.Exit(1)
 	}
 }

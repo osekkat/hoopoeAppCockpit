@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "build": "mkdir -p bin && go build -o bin/hoopoe ./cmd/hoopoe",
+    "build": "mkdir -p bin && go build -o bin/hoopoed ./cmd/hoopoed",
     "typecheck": "go vet ./...",
     "test": "go test ./..."
   }
