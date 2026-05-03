@@ -23,6 +23,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@hoopoe/design-system": "workspace:*",
+        "@hoopoe/fixture-replay": "workspace:*",
         "@hoopoe/fixtures": "workspace:*",
         "@tanstack/react-query": "^5.100.8",
         "@tanstack/react-router": "^1.0.0",
@@ -53,6 +54,18 @@
         "typescript": "catalog:",
       },
     },
+    "packages/fixture-replay": {
+      "name": "@hoopoe/fixture-replay",
+      "version": "0.0.0",
+      "dependencies": {
+        "@hoopoe/fixtures": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "@types/node": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/fixtures": {
       "name": "@hoopoe/fixtures",
       "version": "0.0.0",
@@ -64,7 +77,7 @@
     },
     "packages/schemas": {
       "name": "@hoopoe/schemas",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "devDependencies": {
         "@types/bun": "catalog:",
         "@types/node": "catalog:",
@@ -134,6 +147,8 @@
     "@hoopoe/design-system": ["@hoopoe/design-system@workspace:packages/design-system"],
 
     "@hoopoe/desktop": ["@hoopoe/desktop@workspace:apps/desktop"],
+
+    "@hoopoe/fixture-replay": ["@hoopoe/fixture-replay@workspace:packages/fixture-replay"],
 
     "@hoopoe/fixtures": ["@hoopoe/fixtures@workspace:packages/fixtures"],
 

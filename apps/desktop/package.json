@@ -11,11 +11,14 @@
     "e2e:command-palette": "playwright test -c tests/e2e/command-palette.playwright.config.ts",
     "test:smoke": "bun test tests/smoke/*.test.ts",
     "test:phase1": "bun test tests/unit/*.test.ts",
+    "test:replay": "bun test tests/replay/*.test.ts",
+    "e2e:replay": "bun test tests/replay/*.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "bun test src tests/smoke/*.test.ts tests/unit/*.test.ts electron/*.test.ts"
+    "test": "bun test src tests/smoke/*.test.ts tests/unit/*.test.ts tests/replay/*.test.ts electron/*.test.ts"
   },
   "dependencies": {
     "@hoopoe/design-system": "workspace:*",
+    "@hoopoe/fixture-replay": "workspace:*",
     "@hoopoe/fixtures": "workspace:*",
     "@tanstack/react-query": "^5.100.8",
     "@tanstack/react-router": "^1.0.0",
