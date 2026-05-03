@@ -1,0 +1,324 @@
+# preload-api.yaml — closed surface for the renderer ↔ preload ↔ main IPC.
+#
+# Per hp-rflj (renderer hardening, §5.4 lines 1-2): the renderer cannot reach
+# the filesystem, network, SSH, Keychain, or daemon tokens directly.
+# Everything goes through `window.hoopoe.<group>.<method>` which is enforced
+# at three layers:
+#
+#   1. preload (`apps/desktop/electron/preload.ts`) — exposes ONLY methods
+#      from the `preloadChannels` map below; everything else is undefined
+#      to the renderer.
+#   2. main-side IpcRegistry (`apps/desktop/src/main/IpcRegistry.ts`) —
+#      `register()` and `dispatch()` consult the same allowlist before
+#      dispatching. Defense-in-depth: even if the preload boundary is ever
+#      bypassed (e.g. via a future renderer change that imports `electron`
+#      directly), the main side still refuses unknown channels.
+#   3. parity test (`apps/desktop/src/shared/ipc-contract.test.ts`) —
+#      runtime check that what main-side has REGISTERED matches what this
+#      file DECLARES. Disagreement is a build-time failure.
+#
+# This file is the SINGLE SOURCE OF TRUTH; `apps/desktop/src/shared/
+# ipc-contract.ts` is generated from it by
+# `packages/schemas/scripts/gen-preload-contract.ts`. The codegen drift
+# gate (`validate-preload`) re-runs the generator and byte-compares
+# against the committed file; CI fails on drift.
+#
+# Adding a new method/topic/channel is a SECURITY-RELEVANT change. Each
+# entry expands the renderer's reach. Review the bead it's tied to and
+# the threat model in this file's header before extending.
+#
+# Cross-references:
+#   - hp-rflj (renderer hardening — this file's parent bead)
+#   - hp-r3i  (packages/schemas — codegen substrate)
+#   - hp-n5za (the original manual ipc-contract.ts hardening)
+#   - plan.md §5.4 — renderer + preload security
+#   - review-findings.md "Renderer preload — [HIGH] no allowlist gate"
+
+schemaVersion: 1
+mirrorsTsFile: ../../apps/desktop/src/shared/ipc-contract.ts
+# When the apps/desktop owner switches ipc-contract.ts to import from the
+# generated file (`apps/desktop/src/shared/ipc-contract.gen.ts`), update
+# `mirrorsTsFile` to point at the .gen.ts file. Until then, the generator
+# emits the .gen.ts beside the manual file and the parity test compares
+# them so they cannot drift.
+
+# ── 1. Daemon RPC methods ──────────────────────────────────────────────────
+#
+# Method NAMES carried in `hoopoe.daemon.request` IPC bodies. Each one
+# corresponds to a single daemon HTTP/gRPC method. Inputs/outputs reference
+# component schemas in openapi.yaml so the renderer ↔ daemon round-trip is
+# typed end-to-end.
+daemonRequestMethods:
+  ping:
+    description: Health probe — returns immediately if the daemon is reachable.
+    bead: hp-n5za
+    input: { type: 'null' }
+    output:
+      type: object
+      properties:
+        ok: { type: boolean }
+  health:
+    description: Coarse liveness/adapter status (cheap; no full capability check).
+    bead: hp-r3i
+    input: { type: 'null' }
+    output: { $ref: ./openapi.yaml#/components/schemas/HealthResponse }
+  version:
+    description: Daemon build version + commit + signing/SBOM digests.
+    bead: hp-r3i
+    input: { type: 'null' }
+    output: { $ref: ./openapi.yaml#/components/schemas/VersionResponse }
+  capabilities:
+    description: Capability registry snapshot (every adapter, every capID).
+    bead: hp-r33
+    input: { type: 'null' }
+    output: { $ref: ./openapi.yaml#/components/schemas/CapabilityRegistry }
+  auth.exchangePairingForBearer:
+    description: |
+      Consume a pairing token, return a 30-day bearer session. Required for
+      first-run pairing.
+    bead: hp-n5za
+    input:
+      type: object
+      required: [pairingToken]
+      properties:
+        pairingToken: { type: string }
+    output:
+      type: object
+      required: [bearer, sessionId, expiresAt]
+      properties:
+        bearer: { type: string }
+        sessionId: { type: string }
+        expiresAt: { type: string, format: date-time }
+  auth.issueWsToken:
+    description: Mint a 5-min WS token from the current bearer.
+    bead: hp-n5za
+    input: { type: 'null' }
+    output:
+      type: object
+      required: [wsToken, expiresAt]
+      properties:
+        wsToken: { type: string }
+        expiresAt: { type: string, format: date-time }
+  settings.get:
+    description: Read tier-resolved settings tree.
+    bead: hp-n5za
+    input:
+      type: object
+      properties:
+        scope: { type: string, enum: [user, project, merged] }
+    output:
+      type: object
+      additionalProperties: true
+  settings.set:
+    description: Write a setting at user or project tier.
+    bead: hp-n5za
+    input:
+      type: object
+      required: [tier, key, value]
+      properties:
+        tier: { type: string, enum: [user, project] }
+        key: { type: string }
+        value: {}
+    output:
+      type: object
+      properties:
+        ok: { type: boolean }
+  projects.list:
+    description: List projects on this VPS (paginated).
+    bead: hp-r3i
+    input: { type: 'null' }
+    output: { $ref: ./openapi.yaml#/components/schemas/ProjectListResponse }
+  beads.get:
+    description: Fetch a single bead with edges.
+    bead: hp-r3i
+    input:
+      type: object
+      required: [projectId, beadId]
+      properties:
+        projectId: { type: string }
+        beadId: { type: string }
+    output: { $ref: ./openapi.yaml#/components/schemas/Bead }
+  triage.get:
+    description: Read bv triage snapshot for a project.
+    bead: hp-pjp
+    input:
+      type: object
+      required: [projectId]
+      properties:
+        projectId: { type: string }
+    output:
+      type: object
+      additionalProperties: true
+  swarm.snapshot:
+    description: Read swarm session state for a project.
+    bead: hp-r3i
+    input:
+      type: object
+      required: [projectId]
+      properties:
+        projectId: { type: string }
+    output:
+      type: object
+      additionalProperties: true
+  mail.dump:
+    description: Read agent mail messages for a project / thread.
+    bead: hp-r3i
+    input:
+      type: object
+      required: [projectId]
+      properties:
+        projectId: { type: string }
+        threadId: { type: string }
+    output:
+      type: object
+      additionalProperties: true
+  reservations.list:
+    description: List file reservations for a project.
+    bead: hp-r3i
+    input:
+      type: object
+      required: [projectId]
+      properties:
+        projectId: { type: string }
+    output:
+      type: array
+      items: { $ref: ./openapi.yaml#/components/schemas/FileReservation }
+  build-log.get:
+    description: Read a build/test job log slice.
+    bead: hp-r3i
+    input:
+      type: object
+      required: [jobId]
+      properties:
+        jobId: { type: string }
+        offsetBytes: { type: integer, minimum: 0 }
+    output:
+      type: object
+      additionalProperties: true
+  pane-log.get:
+    description: |
+      Read an agent pane log slice (Diagnostics surface only — Guardrail 12
+      forbids surfacing raw panes in the default Swarm UI).
+    bead: hp-r3i
+    input:
+      type: object
+      required: [agentId]
+      properties:
+        agentId: { type: string }
+        offsetBytes: { type: integer, minimum: 0 }
+    output:
+      type: array
+      items: { $ref: ./openapi.yaml#/components/schemas/PaneStreamEvent }
+  approvals.list:
+    description: List approvals for a project (Activity panel).
+    bead: hp-v0g
+    input:
+      type: object
+      required: [projectId]
+      properties:
+        projectId: { type: string }
+    output: { $ref: ./openapi.yaml#/components/schemas/ApprovalListResponse }
+  approvals.approve:
+    description: Approve a pending approval.
+    bead: hp-v0g
+    input:
+      type: object
+      required: [projectId, approvalId, decisionActor]
+      properties:
+        projectId: { type: string }
+        approvalId: { type: string }
+        decisionActor: { $ref: ./openapi.yaml#/components/schemas/Actor }
+        note: { type: string }
+        scope: { $ref: ./openapi.yaml#/components/schemas/ApprovalScope }
+    output: { $ref: ./openapi.yaml#/components/schemas/Approval }
+  approvals.deny:
+    description: Deny a pending approval.
+    bead: hp-v0g
+    input:
+      type: object
+      required: [projectId, approvalId, decisionActor]
+      properties:
+        projectId: { type: string }
+        approvalId: { type: string }
+        decisionActor: { $ref: ./openapi.yaml#/components/schemas/Actor }
+        note: { type: string }
+    output: { $ref: ./openapi.yaml#/components/schemas/Approval }
+  approvals.extend:
+    description: Extend the expiration of a pending approval.
+    bead: hp-v0g
+    input:
+      type: object
+      required: [projectId, approvalId, additionalSeconds]
+      properties:
+        projectId: { type: string }
+        approvalId: { type: string }
+        additionalSeconds: { type: integer, minimum: 60, maximum: 86400 }
+    output: { $ref: ./openapi.yaml#/components/schemas/Approval }
+
+# ── 2. Daemon WS subscribe topics ──────────────────────────────────────────
+#
+# Topics the renderer is ENTITLED to observe via `hoopoe.daemon.subscribe`.
+# Internal-only topics (audit log, redaction trace, settings tier-merge)
+# are intentionally absent — those flow only inside main. Adding a topic
+# expands the renderer's read surface.
+daemonSubscribeTopics:
+  events.swarm:
+    description: Swarm session lifecycle + agent state changes.
+    bead: hp-r3i
+  events.beads:
+    description: Bead state changes (status, priority, dependency edges).
+    bead: hp-r3i
+  events.activity:
+    description: Cross-stage activity events (Activity panel timeline).
+    bead: hp-1r4
+  events.health:
+    description: Code-health snapshot updates.
+    bead: hp-r3i
+  events.tend:
+    description: Tending job runs + ActionPlan executions.
+    bead: hp-r3i
+  events.approvals:
+    description: Approval queue changes (new pending, decided, expired).
+    bead: hp-v0g
+  events.replay:
+    description: Mock Flywheel replay events (development / fixture-driven runs).
+    bead: hp-o74
+  events.settings:
+    description: Settings tree change notifications (resolved tier only).
+    bead: hp-n5za
+
+# ── 3. Preload IPC channels (preload ↔ main) ───────────────────────────────
+#
+# One channel per direct preload method. Daemon RPC methods all multiplex
+# over `hoopoe.daemon.request`; these are the channels for everything else.
+# The PRELOAD_IPC_CHANNELS map is generated from this section.
+preloadChannels:
+  daemonRequest: hoopoe.daemon.request
+  daemonSubscribe: hoopoe.daemon.subscribe
+  daemonUnsubscribe: hoopoe.daemon.unsubscribe
+  settingsGet: hoopoe.settings.get
+  settingsSet: hoopoe.settings.set
+  settingsWatch: hoopoe.settings.watch
+  keybindingsCompile: hoopoe.keybindings.compile
+  keybindingsDispatch: hoopoe.keybindings.dispatch
+  approvalsList: hoopoe.approvals.list-pending
+  approvalsApprove: hoopoe.approvals.approve
+  approvalsDeny: hoopoe.approvals.deny
+  approvalsExtend: hoopoe.approvals.extend
+  filesOpenExternal: hoopoe.files.open-external
+  filesRevealInFinder: hoopoe.files.reveal-in-finder
+  filesRipgrep: hoopoe.files.ripgrep
+
+# ── 4. Internal IPC command prefixes (main-only) ───────────────────────────
+#
+# IpcRegistry hosts more than the renderer-facing channels — it also
+# hosts internal command IDs (e.g., "mock-flywheel.health" wired in
+# MockFlywheelClient.ts). The allowlist enforced on `register()` is
+# the union of `preloadChannels` values + commands matching one of these
+# prefixes. Each entry is a string PREFIX; everything matching it is
+# allowed (subject to the suffix sanity check in the generated TS).
+#
+# Keep this list short. Each prefix is a security review burden.
+internalCommandPrefixes:
+  - mock-flywheel.
+  - internal.

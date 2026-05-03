@@ -9,12 +9,14 @@
   },
   "scripts": {
     "build": "bun run generate",
-    "generate": "bun run generate:ts && bun run generate:go",
+    "generate": "bun run generate:ts && bun run generate:go && bun run generate:preload",
     "generate:ts": "bunx --bun openapi-typescript@7.13.0 openapi.yaml --output src/generated/openapi.ts",
     "generate:go": "bun scripts/gen-go.ts",
-    "validate": "bun run validate:ts && bun run validate:go",
+    "generate:preload": "bun scripts/gen-preload-contract.ts",
+    "validate": "bun run validate:ts && bun run validate:go && bun run validate:preload",
     "validate:ts": "bun scripts/validate-ts-codegen.ts",
     "validate:go": "bun scripts/validate-go-codegen.ts",
+    "validate:preload": "bun scripts/validate-preload-codegen.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "bun test"
   },

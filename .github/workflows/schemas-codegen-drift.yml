@@ -23,11 +23,13 @@ on:
     branches: [master]
     paths:
       - "packages/schemas/**"
+      - "apps/desktop/src/shared/ipc-contract.gen.ts"
       - ".github/workflows/schemas-codegen-drift.yml"
   pull_request:
     branches: [master]
     paths:
       - "packages/schemas/**"
+      - "apps/desktop/src/shared/ipc-contract.gen.ts"
       - ".github/workflows/schemas-codegen-drift.yml"
 
 permissions:
@@ -67,6 +69,13 @@ jobs:
       - name: Validate Go codegen drift
         run: bun run --cwd packages/schemas validate:go
 
+      - name: Validate preload-contract codegen drift
+        # hp-rflj: packages/schemas/preload-api.yaml is the single source of
+        # truth for the renderer ↔ preload ↔ main IPC allowlist. Drift between
+        # the YAML and apps/desktop/src/shared/ipc-contract.gen.ts is a
+        # security-relevant failure (the preload boundary stops being typed).
+        run: bun run --cwd packages/schemas validate:preload
+
       - name: Schemas typecheck
         run: bun run --cwd packages/schemas typecheck
 
@@ -82,6 +91,14 @@ jobs:
           go vet ./...
           go build ./...
 
+      - name: Generated Go provider plugin tests
+        # hp-14zt: the abstract provider plugin contract has its own test
+        # suite (mockProvider satisfying schemas.ProviderPlugin + registry
+        # behavior + breakdown-sum invariant + idempotent destroy).
+        run: |
+          cd packages/schemas/go
+          go test ./...
+
       - name: Surface drift artifacts on failure
         if: failure()
         uses: actions/upload-artifact@v4
@@ -90,5 +107,6 @@ jobs:
           path: |
             packages/schemas/src/generated/openapi.ts.drift
             packages/schemas/go/schemas.gen.go.drift
+            apps/desktop/src/shared/ipc-contract.gen.ts.drift
           retention-days: 7
           if-no-files-found: ignore
