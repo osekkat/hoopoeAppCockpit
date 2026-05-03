@@ -17,6 +17,7 @@ import {
   type WaitForHttpReadyOptions,
 } from "../vendored/t3code/backendReadiness.ts";
 import { ServerListeningDetector } from "../vendored/t3code/serverListeningDetector.ts";
+import { warnIfProductionMockFlywheelEnabled } from "./MockFlywheelMode.ts";
 
 export interface BackendSpawnOptions {
   readonly daemonBinaryPath: string;
@@ -85,6 +86,8 @@ export async function findOpenPort(
  * verify HTTP readiness on the resolved port. Returns a handle that owns the
  * child process and exposes a `stop()` that escalates SIGTERM → SIGKILL. */
 export async function spawnBackend(options: BackendSpawnOptions): Promise<BackendHandle> {
+  warnIfProductionMockFlywheelEnabled();
+
   const logger = options.logger ?? noopLogger;
   const host = options.host ?? "127.0.0.1";
   const spawnImpl = options.spawnImpl ?? spawn;

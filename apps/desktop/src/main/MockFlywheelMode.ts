@@ -70,8 +70,35 @@ export type MockFlywheelMode =
 export interface ParseArgvOptions {
   /** `process.argv` slice; default `process.argv`. Override for tests. */
   argv?: readonly string[];
+  /** Override `process.env.NODE_ENV` for tests. */
+  nodeEnv?: string;
+  /** Override stderr for tests. */
+  stderr?: MockFlywheelWarningSink;
   /** Override `os.homedir()` for tests. */
   homedirImpl?: () => string;
+}
+
+export interface MockFlywheelWarningSink {
+  readonly write: (message: string) => unknown;
+}
+
+export function warnIfProductionMockFlywheelEnabled(options: {
+  readonly argv?: readonly string[];
+  readonly nodeEnv?: string;
+  readonly stderr?: MockFlywheelWarningSink;
+} = {}): boolean {
+  const argv = options.argv ?? process.argv;
+  const nodeEnv = options.nodeEnv ?? process.env.NODE_ENV;
+  if (nodeEnv !== "production" || !argv.includes(MOCK_FLYWHEEL_FLAG)) {
+    return false;
+  }
+
+  const message =
+    "[CRITICAL] Hoopoe Mock Flywheel Mode is enabled in NODE_ENV=production via " +
+    `${MOCK_FLYWHEEL_FLAG}. This run is fixture-backed and must not be mistaken ` +
+    "for a real daemon session.\n";
+  (options.stderr ?? process.stderr).write(message);
+  return true;
 }
 
 /** Parse argv for mock-mode flags. Returns a discriminated union the rest
@@ -82,6 +109,11 @@ export function parseArgvForMockFlywheel(options: ParseArgvOptions = {}): MockFl
   if (!enabled) {
     return { enabled: false };
   }
+  warnIfProductionMockFlywheelEnabled({
+    argv,
+    ...(options.nodeEnv !== undefined ? { nodeEnv: options.nodeEnv } : {}),
+    ...(options.stderr !== undefined ? { stderr: options.stderr } : {}),
+  });
   const fixtureIdx = argv.indexOf(FIXTURE_PATH_FLAG);
   const scenarioIdx = argv.indexOf(SCENARIO_FLAG);
   let scenario: string;

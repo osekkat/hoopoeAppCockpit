@@ -21,6 +21,7 @@ import {
   MOCK_FLYWHEEL_FLAG,
   FIXTURE_PATH_FLAG,
   SCENARIO_FLAG,
+  warnIfProductionMockFlywheelEnabled,
 } from "./MockFlywheelMode.ts";
 import {
   registerMockFlywheelClient,
@@ -84,6 +85,41 @@ describe("parseArgvForMockFlywheel (hp-o74)", () => {
     if (r.enabled) {
       expect(r.demoStateDir).toBe("/Users/oss/.hoopoe/demo/healthy-hour");
     }
+  });
+
+  test("production startup with --mock-flywheel writes a CRITICAL stderr warning", () => {
+    const writes: string[] = [];
+    const warned = warnIfProductionMockFlywheelEnabled({
+      argv: ["node", "main", MOCK_FLYWHEEL_FLAG],
+      nodeEnv: "production",
+      stderr: { write: (message) => writes.push(message) },
+    });
+    expect(warned).toBe(true);
+    expect(writes.join("")).toContain("[CRITICAL]");
+    expect(writes.join("")).toContain("--mock-flywheel");
+    expect(writes.join("")).toContain("fixture-backed");
+  });
+
+  test("production startup without --mock-flywheel is silent", () => {
+    const writes: string[] = [];
+    const warned = warnIfProductionMockFlywheelEnabled({
+      argv: ["node", "main"],
+      nodeEnv: "production",
+      stderr: { write: (message) => writes.push(message) },
+    });
+    expect(warned).toBe(false);
+    expect(writes).toEqual([]);
+  });
+
+  test("development startup with --mock-flywheel is silent", () => {
+    const writes: string[] = [];
+    const warned = warnIfProductionMockFlywheelEnabled({
+      argv: ["node", "main", MOCK_FLYWHEEL_FLAG],
+      nodeEnv: "development",
+      stderr: { write: (message) => writes.push(message) },
+    });
+    expect(warned).toBe(false);
+    expect(writes).toEqual([]);
   });
 });
 
