@@ -3,10 +3,25 @@
 // The same registry powers Electron `ipcMain.handle` IPC and the renderer-
 // side ⌘K command palette (palette wiring lands in a later bead).
 //
-// Validation against generated TypeScript types from `@hoopoe/schemas`
-// happens at the registry boundary in hp-r3i (Phase 2.5). For now handlers
-// declare their own input/output types and the registry wraps them with
-// a structural when-clause filter.
+// hp-n5za hardening: `register()` and `dispatch()` consult the shared
+// `apps/desktop/src/shared/ipc-contract.ts` allowlist — unknown command
+// IDs are refused (defense-in-depth in case the preload boundary is ever
+// bypassed). The allowlist permits:
+//   - every value in `PRELOAD_IPC_CHANNELS` (the renderer-facing surface),
+//   - every command id whose prefix is in `INTERNAL_IPC_COMMAND_PREFIXES`
+//     (currently `mock-flywheel.` and `internal.`).
+// Adding a new command is a deliberate edit of the contract file.
+//
+// Validation of `Input`/`Output` shapes against generated TypeScript types
+// from `@hoopoe/schemas` is hp-r3i (Phase 2.5). The interim boundary is
+// documented + tested here: the unconstrained generics on `dispatch` are
+// still a known gap; allowlist + actor + redaction layers now sit above
+// this gap so a malicious renderer can't drive arbitrary commands.
+
+import {
+  IpcContractError,
+  isAllowedRegistryCommandId,
+} from "../shared/ipc-contract.ts";
 
 export type WhenContextKeys = ReadonlyArray<string>;
 
@@ -54,6 +69,13 @@ export class IpcRegistry {
   register<Input, Output>(
     registration: IpcCommandRegistration<Input, Output>,
   ): { readonly unregister: () => void } {
+    // hp-n5za: refuse registrations outside the contract allowlist.
+    // The allowlist is the renderer-facing channel set + named internal
+    // prefixes (mock-flywheel.*, internal.*). Adding a new command is a
+    // deliberate edit of `src/shared/ipc-contract.ts`.
+    if (!isAllowedRegistryCommandId(registration.id)) {
+      throw new IpcContractError({ kind: "channel", attempted: registration.id });
+    }
     if (this.registrations.has(registration.id)) {
       throw new Error(`IPC command already registered: ${registration.id}`);
     }
@@ -89,6 +111,12 @@ export class IpcRegistry {
     input: Input,
     context: IpcDispatchContext = {},
   ): Promise<Output> {
+    // hp-n5za defense-in-depth: even if a registration somehow exists for
+    // a non-allowlisted ID (shouldn't, since `register()` blocks it), the
+    // dispatch path independently checks. Two locks > one lock.
+    if (!isAllowedRegistryCommandId(commandId)) {
+      throw new IpcContractError({ kind: "channel", attempted: commandId });
+    }
     const registration = this.registrations.get(commandId);
     if (!registration) {
       throw new UnknownIpcCommandError(commandId);

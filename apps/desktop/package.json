@@ -12,7 +12,7 @@
     "test:smoke": "bun test tests/smoke/*.test.ts",
     "test:phase1": "bun test tests/unit/*.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "bun test src tests/smoke/*.test.ts tests/unit/*.test.ts"
+    "test": "bun test src tests/smoke/*.test.ts tests/unit/*.test.ts electron/*.test.ts"
   },
   "dependencies": {
     "@hoopoe/design-system": "workspace:*",

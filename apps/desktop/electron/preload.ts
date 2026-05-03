@@ -22,31 +22,23 @@
 
 import { randomUUID } from "node:crypto";
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
+import {
+  IpcContractError,
+  PRELOAD_IPC_CHANNELS,
+  isDaemonRequestMethod,
+  isDaemonSubscribeTopic,
+  type DaemonRequestMethod,
+  type DaemonSubscribeTopic,
+} from "../src/shared/ipc-contract.ts";
 
 // ── Channel names ──────────────────────────────────────────────────────────
 //
-// One TS literal type per method so handler-side validation can pin down
-// the channel string at compile time. The renderer consumes these via the
-// generated `@hoopoe/schemas` client (Phase 2.5); this preload file only
-// adapts the channel→method shape.
+// hp-n5za: The single source of truth for channel/method/topic names is
+// `apps/desktop/src/shared/ipc-contract.ts`. Both this preload and the
+// main-side IpcRegistry consume the same constants; a runtime parity
+// test fails the build if they ever drift.
 
-const CHANNELS = {
-  daemonRequest: "hoopoe.daemon.request",
-  daemonSubscribe: "hoopoe.daemon.subscribe",
-  daemonUnsubscribe: "hoopoe.daemon.unsubscribe",
-  settingsGet: "hoopoe.settings.get",
-  settingsSet: "hoopoe.settings.set",
-  settingsWatch: "hoopoe.settings.watch",
-  keybindingsCompile: "hoopoe.keybindings.compile",
-  keybindingsDispatch: "hoopoe.keybindings.dispatch",
-  approvalsList: "hoopoe.approvals.list-pending",
-  approvalsApprove: "hoopoe.approvals.approve",
-  approvalsDeny: "hoopoe.approvals.deny",
-  approvalsExtend: "hoopoe.approvals.extend",
-  filesOpenExternal: "hoopoe.files.open-external",
-  filesRevealInFinder: "hoopoe.files.reveal-in-finder",
-  filesRipgrep: "hoopoe.files.ripgrep",
-} as const satisfies Record<string, `hoopoe.${string}`>;
+const CHANNELS = PRELOAD_IPC_CHANNELS;
 
 // Generic invoke shape — every method round-trips through ipcRenderer.invoke
 // with a single args object and returns whatever the main-process handler
@@ -74,8 +66,14 @@ function subscribe<P>(
 
 export interface HoopoeBridge {
   readonly daemon: {
-    readonly request: <I, O>(method: string, body: I) => Promise<O>;
-    readonly subscribe: <P>(topic: string, listener: (payload: P) => void) => () => void;
+    /** hp-n5za: `method` is statically constrained to the allowlist in
+     *  `src/shared/ipc-contract.ts`. Unknown methods are rejected at the
+     *  preload boundary BEFORE main IPC sees them. */
+    readonly request: <I, O>(method: DaemonRequestMethod, body: I) => Promise<O>;
+    readonly subscribe: <P>(
+      topic: DaemonSubscribeTopic,
+      listener: (payload: P) => void,
+    ) => () => void;
   };
   readonly settings: {
     readonly get: <T>() => Promise<T>;
@@ -101,9 +99,21 @@ export interface HoopoeBridge {
 
 export const hoopoeBridge: HoopoeBridge = {
   daemon: {
-    request: (method, body) =>
-      invoke(CHANNELS.daemonRequest, { method, body }),
+    request: (method, body) => {
+      // hp-n5za defense-in-depth: even though the type system constrains
+      // `method` to DaemonRequestMethod, a non-TS renderer (e.g., a future
+      // bundle from a third-party renderer plugin) could still pass an
+      // arbitrary string. Runtime check refuses unknown methods before
+      // they reach main.
+      if (!isDaemonRequestMethod(method)) {
+        return Promise.reject(new IpcContractError({ kind: "method", attempted: String(method) }));
+      }
+      return invoke(CHANNELS.daemonRequest, { method, body });
+    },
     subscribe: (topic, listener) => {
+      if (!isDaemonSubscribeTopic(topic)) {
+        throw new IpcContractError({ kind: "topic", attempted: String(topic) });
+      }
       // Subscription IDs are crypto-random (RFC 4122 v4 UUID) so a malicious
       // or buggy renderer can't predict/collide channel names. The `topic`
       // is included for diagnostics only — the actual channel is bound to
