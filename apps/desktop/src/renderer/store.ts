@@ -51,10 +51,17 @@ export interface ProjectViewState {
   readonly dagViewport: DagViewport;
 }
 
+export interface ShellLaunchTarget {
+  readonly projectId: string;
+  readonly stageId: ShellRouteId;
+}
+
 export interface ShellUiState {
   readonly projects: readonly ShellProjectSummary[];
   readonly activeProjectId: string | null;
   readonly activityPanelOpen: boolean;
+  readonly commandPaletteOpen: boolean;
+  readonly recentCommandIds: readonly string[];
   readonly lastProjectId: string | null;
   readonly lastStageId: ShellRouteId;
   readonly projectSwitcherOpen: boolean;
@@ -64,6 +71,9 @@ export interface ShellUiState {
   readonly projectViewStateById: Record<string, ProjectViewState>;
   readonly setActivityPanelOpen: (open: boolean) => void;
   readonly toggleActivityPanel: () => void;
+  readonly setCommandPaletteOpen: (open: boolean) => void;
+  readonly toggleCommandPalette: () => void;
+  readonly recordRecentCommand: (commandId: string) => void;
   readonly setProjectSwitcherOpen: (open: boolean) => void;
   readonly setProjectSearch: (search: string) => void;
   readonly requestProjectSwitch: (
@@ -91,6 +101,8 @@ export interface ShellUiState {
   readonly rememberActivityPanelScroll: (scrollY: number) => void;
   readonly rememberDagViewport: (projectId: string, viewport: DagViewport) => void;
 }
+
+const RECENT_COMMAND_LIMIT = 5;
 
 const memoryStorage = new Map<string, string>();
 
@@ -211,12 +223,48 @@ function updateProjectViewState(
   };
 }
 
+export function resolveShellLaunchTarget(
+  state: Pick<
+    ShellUiState,
+    | "activeProjectId"
+    | "lastProjectId"
+    | "lastStageId"
+    | "projectViewStateById"
+    | "projects"
+  >,
+): ShellLaunchTarget | null {
+  const explicitProjectIds = [state.activeProjectId, state.lastProjectId].filter(
+    (projectId): projectId is string => typeof projectId === "string",
+  );
+  for (const projectId of explicitProjectIds) {
+    if (projectExists(state.projects, projectId)) {
+      return {
+        projectId,
+        stageId: state.projectViewStateById[projectId]?.lastStageId ?? state.lastStageId,
+      };
+    }
+  }
+
+  if (explicitProjectIds.length === 0) return null;
+
+  const fallbackProject = state.projects
+    .toSorted((a, b) => Date.parse(b.lastActivatedAt) - Date.parse(a.lastActivatedAt))
+    .at(0);
+  if (!fallbackProject) return null;
+  return {
+    projectId: fallbackProject.id,
+    stageId: state.projectViewStateById[fallbackProject.id]?.lastStageId ?? state.lastStageId,
+  };
+}
+
 export const useShellUiStore = create<ShellUiState>()(
   persist(
     (set, get) => ({
       projects: fixtureProjects,
       activeProjectId: null,
       activityPanelOpen: false,
+      commandPaletteOpen: false,
+      recentCommandIds: [],
       lastProjectId: null,
       lastStageId: "plan",
       projectSwitcherOpen: false,
@@ -239,6 +287,19 @@ export const useShellUiStore = create<ShellUiState>()(
       },
       toggleActivityPanel: () => {
         get().setActivityPanelOpen(!get().activityPanelOpen);
+      },
+      setCommandPaletteOpen: (open) => {
+        set({ commandPaletteOpen: open });
+      },
+      toggleCommandPalette: () => {
+        set({ commandPaletteOpen: !get().commandPaletteOpen });
+      },
+      recordRecentCommand: (commandId) => {
+        set((state) => {
+          const filtered = state.recentCommandIds.filter((id) => id !== commandId);
+          const next = [commandId, ...filtered].slice(0, RECENT_COMMAND_LIMIT);
+          return { recentCommandIds: next };
+        });
       },
       setProjectSwitcherOpen: (open) => {
         set({
@@ -431,6 +492,7 @@ export const useShellUiStore = create<ShellUiState>()(
         projects: state.projects,
         projectViewStateById: state.projectViewStateById,
         duplicateSwitchSuppressCount: state.duplicateSwitchSuppressCount,
+        recentCommandIds: state.recentCommandIds,
       }),
     },
   ),

@@ -1,6 +1,6 @@
 import { Link, Outlet, useParams, useRouterState } from "@tanstack/react-router";
 import { Activity, Command, PanelRightClose, PanelRightOpen } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import {
   stageDefinitions,
   stageForPathname,
@@ -9,6 +9,7 @@ import {
 import { useShellUiStore } from "../store.ts";
 import { ProjectRunningPill, ProjectSwitcher } from "../topbar/ProjectSwitcher.tsx";
 import { ActivityPanel } from "./activity-panel.tsx";
+import { CommandPaletteHost } from "./command-palette/CommandPaletteHost.tsx";
 
 export function RootLayout() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
@@ -18,6 +19,9 @@ export function RootLayout() {
   const activityPanelOpen = useShellUiStore((state) => state.activityPanelOpen);
   const toggleActivityPanel = useShellUiStore((state) => state.toggleActivityPanel);
   const setActivityPanelOpen = useShellUiStore((state) => state.setActivityPanelOpen);
+  const commandPaletteOpen = useShellUiStore((state) => state.commandPaletteOpen);
+  const setCommandPaletteOpen = useShellUiStore((state) => state.setCommandPaletteOpen);
+  const toggleCommandPalette = useShellUiStore((state) => state.toggleCommandPalette);
   const rememberStageScroll = useShellUiStore((state) => state.rememberStageScroll);
   const projectViewStateById = useShellUiStore((state) => state.projectViewStateById);
   const projects = useShellUiStore((state) => state.projects);
@@ -42,6 +46,29 @@ export function RootLayout() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const isPaletteShortcut =
+        (event.metaKey || event.ctrlKey) && (event.key === "k" || event.key === "K");
+      const isFallbackShortcut =
+        (event.metaKey || event.ctrlKey) &&
+        event.shiftKey &&
+        (event.key === "p" || event.key === "P");
+
+      if (!isPaletteShortcut && !isFallbackShortcut) return;
+
+      event.preventDefault();
+      toggleCommandPalette();
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [toggleCommandPalette]);
+
+  const closeCommandPalette = useCallback(() => {
+    setCommandPaletteOpen(false);
+  }, [setCommandPaletteOpen]);
 
   return (
     <div className="hh-shell" data-activity-open={activityPanelOpen}>
@@ -106,7 +133,14 @@ export function RootLayout() {
           </div>
 
           <div className="hh-topbar-actions">
-            <button className="hh-icon-button" type="button" aria-label="Open command palette">
+            <button
+              aria-expanded={commandPaletteOpen}
+              aria-haspopup="dialog"
+              aria-label="Open command palette"
+              className="hh-icon-button"
+              onClick={toggleCommandPalette}
+              type="button"
+            >
               <Command size={17} strokeWidth={2.1} />
             </button>
             <button
@@ -150,6 +184,13 @@ export function RootLayout() {
         open={activityPanelOpen}
         onClose={() => setActivityPanelOpen(false)}
         icon={<Activity size={16} strokeWidth={2.1} />}
+      />
+
+      <CommandPaletteHost
+        open={commandPaletteOpen}
+        pathname={pathname}
+        projectId={projectId}
+        onClose={closeCommandPalette}
       />
     </div>
   );

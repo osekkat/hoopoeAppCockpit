@@ -8,6 +8,7 @@
     "dev": "vite --host 127.0.0.1",
     "e2e": "playwright test -c ../../playwright.config.ts",
     "e2e:phase1": "playwright test -c tests/e2e/hp-j30.playwright.config.ts",
+    "e2e:command-palette": "playwright test -c tests/e2e/command-palette.playwright.config.ts",
     "test:smoke": "bun test tests/smoke/*.test.ts",
     "test:phase1": "bun test tests/unit/*.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
