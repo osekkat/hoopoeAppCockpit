@@ -85,13 +85,14 @@ func NewRouter(cfg Config) http.Handler {
 	r.Use(middleware.RequestID)
 	r.Use(s.requestLogMiddleware)
 
-	r.Get("/health", s.handleHealth)
+	r.Get("/health", s.handleLegacyHealth)
 	r.Get("/v1/health", s.handleHealth)
 	r.Get("/v1/version", s.handleVersion)
 	r.Get("/v1/jobs", s.handleJobs)
 	r.Get("/v1/events/replay", s.handleEventReplay)
 	r.Get("/v1/events/sse", s.handleEventSSE)
 	r.Get("/v1/events/ws", s.handleEventWS)
+	s.mountSeedContractRoutes(r)
 
 	return r
 }
@@ -189,6 +190,10 @@ func (r *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 }
 
 func (s *server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.healthResponse())
+}
+
+func (s *server) handleLegacyHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":            true,
 		"schemaVersion": schemaVersion,
@@ -197,7 +202,7 @@ func (s *server) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handleVersion(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.build)
+	writeJSON(w, http.StatusOK, s.versionResponse())
 }
 
 func (s *server) handleJobs(w http.ResponseWriter, r *http.Request) {
@@ -209,10 +214,7 @@ func (s *server) handleJobs(w http.ResponseWriter, r *http.Request) {
 	if jobList == nil {
 		jobList = []jobs.Job{}
 	}
-	writeJSON(w, http.StatusOK, JobsResponse{
-		SchemaVersion: schemaVersion,
-		Jobs:          jobList,
-	})
+	writeJSON(w, http.StatusOK, jobListResponse(jobList))
 }
 
 func (s *server) handleEventReplay(w http.ResponseWriter, r *http.Request) {
@@ -226,14 +228,7 @@ func (s *server) handleEventReplay(w http.ResponseWriter, r *http.Request) {
 		s.writeProblem(w, http.StatusBadRequest, "invalid sinceSequence", err.Error())
 		return
 	}
-	events, gap := s.events.Replay(channel, since)
-	writeJSON(w, http.StatusOK, ReplayResponse{
-		SchemaVersion: schemaVersion,
-		Channel:       channel,
-		SinceSequence: since,
-		Gap:           gap,
-		Events:        events,
-	})
+	writeJSON(w, http.StatusOK, eventReplayResponse(s.events.replayWindow(channel, since), channel))
 }
 
 func (s *server) handleEventSSE(w http.ResponseWriter, r *http.Request) {
@@ -431,6 +426,10 @@ func (s *server) writeSSE(w http.ResponseWriter, eventType string, payload any) 
 
 func (s *server) writeProblem(w http.ResponseWriter, status int, title string, detail string) {
 	writeProblem(w, status, title, detail)
+}
+
+func (s *server) writeProblemCode(w http.ResponseWriter, status int, code string, title string, detail string) {
+	writeProblemCode(w, status, code, title, detail)
 }
 
 func parseSequence(raw string) (uint64, error) {

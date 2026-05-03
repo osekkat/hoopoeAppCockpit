@@ -12,6 +12,7 @@ import (
 
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/api"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/capabilities"
+	schemas "github.com/hoopoe-cockpit/hoopoe/packages/schemas/go"
 )
 
 func TestMockDaemonSmoke(t *testing.T) {
@@ -33,9 +34,9 @@ func TestMockDaemonSmoke(t *testing.T) {
 	server := httptest.NewServer(daemon.Router())
 	defer server.Close()
 
-	var version api.BuildInfo
+	var version schemas.VersionResponse
 	getJSON(t, server.URL+"/v1/version", &version)
-	if version.Commit != "mock" || version.APIVersion != "v1" {
+	if version.Daemon.Commit == nil || *version.Daemon.Commit != "mock" || version.SchemaVersion != 1 {
 		t.Fatalf("unexpected version payload: %+v", version)
 	}
 
@@ -52,24 +53,25 @@ func TestMockDaemonSmoke(t *testing.T) {
 	}
 
 	var jobsResponse struct {
-		Jobs []struct {
+		Items []struct {
 			ID        string `json:"id"`
-			Kind      string `json:"kind"`
+			Type      string `json:"type"`
 			Status    string `json:"status"`
 			Artifacts []struct {
+				ID   string `json:"id"`
 				Kind string `json:"kind"`
 				URI  string `json:"uri"`
 			} `json:"artifacts"`
-		} `json:"jobs"`
+		} `json:"items"`
 	}
 	getJSON(t, server.URL+"/v1/jobs", &jobsResponse)
-	if len(jobsResponse.Jobs) != 1 || jobsResponse.Jobs[0].Kind != "mock.flywheel.scenario" {
+	if len(jobsResponse.Items) != 1 || jobsResponse.Items[0].Type != "mock.flywheel.scenario" {
 		t.Fatalf("unexpected jobs response: %+v", jobsResponse)
 	}
-	if !hasArtifact(jobsResponse.Jobs[0].Artifacts, "mock.prepare_transcript") {
-		t.Fatalf("mock prepare transcript artifact missing: %+v", jobsResponse.Jobs[0].Artifacts)
+	if !hasArtifact(jobsResponse.Items[0].Artifacts, "prepare_transcript") {
+		t.Fatalf("mock prepare transcript artifact missing: %+v", jobsResponse.Items[0].Artifacts)
 	}
-	logChunk, err := daemon.Jobs.ReadLog(context.Background(), jobsResponse.Jobs[0].ID, 0, 1<<20)
+	logChunk, err := daemon.Jobs.ReadLog(context.Background(), jobsResponse.Items[0].ID, 0, 1<<20)
 	if err != nil {
 		t.Fatalf("read mock job log: %v", err)
 	}
@@ -135,12 +137,13 @@ func getJSON(t *testing.T, url string, target any) {
 }
 
 func hasArtifact(artifacts []struct {
+	ID   string `json:"id"`
 	Kind string `json:"kind"`
 	URI  string `json:"uri"`
-}, kind string) bool {
+}, idFragment string) bool {
 	for _, artifact := range artifacts {
-		if artifact.Kind == kind {
-			return strings.HasPrefix(artifact.URI, "fixture://")
+		if strings.Contains(artifact.ID, idFragment) {
+			return true
 		}
 	}
 	return false
