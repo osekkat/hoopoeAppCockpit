@@ -1,19 +1,50 @@
-# `phase0-2026-05-02/` — real-VPS fixture corpus (placeholder)
+# `phase0-2026-05-02/` — real-VPS fixture corpus
 
-Placeholder for the real-VPS capture corpus. Files here are produced by `scripts/research-spike/snapshot.sh` running on the research-spike VPS (`hp-r7i`) after the canonical 13-step wizard run-through (`hp-jvm`).
+This directory is reserved for Phase 0 acceptance captures from a real
+ACFS-installed VPS. The current `.gitkeep` files are placeholders only; the
+synthetic Mock Flywheel scenarios under `packages/fixtures/scenarios/` are useful
+for development, but they are not Phase 0 acceptance evidence.
 
-Each scenario directory mirrors the `meta.fixturesVersion: phase0-2026-05-02` tag.
+The collector for hp-vtwm is:
 
-## Scenarios (forthcoming)
+```bash
+scripts/research-spike/collect-evidence-pack.sh \
+  --ssh <user@real-acfs-vps> \
+  --project-dir /data/projects/<project> \
+  --landing-dir packages/fixtures/phase0-2026-05-02/incoming \
+  --vps-id research-spike-2026-05-02 \
+  --acfs-tag <pinned-acfs-tag> \
+  --wizard-command '<13-step wizard transcript command or wrapper>'
+```
 
-| Directory          | Source                                                                                  | Status |
-| ------------------ | --------------------------------------------------------------------------------------- | ------ |
-| `scenarios/fresh/` | `snapshot.sh --scenario fresh` against fresh `acfs onboard`                              | pending hp-r7i |
-| `scenarios/active/`| `snapshot.sh --scenario active` mid-swarm                                                | pending hp-r7i |
-| `scenarios/failure/`| `snapshot.sh --scenario failure --scenario-notes "<deliberate breakage>"`               | pending hp-r7i |
+It produces `/tmp/hoopoe-phase0-evidence-<UTC-timestamp>.tar.zst` containing:
 
-Each scenario directory shares the per-scenario file contract documented in [`packages/fixtures/README.md`](../README.md) (meta.json, bv-triage.json, br-list.json, ntm-snapshot.json, agent-mail-dump.json, reservations.json, events.jsonl, pane-logs/, build-logs/, capabilities.json, expected-outcome.json).
+- the hp-6v3 `snapshot.sh` output for `fresh`, `active`, and `failure`;
+- the 13-step wizard transcript;
+- ACFS version and `acfs doctor --json`;
+- versions for `br`, `bv`, `ntm`, Agent Mail, `rch`, `caam`, `dcg`, `caut`,
+  `casr`, `srp`, `sbh`, `pt`, `ubs`, `jsm`, and `jfp`;
+- per-scenario adapter JSON for the real-VPS evidence pack.
 
-## Capture recipe
+Verify before committing:
 
-See [`scripts/research-spike/README.md`](../../../scripts/research-spike/README.md) "Running on the research-spike VPS" for the canonical recipe.
+```bash
+scripts/research-spike/verify-evidence-pack.sh \
+  packages/fixtures/phase0-2026-05-02/incoming/<pack>.tar.zst
+```
+
+The verifier checks the artifact contract and scans for known secret/token/key
+shapes. Only a verifier-passing real-VPS pack should be unpacked and normalized
+into `scenarios/fresh/`, `scenarios/active/`, and `scenarios/failure/`.
+
+## Scenarios
+
+| Directory | Source | Status |
+| --- | --- | --- |
+| `scenarios/fresh/` | `snapshot.sh --scenario fresh` after fresh `acfs onboard` | pending hp-r7i/hp-jvm |
+| `scenarios/active/` | `snapshot.sh --scenario active` mid-swarm | pending hp-r7i/hp-jvm |
+| `scenarios/failure/` | `snapshot.sh --scenario failure --scenario-notes "<deliberate breakage>"` | pending hp-r7i/hp-jvm |
+
+Do not close hp-r7i, hp-jvm, hp-7cs, or hp-vtwm until a verified real-VPS pack
+lands here and the live shapes have been reconciled against the integration
+contracts in `docs/integration-contracts/`.
