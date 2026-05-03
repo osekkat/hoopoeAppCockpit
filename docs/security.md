@@ -37,3 +37,7 @@ That response includes the requested address, effective address, whether the
 runtime confirmation succeeded, and the warning payload to display. Startup also
 logs the same warning fields through the daemon logger as
 `security_public_bind_warning`.
+
+Runtime confirmation tokens are HMAC-signed for the `daemon.public_bind`
+operation, scoped to the exact normalized bind address, time-limited, and
+consumed once by the daemon process.

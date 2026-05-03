@@ -4,14 +4,18 @@ package security
 import (
 	"context"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -24,6 +28,7 @@ var (
 	ErrInvalidBindAddress       = errors.New("security: invalid bind address")
 	ErrPublicBindNotConfirmed   = errors.New("security: public bind requires runtime confirmation")
 	ErrInvalidConfirmationToken = errors.New("security: invalid public-bind confirmation token")
+	ErrConfirmationTokenUsed    = errors.New("security: public-bind confirmation token already used")
 )
 
 type PublicBindConfirmer interface {
@@ -109,7 +114,7 @@ func EvaluateBind(ctx context.Context, req BindRequest) (BindDecision, error) {
 			decision.RuntimeConfirmed = true
 			decision.Warning = publicBindAllowedWarning(target.Address)
 			return decision, nil
-		} else if !errors.Is(err, ErrPublicBindNotConfirmed) && !errors.Is(err, ErrInvalidConfirmationToken) {
+		} else if !errors.Is(err, ErrPublicBindNotConfirmed) && !errors.Is(err, ErrInvalidConfirmationToken) && !errors.Is(err, ErrConfirmationTokenUsed) {
 			return BindDecision{}, err
 		}
 	}
@@ -197,15 +202,19 @@ func publicBindFallbackWarning(requestedAddress string, effectiveAddress string)
 type HMACPublicBindConfirmer struct {
 	Secret []byte
 	Now    func() time.Time
+
+	mu       sync.Mutex
+	consumed map[string]time.Time
 }
 
 type publicBindTokenClaims struct {
+	TokenID   string    `json:"tokenId"`
 	Operation string    `json:"operation"`
 	Address   string    `json:"address"`
 	ExpiresAt time.Time `json:"expiresAt"`
 }
 
-func (c HMACPublicBindConfirmer) ConfirmPublicBind(ctx context.Context, token string, target BindTarget) error {
+func (c *HMACPublicBindConfirmer) ConfirmPublicBind(ctx context.Context, token string, target BindTarget) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -223,14 +232,25 @@ func (c HMACPublicBindConfirmer) ConfirmPublicBind(ctx context.Context, token st
 	if !claims.ExpiresAt.After(now().UTC()) {
 		return ErrInvalidConfirmationToken
 	}
+	if claims.TokenID == "" {
+		return ErrInvalidConfirmationToken
+	}
+	if err := c.consume(claims.TokenID, claims.ExpiresAt, now().UTC()); err != nil {
+		return err
+	}
 	return nil
 }
 
-func (c HMACPublicBindConfirmer) Mint(target BindTarget, expiresAt time.Time) (string, error) {
+func (c *HMACPublicBindConfirmer) Mint(target BindTarget, expiresAt time.Time) (string, error) {
 	if len(c.Secret) < 32 {
 		return "", fmt.Errorf("%w: confirmation secret must be at least 32 bytes", ErrInvalidConfirmationToken)
 	}
+	tokenID, err := newTokenID()
+	if err != nil {
+		return "", err
+	}
 	claims := publicBindTokenClaims{
+		TokenID:   tokenID,
 		Operation: "daemon.public_bind",
 		Address:   target.Address,
 		ExpiresAt: expiresAt.UTC(),
@@ -243,7 +263,7 @@ func (c HMACPublicBindConfirmer) Mint(target BindTarget, expiresAt time.Time) (s
 	return "bindv1." + base64.RawURLEncoding.EncodeToString(payload) + "." + base64.RawURLEncoding.EncodeToString(sig), nil
 }
 
-func (c HMACPublicBindConfirmer) parse(token string) (publicBindTokenClaims, error) {
+func (c *HMACPublicBindConfirmer) parse(token string) (publicBindTokenClaims, error) {
 	if len(c.Secret) < 32 {
 		return publicBindTokenClaims{}, fmt.Errorf("%w: confirmation secret must be at least 32 bytes", ErrInvalidConfirmationToken)
 	}
@@ -268,6 +288,32 @@ func (c HMACPublicBindConfirmer) parse(token string) (publicBindTokenClaims, err
 		return publicBindTokenClaims{}, ErrInvalidConfirmationToken
 	}
 	return claims, nil
+}
+
+func (c *HMACPublicBindConfirmer) consume(tokenID string, expiresAt time.Time, now time.Time) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.consumed == nil {
+		c.consumed = make(map[string]time.Time)
+	}
+	for id, expiry := range c.consumed {
+		if !expiry.After(now) {
+			delete(c.consumed, id)
+		}
+	}
+	if _, ok := c.consumed[tokenID]; ok {
+		return ErrConfirmationTokenUsed
+	}
+	c.consumed[tokenID] = expiresAt
+	return nil
+}
+
+func newTokenID() (string, error) {
+	var b [16]byte
+	if _, err := io.ReadFull(rand.Reader, b[:]); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b[:]), nil
 }
 
 func sign(secret []byte, payload []byte) []byte {

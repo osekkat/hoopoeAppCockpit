@@ -53,7 +53,7 @@ func TestResolveListenDecisionAllowsPublicBindWithRuntimeConfirmation(t *testing
 	if err != nil {
 		t.Fatalf("parse target: %v", err)
 	}
-	confirmer := security.HMACPublicBindConfirmer{
+	confirmer := &security.HMACPublicBindConfirmer{
 		Secret: []byte("0123456789abcdef0123456789abcdef"),
 		Now: func() time.Time {
 			return time.Unix(100, 0).UTC()

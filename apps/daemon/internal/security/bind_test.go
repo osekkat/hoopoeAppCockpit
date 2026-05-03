@@ -132,6 +132,24 @@ func TestHMACPublicBindConfirmerRejectsWrongAddressAndExpiredToken(t *testing.T)
 	}
 }
 
+func TestHMACPublicBindConfirmerConsumesTokenOnce(t *testing.T) {
+	confirmer := testConfirmer(t)
+	target, err := ParseBindTarget("0.0.0.0:8080")
+	if err != nil {
+		t.Fatalf("parse target: %v", err)
+	}
+	token, err := confirmer.Mint(target, mustTime("2026-05-03T20:05:00Z"))
+	if err != nil {
+		t.Fatalf("mint token: %v", err)
+	}
+	if err := confirmer.ConfirmPublicBind(context.Background(), token, target); err != nil {
+		t.Fatalf("first confirm: %v", err)
+	}
+	if err := confirmer.ConfirmPublicBind(context.Background(), token, target); !errors.Is(err, ErrConfirmationTokenUsed) {
+		t.Fatalf("second confirm err = %v, want ErrConfirmationTokenUsed", err)
+	}
+}
+
 func TestParseBindTargetHandlesUnspecifiedHost(t *testing.T) {
 	target, err := ParseBindTarget(":7777")
 	if err != nil {
@@ -142,9 +160,9 @@ func TestParseBindTargetHandlesUnspecifiedHost(t *testing.T) {
 	}
 }
 
-func testConfirmer(t *testing.T) HMACPublicBindConfirmer {
+func testConfirmer(t *testing.T) *HMACPublicBindConfirmer {
 	t.Helper()
-	return HMACPublicBindConfirmer{
+	return &HMACPublicBindConfirmer{
 		Secret: []byte("0123456789abcdef0123456789abcdef"),
 		Now: func() time.Time {
 			return mustTime("2026-05-03T20:00:00Z")
