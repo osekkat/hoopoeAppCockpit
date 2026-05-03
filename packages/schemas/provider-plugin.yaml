@@ -1,0 +1,192 @@
+# provider-plugin.yaml — abstract provider plugin contract per §6.2 + §13.
+#
+# This file documents the 5 typed methods every VPS-provisioning provider
+# plugin must implement. The data shapes (Region, Size, CreateInstanceOpts,
+# Instance, DestroyResult, EstimateCostOpts, CostEstimate, CostLineItem,
+# Manifest) live in `openapi.yaml` so consumers get TS+Go types via the
+# existing codegen. The Go interface that wires the methods to those data
+# types lives in `packages/schemas/go/provider.go`.
+#
+# Per §6.2: Contabo (hp-9fo) is the FIRST plugin not the only-possible
+# shape. Future Hetzner / DigitalOcean / OVH / Linode plugins implement
+# this same interface and slot in without schema work.
+#
+# Mirror discipline (same pattern as tending-actions.yaml + ActionKind):
+# `Manifest.capabilities` declares which of these methods the plugin
+# implements. The daemon refuses to call an undeclared method
+# (returns `provider.method_unsupported` problem+json). Adding a new
+# method requires a coordinated update to:
+#   1. This file (new entry under `methods:` with target/args/result).
+#   2. openapi.yaml (new component schema if it carries new types).
+#   3. packages/schemas/go/provider.go (new method on ProviderPlugin
+#      Go interface).
+#   4. ProviderPluginManifest.capabilities enum in openapi.yaml.
+
+schemaVersion: 1
+mirrorsOpenapiSchema: ProviderPluginManifest
+mirrorsOpenapiYaml: ./openapi.yaml
+mirrorsGoInterface: ./go/provider.go
+
+# Each method below documents:
+#   description      — one-paragraph contract.
+#   capabilityFlag   — value the plugin's Manifest.capabilities must include
+#                      to opt into this method.
+#   billable         — whether invoking this method costs the user money.
+#   destructive      — whether the operation is irreversible (triggers a
+#                      Hoopoe-policy approval before the daemon dispatches).
+#   target           — JSON Schema fragment for path/identifier inputs
+#                      (provider, region, instance).
+#   args             — JSON Schema fragment for the request body (refs into
+#                      openapi.yaml component schemas).
+#   result           — JSON Schema fragment for the response body (refs).
+#   httpEndpoint     — the daemon HTTP wrapper that exposes this method to
+#                      the renderer (mirrors openapi.yaml `paths:`).
+#   loggingFields    — required structured-log fields per §1.4 audit.
+
+methods:
+  listRegions:
+    description: |
+      Enumerate the geographic regions the provider supports. Pure
+      read-only; renderer caches results until the catalog version
+      changes (see CostEstimate.catalogVersion).
+    capabilityFlag: vps.list-regions
+    billable: false
+    destructive: false
+    target:
+      type: object
+      required: [providerId]
+      properties:
+        providerId: { $ref: ./openapi.yaml#/components/schemas/ProviderId }
+    args:
+      type: 'null'
+      description: 'No request body.'
+    result:
+      type: object
+      required: [providerId, items]
+      properties:
+        providerId: { $ref: ./openapi.yaml#/components/schemas/ProviderId }
+        items:
+          type: array
+          items: { $ref: ./openapi.yaml#/components/schemas/ProviderRegion }
+    httpEndpoint: GET /v1/providers/{providerId}/regions
+    loggingFields: [provider, method, durationMs, regionCount, errorClass]
+
+  listSizes:
+    description: |
+      Enumerate the instance sizes available in a specific region. Sizes
+      include the `tier` recommendation per §6.2 (recommended | workable |
+      minimum); the wizard uses `tier == 'recommended'` to preselect.
+    capabilityFlag: vps.list-sizes
+    billable: false
+    destructive: false
+    target:
+      type: object
+      required: [providerId, regionId]
+      properties:
+        providerId: { $ref: ./openapi.yaml#/components/schemas/ProviderId }
+        regionId: { type: string }
+    args:
+      type: 'null'
+    result:
+      type: object
+      required: [providerId, regionId, items]
+      properties:
+        providerId: { $ref: ./openapi.yaml#/components/schemas/ProviderId }
+        regionId: { type: string }
+        items:
+          type: array
+          items: { $ref: ./openapi.yaml#/components/schemas/ProviderSize }
+    httpEndpoint: GET /v1/providers/{providerId}/regions/{regionId}/sizes
+    loggingFields: [provider, region, method, durationMs, sizeCount, errorClass]
+
+  estimateMonthlyCost:
+    description: |
+      Pure-function cost estimate for a (region, size, expected-bandwidth)
+      tuple. Used by the wizard's cost-preview card BEFORE provisioning.
+      Result must include `breakdown[]` summing to `usd` (renderer
+      asserts) and `catalogVersion` so stale estimates can be invalidated
+      cleanly when the provider repriced.
+    capabilityFlag: vps.estimate-cost
+    billable: false
+    destructive: false
+    target:
+      type: object
+      required: [providerId]
+      properties:
+        providerId: { $ref: ./openapi.yaml#/components/schemas/ProviderId }
+    args: { $ref: ./openapi.yaml#/components/schemas/ProviderEstimateCostOpts }
+    result: { $ref: ./openapi.yaml#/components/schemas/ProviderCostEstimate }
+    httpEndpoint: POST /v1/providers/{providerId}/cost-estimate
+    loggingFields: [provider, region, size, method, durationMs, usd, catalogVersion, errorClass]
+
+  createInstance:
+    description: |
+      Provision a new VPS instance. Billable — daemon requires the wizard
+      to surface the cost estimate first. Idempotency-Key is required;
+      retrying with the same key returns the original instance (no double
+      provisioning). Failure leaves NO instance behind on the provider
+      side (plugin contract requirement; if the provider partially
+      created an instance, the plugin must clean up before returning the
+      error).
+    capabilityFlag: vps.create
+    billable: true
+    destructive: false
+    requiresIdempotencyKey: true
+    target:
+      type: object
+      required: [providerId]
+      properties:
+        providerId: { $ref: ./openapi.yaml#/components/schemas/ProviderId }
+    args: { $ref: ./openapi.yaml#/components/schemas/ProviderCreateInstanceOpts }
+    result: { $ref: ./openapi.yaml#/components/schemas/ProviderInstance }
+    httpEndpoint: POST /v1/providers/{providerId}/instances
+    loggingFields:
+      - provider
+      - region
+      - size
+      - method
+      - durationMs
+      - instanceId
+      # sshPubKey is REDACTED to fingerprint by the daemon's logger
+      # (logger pattern id `ssh-pubkey-fingerprint`) — never log raw key.
+      - sshPubKeyFingerprint
+      - usd
+      - errorClass
+
+  destroyInstance:
+    description: |
+      Destroy a VPS instance. Irreversible. Triggers a Hoopoe-policy
+      approval (`policy.provider.destroy`) before the daemon dispatches.
+      Idempotency-Key is required; retrying with the same key returns
+      `ok: true` even if the instance was already gone (the second call
+      is a successful no-op). Provider may continue billing for the
+      partial month — surfaced in the renderer post-destroy summary.
+    capabilityFlag: vps.destroy
+    billable: false      # destruction itself isn't billable; partial-month is
+    destructive: true
+    requiresIdempotencyKey: true
+    requiresApproval: policy.provider.destroy
+    target:
+      type: object
+      required: [providerId, instanceId]
+      properties:
+        providerId: { $ref: ./openapi.yaml#/components/schemas/ProviderId }
+        instanceId: { type: string }
+    args:
+      type: 'null'
+    result: { $ref: ./openapi.yaml#/components/schemas/ProviderDestroyResult }
+    httpEndpoint: DELETE /v1/providers/{providerId}/instances/{instanceId}
+    loggingFields: [provider, instanceId, method, durationMs, ok, providerNotes, errorClass]
+
+# Optional capabilities — declared in Manifest.capabilities but not part of
+# the v1 ProviderPlugin Go interface. Plugins that opt into these expose
+# additional HTTP endpoints in a future bead (Phase 13+).
+optionalCapabilities:
+  - id: vps.snapshot
+    description: 'Take a point-in-time snapshot of an instance for backup/restore.'
+  - id: vps.resize
+    description: 'Change cpuVCores/ramGB/storageGB on an existing instance.'
+  - id: dns.update
+    description: 'Update DNS records (typically post-provisioning A/AAAA).'
+  - id: billing.fetch
+    description: 'Fetch current-month-to-date billing for cost-tracker UI.'
