@@ -6,6 +6,14 @@
 - Test runtime delta: +0s observed; full desktop suite wall time 1.48s
 - Tests still passing: 291/291
 
+## Post-libgbm e2e fixes — p1
+After `libgbm1` was installed on the host, Playwright actually ran (was silently skipping under the `chromiumHostStatus()` guard). Three suites that had shipped this session immediately failed:
+- `tests/e2e/mock-stages.spec.ts:44` — `getByText('GreenBear')` strict-mode violation (two legit UI elements: bead-board agents-joined `<span>` and agent-grid `<strong>` under `aria-label="hoopoe-implementation"`). **ADDRESSED in 072f28f after libgbm1 install unblocked Playwright** (scoped to `getByLabel('hoopoe-implementation').getByText('GreenBear')` — the assertion the test name carries).
+- `tests/e2e/command-palette.spec.ts:48` — input role changed from native `searchbox` to explicit `role="combobox"` in `7fd6fe3` (WAI-ARIA combobox pattern); locator `getByRole("searchbox")` no longer matched. **ADDRESSED in 072f28f after libgbm1 install unblocked Playwright** (locator → `getByRole("combobox", { name: "Search commands" })`).
+- `tests/e2e/command-palette-a11y.spec.ts:56` — same root cause as above; the spec was added in the same `7fd6fe3` commit but shipped with a `searchbox` locator that contradicts its own `role="combobox"` change. **ADDRESSED in 072f28f after libgbm1 install unblocked Playwright**.
+
+Result: `bun run e2e` now reports **7/7 green** across two suites (`desktop-smoke` 3/3 + `hp-j30-desktop-shell` 4/4); `ubs --files <changed>` 0 Critical / 0 Warning / 29 Info. No renderer changes needed — all three failures were test-side locator bugs in code shipped this session.
+
 ## Multi-pass bug hunt — p1
 - Files scanned: 153 (every changed source file in the 81-commit session corpus since `cc20d97`).
 - New findings: CRITICAL 0 / HIGH 0 / MEDIUM 0 / LOW 0 — UBS report combined `Critical 2 / Warning 292 / Info 3437`, but both CRITICALs are intentional security regression fixtures in `packages/fixtures/tests/fixture-fuzz.test.ts:121,329` (synthetic `__proto__: { polluted: true }` payloads asserting the validator rejects prototype pollution), not bugs. Warnings are dominated by the `obj.foo.bar` deep-property-access heuristic, the TS-idiomatic `JSON.parse` in test code, and one false `Listener imbalance` against `{ once: true }` listeners — no behavioural defects.
