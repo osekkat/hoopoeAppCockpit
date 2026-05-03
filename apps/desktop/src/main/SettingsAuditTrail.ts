@@ -106,6 +106,109 @@ export interface SettingsAuditEntry {
 /** Sink interface — write a single audit entry (assumed durable). */
 export type SettingsAuditSink = (entry: SettingsAuditEntry) => void | Promise<void>;
 
+/** Synchronous-only sink. SettingsBridge requires sync semantics so a sink
+ *  failure can synchronously roll back the in-flight setting change before
+ *  any disk write happens (hp-6obn at-most-once delivery contract). Callers
+ *  with async sinks (network logger / DB) must own their own buffering. */
+export type SyncSettingsAuditSink = (entry: SettingsAuditEntry) => void;
+
+/** Defense-in-depth value redactor (hp-6obn + Guardrail 11). Runs against
+ *  `oldValue` / `newValue` strings before they reach the sink. The curated
+ *  `SECURITY_RELEVANT_SETTING_KEYS` list intentionally excludes secret-bearing
+ *  keys (those live in SecretStore), but if a future maintainer ever adds a
+ *  key whose value happens to match a secret pattern, this guard catches it
+ *  before the audit log persists the leak.
+ *
+ *  Pattern coverage mirrors hp-je1p's daemon-side redaction (kept in sync
+ *  by the cross-package drift check). Each pattern returns the replacement
+ *  marker so audit reviewers can see WHICH class fired without reconstructing
+ *  the value. */
+export interface AuditRedactionPattern {
+  readonly id: string;
+  readonly regex: RegExp;
+  readonly replacement: string;
+}
+
+const DEFAULT_AUDIT_REDACTION_PATTERNS: readonly AuditRedactionPattern[] = [
+  // JWT-shaped (header.payload.signature with base64url segments).
+  {
+    id: "jwt",
+    regex: /eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g,
+    replacement: "[redacted-jwt]",
+  },
+  // Hoopoe bearer prefix (used in fixtures + plan.md auth shape).
+  {
+    id: "hoopoe-bearer",
+    regex: /hp-bearer-[A-Za-z0-9_-]{4,}/g,
+    replacement: "[redacted-hoopoe-bearer]",
+  },
+  // Anthropic API keys.
+  { id: "anthropic-key", regex: /sk-ant-[A-Za-z0-9_-]{8,}/g, replacement: "[redacted-anthropic-key]" },
+  // OpenAI keys.
+  { id: "openai-key", regex: /sk-[A-Za-z0-9_-]{20,}/g, replacement: "[redacted-openai-key]" },
+  // Google API keys.
+  { id: "google-key", regex: /AIza[A-Za-z0-9_-]{16,}/g, replacement: "[redacted-google-key]" },
+  // AWS access key id.
+  { id: "aws-access", regex: /AKIA[A-Z0-9]{16}/g, replacement: "[redacted-aws-access]" },
+  // GitHub PAT.
+  { id: "github-pat", regex: /ghp_[A-Za-z0-9]{20,}/g, replacement: "[redacted-github-pat]" },
+  // PEM block headers.
+  {
+    id: "pem-block",
+    regex: /-----BEGIN [A-Z ]+ (PRIVATE KEY|CERTIFICATE)-----[\s\S]*?-----END [A-Z ]+ (PRIVATE KEY|CERTIFICATE)-----/g,
+    replacement: "[redacted-pem-block]",
+  },
+  // 12-char Crockford pairing token (per plan.md §5.2).
+  {
+    id: "pairing-token",
+    regex: /\b[ABCDEFGHJKMNPQRSTVWXYZ0-9]{12}\b/g,
+    replacement: "[redacted-pairing-token]",
+  },
+];
+
+/** Run a value through the redactor. Recurses into objects/arrays; passthrough
+ *  for booleans/numbers/null. */
+export function redactAuditValue(
+  value: unknown,
+  patterns: readonly AuditRedactionPattern[] = DEFAULT_AUDIT_REDACTION_PATTERNS,
+): unknown {
+  if (typeof value === "string") {
+    let out = value;
+    for (const pattern of patterns) {
+      out = out.replace(pattern.regex, pattern.replacement);
+    }
+    return out;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => redactAuditValue(item, patterns));
+  }
+  if (value !== null && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      out[k] = redactAuditValue(v, patterns);
+    }
+    return out;
+  }
+  return value;
+}
+
+/** Deep-redact an audit entry's `oldValue` and `newValue`. Pure; the result
+ *  is a fresh object — the input entry is not mutated. */
+export function redactAuditEntry(
+  entry: SettingsAuditEntry,
+  patterns: readonly AuditRedactionPattern[] = DEFAULT_AUDIT_REDACTION_PATTERNS,
+): SettingsAuditEntry {
+  return {
+    ...entry,
+    oldValue: redactAuditValue(entry.oldValue, patterns),
+    newValue: redactAuditValue(entry.newValue, patterns),
+  };
+}
+
+export const auditRedactionInternalsForTesting = {
+  patterns: DEFAULT_AUDIT_REDACTION_PATTERNS,
+};
+
 export interface AuditChangeOptions {
   /** Override the clock (tests). Default: `() => new Date().toISOString()`. */
   now?: () => string;
@@ -192,7 +295,7 @@ export function createInMemoryAuditSink(): {
   };
 }
 
-function readDottedKey(obj: Record<string, unknown>, key: string): unknown {
+export function readDottedKey(obj: Record<string, unknown>, key: string): unknown {
   const parts = key.split(".");
   let cur: unknown = obj;
   for (const p of parts) {
@@ -200,6 +303,10 @@ function readDottedKey(obj: Record<string, unknown>, key: string): unknown {
     cur = (cur as Record<string, unknown>)[p];
   }
   return cur;
+}
+
+export function deepEqualForAudit(a: unknown, b: unknown): boolean {
+  return deepEqual(a, b);
 }
 
 function deepEqual(a: unknown, b: unknown): boolean {

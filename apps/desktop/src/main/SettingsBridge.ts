@@ -36,6 +36,15 @@ import {
   stripDefaults as stripDefaultsImpl,
   writeFileStringAtomically,
 } from "../vendored/t3code/settings/index.ts";
+import {
+  SECURITY_RELEVANT_SETTING_KEYS,
+  deepEqualForAudit,
+  readDottedKey,
+  redactAuditEntry,
+  type SettingsActor,
+  type SettingsAuditEntry,
+  type SyncSettingsAuditSink,
+} from "./SettingsAuditTrail.ts";
 
 export const SETTINGS_SCHEMA_VERSION = 1;
 
@@ -123,12 +132,71 @@ export interface SettingsChangeEvent {
 
 export type SettingsSubscriber = (event: SettingsChangeEvent) => void;
 
+/** Per-call options for `setUserSettings` / `setProjectSettings` (hp-6obn).
+ *  IPC-driven writes pass an actor identifying the caller (e.g.
+ *  `{ kind: "user", source: "ui", id: "renderer-window-1" }`); migration paths
+ *  pass `{ kind: "system", source: "migration" }`. When omitted the bridge's
+ *  `defaultActor` is stamped — track those down and add explicit actors. */
+export interface SettingsWriteOptions {
+  readonly actor?: SettingsActor;
+}
+
 export interface SettingsBridgeLogger {
   readonly warn: (message: string, meta?: Record<string, unknown>) => void;
   readonly info: (message: string, meta?: Record<string, unknown>) => void;
+  /** Emitted as a Critical when an audit-sink failure surfaces post-hot-reload
+   *  — the disk has already changed and we cannot roll back, so the audit gap
+   *  must be loud (hp-6obn at-most-once delivery contract). Optional: defaults
+   *  to delegating to `warn` so existing callers don't need to update. */
+  readonly critical?: (message: string, meta?: Record<string, unknown>) => void;
 }
 
 const noopLogger: SettingsBridgeLogger = { warn() {}, info() {} };
+
+/** Source-of-change marker on every audit entry's actor (hp-6obn contract).
+ *  The actor's `source` field captures HOW the change reached SettingsBridge
+ *  — UI click vs IPC vs migration vs the file-watcher hot-reload path. */
+export const SETTINGS_CHANGE_SOURCE = {
+  ui: "ui",
+  programmatic: "programmatic",
+  migration: "migration",
+  ipc: "ipc",
+  hotReload: "hot-reload",
+} as const;
+export type SettingsChangeSource =
+  (typeof SETTINGS_CHANGE_SOURCE)[keyof typeof SETTINGS_CHANGE_SOURCE];
+
+/** Default actor used when no per-call override is provided. The bridge is
+ *  the caller of last resort: anything reaching this actor came in through
+ *  a path that didn't propagate identity (which is itself a finding). */
+const DEFAULT_AUDIT_ACTOR: SettingsActor = {
+  kind: "system",
+  id: "settings-bridge",
+  source: SETTINGS_CHANGE_SOURCE.programmatic,
+};
+
+export interface SettingsAuditFailure {
+  readonly entry: SettingsAuditEntry;
+  readonly tier: SettingsTier;
+  readonly cause: Error;
+}
+
+/** Thrown by setUserSettings / setProjectSettings when the audit sink rejects
+ *  AND the disk write hasn't happened yet. Callers handle this distinctly
+ *  from disk I/O errors so the renderer can surface "audit pipeline broken"
+ *  vs "disk full". */
+export class SettingsAuditWriteError extends Error {
+  override readonly cause: Error;
+  readonly attemptedEntry: SettingsAuditEntry;
+  readonly tier: SettingsTier;
+  constructor(failure: SettingsAuditFailure) {
+    super(`Settings audit sink rejected entry for key=${failure.entry.key}: ${failure.cause.message}`);
+    this.name = "SettingsAuditWriteError";
+    this.cause = failure.cause;
+    this.attemptedEntry = failure.entry;
+    this.tier = failure.tier;
+  }
+}
 
 const MAX_PENDING_PER_SUBSCRIBER = 64;
 const HOT_RELOAD_DEBOUNCE_MS = 100;
@@ -151,14 +219,32 @@ export class SettingsBridge {
   private projectReloadTimer: NodeJS.Timeout | null = null;
   private hotReloadCount = 0;
 
+  private readonly auditSink: SyncSettingsAuditSink | null;
+  private readonly defaultActor: SettingsActor;
+  private readonly nowImpl: () => string;
+
   constructor(input: {
     readonly paths: SettingsBridgePaths;
     readonly relaunch?: (reason: string) => void;
     readonly logger?: SettingsBridgeLogger;
+    /** Sink for security-relevant `setting_changed` audit entries (hp-6obn).
+     *  When omitted, audit is silently disabled — appropriate for tests +
+     *  contexts that don't yet wire a durable audit log. Production
+     *  composition root MUST provide one (default: append-only JSONL at
+     *  `<userFile dir>/audit.jsonl`). */
+    readonly auditSink?: SyncSettingsAuditSink;
+    /** Default actor stamped onto every audit entry (hp-6obn). Overridable
+     *  per-call by passing `options.actor` to setUserSettings / setProjectSettings. */
+    readonly defaultActor?: SettingsActor;
+    /** Test seam — clock for audit `ts` field. Defaults to UTC ISO 8601 from the wall clock. */
+    readonly now?: () => string;
   }) {
     this.paths = input.paths;
     this.logger = input.logger ?? noopLogger;
     this.relaunchImpl = input.relaunch ?? defaultRelaunch;
+    this.auditSink = input.auditSink ?? null;
+    this.defaultActor = input.defaultActor ?? DEFAULT_AUDIT_ACTOR;
+    this.nowImpl = input.now ?? (() => new Date().toISOString());
     this.userPartial = readVersionedPartial(this.paths.userFile, this.logger, "user");
     this.projectPartial = this.paths.projectFile
       ? readVersionedPartial(this.paths.projectFile, this.logger, "project")
@@ -178,8 +264,22 @@ export class SettingsBridge {
     return this.projectPartial;
   }
 
-  setUserSettings(partial: DeepPartial<HoopoeSettings>): void {
-    this.userPartial = mergeDeep(this.userPartial, partial);
+  setUserSettings(
+    partial: DeepPartial<HoopoeSettings>,
+    options: SettingsWriteOptions = {},
+  ): void {
+    const nextPartial = mergeDeep(this.userPartial, partial);
+    const nextResolved = mergeDeep(
+      mergeDeep(DEFAULT_HOOPOE_SETTINGS as DeepPartial<HoopoeSettings>, nextPartial),
+      this.projectPartial,
+    ) as HoopoeSettings;
+
+    // Pre-flight audit (hp-6obn at-most-once contract): if the sink rejects,
+    // throw before any disk write or in-memory commit so the user-visible
+    // setting is unchanged. Hot-reload path can't roll back; see reloadNow.
+    this.auditDelta(this.resolvedSnapshot, nextResolved, "user", options.actor);
+
+    this.userPartial = nextPartial;
     const stripped =
       stripDefaultsImpl(this.userPartial, DEFAULT_HOOPOE_SETTINGS) ?? {};
     const persisted = ensureSchemaVersion(stripped);
@@ -187,14 +287,25 @@ export class SettingsBridge {
       filePath: this.paths.userFile,
       contents: `${JSON.stringify(persisted, null, 2)}\n`,
     });
-    this.recompileAndBroadcast("user");
+    this.recompileAndBroadcastNoAudit(nextResolved, "user");
   }
 
-  setProjectSettings(partial: DeepPartial<HoopoeSettings>): void {
+  setProjectSettings(
+    partial: DeepPartial<HoopoeSettings>,
+    options: SettingsWriteOptions = {},
+  ): void {
     if (!this.paths.projectFile) {
       throw new Error("project settings file path not configured");
     }
-    this.projectPartial = mergeDeep(this.projectPartial, partial);
+    const nextPartial = mergeDeep(this.projectPartial, partial);
+    const nextResolved = mergeDeep(
+      mergeDeep(DEFAULT_HOOPOE_SETTINGS as DeepPartial<HoopoeSettings>, this.userPartial),
+      nextPartial,
+    ) as HoopoeSettings;
+
+    this.auditDelta(this.resolvedSnapshot, nextResolved, "project", options.actor);
+
+    this.projectPartial = nextPartial;
     const stripped =
       stripDefaultsImpl(this.projectPartial, DEFAULT_HOOPOE_SETTINGS) ?? {};
     const persisted = ensureSchemaVersion(stripped);
@@ -202,7 +313,7 @@ export class SettingsBridge {
       filePath: this.paths.projectFile,
       contents: `${JSON.stringify(persisted, null, 2)}\n`,
     });
-    this.recompileAndBroadcast("project");
+    this.recompileAndBroadcastNoAudit(nextResolved, "project");
   }
 
   /** Trigger a desktop relaunch — invoked automatically when a write
@@ -255,7 +366,9 @@ export class SettingsBridge {
     }
   }
 
-  /** Test seam — synchronous reload of a single tier. */
+  /** Test seam — synchronous reload of a single tier. Hot-reload path: the
+   *  disk has already been mutated externally (FSWatcher fired), so audit
+   *  failures cannot roll back the change — they surface as Critical. */
   reloadNow(tier: SettingsTier): void {
     this.hotReloadCount += 1;
     const filePath = tier === "user" ? this.paths.userFile : this.paths.projectFile;
@@ -265,7 +378,28 @@ export class SettingsBridge {
     } else {
       this.projectPartial = readVersionedPartial(filePath, this.logger, "project");
     }
-    this.recompileAndBroadcast(tier);
+    const previous = this.resolvedSnapshot;
+    const next = this.computeResolved();
+    const hotReloadActor: SettingsActor = {
+      kind: "system",
+      id: "settings-bridge",
+      source: SETTINGS_CHANGE_SOURCE.hotReload,
+    };
+    try {
+      this.auditDelta(previous, next, tier, hotReloadActor);
+    } catch (error) {
+      // Disk has already mutated. We CANNOT roll back. Surface loud.
+      const cause = error instanceof Error ? error.message : String(error);
+      const critical = this.logger.critical ?? this.logger.warn;
+      critical("settings.audit-failed-post-hot-reload", {
+        tier,
+        cause,
+        guidance:
+          "Audit sink rejected a hot-reload audit entry; the change is on disk but unaudited. " +
+          "Investigate the audit sink before persisting more security-relevant settings.",
+      });
+    }
+    this.recompileAndBroadcastNoAudit(next, tier);
   }
 
   /** Test seam — exposes scheduleReload to deterministically test the
@@ -338,9 +472,12 @@ export class SettingsBridge {
     return fully as HoopoeSettings;
   }
 
-  private recompileAndBroadcast(tier: SettingsTier): void {
+  /** Push a recomputed resolved snapshot to subscribers. Caller is
+   *  responsible for any audit work BEFORE invoking this — set* paths
+   *  call `auditDelta` first; reloadNow audits opportunistically with
+   *  a Critical on failure. */
+  private recompileAndBroadcastNoAudit(next: HoopoeSettings, tier: SettingsTier): void {
     const previous = this.resolvedSnapshot;
-    const next = this.computeResolved();
     this.resolvedSnapshot = next;
     const changedKeys = diffKeyPaths(previous, next);
     const relaunchTriggered = changedKeys.some((key) => RELAUNCH_KEYS.has(key));
@@ -353,6 +490,50 @@ export class SettingsBridge {
       changedKeys,
       relaunchTriggered,
     });
+  }
+
+  /** hp-6obn: walk SECURITY_RELEVANT_SETTING_KEYS, build a redacted audit
+   *  entry per changed key, and send to the sink synchronously. Throws on
+   *  the first sink rejection so the calling set*Settings can roll back
+   *  before any disk write. No-op when no audit sink is wired. */
+  private auditDelta(
+    before: HoopoeSettings,
+    after: HoopoeSettings,
+    tier: SettingsTier,
+    actorOverride?: SettingsActor,
+  ): void {
+    if (!this.auditSink) return;
+    const actor = actorOverride ?? this.defaultActor;
+    const ts = this.nowImpl();
+    const beforeRecord = before as unknown as Record<string, unknown>;
+    const afterRecord = after as unknown as Record<string, unknown>;
+    for (const key of SECURITY_RELEVANT_SETTING_KEYS) {
+      const oldValue = readDottedKey(beforeRecord, key);
+      const newValue = readDottedKey(afterRecord, key);
+      if (deepEqualForAudit(oldValue, newValue)) continue;
+      const rawEntry: SettingsAuditEntry = {
+        entry: "setting_changed",
+        key,
+        oldValue,
+        newValue,
+        actor,
+        tier,
+        ts,
+      };
+      const redacted = redactAuditEntry(rawEntry);
+      try {
+        this.auditSink(redacted);
+      } catch (error) {
+        const cause = error instanceof Error ? error : new Error(String(error));
+        const critical = this.logger.critical ?? this.logger.warn;
+        critical("settings.audit-sink-rejected", {
+          key,
+          tier,
+          cause: cause.message,
+        });
+        throw new SettingsAuditWriteError({ entry: redacted, tier, cause });
+      }
+    }
   }
 
   private broadcast(event: SettingsChangeEvent): void {
