@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hoopoe.local/conformance/jsm.schema.json",
+  "title": "jsm normalized adapter output",
+  "type": "object",
+  "required": ["tool", "source", "state", "exit", "argv", "capabilities", "payload"],
+  "properties": {
+    "tool": { "const": "jsm" },
+    "source": { "enum": ["fixture", "local"] },
+    "state": { "type": "string" },
+    "exit": { "type": "integer" },
+    "argv": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "capabilities": { "type": "object" },
+    "payload": {
+      "type": "object",
+      "required": ["commandAccepted"],
+      "properties": {
+        "commandAccepted": { "type": "boolean" },
+        "skills": { "anyOf": [{ "type": "array" }, { "type": "null" }] },
+        "workspace": { "anyOf": [{ "type": "string" }, { "type": "null" }] }
+      }
+    }
+  }
+}

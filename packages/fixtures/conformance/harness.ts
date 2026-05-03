@@ -13,6 +13,20 @@ export const CONFORMANCE_TOOLS = [
   "caam",
   "dcg",
   "caut",
+  // hp-8a8: §18.3 contract-test scope extended to the remaining adapters.
+  // `health` is the umbrella adapter; per-language `health_<lang>` split
+  // is deferred until the real-VPS pinning bead lands per-language
+  // fixtures (the capability registry already namespaces `health_<lang>`
+  // per hp-r33).
+  "health",
+  "casr",
+  "pt",
+  "srp",
+  "sbh",
+  "ubs",
+  "jsm",
+  "jfp",
+  "oracle",
 ] as const;
 
 export type ConformanceTool = (typeof CONFORMANCE_TOOLS)[number];
@@ -120,6 +134,17 @@ const EXPECTED_FINDING_IDS: Record<ConformanceTool, readonly string[]> = {
   caam: ["caam.capability.unsatisfied.caam.accounts.list"],
   dcg: [],
   caut: ["caut.capability.missing.caut.usage.snapshot"],
+  // hp-8a8: stub-fixture adapters carry no declared capabilities yet, so
+  // no capability rules fire and no drift is expected.
+  health: [],
+  casr: [],
+  pt: [],
+  srp: [],
+  sbh: [],
+  ubs: [],
+  jsm: [],
+  jfp: [],
+  oracle: [],
 };
 
 function schemaPath(tool: ConformanceTool): string {
@@ -334,6 +359,48 @@ function normalizeOutput(tool: ConformanceTool, envelope: GoldenEnvelope, source
           : null,
       };
       break;
+    // hp-8a8: stub-shape adapters share a uniform normalized payload so
+    // the schema-validator runs against a stable shape regardless of how
+    // sparse the underlying fixture is (most are `{}` stdoutJson today;
+    // realistic captures will fill in stderr/stdout text).
+    case "casr":
+    case "pt":
+    case "srp":
+    case "sbh":
+    case "jfp":
+    case "oracle":
+    case "health":
+      payload = {
+        commandAccepted: envelope.exit === 0,
+        stdoutJson: envelope.stdoutJson ?? null,
+        stdoutText: envelope.stdoutText ?? "",
+        stderrText: envelope.stderrText ?? "",
+      };
+      break;
+    case "ubs": {
+      const text = `${envelope.stderrText ?? ""}\n${envelope.stdoutText ?? ""}`;
+      payload = {
+        commandAccepted: envelope.exit === 0,
+        helpBanner: text.includes("Usage: ubs"),
+        stderrText: envelope.stderrText ?? "",
+      };
+      break;
+    }
+    case "jsm": {
+      const json = isObject(envelope.stdoutJson) ? envelope.stdoutJson : null;
+      const skills = Array.isArray((json as { skills?: unknown } | null)?.skills)
+        ? ((json as { skills: unknown }).skills as unknown[])
+        : null;
+      const workspace = typeof (json as { workspace?: unknown } | null)?.workspace === "string"
+        ? ((json as { workspace: string }).workspace)
+        : null;
+      payload = {
+        commandAccepted: envelope.exit === 0,
+        skills,
+        workspace,
+      };
+      break;
+    }
   }
 
   return {
@@ -503,6 +570,15 @@ function capabilityFindings(tool: ConformanceTool, normalized: NormalizedOutput)
   }
   if (tool === "caut" && !caps["caut.usage.snapshot"]) {
     findings.push(finding(tool, "caut.capability.missing.caut.usage.snapshot", "caut.usage.snapshot capability is absent from the stub fixture", "caut.md"));
+  }
+  // hp-8a8: realistic-fixture rules. `ubs.scan` ok requires the help
+  // banner in the captured stream so we know the binary actually ran;
+  // `jsm.skill.list` ok requires `skills[]` in the JSON output.
+  if (tool === "ubs" && capOk("ubs.scan") && normalized.payload.helpBanner !== true) {
+    findings.push(finding(tool, "ubs.capability.unsatisfied.ubs.scan", "ubs.scan ok requires 'Usage: ubs' banner in stderr/stdout", "ubs.md"));
+  }
+  if (tool === "jsm" && capOk("jsm.skill.list") && !Array.isArray(normalized.payload.skills)) {
+    findings.push(finding(tool, "jsm.capability.unsatisfied.jsm.skill.list", "jsm.skill.list ok requires skills[] in stdout JSON", "jsm.md"));
   }
   return findings;
 }
