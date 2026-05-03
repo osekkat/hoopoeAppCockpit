@@ -191,7 +191,8 @@ jobs:
             echo "macOS signing and notarization enabled."
             args+=(--signed)
           else
-            echo "macOS signing disabled; missing one or more Apple signing secrets."
+            echo "::error::macOS signing and notarization secrets are required for release artifacts."
+            exit 1
           fi
 
           bun scripts/build-desktop-artifact.ts "${args[@]}"

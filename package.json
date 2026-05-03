@@ -25,6 +25,7 @@
     "e2e:desktop:phase1": "bun run --cwd apps/desktop e2e:phase1",
     "typecheck": "turbo run typecheck",
     "test": "bun run test:provider-sdks && bun run test:renderer-isolation && bun run test:codex-shape-scrub && turbo run test",
+    "test:desktop:release": "bun test apps/desktop/tests/release/*.test.ts",
     "test:provider-sdks": "bun test scripts/providerlint/check-provider-sdks.test.ts",
     "test:renderer-isolation": "bun test scripts/rendererlint/check-renderer-isolation.test.ts",
     "test:codex-shape-scrub": "bun test scripts/codex-shape-scrub/check-codex-shape-scrub.test.ts",

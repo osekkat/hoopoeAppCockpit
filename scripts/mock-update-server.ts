@@ -77,13 +77,27 @@ async function isServableFile(rootRealPath: string, filePath: string) {
 }
 
 async function serveFile(response: http.ServerResponse, filePath: string) {
-  response.writeHead(200);
+  response.writeHead(200, { "content-type": contentTypeFor(filePath) });
   await new Promise<void>((resolve, reject) => {
     const stream = createReadStream(filePath);
     stream.on("error", reject);
     stream.on("end", resolve);
     stream.pipe(response);
   });
+}
+
+function contentTypeFor(filePath: string) {
+  switch (path.extname(filePath).toLowerCase()) {
+    case ".json":
+      return "application/json; charset=utf-8";
+    case ".yml":
+    case ".yaml":
+      return "application/yaml; charset=utf-8";
+    case ".dmg":
+      return "application/x-apple-diskimage";
+    default:
+      return "application/octet-stream";
+  }
 }
 
 async function main() {

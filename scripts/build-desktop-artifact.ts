@@ -4,6 +4,7 @@
 
 import { constants as fsConstants } from "node:fs";
 import { access, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -23,6 +24,7 @@ type BuildOptions = {
   signed: boolean;
   verbose: boolean;
   mockUpdates: boolean;
+  mockArtifact: boolean;
   mockUpdateServerPort?: number;
 };
 
@@ -54,6 +56,7 @@ function usage() {
     "  --signed                            Enable signing/notarization config.",
     "  --verbose                           Stream child command stdout.",
     "  --mock-updates                      Use a generic mock update server publisher.",
+    "  --mock-artifact                     Emit a deterministic DMG-shaped artifact + update manifests instead of invoking electron-builder.",
     "  --mock-update-server-port <port>     Mock update server port. Defaults to 3000.",
   ].join("\n");
 }
@@ -184,6 +187,8 @@ function resolveOptions(): BuildOptions {
     signed: readBooleanOption(parsed, "signed") ?? parseBooleanEnv("HOOPOE_DESKTOP_SIGNED"),
     verbose: readBooleanOption(parsed, "verbose") ?? parseBooleanEnv("HOOPOE_DESKTOP_VERBOSE"),
     mockUpdates,
+    mockArtifact:
+      readBooleanOption(parsed, "mock-artifact") ?? parseBooleanEnv("HOOPOE_DESKTOP_MOCK_ARTIFACT"),
     mockUpdateServerPort: parsePort(
       readStringOption(parsed, "mock-update-server-port") ??
         process.env.HOOPOE_DESKTOP_MOCK_UPDATE_SERVER_PORT,
@@ -254,6 +259,7 @@ function resolveCatalogDependencies(
   return Object.fromEntries(
     Object.entries(dependencies)
       .filter(([name]) => name !== "electron")
+      .filter(([, spec]) => !spec.startsWith("workspace:"))
       .map(([name, spec]) => {
         if (!spec.startsWith("catalog:")) return [name, spec];
         const key = spec.slice("catalog:".length).trim() || name;
@@ -348,6 +354,85 @@ function createBuildConfig(options: BuildOptions, productName: string) {
   return buildConfig;
 }
 
+function createSha512(bytes: Buffer) {
+  return createHash("sha512").update(bytes).digest("base64");
+}
+
+async function writeMockReleaseArtifacts(options: BuildOptions, version: string) {
+  const artifactName = `Hoopoe-${version}-${options.arch}.dmg`;
+  const artifactPath = path.join(options.outputDir, artifactName);
+  const artifactBytes = Buffer.from(
+    [
+      "Hoopoe mock DMG artifact",
+      `version=${version}`,
+      `platform=${options.platform}`,
+      `arch=${options.arch}`,
+      "notarization=stub",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  const sha512 = createSha512(artifactBytes);
+  const size = artifactBytes.byteLength;
+  const releaseDate = new Date(0).toISOString();
+
+  const signedPayload = JSON.stringify({
+    version,
+    file: artifactName,
+    sha512,
+    size,
+    notarization: "stub",
+  });
+  const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+  const signature = sign(null, Buffer.from(signedPayload), privateKey).toString("base64");
+  const publicKeyPem = publicKey.export({ type: "spki", format: "pem" }).toString();
+
+  await mkdir(options.outputDir, { recursive: true });
+  await writeFile(artifactPath, artifactBytes);
+  await writeFile(
+    path.join(options.outputDir, "latest-mac.yml"),
+    [
+      `version: ${version}`,
+      "files:",
+      `  - url: ${artifactName}`,
+      `    sha512: ${sha512}`,
+      `    size: ${size}`,
+      `path: ${artifactName}`,
+      `sha512: ${sha512}`,
+      `releaseDate: ${releaseDate}`,
+      "",
+    ].join("\n"),
+  );
+  await writeFile(
+    path.join(options.outputDir, "update.json"),
+    `${JSON.stringify(
+      {
+        version,
+        channel: resolveUpdateChannel(version),
+        artifact: {
+          file: artifactName,
+          sha512,
+          size,
+          url: artifactName,
+        },
+        notarization: {
+          mode: "stub",
+          status: "accepted",
+          authority: "hp-2ae3 mock acceptance",
+        },
+        signature: {
+          algorithm: "ed25519",
+          publicKeyPem,
+          signedPayload,
+          value: signature,
+        },
+      },
+      null,
+      2,
+    )}\n`,
+  );
+}
+
 async function stageDirectory(source: string, target: string) {
   if (!(await exists(source))) return;
   await mkdir(target, { recursive: true });
@@ -400,7 +485,10 @@ async function stageApp(options: BuildOptions) {
   const catalog = rootPackage.workspaces?.catalog ?? {};
   const dependencies = resolveCatalogDependencies(desktopPackage.dependencies, catalog);
   const electronVersion =
-    desktopPackage.devDependencies?.electron ?? catalog.electron ?? process.env.ELECTRON_VERSION;
+    desktopPackage.devDependencies?.electron ??
+    desktopPackage.dependencies?.electron ??
+    catalog.electron ??
+    process.env.ELECTRON_VERSION;
   if (!electronVersion) {
     throw new Error("electron version is missing from apps/desktop package.json or catalog");
   }
@@ -427,8 +515,14 @@ async function stageApp(options: BuildOptions) {
 async function main() {
   const options = resolveOptions();
   const { stageDir } = await stageApp(options);
+  const stagePackage = await readJsonFile<{ version?: string }>(path.join(stageDir, "package.json"));
 
   try {
+    if (options.mockArtifact) {
+      await writeMockReleaseArtifacts(options, stagePackage.version ?? options.version ?? "0.0.0");
+      return;
+    }
+
     await run("bun", ["install", "--production"], stageDir, options.verbose);
     await run(
       "bunx",
@@ -439,8 +533,6 @@ async function main() {
         `--${options.arch}`,
         "--publish",
         "never",
-        "--config",
-        "package.json",
       ],
       stageDir,
       options.verbose,
