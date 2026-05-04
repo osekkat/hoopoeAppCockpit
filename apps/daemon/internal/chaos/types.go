@@ -29,6 +29,12 @@ const (
 	FaultRateLimit               FaultKind = "rate_limit"
 	FaultGitPushFailure          FaultKind = "git_push_failure"
 	FaultMissingTool             FaultKind = "missing_tool"
+	FaultSleepWakeActiveSwarm    FaultKind = "sleep_wake_active_swarm"
+	FaultSleepWakePlanningOracle FaultKind = "sleep_wake_planning_oracle"
+	FaultSleepWakeBuildStream    FaultKind = "sleep_wake_build_stream"
+	FaultSleepWakeActionRecovery FaultKind = "sleep_wake_action_recovery"
+	FaultSleepWakePromptCacheTTL FaultKind = "sleep_wake_prompt_cache_ttl"
+	FaultSleepWakeRepeated       FaultKind = "sleep_wake_repeated"
 )
 
 var BaseFaults = []FaultKind{
@@ -47,6 +53,15 @@ var AdditionalFaults = []FaultKind{
 	FaultRateLimit,
 	FaultGitPushFailure,
 	FaultMissingTool,
+}
+
+var SleepWakeFaults = []FaultKind{
+	FaultSleepWakeActiveSwarm,
+	FaultSleepWakePlanningOracle,
+	FaultSleepWakeBuildStream,
+	FaultSleepWakeActionRecovery,
+	FaultSleepWakePromptCacheTTL,
+	FaultSleepWakeRepeated,
 }
 
 type Scenario struct {
@@ -225,6 +240,42 @@ func DefaultScenarios() []Scenario {
 			Name:        "Missing tool",
 			Description: "A missing required tool degrades the capability registry and blocks dependent work.",
 			Run:         runMissingTool,
+		},
+		{
+			Kind:        FaultSleepWakeActiveSwarm,
+			Name:        "macOS sleep during active swarm",
+			Description: "VPS-side swarm events continue during host sleep and replay idempotently after wake within the reconnect SLO.",
+			Run:         runSleepWakeActiveSwarm,
+		},
+		{
+			Kind:        FaultSleepWakePlanningOracle,
+			Name:        "macOS sleep during planning Oracle round",
+			Description: "Mac-resident Oracle work pauses cleanly while VPS-resident planning candidates continue with atomic artifacts.",
+			Run:         runSleepWakePlanningOracle,
+		},
+		{
+			Kind:        FaultSleepWakeBuildStream,
+			Name:        "macOS sleep during build log stream",
+			Description: "Persisted build logs resume by byte offset after wake without duplicate chunks or stale terminal state.",
+			Run:         runSleepWakeBuildStream,
+		},
+		{
+			Kind:        FaultSleepWakeActionRecovery,
+			Name:        "macOS sleep during action postcondition verification",
+			Description: "Tending actions resume postcondition verification after wake and retain host lifecycle audit evidence.",
+			Run:         runSleepWakeActionRecovery,
+		},
+		{
+			Kind:        FaultSleepWakePromptCacheTTL,
+			Name:        "macOS sleep across prompt-cache TTL",
+			Description: "Planning candidates crossing the prompt-cache boundary remain checkpointed or complete with atomic artifacts.",
+			Run:         runSleepWakePromptCacheTTL,
+		},
+		{
+			Kind:        FaultSleepWakeRepeated,
+			Name:        "Repeated short macOS sleeps",
+			Description: "Repeated wake cycles preserve bearer credentials, amortize sequence replay, and avoid connection-slot leaks.",
+			Run:         runSleepWakeRepeated,
 		},
 	}
 }

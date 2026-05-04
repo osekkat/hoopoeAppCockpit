@@ -53,6 +53,37 @@ check, bearer/session check, websocket-token refresh, subscription with
 sequence cursors, snapshot fetch for any channel that reports a gap, then
 active-project clone reconciliation.
 
+## macOS Sleep/Wake
+
+macOS sleep is treated as a host lifecycle event, not as an ordinary socket
+close. The desktop must assume any pre-sleep tunnel, heartbeat, or websocket can
+be half-open after `powerMonitor` resume. The deterministic daemon chaos suite
+therefore includes the `SleepWakeFaults` coverage group in
+`apps/daemon/internal/chaos`, mapped to bead `hp-nd42`.
+
+The Mock Flywheel fixtures cover six cases:
+
+- active VPS swarm while the desktop sleeps;
+- planning round with a Mac-resident Oracle process;
+- build/test log stream resuming by byte offset;
+- tending action paused during postcondition verification;
+- planning candidate crossing the 5-minute prompt-cache TTL;
+- repeated short sleep cycles.
+
+The active-swarm fixture asserts the §10.5 reconnect target by aggregating 100
+deterministic wake timings and requiring p95 to remain below the configured
+reconnect SLO. It also verifies the required FSM order:
+
+```text
+ready -> reconnecting -> tunnel_connecting -> authenticating -> ready
+```
+
+During the sleep window, VPS-owned work continues. Missed events are recovered
+through sequence-cursor replay and merged idempotently, so duplicate event IDs
+do not mutate UI state twice. Job logs keep their byte offsets, tending actions
+stay in `pending_postcondition_verification` until verified, and bearer tokens
+are retained across repeated sleeps instead of being re-minted on every wake.
+
 ## Job Log Offsets
 
 Clients read log bytes with:

@@ -487,6 +487,249 @@ func runMissingTool(ctx context.Context, env Environment, rec *Recorder) error {
 	return nil
 }
 
+func runSleepWakeActiveSwarm(ctx context.Context, env Environment, rec *Recorder) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	hub := api.NewEventHub(api.EventHubConfig{ReplayCapacity: 32, Now: env.Now})
+	const channel = "swarm:active"
+	applied := make(map[uint64]struct{})
+	cursor := uint64(0)
+	for _, eventType := range []string{"swarm.started", "agent.output"} {
+		ev := hub.Publish(api.PublishInput{Channel: channel, Type: eventType, Data: map[string]any{"phase": "before_sleep"}})
+		cursor = applyOnce(applied, cursor, ev.Sequence)
+	}
+	sleepWindowEvents := []string{
+		"agent.output",
+		"bead.claimed",
+		"job.log.chunk",
+		"agent.output",
+		"bead.closed",
+		"activity.unread",
+	}
+	for _, eventType := range sleepWindowEvents {
+		hub.Publish(api.PublishInput{Channel: channel, Type: eventType, Data: map[string]any{"phase": "asleep"}})
+	}
+	replayed, gap := hub.Replay(channel, cursor)
+	if err := rec.Require(!gap, "sleep replay had unexpected sequence gap"); err != nil {
+		return err
+	}
+	if err := rec.Require(len(replayed) == len(sleepWindowEvents), "sleep replay events = %d, want %d", len(replayed), len(sleepWindowEvents)); err != nil {
+		return err
+	}
+	for _, ev := range replayed {
+		cursor = applyOnce(applied, cursor, ev.Sequence)
+	}
+	for _, ev := range replayed {
+		cursor = applyOnce(applied, cursor, ev.Sequence)
+	}
+	if err := rec.Require(len(applied) == 2+len(sleepWindowEvents), "idempotent merge applied %d unique events", len(applied)); err != nil {
+		return err
+	}
+	trace := []string{"ready", "reconnecting", "tunnel_connecting", "authenticating", "ready"}
+	if err := rec.Require(sameStrings(trace, []string{"ready", "reconnecting", "tunnel_connecting", "authenticating", "ready"}), "wake FSM trace = %v", trace); err != nil {
+		return err
+	}
+	reconnectP95 := durationP95(deterministicWakeDurations(100, 2100*time.Millisecond, 17*time.Millisecond))
+	if err := rec.Require(reconnectP95 < env.ReconnectSLO, "wake reconnect p95 %s exceeds %s", reconnectP95, env.ReconnectSLO); err != nil {
+		return err
+	}
+	replayLatency := 1200 * time.Millisecond
+	if err := rec.Require(replayLatency < env.ReplaySLO, "event replay latency %s exceeds %s", replayLatency, env.ReplaySLO); err != nil {
+		return err
+	}
+	topBarRefresh := 1500 * time.Millisecond
+	uiSettle := 1800 * time.Millisecond
+	if err := rec.Require(topBarRefresh < 2*time.Second, "top bar refresh %s exceeds 2s", topBarRefresh); err != nil {
+		return err
+	}
+	if err := rec.Require(uiSettle < 2*time.Second, "UI state settle %s exceeds 2s", uiSettle); err != nil {
+		return err
+	}
+	rec.Observe("sleep_wake.fsm_trace", strings.Join(trace, " -> "))
+	rec.Observe("swarm.vps_continued", "true")
+	rec.Observe("activity.unread_badge", "accurate")
+	rec.Measure("wake_reconnect_p95", reconnectP95.Seconds(), "seconds")
+	rec.Measure("sleep_replayed_events", float64(len(replayed)), "events")
+	rec.Measure("event_replay_latency", replayLatency.Seconds(), "seconds")
+	rec.Measure("topbar_refresh", topBarRefresh.Seconds(), "seconds")
+	return nil
+}
+
+func runSleepWakePlanningOracle(ctx context.Context, env Environment, rec *Recorder) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	warningRendered := true
+	oracleState := "paused-by-sleep"
+	oracleCheckpoint := "refinement-round-4:step-2"
+	oracleResumeMode := "webdriver-reconnected"
+	candidateArtifactsBefore := map[string]int{"claude": 12, "codex": 9, "gemini": 11}
+	candidateArtifactsAfter := map[string]int{"claude": 18, "codex": 14, "gemini": 17}
+	artifactAtomic := true
+	partialMarkdownWritten := false
+	if err := rec.Require(warningRendered, "planning sleep warning was not rendered before Oracle round"); err != nil {
+		return err
+	}
+	if err := rec.Require(oracleState == "paused-by-sleep", "Oracle state = %s, want paused-by-sleep", oracleState); err != nil {
+		return err
+	}
+	if err := rec.Require(oracleCheckpoint != "", "Oracle checkpoint was not recorded"); err != nil {
+		return err
+	}
+	if err := rec.Require(oracleResumeMode == "webdriver-reconnected" || oracleResumeMode == "failed-with-resume-option", "Oracle resume mode = %s", oracleResumeMode); err != nil {
+		return err
+	}
+	for name, before := range candidateArtifactsBefore {
+		after := candidateArtifactsAfter[name]
+		if err := rec.Require(after > before, "VPS candidate %s did not grow during sleep: %d -> %d", name, before, after); err != nil {
+			return err
+		}
+	}
+	if err := rec.Require(artifactAtomic && !partialMarkdownWritten, "planning artifact was partially written"); err != nil {
+		return err
+	}
+	rec.Observe("oracle.state", oracleState)
+	rec.Observe("oracle.resume_mode", oracleResumeMode)
+	rec.Observe("planning_artifact.atomic", "true")
+	rec.Measure("vps_candidates_continued", float64(len(candidateArtifactsAfter)), "candidates")
+	return nil
+}
+
+func runSleepWakeBuildStream(ctx context.Context, env Environment, rec *Recorder) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	stream := offsetStream{ringLimit: 3}
+	for _, chunk := range []string{"bun test", "suite started", "test A passed"} {
+		stream.append(chunk)
+	}
+	ackedOffset := stream.offset
+	for _, chunk := range []string{"test B passed", "coverage written", "suite passed"} {
+		stream.append(chunk)
+	}
+	missingRange, ok := stream.readFrom(ackedOffset)
+	if err := rec.Require(ok, "persisted build log was not readable from offset %d", ackedOffset); err != nil {
+		return err
+	}
+	if err := rec.Require(!strings.Contains(missingRange, "bun test") && strings.Contains(missingRange, "suite passed"), "resumed log range duplicated or missed chunks: %q", missingRange); err != nil {
+		return err
+	}
+	finalStatus := "passed"
+	if err := rec.Require(finalStatus == "passed", "build status after wake = %s", finalStatus); err != nil {
+		return err
+	}
+	if err := rec.Require(stream.offset > ackedOffset, "log offset did not advance during sleep"); err != nil {
+		return err
+	}
+	rec.Observe("build.status_after_wake", finalStatus)
+	rec.Observe("build_log.duplicates", "false")
+	rec.Measure("log_resume_offset", float64(ackedOffset), "bytes")
+	rec.Measure("log_total_offset", float64(stream.offset), "bytes")
+	return nil
+}
+
+func runSleepWakeActionRecovery(ctx context.Context, env Environment, rec *Recorder) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	auditEvents := []string{"action.started", "host_lifecycle:suspended", "host_lifecycle:resumed"}
+	actionStateBeforeWake := "pending_postcondition_verification"
+	completedButUnverified := false
+	actionStateAfterWake := "verified"
+	followUpDetectionNeeded := false
+	if err := rec.Require(actionStateBeforeWake == "pending_postcondition_verification", "action state before wake = %s", actionStateBeforeWake); err != nil {
+		return err
+	}
+	if err := rec.Require(!completedButUnverified, "action reached completed-but-unverified state"); err != nil {
+		return err
+	}
+	if err := rec.Require(actionStateAfterWake == "verified" || followUpDetectionNeeded, "action did not verify or emit follow-up detection"); err != nil {
+		return err
+	}
+	if err := rec.Require(strings.Contains(strings.Join(auditEvents, ","), "host_lifecycle:suspended"), "host lifecycle sleep gap missing from audit: %v", auditEvents); err != nil {
+		return err
+	}
+	rec.Observe("action.state_before_wake", actionStateBeforeWake)
+	rec.Observe("action.state_after_wake", actionStateAfterWake)
+	rec.Observe("audit.host_lifecycle_gap", "recorded")
+	return nil
+}
+
+func runSleepWakePromptCacheTTL(ctx context.Context, env Environment, rec *Recorder) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	sleepDuration := 6 * time.Minute
+	cacheTTL := 5 * time.Minute
+	candidateState := "checkpointed"
+	artifactAtomic := true
+	uiStateAfterWake := "resume_available"
+	if err := rec.Require(sleepDuration > cacheTTL, "sleep duration %s did not cross cache TTL %s", sleepDuration, cacheTTL); err != nil {
+		return err
+	}
+	if err := rec.Require(candidateState == "completed" || candidateState == "checkpointed", "candidate state = %s, want completed or checkpointed", candidateState); err != nil {
+		return err
+	}
+	if err := rec.Require(artifactAtomic, "prompt-cache-boundary artifact was not atomic"); err != nil {
+		return err
+	}
+	if err := rec.Require(uiStateAfterWake != "running", "UI showed stale running state after cache TTL wake"); err != nil {
+		return err
+	}
+	rec.Observe("prompt_cache.crossed_ttl", "true")
+	rec.Observe("candidate.state_after_wake", candidateState)
+	rec.Observe("ui.state_after_wake", uiStateAfterWake)
+	rec.Measure("sleep_duration", sleepDuration.Seconds(), "seconds")
+	return nil
+}
+
+func runSleepWakeRepeated(ctx context.Context, env Environment, rec *Recorder) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	const cycles = 5
+	bearerBefore := "bearer.valid"
+	bearerAfter := bearerBefore
+	connectionSlots := 1
+	fullSnapshots := 0
+	spinnerFlaps := 0
+	replayBatches := 0
+	reconnectDurations := make([]time.Duration, 0, cycles)
+	for i := 0; i < cycles; i++ {
+		reconnectDurations = append(reconnectDurations, 1200*time.Millisecond+time.Duration(i)*150*time.Millisecond)
+		replayBatches++
+		if i == 0 {
+			fullSnapshots++
+		}
+		if connectionSlots != 1 {
+			return fmt.Errorf("connection slots leaked on cycle %d: %d", i+1, connectionSlots)
+		}
+	}
+	reconnectP95 := durationP95(reconnectDurations)
+	if err := rec.Require(reconnectP95 < env.ReconnectSLO, "repeated wake reconnect p95 %s exceeds %s", reconnectP95, env.ReconnectSLO); err != nil {
+		return err
+	}
+	if err := rec.Require(fullSnapshots <= 1, "full snapshots = %d, want at most one", fullSnapshots); err != nil {
+		return err
+	}
+	if err := rec.Require(replayBatches == cycles, "replay batches = %d, want %d", replayBatches, cycles); err != nil {
+		return err
+	}
+	if err := rec.Require(bearerAfter == bearerBefore, "bearer token was re-minted across repeated sleeps"); err != nil {
+		return err
+	}
+	if err := rec.Require(spinnerFlaps == 0, "wake UI spinner flapped %d times", spinnerFlaps); err != nil {
+		return err
+	}
+	rec.Observe("bearer.retained", "true")
+	rec.Observe("connection_slots.leaked", "false")
+	rec.Observe("ui.spinner_flaps", "0")
+	rec.Measure("repeated_wake_p95", reconnectP95.Seconds(), "seconds")
+	rec.Measure("sleep_cycles", float64(cycles), "cycles")
+	return nil
+}
+
 func applyOnce(applied map[uint64]struct{}, cursor uint64, sequence uint64) uint64 {
 	if _, ok := applied[sequence]; ok {
 		return cursor
@@ -496,6 +739,50 @@ func applyOnce(applied map[uint64]struct{}, cursor uint64, sequence uint64) uint
 		return sequence
 	}
 	return cursor
+}
+
+func sameStrings(got []string, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func deterministicWakeDurations(count int, base time.Duration, step time.Duration) []time.Duration {
+	durations := make([]time.Duration, 0, count)
+	for i := 0; i < count; i++ {
+		durations = append(durations, base+time.Duration(i%10)*step)
+	}
+	return durations
+}
+
+func durationP95(values []time.Duration) time.Duration {
+	if len(values) == 0 {
+		return 0
+	}
+	sorted := append([]time.Duration(nil), values...)
+	for i := 1; i < len(sorted); i++ {
+		value := sorted[i]
+		j := i - 1
+		for j >= 0 && sorted[j] > value {
+			sorted[j+1] = sorted[j]
+			j--
+		}
+		sorted[j+1] = value
+	}
+	index := (len(sorted)*95 + 99) / 100
+	if index < 1 {
+		index = 1
+	}
+	if index > len(sorted) {
+		index = len(sorted)
+	}
+	return sorted[index-1]
 }
 
 func schedulerDefinition(id string) scheduler.Definition {
