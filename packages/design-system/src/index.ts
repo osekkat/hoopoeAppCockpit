@@ -3,9 +3,9 @@
 // `PriorityChip`, `CoverageBar`, `TerminalPane`, `TimelineRow`,
 // `HealthKpiCard`, `ApprovalDialog`, `CommandPalette`).
 //
-// Phase 1 / hp-k6r builds out the real token set and components. For
-// hp-xru this index is a placeholder that re-exports the typed token
-// shapes from `./tokens` so consumers can import paths exist now.
+// The package exports dependency-light TypeScript models plus DOM renderers
+// for Storybook and tests. React wrappers live in the desktop app where a
+// stage needs framework-specific behavior.
 
 export * from "./tokens/index.ts";
 export * from "./components/index.ts";

@@ -8,15 +8,17 @@ implementation.
 
 ## Status
 
-`hp-k6r` installs the Phase 1 token layer. Component primitives land in
-follow-on beads, starting with `hp-i62`.
+The Phase 1 token layer and dependency-light component primitives are in
+place. The package exports typed model helpers plus DOM renderers that keep
+Storybook stories and unit tests framework-neutral; React wrappers live in
+`apps/desktop` where a stage needs renderer-specific behavior.
 
 ## Components (per `plan.md §12 Phase 1`)
 
-The reusable component set targeted for Phase 1:
+The reusable component set currently exported from `@hoopoe/design-system`:
 
 - `StageHeader` — `STAGE N — VERB` chrome (Planning, Beads, Swarm,
-  Hardening).
+  Hardening, Diagnostics), breadcrumb, subtitle, and typed action row.
 - `AgentTile` — agent grid card; harness, CAAM account, current bead,
   status, time-on-bead, recent decisions. Critically: **no terminal
   output** in the default UI (`Guardrail 12`).
@@ -27,6 +29,10 @@ The reusable component set targeted for Phase 1:
   toggle (`Guardrail 12`); wrapped in xterm.js.
 - `TimelineRow` — Activity-panel cross-stage timeline atom.
 - `HealthKpiCard`, `ApprovalDialog`, `CommandPalette` — bigger composites.
+
+Foundational shell and error surfaces that are renderer-specific
+(`ActivityDrawer`, shell `EmptyStage`, and the problem+json toast/banner
+hierarchy) live under `apps/desktop/src/renderer/` and consume these tokens.
 
 ## Token Sources
 
@@ -41,9 +47,52 @@ The reusable component set targeted for Phase 1:
 - `apps/desktop/tailwind.config.ts` consumes `tailwindTokenTheme` from
   this package so app styling derives from the same token source.
 
-## Component Primitives
+## Usage Examples
 
-- `src/components/status-pill.ts` provides the `StatusPill` primitive
-  model and DOM renderer for all bead, job, approval, capability, and
-  tool-health states. It is dependency-free until the React wrapper layer
-  lands in the broader component-set bead.
+```ts
+import {
+  getStageHeaderModel,
+  getStatusPillModel,
+  getPriorityChipModel,
+  getCoverageBarModel,
+} from "@hoopoe/design-system";
+
+const header = getStageHeaderModel({
+  stageId: "swarm",
+  projectName: "Local demo",
+  breadcrumb: ["Swarm"],
+  actions: [{ id: "broadcast", label: "Broadcast", tone: "primary" }],
+});
+
+const beadState = getStatusPillModel({
+  kind: "bead",
+  state: "in_progress",
+  size: "sm",
+});
+
+const priority = getPriorityChipModel({ priority: "p0" });
+const coverage = getCoverageBarModel({ percent: 78 });
+
+const summary = [header.kicker, beadState.label, priority.label, coverage.band];
+```
+
+```ts
+import { buildTerminalPaneAuditEntry, getTerminalPaneModel } from "@hoopoe/design-system";
+```
+
+`TerminalPane` is intentionally constrained to the Diagnostics surface. It
+requires an audit acknowledgement before the raw pane can be revealed, and it
+must not be imported into the default Swarm UI.
+
+## Storybook And Verification
+
+- `src/**/*.stories.ts` contains DOM-rendered stories for tokens and every
+  exported component state set.
+- `bun run --cwd packages/design-system storybook` is the package-local
+  story surface command; it remains dependency-light until the monorepo
+  Storybook runner is wired.
+- `bun run --cwd packages/design-system test` exercises model invariants,
+  accessibility labels, state coverage, command-palette filtering, and
+  Guardrail 12 enforcement.
+- `bun run --cwd packages/design-system typecheck` and `build` run the
+  package TypeScript contract.

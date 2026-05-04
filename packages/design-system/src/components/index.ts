@@ -1,4 +1,5 @@
 export * from "./status-pill.ts";
+export * from "./StageHeader/index.ts";
 export * from "./AgentTile/index.ts";
 export * from "./BeadCard/index.ts";
 export * from "./CommandPalette/index.ts";
