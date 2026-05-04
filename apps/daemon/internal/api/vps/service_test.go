@@ -139,6 +139,27 @@ func TestHTTPMountUsesDaemonProblemConventions(t *testing.T) {
 	}
 }
 
+func TestWriteJSONEncodingFailureReturnsProblem(t *testing.T) {
+	t.Parallel()
+	rec := httptest.NewRecorder()
+
+	writeJSON(rec, http.StatusOK, map[string]any{"bad": func() {}})
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusInternalServerError, rec.Body.String())
+	}
+	if got := rec.Header().Get("Content-Type"); got != "application/problem+json; charset=utf-8" {
+		t.Fatalf("content-type = %q, want problem+json", got)
+	}
+	var body schemas.Problem
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode problem: %v", err)
+	}
+	if body.Code != "daemon.encoding_failed" || body.Status != http.StatusInternalServerError {
+		t.Fatalf("problem = %+v", body)
+	}
+}
+
 func TestGrepUsesProjectVPSClonePath(t *testing.T) {
 	t.Parallel()
 	service, _ := newTestService(t)

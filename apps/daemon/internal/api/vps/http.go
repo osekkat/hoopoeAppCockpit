@@ -1,6 +1,7 @@
 package vps
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -134,17 +135,44 @@ func writeServiceProblem(w http.ResponseWriter, err error) {
 }
 
 func writeProblem(w http.ResponseWriter, status int, problem schemas.Problem) {
+	body, err := encodeJSON(problem)
+	if err != nil {
+		body = []byte(`{"type":"urn:hoopoe:problem:daemon-encoding-failed","title":"internal encoding error","status":500,"code":"daemon.encoding_failed"}` + "\n")
+		status = http.StatusInternalServerError
+	}
 	w.Header().Set("Content-Type", "application/problem+json; charset=utf-8")
 	w.WriteHeader(status)
-	enc := json.NewEncoder(w)
-	enc.SetEscapeHTML(false)
-	_ = enc.Encode(problem)
+	_, _ = w.Write(body)
 }
 
 func writeJSON(w http.ResponseWriter, status int, response any) {
+	body, err := encodeJSON(response)
+	if err != nil {
+		writeProblem(w, http.StatusInternalServerError, encodingProblem(err))
+		return
+	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
-	enc := json.NewEncoder(w)
+	_, _ = w.Write(body)
+}
+
+func encodingProblem(err error) schemas.Problem {
+	detail := err.Error()
+	return schemas.Problem{
+		Type:   "urn:hoopoe:problem:daemon-encoding-failed",
+		Title:  "internal encoding error",
+		Status: http.StatusInternalServerError,
+		Code:   "daemon.encoding_failed",
+		Detail: &detail,
+	}
+}
+
+func encodeJSON(payload any) ([]byte, error) {
+	var body bytes.Buffer
+	enc := json.NewEncoder(&body)
 	enc.SetEscapeHTML(false)
-	_ = enc.Encode(response)
+	if err := enc.Encode(payload); err != nil {
+		return nil, err
+	}
+	return body.Bytes(), nil
 }

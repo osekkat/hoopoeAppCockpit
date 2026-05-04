@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -9,13 +10,14 @@ import (
 )
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {
+	body, err := encodeJSON(payload)
+	if err != nil {
+		writeProblemCode(w, http.StatusInternalServerError, "daemon.encoding_failed", "internal encoding error", err.Error())
+		return
+	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
-	enc := json.NewEncoder(w)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(payload); err != nil {
-		http.Error(w, "internal encoding error", http.StatusInternalServerError)
-	}
+	_, _ = w.Write(body)
 }
 
 func writeProblem(w http.ResponseWriter, status int, title string, detail string) {
@@ -23,19 +25,34 @@ func writeProblem(w http.ResponseWriter, status int, title string, detail string
 }
 
 func writeProblemCode(w http.ResponseWriter, status int, code string, title string, detail string) {
-	w.Header().Set("Content-Type", "application/problem+json; charset=utf-8")
-	w.WriteHeader(status)
 	var detailPtr *string
 	if detail != "" {
 		detailPtr = &detail
 	}
-	_ = json.NewEncoder(w).Encode(schemas.Problem{
+	body, err := encodeJSON(schemas.Problem{
 		Type:   "urn:hoopoe:problem:" + strings.ReplaceAll(code, ".", "-"),
 		Title:  title,
 		Status: status,
 		Code:   code,
 		Detail: detailPtr,
 	})
+	if err != nil {
+		body = []byte(`{"type":"urn:hoopoe:problem:daemon-encoding-failed","title":"internal encoding error","status":500,"code":"daemon.encoding_failed"}` + "\n")
+		status = http.StatusInternalServerError
+	}
+	w.Header().Set("Content-Type", "application/problem+json; charset=utf-8")
+	w.WriteHeader(status)
+	_, _ = w.Write(body)
+}
+
+func encodeJSON(payload any) ([]byte, error) {
+	var body bytes.Buffer
+	enc := json.NewEncoder(&body)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(payload); err != nil {
+		return nil, err
+	}
+	return body.Bytes(), nil
 }
 
 func problemCode(title string) string {
