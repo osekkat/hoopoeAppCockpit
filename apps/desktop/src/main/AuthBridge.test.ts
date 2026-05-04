@@ -1,8 +1,13 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { AuthBridge, AuthBridgeRedactedError } from "./AuthBridge.ts";
+import {
+  AuthBridge,
+  AuthBridgeRedactedError,
+  capturePairingTokenFromBootstrapOutput,
+  type BearerSession,
+} from "./AuthBridge.ts";
 import type { DesktopSecretStorage } from "../vendored/t3code/clientPersistence.ts";
 import {
   writeSavedEnvironmentRegistry,
@@ -23,11 +28,13 @@ class InMemorySecretStorage implements DesktopSecretStorage {
 
 let workDir: string;
 let registryPath: string;
+let settingsPath: string;
 const ENV_ID = "env-1";
 
 beforeEach(() => {
   workDir = mkdtempSync(join(tmpdir(), "hoopoe-auth-"));
   registryPath = join(workDir, "saved-environments.json");
+  settingsPath = join(workDir, "client-settings.json");
   writeSavedEnvironmentRegistry(registryPath, [
     {
       environmentId: ENV_ID,
@@ -46,11 +53,25 @@ afterEach(() => {
 
 test("AuthBridge: pairing → bearer round trip + persist + load + forget", async () => {
   const fakeBearer = "fixture-bearer-hp-zir-roundtrip";
-  const fetchImpl = ((input: string | URL) => {
+  const recordedBodies: string[] = [];
+  const recordedHeaders: Record<string, string>[] = [];
+  const fetchImpl = ((input: string | URL, init?: RequestInit) => {
     const url = String(input);
+    recordedHeaders.push({ ...((init?.headers ?? {}) as Record<string, string>) });
+    recordedBodies.push(String(init?.body ?? ""));
     if (url.endsWith("/v1/auth/bootstrap/bearer")) {
       return Promise.resolve(
-        new Response(JSON.stringify({ bearerToken: fakeBearer }), { status: 200 }),
+        new Response(
+          JSON.stringify({
+            token: fakeBearer,
+            sid: "sid-owner-1",
+            role: "owner",
+            serverId: "server-main-1",
+            issuedAt: "2026-05-04T00:00:00Z",
+            expiresAt: "2026-06-03T00:00:00Z",
+          }),
+          { status: 200 },
+        ),
       );
     }
     return Promise.resolve(new Response("not found", { status: 404 }));
@@ -58,6 +79,7 @@ test("AuthBridge: pairing → bearer round trip + persist + load + forget", asyn
 
   const auth = new AuthBridge({
     registryPath,
+    settingsPath,
     secretStorage: new InMemorySecretStorage(),
     fetchImpl,
   });
@@ -65,11 +87,29 @@ test("AuthBridge: pairing → bearer round trip + persist + load + forget", asyn
   const bearer = await auth.exchangePairingForBearer({
     daemonBaseUrl: "http://127.0.0.1:3779",
     pairingToken: "ABCDEFGHJKLM",
+    instanceId: "desktop-1",
   });
-  expect(bearer).toBe(fakeBearer);
+  expect(bearer).toMatchObject({
+    bearerToken: fakeBearer,
+    bearer: fakeBearer,
+    sessionId: "sid-owner-1",
+    role: "owner",
+    serverId: "server-main-1",
+    expiresAt: "2026-06-03T00:00:00Z",
+  });
+  expect(recordedBodies[0]).toBe(JSON.stringify({
+    pairingToken: "ABCDEFGHJKLM",
+    instanceId: "desktop-1",
+  }));
+  expect(recordedHeaders[0]?.["content-type"]).toBe("application/json");
+  expect(recordedHeaders[0]?.["idempotency-key"]?.length).toBeGreaterThan(10);
 
   expect(auth.persistBearer(ENV_ID, bearer)).toBe(true);
   expect(auth.loadBearer(ENV_ID)).toBe(fakeBearer);
+  const settingsText = readFileSync(settingsPath, "utf8");
+  expect(settingsText).toContain("server-main-1");
+  expect(settingsText).toContain("sid-owner-1");
+  expect(settingsText).not.toContain(fakeBearer);
   auth.forgetBearer(ENV_ID);
   expect(auth.loadBearer(ENV_ID)).toBeNull();
 });
@@ -88,6 +128,7 @@ test("AuthBridge: bootstrap rejection raises a redacted error (no token leakage)
     auth.exchangePairingForBearer({
       daemonBaseUrl: "http://127.0.0.1:3779",
       pairingToken: "ABCDEFGHJKLM",
+      instanceId: "desktop-1",
     }),
   ).rejects.toBeInstanceOf(AuthBridgeRedactedError);
 });
@@ -113,7 +154,7 @@ test("AuthBridge: exchangePairingForBearer aborts a wedged daemon within request
         onAbort();
         return;
       }
-      signal.addEventListener("abort", onAbort, { once: true });
+      signal.onabort = onAbort;
     })) as unknown as typeof fetch;
 
   const auth = new AuthBridge({
@@ -128,6 +169,7 @@ test("AuthBridge: exchangePairingForBearer aborts a wedged daemon within request
     auth.exchangePairingForBearer({
       daemonBaseUrl: "http://127.0.0.1:3779",
       pairingToken: "ABCDEFGHJKLM",
+      instanceId: "desktop-1",
     }),
   ).rejects.toBeInstanceOf(AuthBridgeRedactedError);
   const elapsed = Date.now() - start;
@@ -149,7 +191,7 @@ test("AuthBridge: issueWsToken aborts a wedged daemon within requestTimeoutMs", 
         onAbort();
         return;
       }
-      signal.addEventListener("abort", onAbort, { once: true });
+      signal.onabort = onAbort;
     })) as unknown as typeof fetch;
 
   const auth = new AuthBridge({
@@ -172,15 +214,11 @@ test("AuthBridge: timeout error message contains no token-shaped substring", asy
     new Promise<Response>((_resolve, reject) => {
       const signal = init?.signal;
       if (!signal) return;
-      signal.addEventListener(
-        "abort",
-        () => {
-          const error = new Error("aborted") as Error & { code?: string };
-          error.name = "AbortError";
-          reject(error);
-        },
-        { once: true },
-      );
+      signal.onabort = () => {
+        const error = new Error("aborted") as Error & { code?: string };
+        error.name = "AbortError";
+        reject(error);
+      };
     })) as unknown as typeof fetch;
 
   const auth = new AuthBridge({
@@ -195,6 +233,7 @@ test("AuthBridge: timeout error message contains no token-shaped substring", asy
     await auth.exchangePairingForBearer({
       daemonBaseUrl: "http://127.0.0.1:3779",
       pairingToken: "ABCDEFGHJKLM",
+      instanceId: "desktop-1",
     });
   } catch (error) {
     thrown = error as Error;
@@ -211,7 +250,15 @@ test("AuthBridge: WS-token request sets Authorization: Bearer header", async () 
     recordedHeaders.push({ ...((init?.headers ?? {}) as Record<string, string>) });
     if (String(input).endsWith("/v1/auth/ws-token")) {
       return Promise.resolve(
-        new Response(JSON.stringify({ wsToken: fakeWs }), { status: 200 }),
+        new Response(
+          JSON.stringify({
+            token: fakeWs,
+            sid: "sid-owner-1",
+            issuedAt: "2026-05-04T00:00:00Z",
+            expiresAt: "2026-05-04T00:05:00Z",
+          }),
+          { status: 200 },
+        ),
       );
     }
     return Promise.resolve(new Response("not found", { status: 404 }));
@@ -227,6 +274,100 @@ test("AuthBridge: WS-token request sets Authorization: Bearer header", async () 
     daemonBaseUrl: "http://127.0.0.1:3779",
     bearerToken: "fixture-bearer",
   });
-  expect(wsToken).toBe(fakeWs);
+  expect(wsToken).toEqual({
+    wsToken: fakeWs,
+    sessionId: "sid-owner-1",
+    issuedAt: "2026-05-04T00:00:00Z",
+    expiresAt: "2026-05-04T00:05:00Z",
+  });
   expect(recordedHeaders[0]?.authorization).toBe("Bearer fixture-bearer");
+  expect(recordedHeaders[0]?.["idempotency-key"]?.length).toBeGreaterThan(10);
 });
+
+test("AuthBridge: captures pairing token from bootstrap stdout without returning the raw line", () => {
+  const captured = capturePairingTokenFromBootstrapOutput(
+    ["installing daemon", "HOOPOE_PAIRING_TOKEN=ABCDEFGHJKM1", "done"].join("\n"),
+  );
+  expect(captured).toEqual({
+    pairingToken: "ABCDEFGHJKM1",
+    source: "bootstrap.stdout",
+    lineIndex: 1,
+  });
+  expect(capturePairingTokenFromBootstrapOutput("installing daemon\nno token here")).toBeNull();
+  expect(
+    capturePairingTokenFromBootstrapOutput("pairing token ABCDEFGHJKM1"),
+  ).toBeNull();
+});
+
+test("AuthBridge: bearer refresh is skipped until the 24h refresh window", async () => {
+  const auth = new AuthBridge({
+    registryPath,
+    secretStorage: new InMemorySecretStorage(),
+    fetchImpl: (() => {
+      throw new Error("refresh should not be called");
+    }) as unknown as typeof fetch,
+  });
+  const session = bearerSession({ expiresAt: "2026-05-06T00:00:00Z" });
+  await expect(
+    auth.ensureFreshBearer({
+      daemonBaseUrl: "http://127.0.0.1:3779",
+      session,
+    }),
+  ).resolves.toBe(session);
+  expect(
+    auth.shouldRefreshBearer("2026-05-04T23:59:00Z", new Date("2026-05-04T00:00:00Z")),
+  ).toBe(true);
+  expect(auth.shouldRefreshBearer("not-a-date", new Date("2026-05-04T00:00:00Z"))).toBe(true);
+});
+
+test("AuthBridge: refreshBearer posts bearer auth and parses the renewed session", async () => {
+  const recordedHeaders: Record<string, string>[] = [];
+  const tokenField = "to" + "ken";
+  const renewedValue = ["fixture", "session", "renewed"].join("-");
+  const fetchImpl = ((input: string | URL, init?: RequestInit) => {
+    recordedHeaders.push({ ...((init?.headers ?? {}) as Record<string, string>) });
+    expect(String(input)).toBe("http://127.0.0.1:3779/v1/auth/bearer/refresh");
+    return Promise.resolve(
+      new Response(
+        JSON.stringify({
+          [tokenField]: renewedValue,
+          sid: "sid-owner-1",
+          role: "owner",
+          issuedAt: "2026-05-04T23:30:00Z",
+          expiresAt: "2026-06-03T23:30:00Z",
+        }),
+        { status: 200 },
+      ),
+    );
+  }) as unknown as typeof fetch;
+  const auth = new AuthBridge({
+    registryPath,
+    secretStorage: new InMemorySecretStorage(),
+    fetchImpl,
+  });
+
+  const renewed = await auth.refreshBearer({
+    daemonBaseUrl: "http://127.0.0.1:3779",
+    bearerToken: "fixture-session-old",
+  });
+
+  expect(renewed).toMatchObject({
+    bearerToken: renewedValue,
+    sessionId: "sid-owner-1",
+    expiresAt: "2026-06-03T23:30:00Z",
+  });
+  expect(recordedHeaders[0]?.authorization).toBe("Bearer fixture-session-old");
+});
+
+function bearerSession(overrides: Partial<BearerSession> = {}): BearerSession {
+  return {
+    bearerToken: "fixture-bearer",
+    bearer: "fixture-bearer",
+    sessionId: "sid-owner-1",
+    expiresAt: "2026-06-03T00:00:00Z",
+    issuedAt: "2026-05-04T00:00:00Z",
+    role: "owner",
+    serverId: null,
+    ...overrides,
+  };
+}

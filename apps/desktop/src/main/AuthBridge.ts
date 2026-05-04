@@ -9,8 +9,11 @@
 // upholds the contract at the boundary by only ever returning bearer
 // values to callers and never echoing them back into a logger.
 
+import { randomUUID } from "node:crypto";
 import {
+  readClientSettings,
   readSavedEnvironmentSecret,
+  writeClientSettings,
   writeSavedEnvironmentSecret,
   removeSavedEnvironmentSecret,
   type DesktopSecretStorage,
@@ -21,6 +24,7 @@ export { AuthBridgeRedactedError };
 
 export interface AuthBridgeOptions {
   readonly registryPath: string;
+  readonly settingsPath?: string;
   readonly secretStorage: DesktopSecretStorage;
   readonly fetchImpl?: typeof fetch;
   /** Per-request abort timeout for the bootstrap and ws-token fetches.
@@ -32,10 +36,36 @@ export interface AuthBridgeOptions {
 }
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
+const DEFAULT_BEARER_REFRESH_WINDOW_MS = 24 * 60 * 60 * 1_000;
+const PAIRING_TOKEN_RE = /^[1-9A-HJKMNPQRSTVWXYZ]{12}$/u;
+
+export interface CapturedPairingToken {
+  readonly pairingToken: string;
+  readonly source: "bootstrap.stdout";
+  readonly lineIndex: number;
+}
+
+export interface BearerSession {
+  readonly bearerToken: string;
+  readonly bearer: string;
+  readonly sessionId: string;
+  readonly expiresAt: string;
+  readonly issuedAt: string | null;
+  readonly role: string | null;
+  readonly serverId: string | null;
+}
+
+export interface WsTokenSession {
+  readonly wsToken: string;
+  readonly sessionId: string | null;
+  readonly expiresAt: string;
+  readonly issuedAt: string | null;
+}
 
 export interface ExchangePairingForBearerInput {
   readonly daemonBaseUrl: string;
   readonly pairingToken: string;
+  readonly instanceId: string;
 }
 
 export interface IssueWsTokenInput {
@@ -43,23 +73,35 @@ export interface IssueWsTokenInput {
   readonly bearerToken: string;
 }
 
+export interface RefreshBearerInput {
+  readonly daemonBaseUrl: string;
+  readonly bearerToken: string;
+}
+
+export interface EnsureFreshBearerInput {
+  readonly daemonBaseUrl: string;
+  readonly session: BearerSession;
+}
+
 export class AuthBridge {
   private readonly fetchImpl: typeof fetch;
   private readonly options: AuthBridgeOptions;
   private readonly requestTimeoutMs: number;
+  private readonly refreshWindowMs: number;
   constructor(options: AuthBridgeOptions) {
     this.options = options;
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+    this.refreshWindowMs = DEFAULT_BEARER_REFRESH_WINDOW_MS;
   }
 
-  async exchangePairingForBearer(input: ExchangePairingForBearerInput): Promise<string> {
+  async exchangePairingForBearer(input: ExchangePairingForBearerInput): Promise<BearerSession> {
     const response = await this.fetchWithTimeout(
       new URL("/v1/auth/bootstrap/bearer", input.daemonBaseUrl).toString(),
       {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ pairingToken: input.pairingToken }),
+        headers: writeHeaders(),
+        body: JSON.stringify({ pairingToken: input.pairingToken, instanceId: input.instanceId }),
       },
       "bootstrap",
     );
@@ -68,21 +110,54 @@ export class AuthBridge {
         `Bootstrap rejected pairing token (status ${response.status}).`,
       );
     }
-    const payload = (await response.json()) as { bearerToken?: unknown };
-    if (typeof payload.bearerToken !== "string" || payload.bearerToken.length === 0) {
-      throw new AuthBridgeRedactedError("Bootstrap response missing bearerToken.");
-    }
-    return payload.bearerToken;
+    return parseBearerSession(await parseJsonPayload(response, "Bootstrap"), "Bootstrap");
   }
 
-  async issueWsToken(input: IssueWsTokenInput): Promise<string> {
+  async refreshBearer(input: RefreshBearerInput): Promise<BearerSession> {
+    const response = await this.fetchWithTimeout(
+      new URL("/v1/auth/bearer/refresh", input.daemonBaseUrl).toString(),
+      {
+        method: "POST",
+        headers: {
+          ...writeHeaders(),
+          authorization: `Bearer ${input.bearerToken}`,
+        },
+        body: "{}",
+      },
+      "bearer-refresh",
+    );
+    if (!response.ok) {
+      throw new AuthBridgeRedactedError(
+        `Bearer refresh request rejected (status ${response.status}).`,
+      );
+    }
+    return parseBearerSession(await parseJsonPayload(response, "Bearer refresh"), "Bearer refresh");
+  }
+
+  async ensureFreshBearer(input: EnsureFreshBearerInput): Promise<BearerSession> {
+    if (!this.shouldRefreshBearer(input.session.expiresAt)) {
+      return input.session;
+    }
+    return await this.refreshBearer({
+      daemonBaseUrl: input.daemonBaseUrl,
+      bearerToken: input.session.bearerToken,
+    });
+  }
+
+  shouldRefreshBearer(expiresAt: string, now: Date = new Date()): boolean {
+    const expiresAtMs = Date.parse(expiresAt);
+    if (!Number.isFinite(expiresAtMs)) return true;
+    return expiresAtMs - now.getTime() <= this.refreshWindowMs;
+  }
+
+  async issueWsToken(input: IssueWsTokenInput): Promise<WsTokenSession> {
     const response = await this.fetchWithTimeout(
       new URL("/v1/auth/ws-token", input.daemonBaseUrl).toString(),
       {
         method: "POST",
         headers: {
+          ...writeHeaders(),
           authorization: `Bearer ${input.bearerToken}`,
-          "content-type": "application/json",
         },
         body: "{}",
       },
@@ -93,11 +168,7 @@ export class AuthBridge {
         `WS-token request rejected (status ${response.status}).`,
       );
     }
-    const payload = (await response.json()) as { wsToken?: unknown };
-    if (typeof payload.wsToken !== "string" || payload.wsToken.length === 0) {
-      throw new AuthBridgeRedactedError("WS-token response missing wsToken.");
-    }
-    return payload.wsToken;
+    return parseWsTokenSession(await parseJsonPayload(response, "WS-token"));
   }
 
   /** Wrap fetch with an AbortController so a wedged daemon at the HTTP
@@ -108,7 +179,7 @@ export class AuthBridge {
   private async fetchWithTimeout(
     url: string,
     init: RequestInit,
-    requestKind: "bootstrap" | "ws-token",
+    requestKind: "bootstrap" | "bearer-refresh" | "ws-token",
   ): Promise<Response> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.requestTimeoutMs);
@@ -126,13 +197,18 @@ export class AuthBridge {
     }
   }
 
-  persistBearer(environmentId: string, bearerToken: string): boolean {
-    return writeSavedEnvironmentSecret({
+  persistBearer(environmentId: string, bearer: string | BearerSession): boolean {
+    const bearerToken = typeof bearer === "string" ? bearer : bearer.bearerToken;
+    const persisted = writeSavedEnvironmentSecret({
       registryPath: this.options.registryPath,
       environmentId,
       secret: bearerToken,
       secretStorage: this.options.secretStorage,
     });
+    if (persisted && typeof bearer !== "string") {
+      this.persistSessionMetadata(environmentId, bearer);
+    }
+    return persisted;
   }
 
   loadBearer(environmentId: string): string | null {
@@ -149,6 +225,129 @@ export class AuthBridge {
       environmentId,
     });
   }
+
+  private persistSessionMetadata(environmentId: string, session: BearerSession): void {
+    const settingsPath = this.options.settingsPath;
+    if (!settingsPath) return;
+
+    const current = readClientSettings(settingsPath) ?? {};
+    const authSettings = isRecord(current.auth) ? current.auth : {};
+    const sessions = isRecord(authSettings.sessions) ? authSettings.sessions : {};
+    const metadata: Record<string, string> = {
+      sessionId: session.sessionId,
+      expiresAt: session.expiresAt,
+    };
+    if (session.serverId !== null) {
+      metadata.serverId = session.serverId;
+    }
+
+    writeClientSettings(settingsPath, {
+      ...current,
+      auth: {
+        ...authSettings,
+        sessions: {
+          ...sessions,
+          [environmentId]: metadata,
+        },
+      },
+    });
+  }
+}
+
+export function capturePairingTokenFromBootstrapOutput(stdout: string): CapturedPairingToken | null {
+  const lines = stdout.split(/\r?\n/u);
+  for (const [lineIndex, line] of lines.entries()) {
+    const [key, value] = splitEnvAssignment(line);
+    if (key !== "HOOPOE_PAIRING_TOKEN") continue;
+    const pairingToken = normalizePairingToken(value);
+    if (pairingToken === null) return null;
+    return { pairingToken, source: "bootstrap.stdout", lineIndex };
+  }
+  return null;
+}
+
+function writeHeaders(): Record<string, string> {
+  return {
+    "content-type": "application/json",
+    "idempotency-key": randomUUID(),
+  };
+}
+
+async function parseJsonPayload(response: Response, label: string): Promise<Record<string, unknown>> {
+  try {
+    const payload = await response.json();
+    if (typeof payload === "object" && payload !== null && !Array.isArray(payload)) {
+      return payload as Record<string, unknown>;
+    }
+  } catch {
+    // Fall through to the redacted boundary error below.
+  }
+  throw new AuthBridgeRedactedError(`${label} response was not a JSON object.`);
+}
+
+function parseBearerSession(payload: Record<string, unknown>, label: string): BearerSession {
+  const bearerToken = stringField(payload, ["token", "bearerToken", "bearer"]);
+  const sessionId = stringField(payload, ["sid", "sessionId"]);
+  const expiresAt = stringField(payload, ["expiresAt"]);
+  if (bearerToken === null) {
+    throw new AuthBridgeRedactedError(`${label} response missing token.`);
+  }
+  if (sessionId === null) {
+    throw new AuthBridgeRedactedError(`${label} response missing session id.`);
+  }
+  if (expiresAt === null) {
+    throw new AuthBridgeRedactedError(`${label} response missing expiresAt.`);
+  }
+  return {
+    bearerToken,
+    bearer: bearerToken,
+    sessionId,
+    expiresAt,
+    issuedAt: stringField(payload, ["issuedAt"]),
+    role: stringField(payload, ["role"]),
+    serverId: stringField(payload, ["serverId"]),
+  };
+}
+
+function parseWsTokenSession(payload: Record<string, unknown>): WsTokenSession {
+  const wsToken = stringField(payload, ["token", "wsToken"]);
+  const expiresAt = stringField(payload, ["expiresAt"]);
+  if (wsToken === null) {
+    throw new AuthBridgeRedactedError("WS-token response missing token.");
+  }
+  if (expiresAt === null) {
+    throw new AuthBridgeRedactedError("WS-token response missing expiresAt.");
+  }
+  return {
+    wsToken,
+    sessionId: stringField(payload, ["sid", "sessionId"]),
+    expiresAt,
+    issuedAt: stringField(payload, ["issuedAt"]),
+  };
+}
+
+function stringField(payload: Record<string, unknown>, names: readonly string[]): string | null {
+  for (const name of names) {
+    const value = payload[name];
+    if (typeof value === "string" && value.length > 0) return value;
+  }
+  return null;
+}
+
+function splitEnvAssignment(line: string): readonly [string, string] {
+  const trimmed = line.trim();
+  const index = trimmed.indexOf("=");
+  if (index <= 0) return ["", ""];
+  return [trimmed.slice(0, index), trimmed.slice(index + 1)];
+}
+
+function normalizePairingToken(value: string): string | null {
+  const normalized = value.trim().replace(/[-\s]/g, "").toUpperCase();
+  return PAIRING_TOKEN_RE.test(normalized) ? normalized : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isAbortError(error: unknown): boolean {
