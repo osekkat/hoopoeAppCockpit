@@ -345,14 +345,18 @@ func traceEntry(trace redaction.TraceEvent, source Entry) Entry {
 }
 
 type Query struct {
-	ProjectID string
-	ActorKind ActorKind
-	ActorID   string
-	Action    string
-	From      time.Time
-	To        time.Time
-	Limit     int
-	Reverse   bool
+	ProjectID     string
+	ActorKind     ActorKind
+	ActorID       string
+	Action        string
+	Result        Result
+	CorrelationID string
+	CausationID   string
+	Search        string
+	From          time.Time
+	To            time.Time
+	Limit         int
+	Reverse       bool
 }
 
 type Index struct {
@@ -479,6 +483,18 @@ func (q Query) matches(entry Entry) bool {
 	if q.Action != "" && q.Action != entry.Action {
 		return false
 	}
+	if q.Result != "" && q.Result != entry.Result {
+		return false
+	}
+	if q.CorrelationID != "" && q.CorrelationID != entry.CorrelationID {
+		return false
+	}
+	if q.CausationID != "" && q.CausationID != entry.CausationID {
+		return false
+	}
+	if q.Search != "" && !entryMatchesSearch(entry, q.Search) {
+		return false
+	}
 	if !q.From.IsZero() && entry.Time.Before(q.From) {
 		return false
 	}
@@ -486,6 +502,38 @@ func (q Query) matches(entry Entry) bool {
 		return false
 	}
 	return true
+}
+
+func entryMatchesSearch(entry Entry, query string) bool {
+	query = strings.ToLower(strings.TrimSpace(query))
+	if query == "" {
+		return true
+	}
+	haystack := []string{
+		entry.EventID,
+		entry.ProjectID,
+		entry.Actor.ID,
+		string(entry.Actor.Kind),
+		entry.Action,
+		string(entry.Result),
+		entry.Reason,
+		entry.CommandPreview,
+		entry.CorrelationID,
+		entry.CausationID,
+		entry.ApprovalID,
+	}
+	for _, ref := range entry.ArtifactRefs {
+		haystack = append(haystack, ref.Kind, ref.ID, ref.URI, ref.Digest)
+	}
+	for key, value := range entry.Data {
+		haystack = append(haystack, key, fmt.Sprint(value))
+	}
+	for _, candidate := range haystack {
+		if strings.Contains(strings.ToLower(candidate), query) {
+			return true
+		}
+	}
+	return false
 }
 
 type MigrationState struct {

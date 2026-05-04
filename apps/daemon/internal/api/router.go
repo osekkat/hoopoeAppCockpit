@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/audit"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/capabilities"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/jobs"
 	daemonmetrics "github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/metrics"
@@ -48,6 +49,7 @@ type Config struct {
 	Capabilities *capabilities.Registry
 	Inventory    InventoryService
 	Onboarding   *checkpoints.Service
+	Audit        AuditLog
 	Auth         *AuthConfig
 	Upgrade      http.Handler
 	Metrics      *daemonmetrics.Registry
@@ -96,7 +98,12 @@ type server struct {
 	upgrade      http.Handler
 	metrics      *daemonmetrics.Registry
 	telemetry    *telemetry.Service
+	auditLog     AuditLog
 	now          func() time.Time
+}
+
+type AuditLog interface {
+	Query(query audit.Query) ([]audit.Entry, error)
 }
 
 type subscribeRequest struct {
@@ -125,6 +132,7 @@ func NewRouter(cfg Config) http.Handler {
 	r.Get("/v1/events/ws", s.handleEventWS)
 	r.Get("/v1/diagnostics/metrics", s.handleMetrics)
 	r.Get("/v1/diagnostics/metrics/prometheus", s.handleMetricsPrometheus)
+	s.mountAuditRoutes(r)
 	s.mountTelemetryRoutes(r)
 	s.mountCapabilityRoutes(r)
 	s.mountInventoryRoutes(r)
@@ -206,6 +214,7 @@ func normalizeConfig(cfg Config) *server {
 		upgrade:      cfg.Upgrade,
 		metrics:      metrics,
 		telemetry:    telemetryService,
+		auditLog:     cfg.Audit,
 		now:          now,
 	}
 }

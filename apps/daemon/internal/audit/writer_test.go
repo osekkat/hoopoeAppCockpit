@@ -286,6 +286,43 @@ func TestIndexQueriesByProjectTimeActorAndAction(t *testing.T) {
 	if len(recent) != 2 || recent[0].EventID != "evt_4" || recent[1].EventID != "evt_3" {
 		t.Fatalf("recent query = %#v, want evt_4 then evt_3", recent)
 	}
+
+	correlated := NewIndex([]Entry{
+		{
+			SchemaVersion: SchemaVersion,
+			EventID:       "evt_parent",
+			Seq:           1,
+			ProjectID:     "proj_a",
+			Time:          base,
+			Actor:         Actor{Kind: ActorUser, ID: "operator"},
+			Action:        "audit.export_started",
+			Result:        ResultSuccess,
+			Reason:        "redacted slice requested",
+			CorrelationID: "corr_audit",
+			Data:          map[string]any{"range": "24h"},
+		},
+		{
+			SchemaVersion: SchemaVersion,
+			EventID:       "evt_child",
+			Seq:           2,
+			ProjectID:     "proj_a",
+			Time:          base.Add(time.Second),
+			Actor:         Actor{Kind: ActorSystem, ID: "daemon"},
+			Action:        "audit.export_completed",
+			Result:        ResultSuccess,
+			CorrelationID: "corr_audit",
+			CausationID:   "evt_parent",
+			ArtifactRefs:  []ArtifactRef{{Kind: "audit_export", ID: "audit-slice-1"}},
+		},
+	})
+	chain := correlated.Query(Query{CorrelationID: "corr_audit", Search: "audit-slice-1"})
+	if len(chain) != 1 || chain[0].EventID != "evt_child" {
+		t.Fatalf("correlation/search query = %#v, want evt_child", chain)
+	}
+	byCause := correlated.Query(Query{CausationID: "evt_parent", Result: ResultSuccess})
+	if len(byCause) != 1 || byCause[0].EventID != "evt_child" {
+		t.Fatalf("causation/result query = %#v, want evt_child", byCause)
+	}
 }
 
 func TestDecodeEntryMigratesLegacySchema(t *testing.T) {

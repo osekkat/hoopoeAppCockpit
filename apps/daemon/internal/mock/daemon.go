@@ -3,11 +3,13 @@ package mock
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/api"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/audit"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/capabilities"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/fixtures"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/inventory"
@@ -28,6 +30,7 @@ type Daemon struct {
 	Capabilities *capabilities.Registry
 	Inventory    *inventory.Service
 	Metrics      *daemonmetrics.Registry
+	Audit        *audit.Writer
 	Build        api.BuildInfo
 	Now          func() time.Time
 }
@@ -70,6 +73,13 @@ func NewDaemon(cfg Config) (*Daemon, error) {
 	}
 
 	events := api.NewEventHub(api.EventHubConfig{Now: now})
+	auditWriter, err := audit.NewWriter(audit.Config{
+		Writer: io.Discard,
+		Now:    now,
+	})
+	if err != nil {
+		return nil, err
+	}
 	metricsRegistry := daemonmetrics.NewRegistry(daemonmetrics.Config{
 		Now:                   now,
 		IncludeDefaultTargets: true,
@@ -84,6 +94,18 @@ func NewDaemon(cfg Config) (*Daemon, error) {
 			"scenario":        scenario.Manifest.Scenario,
 			"fixturesVersion": scenario.Manifest.FixturesVersion,
 			"adapterCount":    len(scenario.Manifest.Adapters),
+		},
+	})
+	_, _, _ = auditWriter.Append(audit.Entry{
+		ProjectID:     "mock-flywheel-project",
+		Action:        "mock.scenario.loaded",
+		Actor:         audit.Actor{Kind: audit.ActorSystem, ID: "mock-flywheel"},
+		Result:        audit.ResultSuccess,
+		Reason:        "fixture scenario loaded",
+		CorrelationID: "mock-" + scenario.Manifest.Scenario,
+		Data: map[string]any{
+			"scenario":        scenario.Manifest.Scenario,
+			"fixturesVersion": scenario.Manifest.FixturesVersion,
 		},
 	})
 	for _, adapter := range scenario.Manifest.Adapters {
@@ -101,6 +123,18 @@ func NewDaemon(cfg Config) (*Daemon, error) {
 				"source":  "fixture",
 			},
 		})
+		_, _, _ = auditWriter.Append(audit.Entry{
+			ProjectID:     "mock-flywheel-project",
+			Action:        "mock.adapter.loaded",
+			Actor:         audit.Actor{Kind: audit.ActorAdapter, ID: adapter},
+			Result:        audit.ResultSuccess,
+			Reason:        "adapter fixture loaded",
+			CorrelationID: "mock-" + scenario.Manifest.Scenario,
+			Data: map[string]any{
+				"tool":    capture.Tool,
+				"present": capture.Present,
+			},
+		})
 	}
 
 	return &Daemon{
@@ -113,6 +147,7 @@ func NewDaemon(cfg Config) (*Daemon, error) {
 			Now:      now,
 		}),
 		Metrics: metricsRegistry,
+		Audit:   auditWriter,
 		Build:   build,
 		Now:     now,
 	}, nil
@@ -141,6 +176,7 @@ func (d *Daemon) Router() http.Handler {
 		Build:        d.Build,
 		Events:       d.Events,
 		Jobs:         d.Jobs,
+		Audit:        d.Audit,
 		Capabilities: d.Capabilities,
 		Inventory:    d.Inventory,
 		Metrics:      d.Metrics,

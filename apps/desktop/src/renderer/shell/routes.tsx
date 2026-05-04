@@ -6,6 +6,7 @@ import {
   projectDisplayName,
   type ShellRouteId,
 } from "../stages.ts";
+import { DiagnosticsStage } from "../diagnostics/index.ts";
 import { ProjectEntry } from "../projects/index.ts";
 import { BeadsStage } from "../stages/Beads/BeadsStage.tsx";
 import { PlanningStage } from "../stages/Planning/PlanningStage.tsx";
@@ -101,6 +102,8 @@ export function StageRoute({ stageId }: { readonly stageId: ShellRouteId }) {
         <BeadsStage projectId={projectId} />
       ) : stageId === "swarm" ? (
         <SwarmStage projectId={projectId} />
+      ) : stageId === "diag" ? (
+        <DiagnosticsStage projectId={projectId} />
       ) : (
         <EmptyStage stageId={stageId} />
       )}

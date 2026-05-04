@@ -17,6 +17,7 @@ import (
 
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/api"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/approvals"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/audit"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/auth"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/capabilities"
 	jobstore "github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/jobs"
@@ -102,6 +103,14 @@ func Run(ctx context.Context, args []string, cfg Config) error {
 	if err != nil {
 		return err
 	}
+	auditWriter, err := audit.NewWriter(audit.Config{
+		Path: filepath.Join(resolvedStateDir, "audit.jsonl"),
+		Now:  now,
+	})
+	if err != nil {
+		return err
+	}
+	defer auditWriter.Close()
 
 	decision, err := resolveListenDecision(ctx, listenDecisionRequest{
 		Address:            *addr,
@@ -130,6 +139,7 @@ func Run(ctx context.Context, args []string, cfg Config) error {
 		Jobs:         cfg.Jobs,
 		Auth:         authRuntime.config,
 		Onboarding:   onboarding,
+		Audit:        auditWriter,
 		Logger:       cfg.Logger,
 		Redactor:     cfg.Redactor,
 		WSValidator:  wsValidator,
