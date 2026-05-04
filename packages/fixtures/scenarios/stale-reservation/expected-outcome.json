@@ -1,0 +1,63 @@
+{
+  "meta": {
+    "kind": "synthetic",
+    "scenario": "stale-reservation",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-02T23:36:12Z",
+    "vpsId": "mock-flywheel",
+    "source": "hand-written hp-tjf stale-reservation tending fixture",
+    "notes": "Expired reservation is older than the stale threshold and the owning agent is absent from NTM. The tending run wakes an agent to produce a typed ActionPlan, then the executor verifies the reservation disappeared from Agent Mail."
+  },
+  "detections": [
+    {
+      "kind": "reservation.stale",
+      "payload": {
+        "reservation_id": 144,
+        "agent": "AmberSky",
+        "expired_at": "2026-05-02T19:05:00Z",
+        "age_after_expiry_s": 3900,
+        "owner_present": false
+      }
+    },
+    {
+      "kind": "reservation.blocks_ready_work",
+      "payload": {
+        "reservation_id": 144,
+        "blocked_agent": "GreenBear",
+        "path": "packages/schemas/openapi.yaml"
+      }
+    }
+  ],
+  "wakeAgent": true,
+  "actionPlan": {
+    "actions": [
+      {
+        "type": "reservation.force_release",
+        "args": {
+          "reservation_id": 144,
+          "reason": "expired reservation owner absent for 65m",
+          "evidence": [
+            "agent_mail.reservations",
+            "ntm.robot.snapshot"
+          ]
+        }
+      }
+    ]
+  },
+  "approvalsRequested": [],
+  "postconditions": [
+    {
+      "check": "reservation_144.absent_from_agent_mail",
+      "expect": true
+    },
+    {
+      "check": "GreenBear.unblocked",
+      "expect": true
+    },
+    {
+      "check": "audit.reservation_release_recorded",
+      "expect": true
+    }
+  ],
+  "activityBehavior": "surface"
+}

@@ -18,6 +18,7 @@ const SCENARIOS = [
   "wedged-pane",
   "rate-limited-no-caam",
   "rate-limited-with-caam",
+  "stale-reservation",
   "missing-tool",
 ] as const;
 

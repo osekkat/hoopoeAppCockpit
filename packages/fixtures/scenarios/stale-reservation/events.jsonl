@@ -1,0 +1,5 @@
+{"channel":"reservations","seq":1,"ts":"2026-05-02T19:05:00Z","type":"reservation.expired","payload":{"reservation_id":144,"agent":"AmberSky","paths":["packages/schemas/**"],"reason":"hp-r3i"}}
+{"channel":"swarm","seq":2,"ts":"2026-05-02T20:10:00Z","type":"swarm.tick","payload":{"alive":2,"wedged":0,"missing_agents":["AmberSky"],"reservation_conflicts":1}}
+{"channel":"reservations","seq":3,"ts":"2026-05-02T20:10:01Z","type":"reservation.stale_detected","payload":{"reservation_id":144,"age_after_expiry_s":3900,"owner_present":false,"blocked_agent":"GreenBear"}}
+{"channel":"activity","seq":4,"ts":"2026-05-02T20:10:02Z","type":"activity.action_plan","payload":{"jobId":"tend-swarm","summary":"Release stale Agent Mail reservation 144","actions":[{"type":"reservation.force_release","reservation_id":144}]}}
+{"channel":"reservations","seq":5,"ts":"2026-05-02T20:10:03Z","type":"reservation.released","payload":{"reservation_id":144,"actor":"tending:reservation-stale-check","postcondition":"agent_mail.reservations no longer reports reservation"}}

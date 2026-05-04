@@ -1,0 +1,9 @@
+{
+  "kind": "synthetic",
+  "scenario": "stale-reservation",
+  "fixturesVersion": "phase0-2026-05-02",
+  "capturedAt": "2026-05-02T23:36:12Z",
+  "vpsId": "mock-flywheel",
+  "source": "hand-written hp-tjf stale-reservation tending fixture",
+  "notes": "Agent Mail reports an expired exclusive reservation whose owner no longer has a live NTM pane. tend-swarm should release it through a typed reservation.force_release action and verify Agent Mail state."
+}

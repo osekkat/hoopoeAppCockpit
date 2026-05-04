@@ -1,0 +1,32 @@
+{
+  "reservations": [
+    {
+      "id": 144,
+      "agent": "AmberSky",
+      "paths": [
+        "packages/schemas/**"
+      ],
+      "exclusive": true,
+      "reason": "hp-r3i",
+      "expires_ts": "2026-05-02T19:05:00Z",
+      "note": "expired 65 minutes before tend-swarm tick; owner absent from NTM snapshot"
+    }
+  ],
+  "conflicts": [
+    {
+      "path": "packages/schemas/openapi.yaml",
+      "blocked_agent": "GreenBear",
+      "owner": "AmberSky",
+      "reservation_id": 144,
+      "observed_ts": "2026-05-02T20:10:00Z"
+    }
+  ],
+  "stale": [
+    {
+      "reservation_id": 144,
+      "age_after_expiry_s": 3900,
+      "owner_present": false,
+      "decision": "force_release"
+    }
+  ]
+}

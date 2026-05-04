@@ -1,0 +1,3 @@
+tend-swarm pre-script scanned Agent Mail reservations.
+reservation 144 expired 3900s ago and owner AmberSky was absent from NTM.
+typed action intent: reservation.force_release reservation_id=144

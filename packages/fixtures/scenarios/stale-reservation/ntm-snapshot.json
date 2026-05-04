@@ -1,0 +1,39 @@
+{
+  "sessions": [
+    {
+      "id": "hoopoe-implementation",
+      "windows": 1,
+      "panes": [
+        {
+          "id": "%1",
+          "agent": "GreenBear",
+          "program": "codex-cli",
+          "model": "gpt-5.5",
+          "state": "IDLE",
+          "last_activity_ts": "2026-05-02T20:09:55Z",
+          "bead": "hp-r3i",
+          "blocked_on": "reservation:144"
+        },
+        {
+          "id": "%2",
+          "agent": "BlueHill",
+          "program": "claude-code",
+          "model": "claude-opus-4-7",
+          "state": "TYPING",
+          "last_activity_ts": "2026-05-02T20:09:58Z",
+          "bead": "hp-1ry"
+        }
+      ]
+    }
+  ],
+  "counters": {
+    "sessions": 1,
+    "panes": 2,
+    "alive": 2,
+    "wedged": 0,
+    "errored": 0
+  },
+  "absent_agents": [
+    "AmberSky"
+  ]
+}

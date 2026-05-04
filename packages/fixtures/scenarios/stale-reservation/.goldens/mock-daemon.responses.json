@@ -1,0 +1,409 @@
+{
+  "agent_mail.fetch_inbox": {
+    "messages": [
+      {
+        "ack_required": false,
+        "body_md": "Reserved packages/schemas/** for schema codegen work.",
+        "from": "AmberSky",
+        "id": "msg-stale-reservation-001",
+        "sent_at": "2026-05-02T18:35:00Z",
+        "subject": "[hp-r3i] Reserving packages/schemas",
+        "thread_id": "hp-r3i",
+        "to": [
+          "all"
+        ]
+      },
+      {
+        "ack_required": false,
+        "body_md": "Reservation 144 expired at 2026-05-02T19:05:00Z and owner AmberSky is absent from NTM.",
+        "from": "orchestrator",
+        "id": "msg-stale-reservation-002",
+        "sent_at": "2026-05-02T20:10:02Z",
+        "subject": "[hp-tjf] Stale reservation blocks schema work",
+        "thread_id": "hp-tjf",
+        "to": [
+          "HoopoeCOD3"
+        ]
+      }
+    ],
+    "threads": [
+      {
+        "id": "hp-r3i",
+        "message_count": 1,
+        "subject": "[hp-r3i] Reserving packages/schemas"
+      },
+      {
+        "id": "hp-tjf",
+        "message_count": 1,
+        "subject": "[hp-tjf] Stale reservation blocks schema work"
+      }
+    ],
+    "unread_total": 0
+  },
+  "agent_mail.reservations": {
+    "conflicts": [
+      {
+        "blocked_agent": "GreenBear",
+        "observed_ts": "2026-05-02T20:10:00Z",
+        "owner": "AmberSky",
+        "path": "packages/schemas/openapi.yaml",
+        "reservation_id": 144
+      }
+    ],
+    "reservations": [
+      {
+        "agent": "AmberSky",
+        "exclusive": true,
+        "expires_ts": "2026-05-02T19:05:00Z",
+        "id": 144,
+        "note": "expired 65 minutes before tend-swarm tick; owner absent from NTM snapshot",
+        "paths": [
+          "packages/schemas/**"
+        ],
+        "reason": "hp-r3i"
+      }
+    ],
+    "stale": [
+      {
+        "age_after_expiry_s": 3900,
+        "decision": "force_release",
+        "owner_present": false,
+        "reservation_id": 144
+      }
+    ]
+  },
+  "auth.exchangePairingForBearer": {
+    "bearerToken": "hp-bearer-mock-do-not-trust"
+  },
+  "auth.issueWsToken": {
+    "wsToken": "hp-ws-mock-do-not-trust"
+  },
+  "br.list": {
+    "issues": [
+      {
+        "created_at": "2026-05-02T23:36:12Z",
+        "description": "Fixture scenario bead used to prove expired Agent Mail reservations owned by absent agents are released through the typed tending action surface.",
+        "id": "hp-tjf",
+        "issue_type": "task",
+        "priority": 1,
+        "status": "in_progress",
+        "title": "[test] missing tending fixture stale-reservation",
+        "updated_at": "2026-05-02T23:36:12Z"
+      },
+      {
+        "created_at": "2026-05-02T20:00:00Z",
+        "description": "Ready work is blocked because packages/schemas/** is held by an expired reservation.",
+        "id": "hp-r3i",
+        "issue_type": "epic",
+        "priority": 1,
+        "status": "open",
+        "title": "Cross-cutting: packages/schemas - OpenAPI + TS client + Go types",
+        "updated_at": "2026-05-02T20:10:00Z"
+      }
+    ],
+    "total": 2
+  },
+  "build_logs.first": {
+    "runId": "run-007",
+    "text": "tend-swarm pre-script scanned Agent Mail reservations.\nreservation 144 expired 3900s ago and owner AmberSky was absent from NTM.\ntyped action intent: reservation.force_release reservation_id=144\n"
+  },
+  "build_logs.missing": null,
+  "bv.triage": {
+    "data_hash": "stale-reservation-synthetic",
+    "generated_at": "2026-05-02T20:10:00Z",
+    "triage": {
+      "meta": {
+        "compute_time_ms": 1,
+        "generated_at": "2026-05-02T20:10:00Z",
+        "issue_count": 2,
+        "phase2_ready": false,
+        "version": "1.0.0"
+      },
+      "quick_ref": {
+        "actionable_count": 1,
+        "blocked_count": 1,
+        "in_progress_count": 1,
+        "open_count": 2,
+        "top_picks": [
+          {
+            "id": "hp-r3i",
+            "reasons": [
+              "Ready but blocked by stale reservation 144",
+              "High priority schema work"
+            ],
+            "score": 0.91,
+            "title": "Cross-cutting: packages/schemas - OpenAPI + TS client + Go types",
+            "unblocks": 8
+          }
+        ]
+      },
+      "recommendations": [
+        {
+          "action": "Release stale reservation 144 before assignment",
+          "id": "hp-r3i",
+          "priority": 1,
+          "reasons": [
+            "packages/schemas/** held by expired reservation",
+            "owner AmberSky absent from NTM snapshot"
+          ],
+          "score": 0.91,
+          "status": "open",
+          "title": "Cross-cutting: packages/schemas - OpenAPI + TS client + Go types",
+          "type": "epic",
+          "unblocks_ids": [
+            "hp-14zt",
+            "hp-1ry",
+            "hp-38d",
+            "hp-3ab",
+            "hp-4d7",
+            "hp-5ja",
+            "hp-dmz",
+            "hp-gkk"
+          ]
+        }
+      ]
+    }
+  },
+  "events.subscribe": {
+    "cursors": {
+      "activity": 4,
+      "reservations": 5,
+      "swarm": 2
+    },
+    "delivered": [
+      {
+        "channel": "reservations",
+        "payload": {
+          "agent": "AmberSky",
+          "paths": [
+            "packages/schemas/**"
+          ],
+          "reason": "hp-r3i",
+          "reservation_id": 144
+        },
+        "seq": 1,
+        "ts": "2026-05-02T19:05:00Z",
+        "type": "reservation.expired"
+      },
+      {
+        "channel": "swarm",
+        "payload": {
+          "alive": 2,
+          "missing_agents": [
+            "AmberSky"
+          ],
+          "reservation_conflicts": 1,
+          "wedged": 0
+        },
+        "seq": 2,
+        "ts": "2026-05-02T20:10:00Z",
+        "type": "swarm.tick"
+      },
+      {
+        "channel": "reservations",
+        "payload": {
+          "age_after_expiry_s": 3900,
+          "blocked_agent": "GreenBear",
+          "owner_present": false,
+          "reservation_id": 144
+        },
+        "seq": 3,
+        "ts": "2026-05-02T20:10:01Z",
+        "type": "reservation.stale_detected"
+      },
+      {
+        "channel": "activity",
+        "payload": {
+          "actions": [
+            {
+              "reservation_id": 144,
+              "type": "reservation.force_release"
+            }
+          ],
+          "jobId": "tend-swarm",
+          "summary": "Release stale Agent Mail reservation 144"
+        },
+        "seq": 4,
+        "ts": "2026-05-02T20:10:02Z",
+        "type": "activity.action_plan"
+      },
+      {
+        "channel": "reservations",
+        "payload": {
+          "actor": "tending:reservation-stale-check",
+          "postcondition": "agent_mail.reservations no longer reports reservation",
+          "reservation_id": 144
+        },
+        "seq": 5,
+        "ts": "2026-05-02T20:10:03Z",
+        "type": "reservation.released"
+      }
+    ]
+  },
+  "ntm.snapshot": {
+    "absent_agents": [
+      "AmberSky"
+    ],
+    "counters": {
+      "alive": 2,
+      "errored": 0,
+      "panes": 2,
+      "sessions": 1,
+      "wedged": 0
+    },
+    "sessions": [
+      {
+        "id": "hoopoe-implementation",
+        "panes": [
+          {
+            "agent": "GreenBear",
+            "bead": "hp-r3i",
+            "blocked_on": "reservation:144",
+            "id": "%1",
+            "last_activity_ts": "2026-05-02T20:09:55Z",
+            "model": "gpt-5.5",
+            "program": "codex-cli",
+            "state": "IDLE"
+          },
+          {
+            "agent": "BlueHill",
+            "bead": "hp-1ry",
+            "id": "%2",
+            "last_activity_ts": "2026-05-02T20:09:58Z",
+            "model": "claude-opus-4-7",
+            "program": "claude-code",
+            "state": "TYPING"
+          }
+        ],
+        "windows": 1
+      }
+    ]
+  },
+  "pane_logs.first": {
+    "agent": "GreenBear",
+    "bytes": {
+      "encoding": "base64",
+      "data": "R3JlZW5CZWFyIHdhaXRpbmcgb24gcGFja2FnZXMvc2NoZW1hcy9vcGVuYXBpLnlhbWwuCkFnZW50IE1haWwgcmVwb3J0cyBwYWNrYWdlcy9zY2hlbWFzLyoqIGhlbGQgYnkgZXhwaXJlZCByZXNlcnZhdGlvbiAxNDQgZnJvbSBBbWJlclNreS4K"
+    }
+  },
+  "pane_logs.missing": null,
+  "projects.list": [
+    {
+      "id": "mock-flywheel-project",
+      "meta": {
+        "capturedAt": "<scrubbed-captured-at>",
+        "fixturesVersion": "phase0-2026-05-02",
+        "kind": "synthetic",
+        "notes": "Agent Mail reports an expired exclusive reservation whose owner no longer has a live NTM pane. tend-swarm should release it through a typed reservation.force_release action and verify Agent Mail state.",
+        "scenario": "stale-reservation",
+        "source": "hand-written hp-tjf stale-reservation tending fixture",
+        "vpsId": "mock-flywheel"
+      },
+      "name": "stale-reservation",
+      "rootPath": "<fixtures-root>/scenarios/stale-reservation"
+    }
+  ],
+  "scenario.id": "stale-reservation",
+  "system.capabilities": {
+    "agent_mail": {
+      "agent_mail.messages.read": {
+        "status": "ok"
+      },
+      "agent_mail.messages.send": {
+        "status": "ok"
+      },
+      "agent_mail.reservations.list": {
+        "status": "ok"
+      },
+      "agent_mail.reservations.release": {
+        "status": "ok"
+      }
+    },
+    "br": {
+      "br.dep.add": {
+        "status": "ok"
+      },
+      "br.issues.read": {
+        "status": "ok"
+      },
+      "br.issues.update": {
+        "status": "ok"
+      },
+      "br.sync.flush_only": {
+        "status": "ok"
+      }
+    },
+    "bv": {
+      "bv.robot.diff": {
+        "status": "ok"
+      },
+      "bv.robot.insights": {
+        "status": "ok"
+      },
+      "bv.robot.plan": {
+        "status": "ok"
+      },
+      "bv.robot.triage": {
+        "status": "ok"
+      },
+      "bv.tui": {
+        "notes": "Guardrail 1: bare bv launches TUI; never invoked",
+        "status": "blocked-by-policy"
+      }
+    },
+    "caam": {},
+    "casr": {},
+    "caut": {},
+    "dcg": {},
+    "git": {
+      "git.diff.read": {
+        "status": "ok"
+      },
+      "git.push": {
+        "notes": "snapshot script never pushes",
+        "status": "blocked-by-policy"
+      },
+      "git.status.read": {
+        "status": "ok"
+      },
+      "git.unpushed.list": {
+        "status": "ok"
+      }
+    },
+    "health": {
+      "health.complexity": {
+        "status": "untested"
+      },
+      "health.coverage": {
+        "status": "untested"
+      }
+    },
+    "jfp": {},
+    "jsm": {},
+    "ntm": {
+      "ntm.robot.snapshot": {
+        "status": "ok"
+      },
+      "ntm.robot.status": {
+        "status": "ok"
+      },
+      "ntm.robot.tail": {
+        "status": "ok"
+      }
+    },
+    "oracle": {},
+    "pt": {},
+    "sbh": {},
+    "srp": {},
+    "ubs": {}
+  },
+  "system.health": {
+    "environment": "mock-flywheel",
+    "status": "ok",
+    "time": "<scrubbed-runtime-time>"
+  },
+  "system.version": {
+    "api": "v1.0.0-mock",
+    "daemon": "mock-flywheel"
+  }
+}

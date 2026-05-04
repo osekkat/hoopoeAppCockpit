@@ -1,0 +1,41 @@
+{
+  "messages": [
+    {
+      "id": "msg-stale-reservation-001",
+      "thread_id": "hp-r3i",
+      "from": "AmberSky",
+      "to": [
+        "all"
+      ],
+      "subject": "[hp-r3i] Reserving packages/schemas",
+      "body_md": "Reserved packages/schemas/** for schema codegen work.",
+      "sent_at": "2026-05-02T18:35:00Z",
+      "ack_required": false
+    },
+    {
+      "id": "msg-stale-reservation-002",
+      "thread_id": "hp-tjf",
+      "from": "orchestrator",
+      "to": [
+        "HoopoeCOD3"
+      ],
+      "subject": "[hp-tjf] Stale reservation blocks schema work",
+      "body_md": "Reservation 144 expired at 2026-05-02T19:05:00Z and owner AmberSky is absent from NTM.",
+      "sent_at": "2026-05-02T20:10:02Z",
+      "ack_required": false
+    }
+  ],
+  "threads": [
+    {
+      "id": "hp-r3i",
+      "subject": "[hp-r3i] Reserving packages/schemas",
+      "message_count": 1
+    },
+    {
+      "id": "hp-tjf",
+      "subject": "[hp-tjf] Stale reservation blocks schema work",
+      "message_count": 1
+    }
+  ],
+  "unread_total": 0
+}
