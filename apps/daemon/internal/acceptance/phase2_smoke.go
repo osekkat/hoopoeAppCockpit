@@ -72,7 +72,7 @@ func RunPhase2Smoke(ctx context.Context, cfg Config) (Report, error) {
 			SchemaVersion: phase2SmokeSchemaVersion,
 			StartedAt:     now().UTC(),
 			WorkDir:       cfg.WorkDir,
-			Steps:         make([]StepResult, 0, 5),
+			Steps:         make([]StepResult, 0, 6),
 		},
 		state: smokeState{
 			applied: make(map[string]map[uint64]struct{}),
@@ -84,6 +84,7 @@ func RunPhase2Smoke(ctx context.Context, cfg Config) (Report, error) {
 	r.step(ctx, "disconnect_reconnect_replay", "disconnect and reconnect replay is ordered and idempotent", r.disconnectReconnectReplay)
 	r.step(ctx, "mac_sleep_reconnect", "macOS sleep wake reconnect stays inside SLO", r.macSleepReconnect)
 	r.step(ctx, "daemon_restart_recovery", "daemon restart recovers jobs and keeps bearer usable", r.daemonRestartRecovery)
+	r.step(ctx, "secret_rotation_invalidation", "signing secret rotation invalidates bearer and WS tokens", r.secretRotationInvalidation)
 	return r.report, r.report.RequirePassed()
 }
 
@@ -449,6 +450,44 @@ func (r *smokeRunner) daemonRestartRecovery(ctx context.Context) (stepEvidence, 
 		"recoveredStatus":  string(changed[0].Status),
 		"crashedRecovered": strconv.FormatBool(changed[0].Failure.CrashedRecovered),
 		"wsSid":            ws.SID,
+	}, nil
+}
+
+func (r *smokeRunner) secretRotationInvalidation(ctx context.Context) (stepEvidence, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if r.state.sessions == nil {
+		return nil, fmt.Errorf("bootstrap step did not initialize daemon auth state")
+	}
+	if _, err := r.state.sessions.VerifyBearer(r.state.bearer.Token); err != nil {
+		return nil, fmt.Errorf("bearer invalid before rotation: %w", err)
+	}
+	if _, err := r.state.sessions.VerifyWSToken(r.state.wsToken.Token); err != nil {
+		return nil, fmt.Errorf("ws token invalid before rotation: %w", err)
+	}
+	beforeSessions := len(r.state.sessions.ListSessions())
+	snap, err := r.state.sessions.RotateSecret()
+	if err != nil {
+		return nil, err
+	}
+	if _, err := r.state.sessions.VerifyBearer(r.state.bearer.Token); !errors.Is(err, auth.ErrTokenSignatureMismatch) {
+		return nil, fmt.Errorf("bearer verify after rotation = %v, want signature mismatch", err)
+	}
+	if _, err := r.state.sessions.VerifyWSToken(r.state.wsToken.Token); !errors.Is(err, auth.ErrTokenSignatureMismatch) {
+		return nil, fmt.Errorf("ws verify after rotation = %v, want signature mismatch", err)
+	}
+	afterSessions := len(r.state.sessions.ListSessions())
+	if afterSessions != 0 {
+		return nil, fmt.Errorf("session table length after rotation = %d, want 0", afterSessions)
+	}
+	return stepEvidence{
+		"rotatedFrom":       strconv.Itoa(snap.RotatedFrom),
+		"generation":        strconv.Itoa(snap.Generation),
+		"sessionsBefore":    strconv.Itoa(beforeSessions),
+		"sessionsAfter":     strconv.Itoa(afterSessions),
+		"bearerInvalidated": "true",
+		"wsInvalidated":     "true",
 	}, nil
 }
 

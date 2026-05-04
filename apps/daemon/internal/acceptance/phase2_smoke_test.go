@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/auth"
 )
 
 func TestPhase2AcceptanceSmokePassesMockFlywheelEquivalent(t *testing.T) {
@@ -18,7 +20,7 @@ func TestPhase2AcceptanceSmokePassesMockFlywheelEquivalent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("phase2 smoke failed: %v", err)
 	}
-	if got, want := len(report.Steps), 5; got != want {
+	if got, want := len(report.Steps), 6; got != want {
 		t.Fatalf("steps = %d, want %d", got, want)
 	}
 	for _, id := range []string{
@@ -27,6 +29,7 @@ func TestPhase2AcceptanceSmokePassesMockFlywheelEquivalent(t *testing.T) {
 		"disconnect_reconnect_replay",
 		"mac_sleep_reconnect",
 		"daemon_restart_recovery",
+		"secret_rotation_invalidation",
 	} {
 		step, ok := report.Step(id)
 		if !ok {
@@ -55,6 +58,13 @@ func TestPhase2AcceptanceSmokePassesMockFlywheelEquivalent(t *testing.T) {
 	}
 	if _, ok := report.Metric("mac_sleep_reconnect_p95"); !ok {
 		t.Fatalf("missing reconnect p95 metric: %#v", report.Metrics)
+	}
+	rotation, ok := report.Step("secret_rotation_invalidation")
+	if !ok {
+		t.Fatal("missing secret rotation step")
+	}
+	if rotation.Evidence["bearerInvalidated"] != "true" || rotation.Evidence["wsInvalidated"] != "true" || rotation.Evidence["sessionsAfter"] != "0" {
+		t.Fatalf("bad secret rotation evidence: %#v", rotation.Evidence)
 	}
 }
 
@@ -93,6 +103,46 @@ func TestPhase2AcceptanceSmokeReportIsJSONEvidence(t *testing.T) {
 	}
 }
 
+func TestPhase2AcceptanceSmokeEvidenceDoesNotLeakCredentialMaterial(t *testing.T) {
+	report, err := RunPhase2Smoke(context.Background(), Config{
+		WorkDir: t.TempDir(),
+		Now:     fixedNow,
+	})
+	if err != nil {
+		t.Fatalf("phase2 smoke failed: %v", err)
+	}
+	for _, step := range report.Steps {
+		for key, value := range step.Evidence {
+			if looksLikeBearerOrWSToken(value) {
+				t.Fatalf("step %s evidence %s leaked bearer/ws-shaped token", step.ID, key)
+			}
+			if looksLikePairingToken(value) {
+				t.Fatalf("step %s evidence %s leaked pairing-token-shaped value", step.ID, key)
+			}
+		}
+	}
+}
+
 func fixedNow() time.Time {
 	return time.Date(2026, 5, 4, 12, 0, 0, 0, time.UTC)
+}
+
+func looksLikeBearerOrWSToken(value string) bool {
+	parts := strings.Split(value, ".")
+	if len(parts) != 2 {
+		return false
+	}
+	return len(parts[0]) > 40 && len(parts[1]) > 30
+}
+
+func looksLikePairingToken(value string) bool {
+	if len(value) != auth.PairingTokenLength {
+		return false
+	}
+	for _, ch := range value {
+		if !strings.ContainsRune(auth.PairingAlphabet, ch) {
+			return false
+		}
+	}
+	return true
 }

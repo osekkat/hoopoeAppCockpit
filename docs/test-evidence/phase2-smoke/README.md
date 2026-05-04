@@ -8,13 +8,15 @@ cd apps/daemon
 rch exec -- go test ./internal/acceptance/...
 ```
 
-The suite emits a JSON-serializable report with five acceptance steps:
+The suite emits a JSON-serializable report with six acceptance steps:
 
 - cold daemon bootstrap to pairing, bearer, and WS token;
 - tool-inventory job log streaming with byte-offset resume;
 - disconnect/reconnect event replay with ordered, idempotent merge;
 - macOS sleep/wake reconnect p95 under the configured SLO;
 - daemon restart recovery for interrupted jobs while the bearer remains usable.
+- signing-secret rotation invalidating bearer + WS tokens without leaking token
+  material into evidence.
 
 Real research-spike VPS runs should drop host-specific JSONL or JSON reports in
 this directory using one subdirectory per run ID.
