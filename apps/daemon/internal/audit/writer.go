@@ -230,25 +230,17 @@ func (w *Writer) Append(entry Entry) (Entry, []redaction.TraceEvent, error) {
 	return records[0], traces, nil
 }
 
+// Query returns audit entries matching `query` from the in-memory index.
+// hp-1hwb: this no longer takes the writer mutex or re-reads the file on
+// every call. The daemon is the single writer for its own audit-log path,
+// so the in-memory index — bootstrapped from disk in NewWriter and updated
+// incrementally by Append — is authoritative for runtime reads. The Index
+// itself uses its own RWMutex so concurrent Queries do not block each
+// other and do not block in-flight Appends (Appends only need the index
+// lock for the duration of `add`, not for the whole file write).
 func (w *Writer) Query(query Query) ([]Entry, error) {
 	if w == nil {
 		return nil, fmt.Errorf("audit: nil writer")
-	}
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if w.path != "" {
-		if err := w.lockFile(); err != nil {
-			return nil, err
-		}
-		entries, err := readEntries(w.path)
-		unlockErr := w.unlockFile()
-		if err != nil {
-			return nil, err
-		}
-		if unlockErr != nil {
-			return nil, unlockErr
-		}
-		w.index = NewIndex(entries)
 	}
 	return w.index.Query(query), nil
 }
@@ -359,7 +351,16 @@ type Query struct {
 	Reverse       bool
 }
 
+// Index is the in-memory query side of the audit log. Append mutates it
+// under the writer's serialization mutex; Query reads it under its own
+// RWMutex so /v1/audit/query and /v1/audit/export do not block each other
+// or block in-flight Appends (hp-1hwb). The file on disk is the durable
+// canonical state; this index is rebuilt from the file at NewWriter time
+// and incrementally updated thereafter — the daemon is the single writer
+// for its own audit-log path, so an in-memory index is sufficient for
+// runtime reads.
 type Index struct {
+	mu        sync.RWMutex
 	entries   []Entry
 	byProject map[string][]int
 	byActor   map[string][]int
@@ -381,14 +382,21 @@ func NewIndex(entries []Entry) *Index {
 		byActor:   make(map[string][]int),
 		byAction:  make(map[string][]int),
 	}
+	// Single-goroutine bootstrap; bypass the lock to avoid the defer/Unlock
+	// overhead on potentially many entries.
 	for _, entry := range entries {
-		index.add(entry)
+		index.addLocked(entry)
 	}
 	return index
 }
 
 func (i *Index) Entries() []Entry {
-	if i == nil || len(i.entries) == 0 {
+	if i == nil {
+		return nil
+	}
+	i.mu.RLock()
+	defer i.mu.RUnlock()
+	if len(i.entries) == 0 {
 		return nil
 	}
 	out := make([]Entry, len(i.entries))
@@ -397,10 +405,15 @@ func (i *Index) Entries() []Entry {
 }
 
 func (i *Index) Query(query Query) []Entry {
-	if i == nil || len(i.entries) == 0 {
+	if i == nil {
 		return nil
 	}
-	indexes := i.candidateIndexes(query)
+	i.mu.RLock()
+	defer i.mu.RUnlock()
+	if len(i.entries) == 0 {
+		return nil
+	}
+	indexes := i.candidateIndexesLocked(query)
 	out := make([]Entry, 0, len(indexes))
 	for _, idx := range indexes {
 		entry := i.entries[idx]
@@ -427,6 +440,12 @@ func (i *Index) add(entry Entry) {
 	if i == nil {
 		return
 	}
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	i.addLocked(entry)
+}
+
+func (i *Index) addLocked(entry Entry) {
 	entry.ProjectID = normalizeProjectID(entry.ProjectID)
 	pos := len(i.entries)
 	i.entries = append(i.entries, entry)
@@ -439,7 +458,7 @@ func (i *Index) add(entry Entry) {
 	}
 }
 
-func (i *Index) candidateIndexes(query Query) []int {
+func (i *Index) candidateIndexesLocked(query Query) []int {
 	var candidates []int
 	choose := func(next []int) {
 		if next == nil {

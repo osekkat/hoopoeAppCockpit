@@ -373,3 +373,147 @@ func (s *syncBuffer) Sync() error {
 	s.syncs++
 	return nil
 }
+
+func TestQueryAndAppendInterleaveWithoutDeadlockOrTearing(t *testing.T) {
+	// hp-1hwb: Writer.Query no longer takes the writer mutex or re-reads
+	// the file. Concurrent Queries + Appends must complete without
+	// deadlock and without observing torn entries (an entry that's
+	// half-written into the index while another goroutine reads it).
+	dir := t.TempDir()
+	now := time.Unix(2026, 0).UTC()
+	writer, err := NewWriter(Config{
+		Path: filepath.Join(dir, "audit.jsonl"),
+		Now:  func() time.Time { return now },
+	})
+	if err != nil {
+		t.Fatalf("new writer: %v", err)
+	}
+	defer writer.Close()
+
+	const (
+		writers       = 4
+		readers       = 8
+		appendsEach   = 50
+		queriesEach   = 100
+	)
+	var wg sync.WaitGroup
+	wg.Add(writers + readers)
+
+	for w := 0; w < writers; w++ {
+		go func(w int) {
+			defer wg.Done()
+			for i := 0; i < appendsEach; i++ {
+				_, _, err := writer.Append(Entry{
+					ProjectID: "proj_concurrent",
+					Action:    "test.append",
+					Actor:     Actor{Kind: ActorSystem, ID: "test"},
+					Result:    ResultSuccess,
+					Data:      map[string]any{"writer": w, "i": i},
+				})
+				if err != nil {
+					t.Errorf("Append: %v", err)
+					return
+				}
+			}
+		}(w)
+	}
+
+	for r := 0; r < readers; r++ {
+		go func() {
+			defer wg.Done()
+			for i := 0; i < queriesEach; i++ {
+				entries, err := writer.Query(Query{ProjectID: "proj_concurrent", Limit: 10})
+				if err != nil {
+					t.Errorf("Query: %v", err)
+					return
+				}
+				// Sanity: every returned entry must have a non-zero
+				// EventID — the index would have to expose a partially
+				// constructed Entry for this to fail.
+				for _, entry := range entries {
+					if entry.EventID == "" {
+						t.Errorf("torn read: empty EventID")
+						return
+					}
+				}
+			}
+		}()
+	}
+
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timeout: Query may be blocking Append (regression of hp-1hwb)")
+	}
+
+	final, err := writer.Query(Query{ProjectID: "proj_concurrent"})
+	if err != nil {
+		t.Fatalf("final Query: %v", err)
+	}
+	if got, want := len(final), writers*appendsEach; got != want {
+		t.Fatalf("final entry count = %d, want %d", got, want)
+	}
+}
+
+func TestQueryDoesNotRereadFileAfterAppend(t *testing.T) {
+	// hp-1hwb: previously every Query call took the writer mutex AND
+	// re-read every line of the audit file from disk. With the in-memory
+	// index now authoritative for runtime reads, an Append → Query
+	// sequence should make zero ReadDir/Open syscalls against the
+	// audit-log path. Asserting the absence of that is hard portably,
+	// so we instead pin the contract that Query returns the just-
+	// appended entry without any explicit refresh — proving the index
+	// is the source of truth.
+	dir := t.TempDir()
+	now := time.Unix(3000, 0).UTC()
+	writer, err := NewWriter(Config{
+		Path: filepath.Join(dir, "audit.jsonl"),
+		Now:  func() time.Time { return now },
+	})
+	if err != nil {
+		t.Fatalf("new writer: %v", err)
+	}
+	defer writer.Close()
+
+	if _, _, err := writer.Append(Entry{
+		ProjectID: "proj_x",
+		Action:    "test.fresh_append",
+		Actor:     Actor{Kind: ActorSystem, ID: "x"},
+	}); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+
+	entries, err := writer.Query(Query{ProjectID: "proj_x"})
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if len(entries) != 1 || entries[0].Action != "test.fresh_append" {
+		t.Fatalf("Query did not see just-appended entry: %+v", entries)
+	}
+
+	// Mutate the on-disk file out from under the writer (simulate an
+	// outside process appending). The in-memory index should NOT see
+	// this — it's the daemon's authoritative state for its own log;
+	// cross-process visibility is out-of-scope for hp-1hwb.
+	f, err := os.OpenFile(filepath.Join(dir, "audit.jsonl"), os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatalf("open for sneaky append: %v", err)
+	}
+	if _, err := f.WriteString(`{"schemaVersion":2,"eventId":"sneaky","action":"test.sneaky","projectId":"proj_x","time":"2026-05-04T00:00:00Z","actor":{"kind":"system","id":"sneaky"}}` + "\n"); err != nil {
+		t.Fatalf("sneaky write: %v", err)
+	}
+	_ = f.Close()
+
+	entries, err = writer.Query(Query{ProjectID: "proj_x"})
+	if err != nil {
+		t.Fatalf("Query after sneaky append: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("Query saw out-of-band file write — index rescan regression. entries=%+v", entries)
+	}
+}
