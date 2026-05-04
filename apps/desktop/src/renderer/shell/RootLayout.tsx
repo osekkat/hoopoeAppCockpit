@@ -1,6 +1,7 @@
 import { Link, Outlet, useParams, useRouterState } from "@tanstack/react-router";
 import { Activity, Command, PanelRightClose, PanelRightOpen } from "lucide-react";
 import { useCallback, useEffect, useRef } from "react";
+import { ActivityDrawer, useActivityStore } from "../activity/index.ts";
 import {
   stageDefinitions,
   stageForPathname,
@@ -8,7 +9,6 @@ import {
 } from "../stages.ts";
 import { useShellUiStore } from "../store.ts";
 import { ProjectRunningPill, ProjectSwitcher } from "../topbar/ProjectSwitcher.tsx";
-import { ActivityPanel } from "./activity-panel.tsx";
 import { CommandPaletteHost } from "./command-palette/CommandPaletteHost.tsx";
 
 export function RootLayout() {
@@ -49,22 +49,28 @@ export function RootLayout() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      const modPressed = event.metaKey || event.ctrlKey;
       const isPaletteShortcut =
-        (event.metaKey || event.ctrlKey) && (event.key === "k" || event.key === "K");
+        modPressed && (event.key === "k" || event.key === "K");
       const isFallbackShortcut =
-        (event.metaKey || event.ctrlKey) &&
-        event.shiftKey &&
-        (event.key === "p" || event.key === "P");
+        modPressed && event.shiftKey && (event.key === "p" || event.key === "P");
+      // hp-1r4: ⌘/ (or Ctrl+/) toggles the Activity drawer.
+      const isActivityShortcut = modPressed && event.key === "/";
 
-      if (!isPaletteShortcut && !isFallbackShortcut) return;
-
-      event.preventDefault();
-      toggleCommandPalette();
+      if (isActivityShortcut) {
+        event.preventDefault();
+        toggleActivityPanel();
+        return;
+      }
+      if (isPaletteShortcut || isFallbackShortcut) {
+        event.preventDefault();
+        toggleCommandPalette();
+      }
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [toggleCommandPalette]);
+  }, [toggleActivityPanel, toggleCommandPalette]);
 
   const closeCommandPalette = useCallback(() => {
     setCommandPaletteOpen(false);
@@ -143,19 +149,10 @@ export function RootLayout() {
             >
               <Command size={17} strokeWidth={2.1} />
             </button>
-            <button
-              aria-expanded={activityPanelOpen}
-              aria-label={activityPanelOpen ? "Close Activity panel" : "Open Activity panel"}
-              className="hh-icon-button"
+            <ActivityToggleButton
+              open={activityPanelOpen}
               onClick={toggleActivityPanel}
-              type="button"
-            >
-              {activityPanelOpen ? (
-                <PanelRightClose size={17} strokeWidth={2.1} />
-              ) : (
-                <PanelRightOpen size={17} strokeWidth={2.1} />
-              )}
-            </button>
+            />
           </div>
         </header>
 
@@ -180,7 +177,7 @@ export function RootLayout() {
         </main>
       </section>
 
-      <ActivityPanel
+      <ActivityDrawer
         open={activityPanelOpen}
         onClose={() => setActivityPanelOpen(false)}
         icon={<Activity size={16} strokeWidth={2.1} />}
@@ -193,5 +190,35 @@ export function RootLayout() {
         onClose={closeCommandPalette}
       />
     </div>
+  );
+}
+
+interface ActivityToggleButtonProps {
+  readonly open: boolean;
+  readonly onClick: () => void;
+}
+
+/** hp-1r4: top-right Activity toggle. Shows the unread count from the
+ *  activity store as a persistent badge so the user can see urgent
+ *  events from any stage without opening the drawer. */
+function ActivityToggleButton({ open, onClick }: ActivityToggleButtonProps) {
+  const unreadCount = useActivityStore((state) => state.unreadCount);
+  const Icon = open ? PanelRightClose : PanelRightOpen;
+  return (
+    <button
+      aria-expanded={open}
+      aria-label={open ? "Close Activity drawer" : `Open Activity drawer${unreadCount > 0 ? ` (${unreadCount} unread)` : ""}`}
+      className="hh-icon-button hh-activity-toggle"
+      data-unread={unreadCount > 0}
+      onClick={onClick}
+      type="button"
+    >
+      <Icon size={17} strokeWidth={2.1} />
+      {unreadCount > 0 && !open && (
+        <span aria-hidden="true" className="hh-activity-toggle-badge">
+          {unreadCount > 99 ? "99+" : unreadCount}
+        </span>
+      )}
+    </button>
   );
 }
