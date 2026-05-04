@@ -179,6 +179,31 @@ describe("PowerAssertionManager", () => {
     expect(blocker.stops).toEqual([1]);
   });
 
+  test("acquire refuses new leases after the active lease limit", () => {
+    const blocker = makePowerSaveBlocker();
+    const audit: PowerAssertionAuditEvent[] = [];
+    let id = 0;
+    const manager = new PowerAssertionManager({
+      powerSaveBlocker: blocker.blocker,
+      audit: (event) => audit.push(event),
+      idFactory: () => `pa-${++id}`,
+      maxActiveLeases: 2,
+    });
+
+    manager.acquire({ roundId: "round-1" });
+    manager.acquire({ roundId: "round-2" });
+
+    expect(() => manager.acquire({ roundId: "round-3" })).toThrow(PowerAssertionError);
+    expect(manager.snapshot().heldCount).toBe(2);
+    expect(blocker.starts).toEqual(["prevent-app-suspension"]);
+    expect(audit.at(-1)).toMatchObject({
+      kind: "pro-round.power_warning",
+      warningKind: "lease_limit_exceeded",
+      roundId: "round-3",
+      heldCount: 2,
+    });
+  });
+
   test("double release is idempotent and emits a warning", () => {
     const blocker = makePowerSaveBlocker();
     const audit: PowerAssertionAuditEvent[] = [];

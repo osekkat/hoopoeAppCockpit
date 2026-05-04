@@ -89,7 +89,8 @@ export interface PowerAssertionAuditEvent {
     | "double_release"
     | "silence_threshold"
     | "battery_low_downgrade"
-    | "leak_detected";
+    | "leak_detected"
+    | "lease_limit_exceeded";
   readonly message?: string;
 }
 
@@ -113,6 +114,7 @@ export interface PowerAssertionManagerOptions {
   readonly idFactory?: () => string;
   readonly watchdogWarnAfterMs?: number;
   readonly watchdogForceReleaseAfterMs?: number;
+  readonly maxActiveLeases?: number;
   readonly disabled?: boolean;
 }
 
@@ -136,10 +138,16 @@ interface ActiveMechanism {
 
 const DEFAULT_WATCHDOG_WARN_AFTER_MS = 180_000;
 const DEFAULT_WATCHDOG_FORCE_RELEASE_AFTER_MS = 600_000;
+const DEFAULT_MAX_ACTIVE_LEASES = 32;
 const LONG_ROUND_THRESHOLD_MS = 5 * 60_000;
 
 export class PowerAssertionError extends Error {
-  readonly code: "disabled" | "invalid_input" | "no_mechanism" | "unknown_assertion";
+  readonly code:
+    | "disabled"
+    | "invalid_input"
+    | "lease_limit_exceeded"
+    | "no_mechanism"
+    | "unknown_assertion";
   constructor(code: PowerAssertionError["code"], message: string) {
     super(message);
     this.name = "PowerAssertionError";
@@ -158,6 +166,7 @@ export class PowerAssertionManager {
   readonly #idFactory: () => string;
   readonly #watchdogWarnAfterMs: number;
   readonly #watchdogForceReleaseAfterMs: number;
+  readonly #maxActiveLeases: number;
   #disabled: boolean;
 
   #active: ActiveMechanism | null = null;
@@ -175,6 +184,7 @@ export class PowerAssertionManager {
     this.#watchdogWarnAfterMs = options.watchdogWarnAfterMs ?? DEFAULT_WATCHDOG_WARN_AFTER_MS;
     this.#watchdogForceReleaseAfterMs =
       options.watchdogForceReleaseAfterMs ?? DEFAULT_WATCHDOG_FORCE_RELEASE_AFTER_MS;
+    this.#maxActiveLeases = normalizeMaxActiveLeases(options.maxActiveLeases);
     this.#disabled = options.disabled ?? false;
   }
 
@@ -188,6 +198,20 @@ export class PowerAssertionManager {
         message: "power assertions are disabled by settings",
       });
       throw new PowerAssertionError("disabled", "power assertions are disabled");
+    }
+    const heldLeases = this.#heldLeases();
+    if (heldLeases.length >= this.#maxActiveLeases) {
+      this.#emit({
+        kind: "pro-round.power_warning",
+        roundId: normalized.roundId,
+        warningKind: "lease_limit_exceeded",
+        heldCount: heldLeases.length,
+        message: `power assertion lease limit ${this.#maxActiveLeases} reached`,
+      });
+      throw new PowerAssertionError(
+        "lease_limit_exceeded",
+        `power assertion lease limit ${this.#maxActiveLeases} reached`,
+      );
     }
 
     const now = this.#now();
@@ -698,6 +722,17 @@ function cleanIdentifier(value: string, field: string): string {
     throw new PowerAssertionError("invalid_input", `invalid ${field}`);
   }
   return trimmed;
+}
+
+function normalizeMaxActiveLeases(value: number | undefined): number {
+  if (value === undefined) return DEFAULT_MAX_ACTIVE_LEASES;
+  if (!Number.isInteger(value) || value < 1) {
+    throw new PowerAssertionError(
+      "invalid_input",
+      "maxActiveLeases must be a positive integer",
+    );
+  }
+  return value;
 }
 
 function levelRank(level: PowerAssertionLevel): number {
