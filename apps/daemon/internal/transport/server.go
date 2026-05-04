@@ -104,6 +104,10 @@ func Run(ctx context.Context, args []string, cfg Config) error {
 	if err != nil {
 		return err
 	}
+	jobRegistry, err := prepareJobsRuntime(ctx, resolvedStateDir, now, cfg.Jobs)
+	if err != nil {
+		return err
+	}
 	auditWriter, err := audit.NewWriter(audit.Config{
 		Path: filepath.Join(resolvedStateDir, "audit.jsonl"),
 		Now:  now,
@@ -141,7 +145,7 @@ func Run(ctx context.Context, args []string, cfg Config) error {
 	router := api.NewRouter(api.Config{
 		Build:        cfg.Build,
 		Events:       cfg.Events,
-		Jobs:         cfg.Jobs,
+		Jobs:         jobRegistry,
 		Auth:         authRuntime.config,
 		Approvals:    approvalQueue,
 		Onboarding:   onboarding,
@@ -203,6 +207,22 @@ func prepareTelemetryRuntime(stateDir string, now func() time.Time, configured *
 		CollectorURL: collectorURL,
 		Now:          now,
 	})
+}
+
+func prepareJobsRuntime(ctx context.Context, stateDir string, now func() time.Time, configured jobstore.Reader) (jobstore.Reader, error) {
+	if configured != nil {
+		return configured, nil
+	}
+	registry, err := jobstore.NewFileRegistry(
+		ctx,
+		jobstore.FileStore{Path: filepath.Join(stateDir, "jobs", "registry.json")},
+		filepath.Join(stateDir, "jobs", "logs"),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("prepare job registry: %w", err)
+	}
+	registry.SetClock(now)
+	return registry, nil
 }
 
 func prepareOnboardingRuntime(ctx context.Context, stateDir string, now func() time.Time, configured *checkpoints.Service) (*checkpoints.Service, func() error, error) {

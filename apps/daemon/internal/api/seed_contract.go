@@ -399,12 +399,14 @@ func (s *server) handlePlannedWrite(code string) http.HandlerFunc {
 }
 
 func (s *server) writeJobError(w http.ResponseWriter, err error) {
-	switch err {
-	case jobs.ErrNotFound:
+	switch {
+	case errors.Is(err, ErrJobsReaderUnavailable):
+		s.writeProblemCode(w, http.StatusServiceUnavailable, "jobs.registry_unavailable", "job registry unavailable", err.Error())
+	case errors.Is(err, jobs.ErrNotFound):
 		s.writeProblemCode(w, http.StatusNotFound, "jobs.not_found", "job not found", err.Error())
-	case jobs.ErrInvalidRequest:
+	case errors.Is(err, jobs.ErrInvalidRequest):
 		s.writeProblemCode(w, http.StatusBadRequest, "jobs.invalid_request", "invalid job request", err.Error())
-	case jobs.ErrInvalidState:
+	case errors.Is(err, jobs.ErrInvalidState):
 		s.writeProblemCode(w, http.StatusConflict, "jobs.invalid_state", "invalid job state", err.Error())
 	default:
 		s.writeProblemCode(w, http.StatusInternalServerError, "jobs.error", "job request failed", err.Error())

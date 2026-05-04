@@ -102,6 +102,8 @@ func setLogHeader(header http.Header, key string, value string) {
 
 func (s *server) writeLogJobError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, ErrJobsReaderUnavailable):
+		s.writeProblemCode(w, http.StatusServiceUnavailable, "jobs.registry_unavailable", "job registry unavailable", err.Error())
 	case errors.Is(err, jobs.ErrNotFound):
 		s.writeProblem(w, http.StatusNotFound, "job not found", err.Error())
 	case errors.Is(err, jobs.ErrInvalidRequest):

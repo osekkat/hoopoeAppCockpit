@@ -183,7 +183,7 @@ func normalizeConfig(cfg Config) *server {
 	}
 	jobs := cfg.Jobs
 	if jobs == nil {
-		jobs = EmptyJobsReader{}
+		jobs = MissingJobsReader{}
 	}
 	logger := cfg.Logger
 	if logger == nil {
@@ -299,6 +299,10 @@ func (s *server) handleVersion(w http.ResponseWriter, r *http.Request) {
 func (s *server) handleJobs(w http.ResponseWriter, r *http.Request) {
 	jobList, err := s.jobs.List(r.Context(), jobs.ListFilter{})
 	if err != nil {
+		if errors.Is(err, ErrJobsReaderUnavailable) {
+			s.writeProblemCode(w, http.StatusServiceUnavailable, "jobs.registry_unavailable", "job registry unavailable", err.Error())
+			return
+		}
 		s.writeProblem(w, http.StatusInternalServerError, "job list failed", err.Error())
 		return
 	}

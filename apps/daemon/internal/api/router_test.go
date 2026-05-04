@@ -89,6 +89,40 @@ func TestJobsRoundTripUsesRegistryReader(t *testing.T) {
 	}
 }
 
+func TestJobRoutesWithoutRegistryReturnUnavailableProblem(t *testing.T) {
+	router := NewRouter(Config{})
+
+	for _, tc := range []struct {
+		name string
+		path string
+	}{
+		{name: "list", path: "/v1/jobs"},
+		{name: "log", path: "/v1/jobs/job_missing/log?offset=0"},
+		{name: "artifacts", path: "/v1/jobs/job_missing/artifacts"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			rec := httptest.NewRecorder()
+
+			router.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusServiceUnavailable {
+				t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusServiceUnavailable, rec.Body.String())
+			}
+			if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "application/problem+json") {
+				t.Fatalf("content-type = %q, want problem+json", got)
+			}
+			var body schemas.Problem
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+				t.Fatalf("decode problem: %v", err)
+			}
+			if body.Code != "jobs.registry_unavailable" {
+				t.Fatalf("problem code = %q, want jobs.registry_unavailable", body.Code)
+			}
+		})
+	}
+}
+
 func TestVersionRoundTrip(t *testing.T) {
 	router := NewRouter(Config{
 		Build: BuildInfo{

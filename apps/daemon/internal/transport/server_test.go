@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	jobstore "github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/jobs"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/security"
 )
 
@@ -108,6 +109,24 @@ func TestRunBootstrapTokenOnlyCreatesInitialPairingOnce(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(stateDir, "onboarding.sqlite3")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("bootstrap-token-only should not create onboarding database, stat err=%v", err)
+	}
+}
+
+func TestPrepareJobsRuntimeDefaultsToFileRegistry(t *testing.T) {
+	now := time.Date(2026, 5, 4, 0, 0, 0, 0, time.UTC)
+	reader, err := prepareJobsRuntime(context.Background(), t.TempDir(), func() time.Time { return now }, nil)
+	if err != nil {
+		t.Fatalf("prepareJobsRuntime: %v", err)
+	}
+	if _, ok := reader.(*jobstore.FileRegistry); !ok {
+		t.Fatalf("default jobs reader = %T, want *jobs.FileRegistry", reader)
+	}
+	list, err := reader.List(context.Background(), jobstore.ListFilter{})
+	if err != nil {
+		t.Fatalf("default jobs List: %v", err)
+	}
+	if len(list) != 0 {
+		t.Fatalf("default jobs length = %d, want 0", len(list))
 	}
 }
 
