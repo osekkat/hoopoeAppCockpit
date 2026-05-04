@@ -113,6 +113,31 @@ export function isPreloadIpcChannel(value: unknown): value is PreloadIpcChannelV
   return typeof value === "string" && PRELOAD_IPC_CHANNEL_VALUES.has(value);
 }
 
+export const PRELOAD_IPC_CHANNEL_CONTRACTS = {
+  powerAcquire: {
+    channel: PRELOAD_IPC_CHANNELS.powerAcquire,
+    input: "PowerAssertionAcquireInput",
+    output: "PowerAssertionSnapshot",
+  },
+  powerRelease: {
+    channel: PRELOAD_IPC_CHANNELS.powerRelease,
+    input: "PowerAssertionReleaseInput",
+    output: "PowerAssertionSnapshot",
+  },
+  powerSnapshot: {
+    channel: PRELOAD_IPC_CHANNELS.powerSnapshot,
+    input: "EmptyObject",
+    output: "PowerAssertionSnapshot",
+  },
+} as const satisfies Record<
+  string,
+  {
+    readonly channel: PreloadIpcChannelValue;
+    readonly input: string;
+    readonly output: string;
+  }
+>;
+
 export const MOCK_FLYWHEEL_COMMANDS = {
   health: "mock-flywheel.health",
   version: "mock-flywheel.version",
@@ -126,7 +151,7 @@ export const MOCK_FLYWHEEL_COMMANDS = {
   getBuildLog: "mock-flywheel.build-log.get",
   getPaneLog: "mock-flywheel.pane-log.get",
   exchangePairingForBearer: "mock-flywheel.auth.exchangePairing",
-  issueWsToken: "mock-flywheel.auth.issueWsToken",
+  issueWsSession: "mock-flywheel.auth.issue-ws-session",
   scenarioInfo: "mock-flywheel.scenario.info",
   swapScenario: "mock-flywheel.scenario.swap",
   setReplaySpeed: "mock-flywheel.replay.setSpeed",

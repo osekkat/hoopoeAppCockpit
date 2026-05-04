@@ -470,6 +470,27 @@ preloadChannels:
   powerRelease: hoopoe.power.release
   powerSnapshot: hoopoe.power.snapshot
 
+# ── 3a. Typed direct preload channel contracts ────────────────────────────
+#
+# These entries pin direct renderer → preload → main channel payload/response
+# type names for channels whose payloads are already validated by main-side
+# IpcRegistry handlers. hp-3zc will expand this section to cover every direct
+# preload channel; hp-ey3 starts with the security-sensitive power assertion
+# surface so preload-api.yaml cannot drift from the manual/generated contract.
+preloadChannelContracts:
+  powerAcquire:
+    channel: powerAcquire
+    input: PowerAssertionAcquireInput
+    output: PowerAssertionSnapshot
+  powerRelease:
+    channel: powerRelease
+    input: PowerAssertionReleaseInput
+    output: PowerAssertionSnapshot
+  powerSnapshot:
+    channel: powerSnapshot
+    input: EmptyObject
+    output: PowerAssertionSnapshot
+
 # ── 4. Internal IPC command manifests (main-only) ──────────────────────────
 #
 # IpcRegistry hosts more than the renderer-facing channels — it also
@@ -491,7 +512,7 @@ mockFlywheelCommands:
   getBuildLog: mock-flywheel.build-log.get
   getPaneLog: mock-flywheel.pane-log.get
   exchangePairingForBearer: mock-flywheel.auth.exchangePairing
-  issueWsToken: mock-flywheel.auth.issueWsToken
+  issueWsSession: mock-flywheel.auth.issue-ws-session
   scenarioInfo: mock-flywheel.scenario.info
   swapScenario: mock-flywheel.scenario.swap
   setReplaySpeed: mock-flywheel.replay.setSpeed

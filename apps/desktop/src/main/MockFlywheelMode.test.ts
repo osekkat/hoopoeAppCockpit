@@ -147,9 +147,9 @@ describe("createMockFlywheelDaemon (hp-o74)", () => {
 
 describe("auth tokens (hp-o74)", () => {
   test("mock pairing/bearer/ws-token are loud non-real strings", () => {
-    expect(MOCK_FLYWHEEL_AUTH_TOKENS.pairingToken).toBe("MOCKMOCKMOCK");
-    expect(MOCK_FLYWHEEL_AUTH_TOKENS.bearerToken.startsWith("hp-bearer-mock")).toBe(true);
-    expect(MOCK_FLYWHEEL_AUTH_TOKENS.wsToken.startsWith("hp-ws-mock")).toBe(true);
+    for (const value of Object.values(MOCK_FLYWHEEL_AUTH_TOKENS)) {
+      expect(value.startsWith("mock:flywheel:")).toBe(true);
+    }
   });
 
   test("audit actor is unmistakably a mock", () => {
@@ -226,7 +226,7 @@ describe("registerMockFlywheelClient (hp-o74)", () => {
     );
     expect(bearer.bearerToken).toBe(MOCK_FLYWHEEL_AUTH_TOKENS.bearerToken);
     const ws = await ipc.dispatch<{ bearerToken: string }, { wsToken: string }>(
-      MOCK_FLYWHEEL_COMMANDS.issueWsToken,
+      MOCK_FLYWHEEL_COMMANDS.issueWsSession,
       { bearerToken: bearer.bearerToken },
       { [WHEN_MOCK_FLYWHEEL]: true },
     );

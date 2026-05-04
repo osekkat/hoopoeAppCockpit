@@ -1,17 +1,24 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { PRELOAD_IPC_CHANNELS } from "../shared/ipc-contract.ts";
+import {
+  PRELOAD_IPC_CHANNELS,
+  type PowerAssertionAcquireInput,
+  type PowerAssertionLevel,
+  type PowerAssertionMechanism,
+  type PowerAssertionReleaseInput,
+  type PowerAssertionReleaseReason,
+  type PowerAssertionSnapshot,
+} from "../shared/ipc-contract.ts";
 import type { IpcRegistry, IpcValueValidator } from "./IpcRegistry.ts";
 
-export type PowerAssertionLevel = "display" | "app-suspension" | "system";
-export type PowerAssertionMechanism = "powersaveblocker" | "nsprocessinfo" | "caffeinate";
-export type PowerAssertionReleaseReason =
-  | "round_complete"
-  | "round_failed"
-  | "round_cancelled"
-  | "watchdog_force_release"
-  | "user_disabled"
-  | "shutdown";
+export type {
+  PowerAssertionAcquireInput,
+  PowerAssertionLevel,
+  PowerAssertionMechanism,
+  PowerAssertionReleaseInput,
+  PowerAssertionReleaseReason,
+  PowerAssertionSnapshot,
+} from "../shared/ipc-contract.ts";
 
 export interface PowerSaveBlockerLike {
   start(type: "prevent-display-sleep" | "prevent-app-suspension"): number;
@@ -87,24 +94,6 @@ export interface PowerAssertionAuditEvent {
 }
 
 export type PowerAssertionAuditSink = (event: PowerAssertionAuditEvent) => void;
-
-export interface PowerAssertionAcquireInput {
-  readonly roundId: string;
-  readonly modelId?: string;
-  readonly oracleTopology?: "mac" | "vps";
-  readonly estimatedDurationMs?: number;
-  readonly reason?: string;
-}
-
-export interface PowerAssertionSnapshot {
-  readonly active: boolean;
-  readonly assertionId: string | null;
-  readonly mechanism: PowerAssertionMechanism | null;
-  readonly level: PowerAssertionLevel | null;
-  readonly ownerRoundIds: readonly string[];
-  readonly heldCount: number;
-  readonly acquiredAt: string | null;
-}
 
 export interface PowerAssertionHandle {
   readonly assertionId: string;
@@ -483,10 +472,7 @@ export function registerPowerAssertionIpc(
         handle: (input) => manager.acquire(input).snapshot(),
       },
     }),
-    registry.register<
-      { readonly assertionId: string; readonly reason?: PowerAssertionReleaseReason },
-      PowerAssertionSnapshot
-    >({
+    registry.register<PowerAssertionReleaseInput, PowerAssertionSnapshot>({
       id: PRELOAD_IPC_CHANNELS.powerRelease,
       validateInput: assertReleaseInput,
       validateOutput: assertPowerAssertionSnapshot,
@@ -614,10 +600,7 @@ const assertAcquireInput: IpcValueValidator<PowerAssertionAcquireInput> = (
   return out;
 };
 
-const assertReleaseInput: IpcValueValidator<{
-  readonly assertionId: string;
-  readonly reason?: PowerAssertionReleaseReason;
-}> = (input) => {
+const assertReleaseInput: IpcValueValidator<PowerAssertionReleaseInput> = (input) => {
   if (!isRecord(input)) {
     throw new PowerAssertionError("invalid_input", "release input must be an object");
   }

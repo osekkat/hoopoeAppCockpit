@@ -187,6 +187,68 @@ export function isPreloadIpcChannel(value: unknown): value is PreloadIpcChannelV
   return typeof value === "string" && PRELOAD_IPC_CHANNEL_VALUES.has(value);
 }
 
+export type EmptyObject = Record<string, never>;
+
+export type PowerAssertionLevel = "display" | "app-suspension" | "system";
+
+export type PowerAssertionMechanism = "powersaveblocker" | "nsprocessinfo" | "caffeinate";
+
+export type PowerAssertionReleaseReason =
+  | "round_complete"
+  | "round_failed"
+  | "round_cancelled"
+  | "watchdog_force_release"
+  | "user_disabled"
+  | "shutdown";
+
+export interface PowerAssertionAcquireInput {
+  readonly roundId: string;
+  readonly modelId?: string;
+  readonly oracleTopology?: "mac" | "vps";
+  readonly estimatedDurationMs?: number;
+  readonly reason?: string;
+}
+
+export interface PowerAssertionReleaseInput {
+  readonly assertionId: string;
+  readonly reason?: PowerAssertionReleaseReason;
+}
+
+export interface PowerAssertionSnapshot {
+  readonly active: boolean;
+  readonly assertionId: string | null;
+  readonly mechanism: PowerAssertionMechanism | null;
+  readonly level: PowerAssertionLevel | null;
+  readonly ownerRoundIds: readonly string[];
+  readonly heldCount: number;
+  readonly acquiredAt: string | null;
+}
+
+export const PRELOAD_IPC_CHANNEL_CONTRACTS = {
+  powerAcquire: {
+    channel: PRELOAD_IPC_CHANNELS.powerAcquire,
+    input: "PowerAssertionAcquireInput",
+    output: "PowerAssertionSnapshot",
+  },
+  powerRelease: {
+    channel: PRELOAD_IPC_CHANNELS.powerRelease,
+    input: "PowerAssertionReleaseInput",
+    output: "PowerAssertionSnapshot",
+  },
+  powerSnapshot: {
+    channel: PRELOAD_IPC_CHANNELS.powerSnapshot,
+    input: "EmptyObject",
+    output: "PowerAssertionSnapshot",
+  },
+} as const satisfies Record<
+  string,
+  {
+    readonly channel: PreloadIpcChannelValue;
+    readonly input: string;
+    readonly output: string;
+  }
+>;
+
 // ── 4. IpcContract error type ─────────────────────────────────────────────
 //
 // Thrown by both preload (renderer-side) and IpcRegistry (main-side) when
@@ -229,7 +291,7 @@ export const MOCK_FLYWHEEL_COMMANDS = {
   getBuildLog: "mock-flywheel.build-log.get",
   getPaneLog: "mock-flywheel.pane-log.get",
   exchangePairingForBearer: "mock-flywheel.auth.exchangePairing",
-  issueWsToken: "mock-flywheel.auth.issueWsToken",
+  issueWsSession: "mock-flywheel.auth.issue-ws-session",
   scenarioInfo: "mock-flywheel.scenario.info",
   swapScenario: "mock-flywheel.scenario.swap",
   setReplaySpeed: "mock-flywheel.replay.setSpeed",

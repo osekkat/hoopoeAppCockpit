@@ -30,6 +30,10 @@ interface PreloadApi {
   daemonRequestMethods: Record<string, { description: string; bead: string }>;
   daemonSubscribeTopics: Record<string, { description: string; bead: string }>;
   preloadChannels: Record<string, string>;
+  preloadChannelContracts: Record<
+    string,
+    { channel: string; input: string; output: string }
+  >;
   mockFlywheelCommands: Record<string, string>;
   internalCommands: Record<string, string>;
 }
@@ -44,6 +48,7 @@ function parseYaml(text: string): PreloadApi {
     daemonRequestMethods: {},
     daemonSubscribeTopics: {},
     preloadChannels: {},
+    preloadChannelContracts: {},
     mockFlywheelCommands: {},
     internalCommands: {},
   };
@@ -53,10 +58,12 @@ function parseYaml(text: string): PreloadApi {
     | "daemonRequestMethods"
     | "daemonSubscribeTopics"
     | "preloadChannels"
+    | "preloadChannelContracts"
     | "mockFlywheelCommands"
     | "internalCommands";
   let section: Section = "none";
   let currentKey: string | null = null;
+  let currentPreloadContractKey: string | null = null;
   let currentBead = "";
   let currentDescription = "";
 
@@ -104,6 +111,13 @@ function parseYaml(text: string): PreloadApi {
     if (/^preloadChannels:\s*$/.test(line)) {
       flushPending();
       section = "preloadChannels";
+      currentPreloadContractKey = null;
+      continue;
+    }
+    if (/^preloadChannelContracts:\s*$/.test(line)) {
+      flushPending();
+      section = "preloadChannelContracts";
+      currentPreloadContractKey = null;
       continue;
     }
     if (/^mockFlywheelCommands:\s*$/.test(line)) {
@@ -120,6 +134,7 @@ function parseYaml(text: string): PreloadApi {
       // New top-level — leaving the current section.
       flushPending();
       section = "none";
+      currentPreloadContractKey = null;
       continue;
     }
 
@@ -135,6 +150,33 @@ function parseYaml(text: string): PreloadApi {
       const m = /^\s+([a-zA-Z]\w*):\s+(\S+)\s*$/.exec(line);
       if (m && m[1] !== undefined && m[2] !== undefined) {
         result.preloadChannels[m[1]] = m[2];
+      }
+      continue;
+    }
+
+    if (section === "preloadChannelContracts") {
+      const keyMatch = /^  ([a-zA-Z]\w*):\s*$/.exec(line);
+      if (keyMatch && keyMatch[1] !== undefined) {
+        currentPreloadContractKey = keyMatch[1];
+        result.preloadChannelContracts[currentPreloadContractKey] = {
+          channel: "",
+          input: "",
+          output: "",
+        };
+        continue;
+      }
+
+      const propMatch = /^\s{4}(channel|input|output):\s+(\S+)\s*$/.exec(line);
+      if (
+        propMatch &&
+        currentPreloadContractKey !== null &&
+        propMatch[1] !== undefined &&
+        propMatch[2] !== undefined
+      ) {
+        const contract = result.preloadChannelContracts[currentPreloadContractKey];
+        if (contract !== undefined) {
+          contract[propMatch[1] as "channel" | "input" | "output"] = propMatch[2];
+        }
       }
       continue;
     }
@@ -165,10 +207,29 @@ function parseYaml(text: string): PreloadApi {
   return result;
 }
 
+function assertValidPreloadContracts(api: PreloadApi): void {
+  for (const [key, contract] of Object.entries(api.preloadChannelContracts)) {
+    if (!contract.channel || !contract.input || !contract.output) {
+      throw new Error(`preloadChannelContracts.${key} must declare channel, input, and output`);
+    }
+    if (contract.channel !== key) {
+      throw new Error(
+        `preloadChannelContracts.${key}.channel must match the contract key, got ${contract.channel}`,
+      );
+    }
+    if (!(contract.channel in api.preloadChannels)) {
+      throw new Error(
+        `preloadChannelContracts.${key}.channel references unknown preloadChannels key ${contract.channel}`,
+      );
+    }
+  }
+}
+
 function generateTs(api: PreloadApi): string {
   const requestMethodNames = Object.keys(api.daemonRequestMethods);
   const subscribeTopicNames = Object.keys(api.daemonSubscribeTopics);
   const channelEntries = Object.entries(api.preloadChannels);
+  const preloadContractEntries = Object.entries(api.preloadChannelContracts);
   const mockCommandEntries = Object.entries(api.mockFlywheelCommands);
   const internalCommandEntries = Object.entries(api.internalCommands);
 
@@ -180,6 +241,17 @@ function generateTs(api: PreloadApi): string {
 
   const channelLines = channelEntries
     .map(([key, value]) => `  ${key}: ${JSON.stringify(value)},`)
+    .join("\n");
+
+  const preloadContractLines = preloadContractEntries
+    .map(
+      ([key, value]) =>
+        `  ${key}: {\n` +
+        `    channel: PRELOAD_IPC_CHANNELS.${value.channel},\n` +
+        `    input: ${JSON.stringify(value.input)},\n` +
+        `    output: ${JSON.stringify(value.output)},\n` +
+        "  },",
+    )
     .join("\n");
 
   return `/**
@@ -241,6 +313,17 @@ export function isPreloadIpcChannel(value: unknown): value is PreloadIpcChannelV
   return typeof value === "string" && PRELOAD_IPC_CHANNEL_VALUES.has(value);
 }
 
+export const PRELOAD_IPC_CHANNEL_CONTRACTS = {
+${preloadContractLines}
+} as const satisfies Record<
+  string,
+  {
+    readonly channel: PreloadIpcChannelValue;
+    readonly input: string;
+    readonly output: string;
+  }
+>;
+
 export const MOCK_FLYWHEEL_COMMANDS = {
 ${fmtObject(mockCommandEntries)}
 } as const satisfies Record<string, \`mock-flywheel.\${string}\`>;
@@ -269,6 +352,7 @@ export function isInternalIpcCommand(value: unknown): value is InternalIpcComman
 
 const yamlText = readFileSync(yamlPath, "utf8");
 const api = parseYaml(yamlText);
+assertValidPreloadContracts(api);
 const ts = generateTs(api);
 writeFileSync(outPath, ts);
 

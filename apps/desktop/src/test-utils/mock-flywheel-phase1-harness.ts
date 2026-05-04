@@ -161,7 +161,7 @@ export function createPhase1MockFlywheelHarness(input?: {
         { pairingToken: MOCK_FLYWHEEL_AUTH_TOKENS.pairingToken },
       );
       const ws = await dispatch<{ bearerToken: string }, { wsToken: string }>(
-        MOCK_FLYWHEEL_COMMANDS.issueWsToken,
+        MOCK_FLYWHEEL_COMMANDS.issueWsSession,
         { bearerToken: bearer.bearerToken },
       );
       return {
@@ -188,7 +188,7 @@ export function createPhase1MockFlywheelHarness(input?: {
     assertReady: async () => {
       const state = await snapshot();
       const auth = await dispatch<{ bearerToken: string }, { wsToken: string }>(
-        MOCK_FLYWHEEL_COMMANDS.issueWsToken,
+        MOCK_FLYWHEEL_COMMANDS.issueWsSession,
         {
           bearerToken: (await dispatch<{ pairingToken: string }, { bearerToken: string }>(
             MOCK_FLYWHEEL_COMMANDS.exchangePairingForBearer,

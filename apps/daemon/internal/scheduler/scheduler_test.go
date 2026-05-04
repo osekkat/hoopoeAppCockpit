@@ -704,6 +704,118 @@ func TestSchedulerWaitContextDoesNotLeakWaitersOnCallerCancellation(t *testing.T
 	}
 }
 
+// TestSchedulerRunNowDispatchesEvenWhenAuditFails guards hp-54te: the
+// registry already persisted the run as RunStatusRunning by the time
+// RunNow returns. If audit is recorded before dispatch and audit
+// fails, the run is orphaned in the registry until lease expiry. The
+// scheduler must dispatch first; the audit error is reported via the
+// return value but never silently swallows the run.
+func TestSchedulerRunNowDispatchesEvenWhenAuditFails(t *testing.T) {
+	ctx := context.Background()
+	clock := newTestClock(time.Date(2026, 5, 4, 16, 0, 0, 0, time.UTC))
+	registry := newTestRegistry(t, clock)
+	if _, err := registry.ImportDefinition(ctx, testDefinition("orphan-guard", Schedule{Type: ScheduleOnDemand})); err != nil {
+		t.Fatal(err)
+	}
+	ran := make(chan struct{}, 1)
+	auditErr := errors.New("synthetic audit failure")
+	scheduler, err := New(Config{
+		Registry: registry,
+		Runner: RunnerFunc(func(context.Context, Run) (RunResult, error) {
+			ran <- struct{}{}
+			return RunResult{WakeAgent: false}, nil
+		}),
+		AuditSink: AuditSinkFunc(func(context.Context, Decision) error {
+			return auditErr
+		}),
+		MaxWorkers: 2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	decision, err := scheduler.RunNow(ctx, "orphan-guard")
+	if !errors.Is(err, auditErr) {
+		t.Fatalf("RunNow err = %v, want errors.Is(_, auditErr)", err)
+	}
+	if decision.Outcome != OutcomeStarted {
+		t.Fatalf("decision.Outcome = %s, want %s", decision.Outcome, OutcomeStarted)
+	}
+	waitForSignal(t, ran, "runner invoked despite audit failure")
+	waitForRunStatus(t, registry, decision.RunID, RunStatusSucceeded)
+	scheduler.Wait()
+}
+
+// TestSchedulerTickDispatchesAllRunsAndJoinsAuditErrors guards hp-54te:
+// when SelectDue persists multiple runs and the audit sink fails on the
+// first decision, the previous code returned immediately, leaving every
+// run orphaned as RunStatusRunning. The fix must (a) dispatch every
+// returned run, (b) audit every decision regardless of intermediate
+// failures, and (c) return a joined error so callers see the failure
+// without losing the rest of the batch.
+func TestSchedulerTickDispatchesAllRunsAndJoinsAuditErrors(t *testing.T) {
+	ctx := context.Background()
+	clock := newTestClock(time.Date(2026, 5, 4, 17, 0, 0, 0, time.UTC))
+	registry := newTestRegistry(t, clock)
+	for _, id := range []string{"job-a", "job-b", "job-c"} {
+		if _, err := registry.ImportDefinition(ctx, testDefinition(id, Schedule{Type: ScheduleInterval, Interval: time.Minute})); err != nil {
+			t.Fatal(err)
+		}
+	}
+	clock.Advance(2 * time.Minute)
+
+	var auditedMu sync.Mutex
+	audited := map[string]int{}
+	auditErr := errors.New("synthetic audit failure")
+	var ranMu sync.Mutex
+	ran := map[string]int{}
+	allRan := make(chan struct{})
+	var ranOnce sync.Once
+	scheduler, err := New(Config{
+		Registry: registry,
+		Runner: RunnerFunc(func(_ context.Context, run Run) (RunResult, error) {
+			ranMu.Lock()
+			ran[run.JobID]++
+			n := len(ran)
+			ranMu.Unlock()
+			if n >= 3 {
+				ranOnce.Do(func() { close(allRan) })
+			}
+			return RunResult{WakeAgent: false}, nil
+		}),
+		AuditSink: AuditSinkFunc(func(_ context.Context, decision Decision) error {
+			auditedMu.Lock()
+			audited[decision.JobID]++
+			auditedMu.Unlock()
+			if decision.JobID == "job-b" {
+				return auditErr
+			}
+			return nil
+		}),
+		MaxWorkers: 4,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	decisions, err := scheduler.Tick(ctx)
+	if !errors.Is(err, auditErr) {
+		t.Fatalf("Tick err = %v, want errors.Is(_, auditErr)", err)
+	}
+	if len(decisions) != 3 {
+		t.Fatalf("len(decisions) = %d, want 3 (Tick must surface every decision even when audit fails mid-batch)", len(decisions))
+	}
+
+	waitForSignal(t, allRan, "every dispatched run executed")
+	scheduler.Wait()
+
+	auditedMu.Lock()
+	defer auditedMu.Unlock()
+	if len(audited) != 3 {
+		t.Fatalf("audit invocations = %v, want all three jobs audited regardless of intermediate failure", audited)
+	}
+}
+
 // TestSchedulerNewRefusesNilRunner guards hp-6pn: the previous silent
 // no-op default made every dispatched run look like a healthy
 // `wakeAgent: false` tick (Guardrail 9), which would mask missing

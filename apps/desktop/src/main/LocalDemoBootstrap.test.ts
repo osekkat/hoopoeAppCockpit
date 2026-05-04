@@ -179,7 +179,7 @@ describe("startLocalDemo (hp-lddj)", () => {
         { bearerToken: string },
         { wsToken: string }
       >(
-        MOCK_FLYWHEEL_COMMANDS.issueWsToken,
+        MOCK_FLYWHEEL_COMMANDS.issueWsSession,
         { bearerToken: bearer.bearerToken },
         { [WHEN_MOCK_FLYWHEEL]: true },
       );

@@ -29,6 +29,9 @@ import {
   isDaemonSubscribeTopic,
   type DaemonRequestMethod,
   type DaemonSubscribeTopic,
+  type PowerAssertionAcquireInput,
+  type PowerAssertionReleaseInput,
+  type PowerAssertionSnapshot,
 } from "../src/shared/ipc-contract.ts";
 import type { BootstrapStepBridge } from "../src/shared/bootstrap-bridge.ts";
 
@@ -44,9 +47,10 @@ const CHANNELS = PRELOAD_IPC_CHANNELS;
 // Every method round-trips through ipcRenderer.invoke with a single args
 // object. Concrete request/response validation happens in main-process
 // IpcRegistry handlers; preload exposes unknown wire values until a caller
-// narrows them with the generated schema types.
-async function invoke(channel: string, args: unknown): Promise<unknown> {
-  return await ipcRenderer.invoke(channel, args);
+// narrows them with the generated schema types or a shared direct-channel
+// contract.
+async function invoke<T = unknown>(channel: string, args: unknown): Promise<T> {
+  return (await ipcRenderer.invoke(channel, args)) as T;
 }
 
 async function invokeVoid(channel: string, args: unknown): Promise<void> {
@@ -129,18 +133,13 @@ export interface HoopoeBridge {
     /** hp-6gs4: Scoped Mac awake assertion while a ChatGPT Pro Oracle
      *  browser round is actively running. Main owns the OS mechanisms;
      *  renderer passes only round metadata. */
-    readonly acquire: (input: {
-      roundId: string;
-      modelId?: string;
-      oracleTopology?: "mac" | "vps";
-      estimatedDurationMs?: number;
-      reason?: string;
-    }) => Promise<unknown>;
-    readonly release: (input: {
-      assertionId: string;
-      reason?: "round_complete" | "round_failed" | "round_cancelled" | "watchdog_force_release" | "user_disabled" | "shutdown";
-    }) => Promise<unknown>;
-    readonly snapshot: () => Promise<unknown>;
+    readonly acquire: (
+      input: PowerAssertionAcquireInput,
+    ) => Promise<PowerAssertionSnapshot>;
+    readonly release: (
+      input: PowerAssertionReleaseInput,
+    ) => Promise<PowerAssertionSnapshot>;
+    readonly snapshot: () => Promise<PowerAssertionSnapshot>;
   };
   /** hp-9z45 + hp-o90: Wizard bootstrap stream steps. Optional —
    *  daemon endpoints (POST /v1/bootstrap/preflight, /acfs/start,
@@ -215,9 +214,9 @@ export const hoopoeBridge: HoopoeBridge = {
     setCapOverride: (input) => invoke(CHANNELS.cloneSetCapOverride, input),
   },
   power: {
-    acquire: (input) => invoke(CHANNELS.powerAcquire, input),
-    release: (input) => invoke(CHANNELS.powerRelease, input),
-    snapshot: () => invoke(CHANNELS.powerSnapshot, {}),
+    acquire: (input) => invoke<PowerAssertionSnapshot>(CHANNELS.powerAcquire, input),
+    release: (input) => invoke<PowerAssertionSnapshot>(CHANNELS.powerRelease, input),
+    snapshot: () => invoke<PowerAssertionSnapshot>(CHANNELS.powerSnapshot, {}),
   },
 };
 

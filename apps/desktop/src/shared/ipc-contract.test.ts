@@ -12,12 +12,21 @@ import {
   IpcContractError,
   MOCK_FLYWHEEL_COMMANDS,
   PRELOAD_IPC_CHANNELS,
+  PRELOAD_IPC_CHANNEL_CONTRACTS,
   isAllowedRegistryCommandId,
   isDaemonRequestMethod,
   isDaemonSubscribeTopic,
   isInternalIpcCommand,
   isPreloadIpcChannel,
 } from "./ipc-contract.ts";
+import {
+  DAEMON_REQUEST_METHODS as GENERATED_DAEMON_REQUEST_METHODS,
+  DAEMON_SUBSCRIBE_TOPICS as GENERATED_DAEMON_SUBSCRIBE_TOPICS,
+  INTERNAL_IPC_COMMANDS as GENERATED_INTERNAL_IPC_COMMANDS,
+  MOCK_FLYWHEEL_COMMANDS as GENERATED_MOCK_FLYWHEEL_COMMANDS,
+  PRELOAD_IPC_CHANNELS as GENERATED_PRELOAD_IPC_CHANNELS,
+  PRELOAD_IPC_CHANNEL_CONTRACTS as GENERATED_PRELOAD_IPC_CHANNEL_CONTRACTS,
+} from "./ipc-contract.gen.ts";
 
 test("DAEMON_REQUEST_METHODS: every entry is a non-empty string", () => {
   expect(DAEMON_REQUEST_METHODS.length).toBeGreaterThan(0);
@@ -92,6 +101,38 @@ test("isPreloadIpcChannel: accepts only enumerated values", () => {
 test("isAllowedRegistryCommandId: preload channels are always allowed", () => {
   for (const channel of Object.values(PRELOAD_IPC_CHANNELS)) {
     expect(isAllowedRegistryCommandId(channel)).toBe(true);
+  }
+});
+
+test("generated preload contract mirrors manual ipc-contract.ts", () => {
+  expect(DAEMON_REQUEST_METHODS).toEqual(GENERATED_DAEMON_REQUEST_METHODS);
+  expect(DAEMON_SUBSCRIBE_TOPICS).toEqual(GENERATED_DAEMON_SUBSCRIBE_TOPICS);
+  expect(PRELOAD_IPC_CHANNELS).toEqual(GENERATED_PRELOAD_IPC_CHANNELS);
+  expect(PRELOAD_IPC_CHANNEL_CONTRACTS).toEqual(
+    GENERATED_PRELOAD_IPC_CHANNEL_CONTRACTS,
+  );
+  expect(MOCK_FLYWHEEL_COMMANDS).toEqual(GENERATED_MOCK_FLYWHEEL_COMMANDS);
+  expect(INTERNAL_IPC_COMMANDS).toEqual(GENERATED_INTERNAL_IPC_COMMANDS);
+});
+
+test("power assertion preload contracts pin payload and response type names", () => {
+  expect(PRELOAD_IPC_CHANNEL_CONTRACTS.powerAcquire).toEqual({
+    channel: PRELOAD_IPC_CHANNELS.powerAcquire,
+    input: "PowerAssertionAcquireInput",
+    output: "PowerAssertionSnapshot",
+  });
+  expect(PRELOAD_IPC_CHANNEL_CONTRACTS.powerRelease).toEqual({
+    channel: PRELOAD_IPC_CHANNELS.powerRelease,
+    input: "PowerAssertionReleaseInput",
+    output: "PowerAssertionSnapshot",
+  });
+  expect(PRELOAD_IPC_CHANNEL_CONTRACTS.powerSnapshot).toEqual({
+    channel: PRELOAD_IPC_CHANNELS.powerSnapshot,
+    input: "EmptyObject",
+    output: "PowerAssertionSnapshot",
+  });
+  for (const contract of Object.values(PRELOAD_IPC_CHANNEL_CONTRACTS)) {
+    expect(isPreloadIpcChannel(contract.channel)).toBe(true);
   }
 });
 

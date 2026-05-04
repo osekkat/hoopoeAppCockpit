@@ -165,7 +165,7 @@ function registerAuthCommands(register: RegisterMockCommand, client: MockDaemonC
     (input) => client.exchangePairingForBearer(input),
   );
   register<{ bearerToken: string }, ReturnType<MockDaemonClient["issueWsToken"]>>(
-    MOCK_FLYWHEEL_COMMANDS.issueWsToken,
+    MOCK_FLYWHEEL_COMMANDS.issueWsSession,
     (input) => client.issueWsToken(input),
   );
 }

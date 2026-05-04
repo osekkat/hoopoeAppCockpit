@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -75,16 +76,18 @@ func (s *Scheduler) Tick(ctx context.Context) ([]Decision, error) {
 	if err != nil {
 		return nil, err
 	}
-	for _, decision := range decisions {
-		if err := s.recordAudit(ctx, decision); err != nil {
-			return nil, err
-		}
-	}
+	// Dispatch before audit. SelectDue persisted these runs as
+	// RunStatusRunning; if recordAudit fails first, the runs are
+	// orphaned in the registry until lease expiry. Dispatch is
+	// fire-and-forget, so reordering can't fail. Guardrail 10 still
+	// holds: audit errors are joined and returned, never swallowed.
 	for _, run := range runs {
 		s.dispatch(ctx, run)
 	}
-	if err := s.registry.RecordTickDuration(ctx, time.Since(start)); err != nil {
-		return nil, err
+	auditErr := s.recordAuditDecisions(ctx, decisions)
+	tickErr := s.registry.RecordTickDuration(ctx, time.Since(start))
+	if joined := errors.Join(auditErr, tickErr); joined != nil {
+		return decisions, joined
 	}
 	return decisions, nil
 }
@@ -94,11 +97,13 @@ func (s *Scheduler) RunNow(ctx context.Context, jobID string) (Decision, error) 
 	if err != nil {
 		return Decision{}, err
 	}
-	if err := s.recordAudit(ctx, decision); err != nil {
-		return Decision{}, err
-	}
+	// Dispatch before audit; the registry has already persisted run as
+	// RunStatusRunning. See Tick comment.
 	if decision.Outcome == OutcomeStarted {
 		s.dispatch(ctx, run)
+	}
+	if err := s.recordAudit(ctx, decision); err != nil {
+		return decision, err
 	}
 	return decision, nil
 }
@@ -108,15 +113,28 @@ func (s *Scheduler) EmitEvent(ctx context.Context, eventType string, eventKey st
 	if err != nil {
 		return nil, err
 	}
-	for _, decision := range decisions {
-		if err := s.recordAudit(ctx, decision); err != nil {
-			return nil, err
-		}
-	}
+	// Dispatch before audit; see Tick comment.
 	for _, run := range runs {
 		s.dispatch(ctx, run)
 	}
+	if err := s.recordAuditDecisions(ctx, decisions); err != nil {
+		return decisions, err
+	}
 	return decisions, nil
+}
+
+// recordAuditDecisions audits every decision in the batch, accumulating
+// errors via errors.Join instead of returning on the first failure. A
+// single audit blip in a batched Tick must not silently swallow the
+// remaining decisions (Guardrail 10: audit always fires regardless).
+func (s *Scheduler) recordAuditDecisions(ctx context.Context, decisions []Decision) error {
+	var errs error
+	for _, decision := range decisions {
+		if err := s.recordAudit(ctx, decision); err != nil {
+			errs = errors.Join(errs, err)
+		}
+	}
+	return errs
 }
 
 func (s *Scheduler) Wait() {

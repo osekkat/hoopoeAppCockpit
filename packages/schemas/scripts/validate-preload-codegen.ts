@@ -34,6 +34,10 @@ type ContractModule = {
   DAEMON_REQUEST_METHODS: readonly string[];
   DAEMON_SUBSCRIBE_TOPICS: readonly string[];
   PRELOAD_IPC_CHANNELS: Record<string, string>;
+  PRELOAD_IPC_CHANNEL_CONTRACTS: Record<
+    string,
+    { readonly channel: string; readonly input: string; readonly output: string }
+  >;
   MOCK_FLYWHEEL_COMMANDS: Record<string, string>;
   INTERNAL_IPC_COMMANDS: Record<string, string>;
 };
@@ -42,11 +46,21 @@ type ComparableContract = {
   daemonRequestMethods: readonly string[];
   daemonSubscribeTopics: readonly string[];
   preloadIpcChannels: Record<string, string>;
+  preloadIpcChannelContracts: Record<
+    string,
+    { readonly channel: string; readonly input: string; readonly output: string }
+  >;
   mockFlywheelCommands: Record<string, string>;
   internalIpcCommands: Record<string, string>;
 };
 
-function stableObject(input: Record<string, string>): Record<string, string> {
+function stableStringObject(input: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.entries(input).toSorted(([a], [b]) => a.localeCompare(b)));
+}
+
+function stablePreloadContracts(
+  input: Record<string, { readonly channel: string; readonly input: string; readonly output: string }>,
+): Record<string, { readonly channel: string; readonly input: string; readonly output: string }> {
   return Object.fromEntries(Object.entries(input).toSorted(([a], [b]) => a.localeCompare(b)));
 }
 
@@ -54,9 +68,10 @@ function comparableContract(module: ContractModule): ComparableContract {
   return {
     daemonRequestMethods: [...module.DAEMON_REQUEST_METHODS],
     daemonSubscribeTopics: [...module.DAEMON_SUBSCRIBE_TOPICS],
-    preloadIpcChannels: stableObject(module.PRELOAD_IPC_CHANNELS),
-    mockFlywheelCommands: stableObject(module.MOCK_FLYWHEEL_COMMANDS),
-    internalIpcCommands: stableObject(module.INTERNAL_IPC_COMMANDS),
+    preloadIpcChannels: stableStringObject(module.PRELOAD_IPC_CHANNELS),
+    preloadIpcChannelContracts: stablePreloadContracts(module.PRELOAD_IPC_CHANNEL_CONTRACTS),
+    mockFlywheelCommands: stableStringObject(module.MOCK_FLYWHEEL_COMMANDS),
+    internalIpcCommands: stableStringObject(module.INTERNAL_IPC_COMMANDS),
   };
 }
 
@@ -65,6 +80,7 @@ function assertContractModule(module: Partial<ContractModule>, label: string): C
     "DAEMON_REQUEST_METHODS",
     "DAEMON_SUBSCRIBE_TOPICS",
     "PRELOAD_IPC_CHANNELS",
+    "PRELOAD_IPC_CHANNEL_CONTRACTS",
     "MOCK_FLYWHEEL_COMMANDS",
     "INTERNAL_IPC_COMMANDS",
   ] as const;
@@ -105,6 +121,7 @@ function contractParityDiffs(
     "daemonRequestMethods",
     "daemonSubscribeTopics",
     "preloadIpcChannels",
+    "preloadIpcChannelContracts",
     "mockFlywheelCommands",
     "internalIpcCommands",
   ] as const satisfies readonly (keyof ComparableContract)[];
