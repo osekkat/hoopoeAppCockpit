@@ -281,6 +281,46 @@ func (q *Queue) Revoke(ctx context.Context, id string, decision schemas.Approval
 	return q.decide(ctx, id, schemas.Revoked, decision)
 }
 
+func (q *Queue) ConsumeOnce(ctx context.Context, id string, decision schemas.ApprovalDecisionRequest) (schemas.Approval, error) {
+	if q == nil {
+		return schemas.Approval{}, fmt.Errorf("%w: nil queue", ErrInvalidRequest)
+	}
+	if !decision.DecisionActor.Kind.Valid() {
+		return schemas.Approval{}, fmt.Errorf("%w: decision actor kind is required", ErrInvalidRequest)
+	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	approval, ok, err := q.store.Get(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return schemas.Approval{}, err
+	}
+	if !ok {
+		return schemas.Approval{}, ErrNotFound
+	}
+	approval, err = q.expireIfNeededLocked(ctx, approval, q.now())
+	if err != nil {
+		return schemas.Approval{}, err
+	}
+	if approval.State == schemas.Expired {
+		return schemas.Approval{}, ErrExpired
+	}
+	if approval.State != schemas.Approved {
+		return schemas.Approval{}, fmt.Errorf("%w: approval is %s", ErrInvalidTransition, approval.State)
+	}
+	if approval.Scope != schemas.Once {
+		return schemas.Approval{}, fmt.Errorf("%w: cannot consume %s approval", ErrInvalidTransition, approval.Scope)
+	}
+	consumedAt := q.now().UTC()
+	approval.State = schemas.Revoked
+	approval.DecidedAt = &consumedAt
+	approval.DecisionActor = &decision.DecisionActor
+	approval.DecisionNote = cloneStringPtr(decision.Note)
+	if err := q.store.Save(ctx, approval); err != nil {
+		return schemas.Approval{}, err
+	}
+	return cloneApproval(approval), nil
+}
+
 func (q *Queue) Extend(ctx context.Context, id string, expiresAt time.Time) (schemas.Approval, error) {
 	if q == nil {
 		return schemas.Approval{}, fmt.Errorf("%w: nil queue", ErrInvalidRequest)

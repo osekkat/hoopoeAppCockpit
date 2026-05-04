@@ -437,6 +437,13 @@ func TestRotateSecretHappyPathInvalidatesBearerAndReturnsReplacementPairing(t *t
 	if resp.Revoked.Bearers != 1 || resp.Revoked.PairingGrants != 1 {
 		t.Fatalf("revoked = %+v", resp.Revoked)
 	}
+	consumed, ok, err := rig.approvals.Get(context.Background(), approvalID)
+	if err != nil || !ok {
+		t.Fatalf("approval lookup after rotation: approval=%+v ok=%v err=%v", consumed, ok, err)
+	}
+	if consumed.State != schemas.Revoked {
+		t.Fatalf("approval state = %s, want revoked", consumed.State)
+	}
 	if len(rig.pairing.revoked) != 1 || rig.pairing.revoked[0].TokenID != "pair_open" {
 		t.Fatalf("pairing revocations = %+v", rig.pairing.revoked)
 	}
@@ -469,6 +476,63 @@ func TestRotateSecretHappyPathInvalidatesBearerAndReturnsReplacementPairing(t *t
 	}
 	if strings.Contains(string(rawEvents), resp.NewPairingToken.Value) {
 		t.Fatalf("event stream leaked replacement pairing token: %s", rawEvents)
+	}
+}
+
+func TestRotateSecretRejectsReusedOnceApproval(t *testing.T) {
+	rig := newAuthRouter(t)
+	bootRR := postJSON(t, rig.router, "/v1/auth/bootstrap/bearer", map[string]any{
+		"pairingToken": "H0123456789AB",
+		"instanceId":   "desktop-1",
+	}, nil)
+	if bootRR.Code != http.StatusOK {
+		t.Fatalf("bootstrap status=%d body=%s", bootRR.Code, bootRR.Body.String())
+	}
+	bearer := decodeBearer(t, bootRR)
+	approvalID := approveRotateSecret(t, rig)
+
+	first := postJSON(t, rig.router, "/v1/auth/rotate-secret", nil, map[string]string{
+		"Authorization":                "Bearer " + bearer.Token,
+		authRotateSecretConfirmHeader:  "yes",
+		authRotateSecretApprovalHeader: approvalID,
+	})
+	if first.Code != http.StatusOK {
+		t.Fatalf("first rotate status=%d body=%s", first.Code, first.Body.String())
+	}
+	var firstBody struct {
+		NewPairingToken struct {
+			Value string `json:"value"`
+		} `json:"newPairingToken"`
+	}
+	if err := json.Unmarshal(first.Body.Bytes(), &firstBody); err != nil {
+		t.Fatalf("decode first rotate: %v body=%s", err, first.Body.String())
+	}
+
+	repairedBoot := postJSON(t, rig.router, "/v1/auth/bootstrap/bearer", map[string]any{
+		"pairingToken": firstBody.NewPairingToken.Value,
+		"instanceId":   "desktop-2",
+	}, nil)
+	if repairedBoot.Code != http.StatusOK {
+		t.Fatalf("replacement bootstrap status=%d body=%s", repairedBoot.Code, repairedBoot.Body.String())
+	}
+	repairedBearer := decodeBearer(t, repairedBoot)
+	reuse := postJSON(t, rig.router, "/v1/auth/rotate-secret", nil, map[string]string{
+		"Authorization":                "Bearer " + repairedBearer.Token,
+		authRotateSecretConfirmHeader:  "yes",
+		authRotateSecretApprovalHeader: approvalID,
+	})
+	if reuse.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("reuse status=%d body=%s", reuse.Code, reuse.Body.String())
+	}
+	if !strings.Contains(reuse.Body.String(), "auth.rotate_secret_approval_consumed") {
+		t.Fatalf("reuse body=%s, want consumed problem code", reuse.Body.String())
+	}
+	events, gap := rig.events.Replay("_system", 0)
+	if gap {
+		t.Fatal("unexpected replay gap")
+	}
+	if len(events) != 2 {
+		t.Fatalf("events after rejected reuse = %+v, want original rotation events only", events)
 	}
 }
 

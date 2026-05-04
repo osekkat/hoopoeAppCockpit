@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/approvals"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/auth"
 	schemas "github.com/hoopoe-cockpit/hoopoe/packages/schemas/go"
 )
@@ -80,6 +81,14 @@ type ApprovalGetter interface {
 	Get(ctx context.Context, id string) (schemas.Approval, bool, error)
 }
 
+type ApprovalOnceConsumer interface {
+	ConsumeOnce(ctx context.Context, id string, decision schemas.ApprovalDecisionRequest) (schemas.Approval, error)
+}
+
+type ApprovalConsumeLookup interface {
+	ConsumeOnceApproval(ctx context.Context, id string, decision schemas.ApprovalDecisionRequest) (schemas.Approval, error)
+}
+
 type ApprovalQueueLookup struct {
 	Queue ApprovalGetter
 }
@@ -89,6 +98,17 @@ func (l ApprovalQueueLookup) LookupApproval(ctx context.Context, id string) (sch
 		return schemas.Approval{}, false, errors.New("approval queue is nil")
 	}
 	return l.Queue.Get(ctx, id)
+}
+
+func (l ApprovalQueueLookup) ConsumeOnceApproval(ctx context.Context, id string, decision schemas.ApprovalDecisionRequest) (schemas.Approval, error) {
+	if l.Queue == nil {
+		return schemas.Approval{}, errors.New("approval queue is nil")
+	}
+	consumer, ok := l.Queue.(ApprovalOnceConsumer)
+	if !ok {
+		return schemas.Approval{}, errors.New("approval queue does not support once consumption")
+	}
+	return consumer.ConsumeOnce(ctx, id, decision)
 }
 
 // AuthConfig wires the auth handlers. Both services are required; the
@@ -304,6 +324,11 @@ func (s *server) handleAuthRotateSecret(w http.ResponseWriter, r *http.Request) 
 		s.writeProblemCode(w, http.StatusInternalServerError, "auth.rotate_secret_pairing_revoke_failed", "pairing revoke failed", err.Error())
 		return
 	}
+	if err := s.consumeRotateSecretApproval(r.Context(), approvalID); err != nil {
+		revokeReplacementPairing(r.Context(), rotator, flowID, newPairing)
+		writeApprovalProblem(s, w, err)
+		return
+	}
 
 	s.events.Publish(PublishInput{
 		Channel:       authRotateSecretSystemChannel,
@@ -395,6 +420,14 @@ func (s *server) validateRotateSecretApproval(ctx context.Context, approvalID st
 			detail: "approval id does not exist",
 		}
 	}
+	if approval.State == schemas.Revoked {
+		return rotateApprovalError{
+			status: http.StatusUnprocessableEntity,
+			code:   "auth.rotate_secret_approval_consumed",
+			title:  "approval already used",
+			detail: "rotate-secret approval must still be approved and unused",
+		}
+	}
 	if approval.State != schemas.Approved {
 		return rotateApprovalError{
 			status: http.StatusUnprocessableEntity,
@@ -431,6 +464,64 @@ func (s *server) validateRotateSecretApproval(ctx context.Context, approvalID st
 			code:   "auth.rotate_secret_approval_expired",
 			title:  "approval too old",
 			detail: "rotate-secret approval must be fresh within 2 minutes",
+		}
+	}
+	return nil
+}
+
+func (s *server) consumeRotateSecretApproval(ctx context.Context, approvalID string) error {
+	if s.authConfig.Approvals == nil {
+		return rotateApprovalError{
+			status: http.StatusServiceUnavailable,
+			code:   "auth.rotate_secret_approvals_unavailable",
+			title:  "approval queue unavailable",
+			detail: "rotate-secret requires the unified approvals queue",
+		}
+	}
+	consumer, ok := s.authConfig.Approvals.(ApprovalConsumeLookup)
+	if !ok {
+		return rotateApprovalError{
+			status: http.StatusServiceUnavailable,
+			code:   "auth.rotate_secret_approval_consume_unavailable",
+			title:  "approval consume unavailable",
+			detail: "rotate-secret requires an approval queue that can consume once approvals",
+		}
+	}
+	actorID := "daemon.api"
+	note := "consumed by auth.rotate_secret"
+	if _, err := consumer.ConsumeOnceApproval(ctx, approvalID, schemas.ApprovalDecisionRequest{
+		DecisionActor: schemas.Actor{Kind: schemas.ActorKindSystem, Id: &actorID},
+		Note:          &note,
+	}); err != nil {
+		switch {
+		case errors.Is(err, approvals.ErrNotFound):
+			return rotateApprovalError{
+				status: http.StatusUnprocessableEntity,
+				code:   "auth.rotate_secret_approval_not_found",
+				title:  "approval not found",
+				detail: "approval id does not exist",
+			}
+		case errors.Is(err, approvals.ErrExpired):
+			return rotateApprovalError{
+				status: http.StatusUnprocessableEntity,
+				code:   "auth.rotate_secret_approval_expired",
+				title:  "approval too old",
+				detail: "rotate-secret approval must be fresh within 2 minutes",
+			}
+		case errors.Is(err, approvals.ErrInvalidTransition):
+			return rotateApprovalError{
+				status: http.StatusUnprocessableEntity,
+				code:   "auth.rotate_secret_approval_consumed",
+				title:  "approval already used",
+				detail: "rotate-secret approval must still be approved and unused",
+			}
+		default:
+			return rotateApprovalError{
+				status: http.StatusInternalServerError,
+				code:   "auth.rotate_secret_approval_consume_failed",
+				title:  "approval consume failed",
+				detail: err.Error(),
+			}
 		}
 	}
 	return nil

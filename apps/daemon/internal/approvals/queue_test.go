@@ -215,6 +215,82 @@ func TestApprovedScopeAuthorizesMatchingAction(t *testing.T) {
 	}
 }
 
+func TestConsumeOnceRevokesApprovedOnceApproval(t *testing.T) {
+	ctx := context.Background()
+	now := fixedTime()
+	queue := testQueue(&now)
+	approval, _, err := queue.Request(ctx, Request{
+		PolicyRule:      "hoopoe-policy:auth.rotate_secret",
+		RequestedAction: commandSpec("auth.rotate_secret", "rotate-1"),
+		RequestActor:    actor(schemas.ActorKindUser, "user-1"),
+		RiskClass:       schemas.Critical,
+		Scope:           schemas.Once,
+	})
+	if err != nil {
+		t.Fatalf("Request: %v", err)
+	}
+	if _, err := queue.Approve(ctx, approval.Id, schemas.ApprovalDecisionRequest{
+		DecisionActor: actor(schemas.ActorKindUser, "owner"),
+	}); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+
+	consumed, err := queue.ConsumeOnce(ctx, approval.Id, schemas.ApprovalDecisionRequest{
+		DecisionActor: actor(schemas.ActorKindSystem, "daemon.api"),
+		Note:          stringPtr("consumed by auth.rotate_secret"),
+	})
+	if err != nil {
+		t.Fatalf("ConsumeOnce: %v", err)
+	}
+	if consumed.State != schemas.Revoked {
+		t.Fatalf("state = %s, want revoked", consumed.State)
+	}
+	if consumed.DecisionActor == nil || consumed.DecisionActor.Kind != schemas.ActorKindSystem {
+		t.Fatalf("decision actor = %+v, want system", consumed.DecisionActor)
+	}
+
+	check, err := queue.Check(ctx, CheckRequest{RequestedAction: commandSpec("auth.rotate_secret", "rotate-1")})
+	if err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	if check.Allowed {
+		t.Fatalf("consumed approval still authorizes action: %+v", check)
+	}
+	if _, err := queue.ConsumeOnce(ctx, approval.Id, schemas.ApprovalDecisionRequest{
+		DecisionActor: actor(schemas.ActorKindSystem, "daemon.api"),
+	}); !errors.Is(err, ErrInvalidTransition) {
+		t.Fatalf("second ConsumeOnce err = %v, want ErrInvalidTransition", err)
+	}
+}
+
+func TestConsumeOnceRejectsNonOnceScope(t *testing.T) {
+	ctx := context.Background()
+	now := fixedTime()
+	queue := testQueue(&now)
+	approval, _, err := queue.Request(ctx, Request{
+		PolicyRule:      "hoopoe-policy:git.force_push",
+		RequestedAction: commandSpec("git.push_branch", "push-1"),
+		RequestActor:    actor(schemas.ActorKindAgent, "agent-1"),
+		ProjectID:       "project-1",
+		BeadID:          "hp-v0g",
+		Scope:           schemas.ThisBead,
+		RiskClass:       schemas.High,
+	})
+	if err != nil {
+		t.Fatalf("Request: %v", err)
+	}
+	if _, err := queue.Approve(ctx, approval.Id, schemas.ApprovalDecisionRequest{
+		DecisionActor: actor(schemas.ActorKindUser, "owner"),
+	}); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+	if _, err := queue.ConsumeOnce(ctx, approval.Id, schemas.ApprovalDecisionRequest{
+		DecisionActor: actor(schemas.ActorKindSystem, "daemon.api"),
+	}); !errors.Is(err, ErrInvalidTransition) {
+		t.Fatalf("ConsumeOnce non-once err = %v, want ErrInvalidTransition", err)
+	}
+}
+
 func TestIngestDCGRequiresConfirmationQueuesPendingApproval(t *testing.T) {
 	ctx := context.Background()
 	now := fixedTime()
