@@ -14,6 +14,20 @@ interface PlanEditorProps {
   readonly onSave?: ((next: string) => void) | undefined;
 }
 
+interface SaveHandlerRef {
+  current: () => void;
+}
+
+export function planEditorSaveKeyBinding(saveHandlerRef: SaveHandlerRef) {
+  return {
+    key: "Mod-s",
+    run: () => {
+      saveHandlerRef.current();
+      return true;
+    },
+  };
+}
+
 export function PlanEditor({
   artifactPath,
   initialContent,
@@ -26,6 +40,7 @@ export function PlanEditor({
   const readOnlyCompartment = useMemo(() => new Compartment(), []);
   const [dirty, setDirty] = useState(false);
   const initialContentRef = useRef(initialContent);
+  const saveHandlerRef = useRef<() => void>(() => undefined);
 
   const handleSave = useCallback(() => {
     if (!viewRef.current || !onSave || readOnly) return;
@@ -34,6 +49,7 @@ export function PlanEditor({
     initialContentRef.current = next;
     setDirty(false);
   }, [onSave, readOnly]);
+  saveHandlerRef.current = handleSave;
 
   useEffect(() => {
     if (!hostRef.current) return;
@@ -52,13 +68,7 @@ export function PlanEditor({
         keymap.of([
           ...defaultKeymap,
           ...historyKeymap,
-          {
-            key: "Mod-s",
-            run: () => {
-              handleSave();
-              return true;
-            },
-          },
+          planEditorSaveKeyBinding(saveHandlerRef),
         ]),
         markdown(),
         syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
