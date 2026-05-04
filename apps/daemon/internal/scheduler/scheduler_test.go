@@ -225,6 +225,86 @@ func TestDeadLetterAfterFailedRuns(t *testing.T) {
 	}
 }
 
+func TestPauseResumePersistsAcrossRestart(t *testing.T) {
+	ctx := context.Background()
+	clock := newTestClock(time.Date(2026, 5, 4, 13, 30, 0, 0, time.UTC))
+	store := FileStore{Path: filepath.Join(t.TempDir(), "scheduler-state.json")}
+	registry, err := NewRegistry(ctx, RegistryConfig{
+		Store:       store,
+		Now:         clock.Now,
+		LeaseHolder: "daemon-a",
+		LeaseTTL:    time.Minute,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := registry.ImportDefinition(ctx, testDefinition("snapshot-health", Schedule{Type: ScheduleInterval, Interval: time.Minute})); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := registry.PauseJob(ctx, "snapshot-health"); err != nil {
+		t.Fatal(err)
+	}
+
+	restarted, err := NewRegistry(ctx, RegistryConfig{
+		Store:       store,
+		Now:         clock.Now,
+		LeaseHolder: "daemon-b",
+		LeaseTTL:    time.Minute,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := restarted.GetJob(ctx, "snapshot-health")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job.Status != JobStatusPaused || !job.Definition.Paused {
+		t.Fatalf("expected paused job after restart, got status=%s paused=%t", job.Status, job.Definition.Paused)
+	}
+
+	clock.Advance(2 * time.Minute)
+	runs, decisions, err := restarted.SelectDue(ctx, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 0 || len(decisions) != 1 || decisions[0].Outcome != OutcomePaused {
+		t.Fatalf("expected paused due job to skip without dispatch, runs=%d decisions=%#v", len(runs), decisions)
+	}
+
+	resumed, err := restarted.ResumeJob(ctx, "snapshot-health")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resumed.Status != JobStatusReady || resumed.Definition.Paused {
+		t.Fatalf("expected resumed ready job, got status=%s paused=%t", resumed.Status, resumed.Definition.Paused)
+	}
+}
+
+func TestRemoveJobDropsRuntimeEntryAndEventDedupe(t *testing.T) {
+	ctx := context.Background()
+	clock := newTestClock(time.Date(2026, 5, 4, 13, 45, 0, 0, time.UTC))
+	registry := newTestRegistry(t, clock)
+	if _, err := registry.ImportDefinition(ctx, testDefinition("mail-watch", Schedule{Type: ScheduleEvent, Event: "agent_mail.received"})); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := registry.EmitEvent(ctx, "agent_mail.received", "msg-1", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := registry.RemoveJob(ctx, "mail-watch"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := registry.GetJob(ctx, "mail-watch"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected removed job to be missing, got %v", err)
+	}
+	state, err := registry.Snapshot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(state.EventDedupe) != 0 {
+		t.Fatalf("expected remove to drop event dedupe keys, got %#v", state.EventDedupe)
+	}
+}
+
 func TestSchedulerWorkersAllowUnrelatedRunsToComplete(t *testing.T) {
 	ctx := context.Background()
 	clock := newTestClock(time.Date(2026, 5, 4, 14, 0, 0, 0, time.UTC))

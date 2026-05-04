@@ -138,6 +138,19 @@ func (r *Registry) GetRun(ctx context.Context, id string) (Run, error) {
 	return cloneRun(run), nil
 }
 
+func (r *Registry) ListJobs(ctx context.Context) ([]Job, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	jobs := make([]Job, 0, len(r.state.Jobs))
+	for _, id := range sortedJobIDs(r.state.Jobs) {
+		jobs = append(jobs, cloneJob(r.state.Jobs[id]))
+	}
+	return jobs, nil
+}
+
 func (r *Registry) Snapshot(ctx context.Context) (State, error) {
 	if err := ctx.Err(); err != nil {
 		return State{}, err
@@ -145,6 +158,90 @@ func (r *Registry) Snapshot(ctx context.Context) (State, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return cloneState(r.state), nil
+}
+
+func (r *Registry) PauseJob(ctx context.Context, id string) (Job, error) {
+	if err := ctx.Err(); err != nil {
+		return Job{}, err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	job, ok := r.state.Jobs[id]
+	if !ok {
+		return Job{}, ErrNotFound
+	}
+	now := r.now().UTC()
+	job.Definition.Paused = true
+	if job.Status != JobStatusDeadLettered && job.Status != JobStatusCompleted {
+		job.Status = JobStatusPaused
+	}
+	job.UpdatedAt = now
+	r.state.Jobs[id] = job
+	if err := r.persistLocked(ctx); err != nil {
+		return Job{}, err
+	}
+	return cloneJob(job), nil
+}
+
+func (r *Registry) ResumeJob(ctx context.Context, id string) (Job, error) {
+	if err := ctx.Err(); err != nil {
+		return Job{}, err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	job, ok := r.state.Jobs[id]
+	if !ok {
+		return Job{}, ErrNotFound
+	}
+	now := r.now().UTC()
+	job.Definition.Paused = false
+	switch {
+	case job.DeadLetteredAt != nil:
+		job.Status = JobStatusDeadLettered
+	case job.Status == JobStatusCompleted:
+		// Preserve completed repeat-limited jobs; resume only clears the
+		// paused flag and does not restart exhausted work.
+	default:
+		job.Status = JobStatusReady
+		if job.NextRunAt == nil && (job.Definition.Schedule.Type == ScheduleCron || job.Definition.Schedule.Type == ScheduleInterval) {
+			next, err := job.Definition.Schedule.NextAfter(now)
+			if err != nil {
+				return Job{}, err
+			}
+			if !next.IsZero() {
+				job.NextRunAt = &next
+			}
+		}
+	}
+	job.UpdatedAt = now
+	r.state.Jobs[id] = job
+	if err := r.persistLocked(ctx); err != nil {
+		return Job{}, err
+	}
+	return cloneJob(job), nil
+}
+
+func (r *Registry) RemoveJob(ctx context.Context, id string) (Job, error) {
+	if err := ctx.Err(); err != nil {
+		return Job{}, err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	job, ok := r.state.Jobs[id]
+	if !ok {
+		return Job{}, ErrNotFound
+	}
+	delete(r.state.Jobs, id)
+	prefix := id + "\x00"
+	for key := range r.state.EventDedupe {
+		if len(key) >= len(prefix) && key[:len(prefix)] == prefix {
+			delete(r.state.EventDedupe, key)
+		}
+	}
+	if err := r.persistLocked(ctx); err != nil {
+		return Job{}, err
+	}
+	return cloneJob(job), nil
 }
 
 func (r *Registry) SelectDue(ctx context.Context, limit int) ([]Run, []Decision, error) {

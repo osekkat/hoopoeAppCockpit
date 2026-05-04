@@ -1,13 +1,15 @@
 // Package main hosts the Hoopoe Go daemon entry point + the operator
 // CLI subcommands. Subcommand dispatch:
 //
-//   hoopoe                  → starts the daemon (default; preserves the
-//                              pre-hp-uz6 invocation shape)
-//   hoopoe serve [...]      → explicit form for the daemon (same as no-args)
-//   hoopoe auth ...         → hp-uz6 operator CLI
-//                             (pairing/session create|list|revoke,
-//                              rotate-secret)
-//   hoopoe --help|-h        → usage
+//	hoopoe                  → starts the daemon (default; preserves the
+//	                           pre-hp-uz6 invocation shape)
+//	hoopoe serve [...]      → explicit form for the daemon (same as no-args)
+//	hoopoe auth ...         → hp-uz6 operator CLI
+//	                          (pairing/session create|list|revoke,
+//	                           rotate-secret)
+//	hoopoe tending ...      → hp-sqd tending scheduler CLI
+//	                          (list/create/pause/resume/run/status/tick)
+//	hoopoe --help|-h        → usage
 //
 // When no subcommand is given, behavior is unchanged from before
 // hp-uz6: the binary boots the daemon. Wrapping CLI subcommands in
@@ -53,6 +55,12 @@ func dispatch(ctx context.Context, args []string) error {
 			Stderr: os.Stderr,
 			Stdin:  os.Stdin,
 		})
+	case "tending":
+		return runTending(ctx, args[1:], &tendingIO{
+			Stdout: os.Stdout,
+			Stderr: os.Stderr,
+			Stdin:  os.Stdin,
+		})
 	case "--help", "-h", "help":
 		printRootUsage(os.Stdout)
 		return nil
@@ -85,7 +93,9 @@ func printRootUsage(w *os.File) {
 subcommands:
   serve [flags]   start the HTTP daemon (default when no subcommand given)
   auth ...        hp-uz6 operator CLI (pairing / session / rotate-secret)
+  tending ...     tending scheduler CLI (jobs / controls / status)
 
 run 'hoopoe auth --help' for the auth subcommand surface.
+run 'hoopoe tending --help' for the tending subcommand surface.
 `)
 }

@@ -346,5 +346,14 @@ func durationString(duration time.Duration) string {
 	if duration%(24*time.Hour) == 0 {
 		return fmt.Sprintf("%dd", int(duration/(24*time.Hour)))
 	}
+	if duration%time.Hour == 0 {
+		return fmt.Sprintf("%dh", int(duration/time.Hour))
+	}
+	if duration%time.Minute == 0 {
+		return fmt.Sprintf("%dm", int(duration/time.Minute))
+	}
+	if duration%time.Second == 0 {
+		return fmt.Sprintf("%ds", int(duration/time.Second))
+	}
 	return duration.String()
 }
