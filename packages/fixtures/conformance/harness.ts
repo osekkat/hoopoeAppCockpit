@@ -130,7 +130,7 @@ const EXPECTED_FINDING_IDS: Record<ConformanceTool, readonly string[]> = {
   ],
   git: [],
   ru: [],
-  rch: ["rch.fixture.missing.normal"],
+  rch: [],
   caam: ["caam.capability.unsatisfied.caam.accounts.list"],
   dcg: [],
   caut: ["caut.capability.missing.caut.usage.snapshot"],
@@ -184,8 +184,16 @@ function parseEnvelopeText(tool: ConformanceTool, text: string, where: string): 
   if (!isObject(meta) || meta.adapter !== tool || typeof meta.state !== "string") {
     throw new ConformanceParseError(tool, "bad_meta", `${where} has invalid fixture metadata`);
   }
-  if (!Array.isArray(parsed.argv) || typeof parsed.exit !== "number" || typeof parsed.durationMs !== "number") {
-    throw new ConformanceParseError(tool, "bad_envelope", `${where} is missing argv/exit/durationMs`);
+  if (
+    !Array.isArray(parsed.argv) ||
+    typeof parsed.exit !== "number" ||
+    typeof parsed.durationMs !== "number"
+  ) {
+    throw new ConformanceParseError(
+      tool,
+      "bad_envelope",
+      `${where} is missing argv/exit/durationMs`,
+    );
   }
   return parsed as unknown as GoldenEnvelope;
 }
@@ -194,39 +202,6 @@ function loadEnvelope(tool: ConformanceTool, state: string): GoldenEnvelope {
   const path = goldenPath(tool, state);
   const text = readFileSync(path, "utf8");
   return parseEnvelopeText(tool, text, `${tool}/${state}`);
-}
-
-function localRchEnvelope(): GoldenEnvelope {
-  const proc = Bun.spawnSync({
-    cmd: ["rch", "status"],
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const stdoutText = new TextDecoder().decode(proc.stdout);
-  const stderrText = new TextDecoder().decode(proc.stderr);
-  return {
-    meta: {
-      adapter: "rch",
-      state: "normal",
-      kind: "realistic",
-      fixturesVersion: "local",
-      capturedAt: new Date(0).toISOString(),
-      source: "local rch status probe; golden fixture absent",
-    },
-    argv: ["rch", "status"],
-    exit: proc.exitCode ?? 0,
-    durationMs: 0,
-    stdoutBytes: stdoutText.length,
-    stderrBytes: stderrText.length,
-    stdoutText,
-    stderrText,
-    truncated: false,
-    redacted: false,
-    tags: ["local-probe"],
-    capabilities: {
-      "rch.status.read": { status: "ok" },
-    },
-  };
 }
 
 function canonicalize(value: unknown): unknown {
@@ -244,9 +219,16 @@ function canonicalJson(value: unknown): string {
   return JSON.stringify(canonicalize(value));
 }
 
-function requireStdoutObject(tool: ConformanceTool, envelope: GoldenEnvelope): Record<string, unknown> {
+function requireStdoutObject(
+  tool: ConformanceTool,
+  envelope: GoldenEnvelope,
+): Record<string, unknown> {
   if (isObject(envelope.stdoutJson)) return envelope.stdoutJson;
-  throw new ConformanceParseError(tool, "missing_json_payload", `${tool} fixture has no JSON payload`);
+  throw new ConformanceParseError(
+    tool,
+    "missing_json_payload",
+    `${tool} fixture has no JSON payload`,
+  );
 }
 
 function parseGitPorcelain(stdoutText: string): Record<string, unknown> {
@@ -255,7 +237,8 @@ function parseGitPorcelain(stdoutText: string): Record<string, unknown> {
   for (const line of stdoutText.split("\n")) {
     if (line.startsWith("# branch.oid ")) branch.oid = line.slice("# branch.oid ".length);
     else if (line.startsWith("# branch.head ")) branch.head = line.slice("# branch.head ".length);
-    else if (line.startsWith("# branch.upstream ")) branch.upstream = line.slice("# branch.upstream ".length);
+    else if (line.startsWith("# branch.upstream "))
+      branch.upstream = line.slice("# branch.upstream ".length);
     else if (line.startsWith("# branch.ab ")) branch.ab = line.slice("# branch.ab ".length);
     else if (line.trim().length > 0) entries.push(line);
   }
@@ -264,7 +247,9 @@ function parseGitPorcelain(stdoutText: string): Record<string, unknown> {
 
 function parseRchStatus(stdoutText: string): Record<string, unknown> {
   const lineValue = (label: string): string => {
-    const line = stdoutText.split("\n").find((candidate) => candidate.trim().startsWith(`${label} :`));
+    const line = stdoutText
+      .split("\n")
+      .find((candidate) => candidate.trim().startsWith(`${label} :`));
     return line?.split(":").slice(1).join(":").trim() ?? "";
   };
   return {
@@ -276,12 +261,20 @@ function parseRchStatus(stdoutText: string): Record<string, unknown> {
   };
 }
 
-function normalizeOutput(tool: ConformanceTool, envelope: GoldenEnvelope, source: "fixture" | "local"): NormalizedOutput {
+function normalizeOutput(
+  tool: ConformanceTool,
+  envelope: GoldenEnvelope,
+  source: "fixture" | "local",
+): NormalizedOutput {
   if (envelope.truncated) {
     throw new ConformanceParseError(tool, "truncated_output", `${tool} output was truncated`);
   }
   if (envelope.meta.state === "malformed-json") {
-    throw new ConformanceParseError(tool, "tool_output_malformed", `${tool} malformed fixture must not parse`);
+    throw new ConformanceParseError(
+      tool,
+      "tool_output_malformed",
+      `${tool} malformed fixture must not parse`,
+    );
   }
 
   let payload: Record<string, unknown>;
@@ -337,7 +330,9 @@ function normalizeOutput(tool: ConformanceTool, envelope: GoldenEnvelope, source
     case "caam":
       payload = {
         commandAccepted: envelope.exit === 0,
-        accounts: Array.isArray((envelope.stdoutJson as { accounts?: unknown } | undefined)?.accounts)
+        accounts: Array.isArray(
+          (envelope.stdoutJson as { accounts?: unknown } | undefined)?.accounts,
+        )
           ? (envelope.stdoutJson as { accounts: unknown }).accounts
           : null,
         stderrText: envelope.stderrText ?? "",
@@ -354,7 +349,9 @@ function normalizeOutput(tool: ConformanceTool, envelope: GoldenEnvelope, source
     case "caut":
       payload = {
         usage: isObject(envelope.stdoutJson) ? envelope.stdoutJson : {},
-        providers: Array.isArray((envelope.stdoutJson as { providers?: unknown } | undefined)?.providers)
+        providers: Array.isArray(
+          (envelope.stdoutJson as { providers?: unknown } | undefined)?.providers,
+        )
           ? (envelope.stdoutJson as { providers: unknown }).providers
           : null,
       };
@@ -391,9 +388,10 @@ function normalizeOutput(tool: ConformanceTool, envelope: GoldenEnvelope, source
       const skills = Array.isArray((json as { skills?: unknown } | null)?.skills)
         ? ((json as { skills: unknown }).skills as unknown[])
         : null;
-      const workspace = typeof (json as { workspace?: unknown } | null)?.workspace === "string"
-        ? ((json as { workspace: string }).workspace)
-        : null;
+      const workspace =
+        typeof (json as { workspace?: unknown } | null)?.workspace === "string"
+          ? (json as { workspace: string }).workspace
+          : null;
       payload = {
         commandAccepted: envelope.exit === 0,
         skills,
@@ -457,14 +455,21 @@ function validateSchema(value: unknown, schema: JsonSchema, path = "$"): string[
     return [`${path} did not match anyOf: ${candidates.map((errors) => errors[0]).join("; ")}`];
   }
   if ("const" in schema && JSON.stringify(value) !== JSON.stringify(schema.const)) {
-    return [`${path} expected const ${JSON.stringify(schema.const)} but got ${JSON.stringify(value)}`];
+    return [
+      `${path} expected const ${JSON.stringify(schema.const)} but got ${JSON.stringify(value)}`,
+    ];
   }
-  if (schema.enum && !schema.enum.some((entry) => JSON.stringify(entry) === JSON.stringify(value))) {
+  if (
+    schema.enum &&
+    !schema.enum.some((entry) => JSON.stringify(entry) === JSON.stringify(value))
+  ) {
     return [`${path} expected one of ${schema.enum.join(", ")} but got ${JSON.stringify(value)}`];
   }
   const types = schema.type ? (Array.isArray(schema.type) ? schema.type : [schema.type]) : [];
   if (types.length > 0 && !types.some((type) => matchesType(value, type))) {
-    return [`${path} expected ${types.join("|")} but got ${Array.isArray(value) ? "array" : typeof value}`];
+    return [
+      `${path} expected ${types.join("|")} but got ${Array.isArray(value) ? "array" : typeof value}`,
+    ];
   }
 
   const errors: string[] = [];
@@ -484,7 +489,9 @@ function validateSchema(value: unknown, schema: JsonSchema, path = "$"): string[
       errors.push(`${path} expected at least ${schema.minItems} items`);
     }
     if (schema.items) {
-      value.forEach((item, index) => errors.push(...validateSchema(item, schema.items!, `${path}[${index}]`)));
+      value.forEach((item, index) =>
+        errors.push(...validateSchema(item, schema.items!, `${path}[${index}]`)),
+      );
     }
   }
   if (isObject(value)) {
@@ -520,72 +527,175 @@ function finding(
   };
 }
 
-function capabilityFindings(tool: ConformanceTool, normalized: NormalizedOutput): ConformanceFinding[] {
+function capabilityFindings(
+  tool: ConformanceTool,
+  normalized: NormalizedOutput,
+): ConformanceFinding[] {
   const caps = normalized.capabilities;
   const findings: ConformanceFinding[] = [];
   const capOk = (cap: string): boolean => caps[cap]?.status === "ok";
 
   if (tool === "br" && capOk("br.issues.read")) {
     if (!Array.isArray(normalized.payload.issues) || typeof normalized.payload.total !== "number") {
-      findings.push(finding(tool, "br.capability.unsatisfied.br.issues.read", "br.issues.read requires issues[] and total", "br.md"));
+      findings.push(
+        finding(
+          tool,
+          "br.capability.unsatisfied.br.issues.read",
+          "br.issues.read requires issues[] and total",
+          "br.md",
+        ),
+      );
     }
   }
   if (tool === "bv") {
     if (caps["bv.tui"]?.status !== "blocked-by-policy") {
-      findings.push(finding(tool, "bv.capability.policy.bv.tui", "bv.tui must be blocked-by-policy", "bv.md"));
+      findings.push(
+        finding(tool, "bv.capability.policy.bv.tui", "bv.tui must be blocked-by-policy", "bv.md"),
+      );
     }
     if (capOk("bv.robot.triage") && !Array.isArray(normalized.payload.recommendations)) {
-      findings.push(finding(tool, "bv.capability.unsatisfied.bv.robot.triage", "bv.robot.triage requires recommendations[]", "bv.md"));
+      findings.push(
+        finding(
+          tool,
+          "bv.capability.unsatisfied.bv.robot.triage",
+          "bv.robot.triage requires recommendations[]",
+          "bv.md",
+        ),
+      );
     }
   }
   if (tool === "ntm" && capOk("ntm.robot.snapshot")) {
     const sessions = normalized.payload.sessions;
     if (!(Array.isArray(sessions) || sessions === null)) {
-      findings.push(finding(tool, "ntm.capability.unsatisfied.ntm.robot.snapshot", "ntm.robot.snapshot requires sessions[] or null", "ntm.md"));
+      findings.push(
+        finding(
+          tool,
+          "ntm.capability.unsatisfied.ntm.robot.snapshot",
+          "ntm.robot.snapshot requires sessions[] or null",
+          "ntm.md",
+        ),
+      );
     }
   }
   if (tool === "agent_mail") {
-    for (const cap of ["agent_mail.messages.read", "agent_mail.messages.send", "agent_mail.reservations.list"]) {
+    for (const cap of [
+      "agent_mail.messages.read",
+      "agent_mail.messages.send",
+      "agent_mail.reservations.list",
+    ]) {
       if (capOk(cap) && normalized.payload.mcpEvidence !== true) {
-        findings.push(finding(tool, `agent_mail.capability.unsatisfied.${cap}`, `${cap} is marked ok but fixture only contains CLI help text`, "agent_mail.md"));
+        findings.push(
+          finding(
+            tool,
+            `agent_mail.capability.unsatisfied.${cap}`,
+            `${cap} is marked ok but fixture only contains CLI help text`,
+            "agent_mail.md",
+          ),
+        );
       }
     }
   }
   if (tool === "git") {
     if (capOk("git.status.read") && !isObject(normalized.payload.branch)) {
-      findings.push(finding(tool, "git.capability.unsatisfied.git.status.read", "git.status.read requires parsed branch metadata", "git.md"));
+      findings.push(
+        finding(
+          tool,
+          "git.capability.unsatisfied.git.status.read",
+          "git.status.read requires parsed branch metadata",
+          "git.md",
+        ),
+      );
     }
     if (caps["git.push"]?.status !== "blocked-by-policy") {
-      findings.push(finding(tool, "git.capability.policy.git.push", "git.push must be blocked-by-policy in fixture mode", "git.md"));
+      findings.push(
+        finding(
+          tool,
+          "git.capability.policy.git.push",
+          "git.push must be blocked-by-policy in fixture mode",
+          "git.md",
+        ),
+      );
     }
   }
   if (tool === "ru" && capOk("ru.schema") && typeof normalized.payload.schemaVersion !== "string") {
-    findings.push(finding(tool, "ru.capability.unsatisfied.ru.schema", "ru.schema requires schemaVersion", "ru.md"));
+    findings.push(
+      finding(
+        tool,
+        "ru.capability.unsatisfied.ru.schema",
+        "ru.schema requires schemaVersion",
+        "ru.md",
+      ),
+    );
   }
-  if (tool === "caam" && capOk("caam.accounts.list") && !Array.isArray(normalized.payload.accounts)) {
-    findings.push(finding(tool, "caam.capability.unsatisfied.caam.accounts.list", "caam.accounts.list is ok but account-list produced no accounts JSON", "caam.md"));
+  if (
+    tool === "caam" &&
+    capOk("caam.accounts.list") &&
+    !Array.isArray(normalized.payload.accounts)
+  ) {
+    findings.push(
+      finding(
+        tool,
+        "caam.capability.unsatisfied.caam.accounts.list",
+        "caam.accounts.list is ok but account-list produced no accounts JSON",
+        "caam.md",
+      ),
+    );
   }
   if (tool === "dcg" && caps["dcg.verdicts.subscribe"]?.status === "ok") {
-    findings.push(finding(tool, "dcg.capability.unsatisfied.dcg.verdicts.subscribe", "dcg verdict stream cannot be ok from a status/help probe", "dcg.md"));
+    findings.push(
+      finding(
+        tool,
+        "dcg.capability.unsatisfied.dcg.verdicts.subscribe",
+        "dcg verdict stream cannot be ok from a status/help probe",
+        "dcg.md",
+      ),
+    );
   }
   if (tool === "caut" && !caps["caut.usage.snapshot"]) {
-    findings.push(finding(tool, "caut.capability.missing.caut.usage.snapshot", "caut.usage.snapshot capability is absent from the stub fixture", "caut.md"));
+    findings.push(
+      finding(
+        tool,
+        "caut.capability.missing.caut.usage.snapshot",
+        "caut.usage.snapshot capability is absent from the stub fixture",
+        "caut.md",
+      ),
+    );
   }
   // hp-8a8: realistic-fixture rules. `ubs.scan` ok requires the help
   // banner in the captured stream so we know the binary actually ran;
   // `jsm.skill.list` ok requires `skills[]` in the JSON output.
   if (tool === "ubs" && capOk("ubs.scan") && normalized.payload.helpBanner !== true) {
-    findings.push(finding(tool, "ubs.capability.unsatisfied.ubs.scan", "ubs.scan ok requires 'Usage: ubs' banner in stderr/stdout", "ubs.md"));
+    findings.push(
+      finding(
+        tool,
+        "ubs.capability.unsatisfied.ubs.scan",
+        "ubs.scan ok requires 'Usage: ubs' banner in stderr/stdout",
+        "ubs.md",
+      ),
+    );
   }
   if (tool === "jsm" && capOk("jsm.skill.list") && !Array.isArray(normalized.payload.skills)) {
-    findings.push(finding(tool, "jsm.capability.unsatisfied.jsm.skill.list", "jsm.skill.list ok requires skills[] in stdout JSON", "jsm.md"));
+    findings.push(
+      finding(
+        tool,
+        "jsm.capability.unsatisfied.jsm.skill.list",
+        "jsm.skill.list ok requires skills[] in stdout JSON",
+        "jsm.md",
+      ),
+    );
   }
   return findings;
 }
 
 function scenarioCapabilityFindings(tool: ConformanceTool): ConformanceFinding[] {
   const scenariosDir = resolve(fixturesPackageRoot, "scenarios");
-  const scenarioNames = ["healthy-hour", "idle-but-not-stuck", "wedged-pane", "rate-limited-no-caam", "rate-limited-with-caam"];
+  const scenarioNames = [
+    "healthy-hour",
+    "idle-but-not-stuck",
+    "wedged-pane",
+    "rate-limited-no-caam",
+    "rate-limited-with-caam",
+  ];
   const findings: ConformanceFinding[] = [];
   for (const scenario of scenarioNames) {
     const capsPath = resolve(scenariosDir, scenario, "capabilities.json");
@@ -594,11 +704,33 @@ function scenarioCapabilityFindings(tool: ConformanceTool): ConformanceFinding[]
     if (!isObject(allCaps)) continue;
     const toolCaps = allCaps[tool];
     if (!isObject(toolCaps)) continue;
-    if (tool === "bv" && isObject(toolCaps["bv.tui"]) && (toolCaps["bv.tui"] as CapabilityEntry).status !== "blocked-by-policy") {
-      findings.push(finding(tool, `bv.scenario.${scenario}.tui`, `bv.tui is not blocked in ${scenario}`, capsPath));
+    if (
+      tool === "bv" &&
+      isObject(toolCaps["bv.tui"]) &&
+      (toolCaps["bv.tui"] as CapabilityEntry).status !== "blocked-by-policy"
+    ) {
+      findings.push(
+        finding(
+          tool,
+          `bv.scenario.${scenario}.tui`,
+          `bv.tui is not blocked in ${scenario}`,
+          capsPath,
+        ),
+      );
     }
-    if (tool === "git" && isObject(toolCaps["git.push"]) && (toolCaps["git.push"] as CapabilityEntry).status !== "blocked-by-policy") {
-      findings.push(finding(tool, `git.scenario.${scenario}.push`, `git.push is not blocked in ${scenario}`, capsPath));
+    if (
+      tool === "git" &&
+      isObject(toolCaps["git.push"]) &&
+      (toolCaps["git.push"] as CapabilityEntry).status !== "blocked-by-policy"
+    ) {
+      findings.push(
+        finding(
+          tool,
+          `git.scenario.${scenario}.push`,
+          `git.push is not blocked in ${scenario}`,
+          capsPath,
+        ),
+      );
     }
   }
   return findings;
@@ -608,32 +740,56 @@ function assertNegativeCases(tool: ConformanceTool): ConformanceFinding[] {
   const findings: ConformanceFinding[] = [];
   const cases = [
     { name: "empty", text: "", code: "empty_input" },
-    { name: "truncated-envelope", text: "{\"meta\":{\"adapter\":", code: "invalid_json" },
+    { name: "truncated-envelope", text: '{"meta":{"adapter":', code: "invalid_json" },
     { name: "non-object", text: "[]", code: "non_object" },
   ];
   for (const testCase of cases) {
     try {
       parseEnvelopeText(tool, testCase.text, testCase.name);
-      findings.push(finding(tool, `${tool}.negative.${testCase.name}`, `${testCase.name} unexpectedly parsed`, "synthetic negative input"));
+      findings.push(
+        finding(
+          tool,
+          `${tool}.negative.${testCase.name}`,
+          `${testCase.name} unexpectedly parsed`,
+          "synthetic negative input",
+        ),
+      );
     } catch (error) {
       if (!(error instanceof ConformanceParseError) || error.code !== testCase.code) {
-        findings.push(finding(tool, `${tool}.negative.${testCase.name}`, `${testCase.name} returned wrong error`, "synthetic negative input"));
+        findings.push(
+          finding(
+            tool,
+            `${tool}.negative.${testCase.name}`,
+            `${testCase.name} returned wrong error`,
+            "synthetic negative input",
+          ),
+        );
       }
     }
   }
   for (const state of ["malformed-json", "high-volume"] as const) {
     const path = goldenPath(tool, state);
     if (!existsSync(path)) {
-      if (tool === "rch") continue;
-      findings.push(finding(tool, `${tool}.fixture.missing.${state}`, `missing ${basename(path)}`, path));
+      findings.push(
+        finding(tool, `${tool}.fixture.missing.${state}`, `missing ${basename(path)}`, path),
+      );
       continue;
     }
     try {
       normalizeOutput(tool, loadEnvelope(tool, state), "fixture");
-      findings.push(finding(tool, `${tool}.negative.${state}`, `${state} unexpectedly parsed`, path));
+      findings.push(
+        finding(tool, `${tool}.negative.${state}`, `${state} unexpectedly parsed`, path),
+      );
     } catch (error) {
       if (!(error instanceof ConformanceParseError)) {
-        findings.push(finding(tool, `${tool}.negative.${state}`, `${state} did not fail with ConformanceParseError`, path));
+        findings.push(
+          finding(
+            tool,
+            `${tool}.negative.${state}`,
+            `${state} did not fail with ConformanceParseError`,
+            path,
+          ),
+        );
       }
     }
   }
@@ -644,7 +800,9 @@ export function runToolConformance(tool: ConformanceTool): ToolConformanceReport
   const findings: ConformanceFinding[] = [];
   const schemaFile = schemaPath(tool);
   if (!existsSync(schemaFile)) {
-    findings.push(finding(tool, `${tool}.schema.missing`, `missing schema ${schemaFile}`, schemaFile));
+    findings.push(
+      finding(tool, `${tool}.schema.missing`, `missing schema ${schemaFile}`, schemaFile),
+    );
   }
 
   const fixtureFile = goldenPath(tool, "normal");
@@ -652,14 +810,19 @@ export function runToolConformance(tool: ConformanceTool): ToolConformanceReport
   let source: "fixture" | "local" = "fixture";
   if (existsSync(fixtureFile)) {
     envelope = loadEnvelope(tool, "normal");
-  } else if (tool === "rch") {
-    findings.push(finding(tool, "rch.fixture.missing.normal", "rch has a contract but no golden-output fixture or snapshot capture", fixtureFile));
-    envelope = localRchEnvelope();
-    source = "local";
   } else {
-    findings.push(finding(tool, `${tool}.fixture.missing.normal`, `missing normal fixture`, fixtureFile));
+    findings.push(
+      finding(tool, `${tool}.fixture.missing.normal`, `missing normal fixture`, fixtureFile),
+    );
     envelope = {
-      meta: { adapter: tool, state: "normal", kind: "stub", fixturesVersion: "missing", capturedAt: new Date(0).toISOString(), source: "missing" },
+      meta: {
+        adapter: tool,
+        state: "normal",
+        kind: "stub",
+        fixturesVersion: "missing",
+        capturedAt: new Date(0).toISOString(),
+        source: "missing",
+      },
       argv: [tool],
       exit: 127,
       durationMs: 0,
@@ -692,7 +855,14 @@ export function runToolConformance(tool: ConformanceTool): ToolConformanceReport
     const reparsed = JSON.parse(first) as unknown;
     const second = canonicalJson(reparsed);
     if (first !== second) {
-      findings.push(finding(tool, `${tool}.roundtrip.mismatch`, "canonical parse/serialize/reparse changed bytes", schemaFile));
+      findings.push(
+        finding(
+          tool,
+          `${tool}.roundtrip.mismatch`,
+          "canonical parse/serialize/reparse changed bytes",
+          schemaFile,
+        ),
+      );
     }
     findings.push(...capabilityFindings(tool, normalized));
   }
@@ -719,10 +889,18 @@ export function runToolConformance(tool: ConformanceTool): ToolConformanceReport
     schemaPath: schemaFile,
     fixturePath: existsSync(fixtureFile) ? fixtureFile : undefined,
     cases: {
-      schema: findings.some((entry) => entry.id.includes(".schema.") && !entry.expected) ? "fail" : "pass",
-      roundTrip: findings.some((entry) => entry.id.includes(".roundtrip.") && !entry.expected) ? "fail" : "pass",
-      negative: findings.some((entry) => entry.id.includes(".negative.") && !entry.expected) ? "fail" : "pass",
-      capabilities: findings.some((entry) => entry.id.includes(".capability.") && !entry.expected) ? "fail" : "pass",
+      schema: findings.some((entry) => entry.id.includes(".schema.") && !entry.expected)
+        ? "fail"
+        : "pass",
+      roundTrip: findings.some((entry) => entry.id.includes(".roundtrip.") && !entry.expected)
+        ? "fail"
+        : "pass",
+      negative: findings.some((entry) => entry.id.includes(".negative.") && !entry.expected)
+        ? "fail"
+        : "pass",
+      capabilities: findings.some((entry) => entry.id.includes(".capability.") && !entry.expected)
+        ? "fail"
+        : "pass",
     },
   };
 }
@@ -753,7 +931,9 @@ export function assertToolConformance(tool: ConformanceTool): void {
 }
 
 export function formatToolReport(report: ToolConformanceReport): string {
-  const lines = [`${report.tool}: schema=${report.cases.schema} roundTrip=${report.cases.roundTrip} negative=${report.cases.negative} capabilities=${report.cases.capabilities}`];
+  const lines = [
+    `${report.tool}: schema=${report.cases.schema} roundTrip=${report.cases.roundTrip} negative=${report.cases.negative} capabilities=${report.cases.capabilities}`,
+  ];
   for (const findingEntry of report.findings) {
     lines.push(
       `- ${findingEntry.expected ? "XFAIL" : "FAIL"} ${findingEntry.id}: ${findingEntry.message} (${findingEntry.where})`,

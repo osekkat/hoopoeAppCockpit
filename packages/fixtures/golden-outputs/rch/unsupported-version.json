@@ -1,0 +1,26 @@
+{
+  "meta": {
+    "adapter": "rch",
+    "state": "unsupported-version",
+    "kind": "synthetic",
+    "fixturesVersion": "phase0-rch-stub-2026-05-04",
+    "capturedAt": "2026-05-04T19:38:00Z",
+    "source": "hand-written unsupported version fixture"
+  },
+  "argv": ["rch", "status"],
+  "exit": 0,
+  "durationMs": 35,
+  "stdoutBytes": 92,
+  "stderrBytes": 0,
+  "stdoutText": "RCH Status\nDaemon : running\nPosture : unsupported-version\nWorkers : 0 healthy\nBuilds : 0 active\n",
+  "stderrText": "",
+  "truncated": false,
+  "redacted": false,
+  "tags": ["unsupported-version"],
+  "capabilities": {
+    "rch.run": {
+      "status": "degraded",
+      "notes": "version below supported minimum"
+    }
+  }
+}

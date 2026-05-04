@@ -1,0 +1,25 @@
+{
+  "meta": {
+    "adapter": "rch",
+    "state": "missing-tool",
+    "kind": "synthetic",
+    "fixturesVersion": "phase0-rch-stub-2026-05-04",
+    "capturedAt": "2026-05-04T19:38:00Z",
+    "source": "hand-written missing binary fixture"
+  },
+  "argv": ["rch", "--version"],
+  "exit": 127,
+  "durationMs": 5,
+  "stdoutBytes": 0,
+  "stderrBytes": 23,
+  "stdoutText": "",
+  "stderrText": "rch: command not found\n",
+  "truncated": false,
+  "redacted": false,
+  "tags": ["missing-tool"],
+  "capabilities": {
+    "rch.run": {
+      "status": "missing"
+    }
+  }
+}

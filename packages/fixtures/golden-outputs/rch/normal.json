@@ -1,0 +1,25 @@
+{
+  "meta": {
+    "adapter": "rch",
+    "state": "normal",
+    "kind": "synthetic",
+    "fixturesVersion": "phase0-rch-stub-2026-05-04",
+    "capturedAt": "2026-05-04T19:38:00Z",
+    "source": "synthetic-stub; mirrors rch status text until real Phase 0 VPS capture lands"
+  },
+  "argv": ["rch", "status"],
+  "exit": 0,
+  "durationMs": 30,
+  "stdoutBytes": 92,
+  "stderrBytes": 0,
+  "stdoutText": "RCH Status\nDaemon : running\nPosture : remote-preferred\nWorkers : 3 healthy\nBuilds : 0 active\n",
+  "stderrText": "",
+  "truncated": false,
+  "redacted": false,
+  "tags": ["stub-phase0"],
+  "capabilities": {
+    "rch.run": {
+      "status": "ok"
+    }
+  }
+}

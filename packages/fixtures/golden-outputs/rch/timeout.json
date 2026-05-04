@@ -1,0 +1,26 @@
+{
+  "meta": {
+    "adapter": "rch",
+    "state": "timeout",
+    "kind": "synthetic",
+    "fixturesVersion": "phase0-rch-stub-2026-05-04",
+    "capturedAt": "2026-05-04T19:38:00Z",
+    "source": "hand-written timeout fixture"
+  },
+  "argv": ["rch", "status"],
+  "exit": 124,
+  "durationMs": 30000,
+  "stdoutBytes": 0,
+  "stderrBytes": 31,
+  "stdoutText": "",
+  "stderrText": "rch status timed out after 30s\n",
+  "truncated": false,
+  "redacted": false,
+  "tags": ["timeout"],
+  "capabilities": {
+    "rch.run": {
+      "status": "degraded",
+      "notes": "status probe timeout"
+    }
+  }
+}

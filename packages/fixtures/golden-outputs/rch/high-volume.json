@@ -1,0 +1,26 @@
+{
+  "meta": {
+    "adapter": "rch",
+    "state": "high-volume",
+    "kind": "synthetic",
+    "fixturesVersion": "phase0-rch-stub-2026-05-04",
+    "capturedAt": "2026-05-04T19:38:00Z",
+    "source": "hand-written high-volume fixture"
+  },
+  "argv": ["rch", "status"],
+  "exit": 0,
+  "durationMs": 45,
+  "stdoutBytes": 10485760,
+  "stderrBytes": 0,
+  "stdoutText": "RCH Status\nDaemon : running\nPosture : remote-preferred\nWorkers : truncated\nBuilds : truncated\n",
+  "stderrText": "",
+  "truncated": true,
+  "redacted": false,
+  "tags": ["high-volume"],
+  "capabilities": {
+    "rch.run": {
+      "status": "degraded",
+      "notes": "status output truncated"
+    }
+  }
+}

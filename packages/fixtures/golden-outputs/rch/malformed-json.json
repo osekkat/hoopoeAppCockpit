@@ -1,0 +1,26 @@
+{
+  "meta": {
+    "adapter": "rch",
+    "state": "malformed-json",
+    "kind": "synthetic",
+    "fixturesVersion": "phase0-rch-stub-2026-05-04",
+    "capturedAt": "2026-05-04T19:38:00Z",
+    "source": "hand-written malformed output fixture"
+  },
+  "argv": ["rch", "status", "--json"],
+  "exit": 0,
+  "durationMs": 20,
+  "stdoutBytes": 31,
+  "stderrBytes": 0,
+  "stdoutText": "{\"daemon\":\"running\",\"workers\":",
+  "stderrText": "",
+  "truncated": false,
+  "redacted": false,
+  "tags": ["malformed-json"],
+  "capabilities": {
+    "rch.run": {
+      "status": "degraded",
+      "notes": "malformed status payload"
+    }
+  }
+}
