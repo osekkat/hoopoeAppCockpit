@@ -7,11 +7,15 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	gitadapter "github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/adapters/git"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/capabilities"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/search"
 	schemas "github.com/hoopoe-cockpit/hoopoe/packages/schemas/go"
 )
@@ -238,6 +242,189 @@ func TestMissingVPSClonePathReturnsProblem(t *testing.T) {
 	}
 }
 
+func TestGitReadGateBlocksMissingCapability(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name      string
+		path      string
+		gitClient bool
+		wantRefs  []string
+	}{
+		{name: "status", path: "/v1/projects/proj_1/git/status", gitClient: true, wantRefs: []string{"git.status.read"}},
+		{name: "staged-diff", path: "/v1/projects/proj_1/git/staged-diff", gitClient: true, wantRefs: []string{"git.diff.read"}},
+		{name: "unstaged-diff", path: "/v1/projects/proj_1/git/unstaged-diff", gitClient: true, wantRefs: []string{"git.diff.read"}},
+		{name: "unpushed-commits", path: "/v1/projects/proj_1/git/unpushed-commits", gitClient: true, wantRefs: []string{"git.unpushed.list"}},
+		{name: "open-files", path: "/v1/projects/proj_1/git/open-files", gitClient: true, wantRefs: []string{"git.status.read"}},
+		{name: "grep", path: "/v1/projects/proj_1/grep?query=x", gitClient: false, wantRefs: []string{"git.grep"}},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			service, fake := newTestService(t)
+			searcher := &fakeSearcher{response: search.Response{
+				SchemaVersion: search.SchemaVersion,
+				ProjectID:     "proj_1",
+				Query:         "x",
+			}}
+			caps := &fakeCaps{} // empty registry → every cap is missing
+			router := chi.NewRouter()
+			router.Route("/v1/projects/{projectId}", func(r chi.Router) {
+				MountGitRoutes(r, Config{
+					Projects:         service.projects,
+					GitClientFactory: service.newGit,
+					Cache:            service.cache,
+					Searcher:         searcher,
+					Capabilities:     caps,
+					Now:              service.now,
+				})
+			})
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tc.path, nil))
+			if rec.Code != http.StatusServiceUnavailable {
+				t.Fatalf("status = %d, want 503; body=%s", rec.Code, rec.Body.String())
+			}
+			if got := rec.Header().Get("Content-Type"); got != "application/problem+json; charset=utf-8" {
+				t.Fatalf("content-type = %q", got)
+			}
+			var problem schemas.Problem
+			if err := json.Unmarshal(rec.Body.Bytes(), &problem); err != nil {
+				t.Fatalf("decode problem: %v", err)
+			}
+			if problem.Code != "git.read.capabilities_unavailable" {
+				t.Fatalf("problem.Code = %q, want git.read.capabilities_unavailable", problem.Code)
+			}
+			if problem.Type != "urn:hoopoe:problem:git-read-capabilities-unavailable" {
+				t.Fatalf("problem.Type = %q", problem.Type)
+			}
+			if problem.Detail == nil {
+				t.Fatal("problem.Detail nil")
+			}
+			for _, ref := range tc.wantRefs {
+				if !strings.Contains(*problem.Detail, ref) {
+					t.Fatalf("problem.Detail = %q, missing %q", *problem.Detail, ref)
+				}
+			}
+			gotRefs := caps.lookups()
+			sort.Strings(gotRefs)
+			want := append([]string(nil), tc.wantRefs...)
+			sort.Strings(want)
+			if !equalStrings(gotRefs, want) {
+				t.Fatalf("looked up refs = %v, want %v", gotRefs, want)
+			}
+			if tc.gitClient {
+				if fake.totalCalls() != 0 {
+					t.Fatalf("git client invoked %d times despite missing capability", fake.totalCalls())
+				}
+			}
+			if !tc.gitClient && searcher.callCount() != 0 {
+				t.Fatalf("searcher invoked %d times despite missing capability", searcher.callCount())
+			}
+		})
+	}
+}
+
+func TestGitReadGateBlocksByPolicy(t *testing.T) {
+	t.Parallel()
+	service, fake := newTestService(t)
+	caps := &fakeCaps{statuses: map[string]capabilities.CapabilityStatus{
+		"git.status.read": capabilities.StatusBlockedByPolicy,
+	}}
+	router := chi.NewRouter()
+	router.Route("/v1/projects/{projectId}", func(r chi.Router) {
+		MountGitRoutes(r, Config{
+			Projects:         service.projects,
+			GitClientFactory: service.newGit,
+			Cache:            service.cache,
+			Capabilities:     caps,
+			Now:              service.now,
+		})
+	})
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/projects/proj_1/git/status", nil))
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503; body=%s", rec.Code, rec.Body.String())
+	}
+	var problem schemas.Problem
+	if err := json.Unmarshal(rec.Body.Bytes(), &problem); err != nil {
+		t.Fatalf("decode problem: %v", err)
+	}
+	if problem.Detail == nil || !strings.Contains(*problem.Detail, "blocked-by-policy: git.status.read") {
+		t.Fatalf("problem.Detail = %v, want blocked-by-policy detail", problem.Detail)
+	}
+	if fake.totalCalls() != 0 {
+		t.Fatalf("git client invoked despite blocked-by-policy capability")
+	}
+}
+
+func TestGitReadGatePermitsDegradedAndLogs(t *testing.T) {
+	t.Parallel()
+	service, fake := newTestService(t)
+	caps := &fakeCaps{statuses: map[string]capabilities.CapabilityStatus{
+		"git.status.read": capabilities.StatusDegraded,
+	}}
+	logger := &fakeLogger{}
+	router := chi.NewRouter()
+	router.Route("/v1/projects/{projectId}", func(r chi.Router) {
+		MountGitRoutes(r, Config{
+			Projects:         service.projects,
+			GitClientFactory: service.newGit,
+			Cache:            service.cache,
+			Capabilities:     caps,
+			Logger:           logger,
+			Now:              service.now,
+		})
+	})
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/projects/proj_1/git/status", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	if fake.totalCalls() == 0 {
+		t.Fatal("git client not invoked under degraded capability")
+	}
+	logs := logger.entries("vps_git_read_capabilities_degraded")
+	if len(logs) != 1 {
+		t.Fatalf("degraded log entries = %d, want 1: %#v", len(logs), logger.all())
+	}
+	if got, _ := logs[0]["capabilities"].([]string); len(got) != 1 || got[0] != "git.status.read" {
+		t.Fatalf("logged capabilities = %v", logs[0]["capabilities"])
+	}
+}
+
+func TestGitReadGateAllowsOK(t *testing.T) {
+	t.Parallel()
+	service, _ := newTestService(t)
+	caps := &fakeCaps{statuses: map[string]capabilities.CapabilityStatus{
+		"git.status.read":   capabilities.StatusOK,
+		"git.diff.read":     capabilities.StatusOK,
+		"git.unpushed.list": capabilities.StatusOK,
+	}}
+	router := chi.NewRouter()
+	router.Route("/v1/projects/{projectId}", func(r chi.Router) {
+		MountGitRoutes(r, Config{
+			Projects:         service.projects,
+			GitClientFactory: service.newGit,
+			Cache:            service.cache,
+			Capabilities:     caps,
+			Now:              service.now,
+		})
+	})
+	for _, path := range []string{
+		"/v1/projects/proj_1/git/status",
+		"/v1/projects/proj_1/git/staged-diff",
+		"/v1/projects/proj_1/git/unstaged-diff",
+		"/v1/projects/proj_1/git/unpushed-commits",
+		"/v1/projects/proj_1/git/open-files",
+	} {
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("path %s: status = %d, want 200; body=%s", path, rec.Code, rec.Body.String())
+		}
+	}
+}
+
 func newTestService(t *testing.T) (*Service, *fakeGit) {
 	t.Helper()
 	repoPath := t.TempDir()
@@ -312,12 +499,15 @@ type fakeGit struct {
 	head           string
 	stagedDiff     []byte
 	unstagedDiff   []byte
+	statusCalls    int
+	revParseCalls  int
 	stagedCalls    int
 	unstagedCalls  int
 	unpushedBranch string
 }
 
 func (g *fakeGit) Status(context.Context) (*gitadapter.Status, error) {
+	g.statusCalls++
 	return g.status, nil
 }
 
@@ -347,16 +537,112 @@ func (g *fakeGit) UnpushedCommits(_ context.Context, branch string) (*gitadapter
 }
 
 func (g *fakeGit) RevParse(context.Context, string) (string, error) {
+	g.revParseCalls++
 	return g.head, nil
 }
 
+func (g *fakeGit) totalCalls() int {
+	calls := g.statusCalls + g.revParseCalls + g.stagedCalls + g.unstagedCalls
+	if g.unpushedBranch != "" {
+		calls++
+	}
+	return calls
+}
+
 type fakeSearcher struct {
+	mu       sync.Mutex
 	request  search.Request
 	response search.Response
 	err      error
+	calls    int
 }
 
 func (s *fakeSearcher) Search(_ context.Context, req search.Request) (search.Response, error) {
+	s.mu.Lock()
 	s.request = req
+	s.calls++
+	s.mu.Unlock()
 	return s.response, s.err
+}
+
+func (s *fakeSearcher) callCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.calls
+}
+
+type fakeCaps struct {
+	mu       sync.Mutex
+	statuses map[string]capabilities.CapabilityStatus
+	seen     []string
+}
+
+func (c *fakeCaps) LookupCapabilityStatus(ref string) (capabilities.CapabilityStatus, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.seen = append(c.seen, ref)
+	if c.statuses == nil {
+		return "", false
+	}
+	status, ok := c.statuses[ref]
+	return status, ok
+}
+
+func (c *fakeCaps) lookups() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make([]string, len(c.seen))
+	copy(out, c.seen)
+	return out
+}
+
+type fakeLogger struct {
+	mu      sync.Mutex
+	records []map[string]any
+}
+
+func (l *fakeLogger) Info(_ context.Context, message string, fields map[string]any) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	rec := map[string]any{"_msg": message}
+	for k, v := range fields {
+		rec[k] = v
+	}
+	l.records = append(l.records, rec)
+}
+
+func (l *fakeLogger) Error(_ context.Context, message string, fields map[string]any) {
+	l.Info(nil, message, fields)
+}
+
+func (l *fakeLogger) entries(message string) []map[string]any {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	out := make([]map[string]any, 0)
+	for _, rec := range l.records {
+		if rec["_msg"] == message {
+			out = append(out, rec)
+		}
+	}
+	return out
+}
+
+func (l *fakeLogger) all() []map[string]any {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	out := make([]map[string]any, len(l.records))
+	copy(out, l.records)
+	return out
+}
+
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }

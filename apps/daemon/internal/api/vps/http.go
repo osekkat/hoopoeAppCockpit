@@ -4,26 +4,113 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/capabilities"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/search"
 	schemas "github.com/hoopoe-cockpit/hoopoe/packages/schemas/go"
 )
 
+// gitReadRouteCaps maps each VPS Git read route to the fully qualified
+// capability refs it requires from the daemon /v1/capabilities registry.
+// A route is served only when every required cap is StatusOK or
+// StatusDegraded; missing/untested/blocked-by-policy short-circuits to a
+// 503 problem envelope.
+var gitReadRouteCaps = struct {
+	Status          []string
+	Diff            []string
+	UnpushedCommits []string
+	OpenFiles       []string
+	Grep            []string
+}{
+	Status:          []string{"git.status.read"},
+	Diff:            []string{"git.diff.read"},
+	UnpushedCommits: []string{"git.unpushed.list"},
+	OpenFiles:       []string{"git.status.read"},
+	Grep:            []string{"git.grep"},
+}
+
 func MountGitRoutes(r chi.Router, cfg Config) {
-	h := &handler{service: NewService(cfg)}
-	r.Get("/git/status", h.status)
-	r.Get("/git/staged-diff", h.diff(DiffKindStaged))
-	r.Get("/git/unstaged-diff", h.diff(DiffKindUnstaged))
-	r.Get("/git/unpushed-commits", h.unpushedCommits)
-	r.Get("/git/open-files", h.openFiles)
-	r.Get("/grep", h.grep)
+	h := &handler{
+		service: NewService(cfg),
+		caps:    cfg.Capabilities,
+		logger:  cfg.Logger,
+	}
+	r.Get("/git/status", h.gateRead(gitReadRouteCaps.Status, h.status))
+	r.Get("/git/staged-diff", h.gateRead(gitReadRouteCaps.Diff, h.diff(DiffKindStaged)))
+	r.Get("/git/unstaged-diff", h.gateRead(gitReadRouteCaps.Diff, h.diff(DiffKindUnstaged)))
+	r.Get("/git/unpushed-commits", h.gateRead(gitReadRouteCaps.UnpushedCommits, h.unpushedCommits))
+	r.Get("/git/open-files", h.gateRead(gitReadRouteCaps.OpenFiles, h.openFiles))
+	r.Get("/grep", h.gateRead(gitReadRouteCaps.Grep, h.grep))
 }
 
 type handler struct {
 	service *Service
+	caps    CapabilityChecker
+	logger  Logger
+}
+
+// gateRead short-circuits a VPS Git read handler when the daemon capability
+// registry reports any required cap as missing, untested, or blocked by
+// policy. Degraded is allowed through but logged so the desktop's degraded
+// indicator and the audit log can reflect the partial guarantee. When the
+// registry is not configured the gate is a no-op for backward compatibility
+// with tests and minimal deployments.
+func (h *handler) gateRead(refs []string, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if h.caps == nil || len(refs) == 0 {
+			next(w, r)
+			return
+		}
+		var unavailable, blocked, degraded []string
+		for _, ref := range refs {
+			status, ok := h.caps.LookupCapabilityStatus(ref)
+			switch {
+			case !ok || status == capabilities.StatusMissing || status == capabilities.StatusUntested:
+				unavailable = append(unavailable, ref)
+			case status == capabilities.StatusBlockedByPolicy:
+				blocked = append(blocked, ref)
+			case status == capabilities.StatusDegraded:
+				degraded = append(degraded, ref)
+			}
+		}
+		if len(unavailable) > 0 || len(blocked) > 0 {
+			sort.Strings(unavailable)
+			sort.Strings(blocked)
+			detail := strings.Builder{}
+			if len(unavailable) > 0 {
+				detail.WriteString("missing or untested capabilities: ")
+				detail.WriteString(strings.Join(unavailable, ", "))
+			}
+			if len(blocked) > 0 {
+				if detail.Len() > 0 {
+					detail.WriteString("; ")
+				}
+				detail.WriteString("blocked-by-policy: ")
+				detail.WriteString(strings.Join(blocked, ", "))
+			}
+			detailStr := detail.String()
+			writeProblem(w, http.StatusServiceUnavailable, schemas.Problem{
+				Type:   "urn:hoopoe:problem:git-read-capabilities-unavailable",
+				Title:  "required capabilities unavailable",
+				Status: http.StatusServiceUnavailable,
+				Code:   "git.read.capabilities_unavailable",
+				Detail: &detailStr,
+			})
+			return
+		}
+		if len(degraded) > 0 && h.logger != nil {
+			sort.Strings(degraded)
+			h.logger.Info(r.Context(), "vps_git_read_capabilities_degraded", map[string]any{
+				"path":         r.URL.Path,
+				"capabilities": degraded,
+			})
+		}
+		next(w, r)
+	}
 }
 
 func (h *handler) status(w http.ResponseWriter, r *http.Request) {

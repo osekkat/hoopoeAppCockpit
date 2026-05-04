@@ -14,6 +14,7 @@ import (
 	"time"
 
 	gitadapter "github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/adapters/git"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/capabilities"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/projects"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/search"
 	schemas "github.com/hoopoe-cockpit/hoopoe/packages/schemas/go"
@@ -54,12 +55,21 @@ type Logger interface {
 	Error(ctx context.Context, message string, fields map[string]any)
 }
 
+// CapabilityChecker is the minimal surface MountGitRoutes needs from the
+// daemon's capabilities registry. It returns the current status for a fully
+// qualified capability reference such as "git.status.read"; ok=false means
+// the registry has no entry for that ref (treated as missing by the gate).
+type CapabilityChecker interface {
+	LookupCapabilityStatus(capRef string) (capabilities.CapabilityStatus, bool)
+}
+
 type Config struct {
 	Projects         ProjectResolver
 	GitClientFactory GitClientFactory
 	Cache            *DiffCache
 	Searcher         Searcher
 	Logger           Logger
+	Capabilities     CapabilityChecker
 	Now              func() time.Time
 }
 

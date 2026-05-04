@@ -197,8 +197,13 @@ func (r *Registry) LookupCapability(tool ToolID, capID string) (Capability, bool
 // LookupCapabilityStatus parses a fully-qualified capability reference
 // (e.g., 'br.issues.read') and returns the current status. Adapters that
 // need to gate their own behavior on capability availability use this
-// rather than reaching into Snapshot().
+// rather than reaching into Snapshot(). A nil receiver returns
+// (StatusMissing, false) so callers that wrap the registry in a typed-nil
+// interface still see the missing-capability path instead of a panic.
 func (r *Registry) LookupCapabilityStatus(capRef string) (CapabilityStatus, bool) {
+	if r == nil {
+		return StatusMissing, false
+	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.lookupCapabilityStatus(capRef)

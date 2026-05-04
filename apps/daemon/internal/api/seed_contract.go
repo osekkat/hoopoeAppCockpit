@@ -73,12 +73,19 @@ func (s *server) mountSeedContractRoutes(r chi.Router) {
 		r.Post("/activate", s.handlePlannedWrite("projects.activate"))
 		r.Get("/readiness", s.handleProjectReadiness)
 
-		vps.MountGitRoutes(r, vps.Config{
-			Projects:     s.projects,
-			Logger:       s.logger,
-			Capabilities: s.capabilities,
-			Now:          s.now,
-		})
+		gitCfg := vps.Config{
+			Projects: s.projects,
+			Logger:   s.logger,
+			Now:      s.now,
+		}
+		if s.capabilities != nil {
+			// Avoid the typed-nil interface trap: passing a nil
+			// *capabilities.Registry through the CapabilityChecker
+			// interface field would yield a non-nil interface value that
+			// nil-panics on the first lookup.
+			gitCfg.Capabilities = s.capabilities
+		}
+		vps.MountGitRoutes(r, gitCfg)
 		r.Post("/git/push", s.handlePlannedWrite("git.push"))
 
 		r.Get("/plans", s.handlePlans)
