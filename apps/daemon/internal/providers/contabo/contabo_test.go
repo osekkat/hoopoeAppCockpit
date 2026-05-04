@@ -263,6 +263,39 @@ func TestProviderErrorsEmitWarningLogs(t *testing.T) {
 	}
 }
 
+func TestProviderErrorsCarryRetryHintsAndRedactedBody(t *testing.T) {
+	t.Parallel()
+	fake := newFakeAPI(t)
+	fake.cancelStatus = http.StatusTooManyRequests
+	fake.retryAfter = "90"
+	fake.errorBody = `{"error":"Bearer sk-contabo-test-token-1234567890 used from /home/ubuntu/.ssh/id_ed25519"}`
+	plugin := New(Options{
+		BaseURL:    fake.server.URL,
+		HTTPClient: fake.server.Client(),
+		Token:      staticToken("tok"),
+		Now:        fixedNow,
+	})
+
+	_, err := plugin.DestroyInstance(context.Background(), "12345")
+	var perr *ProviderError
+	if !errors.As(err, &perr) {
+		t.Fatalf("err = %v, want ProviderError", err)
+	}
+	if perr.ErrorClass != "rate_limited" || !perr.Retryable {
+		t.Fatalf("provider error = %+v, want retryable rate limit", perr)
+	}
+	if perr.RetryAfterSeconds == nil || *perr.RetryAfterSeconds != 90 {
+		t.Fatalf("retryAfter = %+v, want 90", perr.RetryAfterSeconds)
+	}
+	if !strings.Contains(perr.SuggestedAction, "rate-limit") {
+		t.Fatalf("suggested action = %q", perr.SuggestedAction)
+	}
+	if strings.Contains(perr.Body, "sk-contabo-test-token") || strings.Contains(perr.Body, "/home/ubuntu/.ssh") ||
+		!strings.Contains(perr.Body, "[redacted") {
+		t.Fatalf("body was not redacted: %q", perr.Body)
+	}
+}
+
 func TestCreateAndDestroyEmitAuditEntries(t *testing.T) {
 	t.Parallel()
 	fake := newFakeAPI(t)
@@ -334,12 +367,13 @@ func TestSuccessfulMutationSurfacesAuditFailure(t *testing.T) {
 func TestProviderErrorsAreClassified(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
-		status int
-		class  string
+		status    int
+		class     string
+		retryable bool
 	}{
-		{http.StatusUnauthorized, "auth"},
-		{http.StatusTooManyRequests, "rate_limited"},
-		{http.StatusServiceUnavailable, "provider_unavailable"},
+		{http.StatusUnauthorized, "auth", false},
+		{http.StatusTooManyRequests, "rate_limited", true},
+		{http.StatusServiceUnavailable, "provider_unavailable", true},
 	} {
 		t.Run(tc.class, func(t *testing.T) {
 			t.Parallel()
@@ -358,8 +392,8 @@ func TestProviderErrorsAreClassified(t *testing.T) {
 				SshPubKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAItest user@host",
 			})
 			var perr *ProviderError
-			if !errors.As(err, &perr) || perr.ErrorClass != tc.class {
-				t.Fatalf("err = %v, want class %s", err, tc.class)
+			if !errors.As(err, &perr) || perr.ErrorClass != tc.class || perr.Retryable != tc.retryable {
+				t.Fatalf("err = %v, want class %s retryable=%v", err, tc.class, tc.retryable)
 			}
 		})
 	}
@@ -394,6 +428,8 @@ type fakeAPI struct {
 	listStatus          int
 	createStatus        int
 	cancelStatus        int
+	retryAfter          string
+	errorBody           string
 	lastCreateBody      string
 	expectedToken       string
 }
@@ -429,7 +465,7 @@ func (f *fakeAPI) handle(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.Method == http.MethodGet && r.URL.Path == "/compute/instances":
 		if f.listStatus != http.StatusOK {
-			http.Error(w, "list failed", f.listStatus)
+			f.writeProviderFailure(w, "list failed", f.listStatus)
 			return
 		}
 		if f.existingDisplayName != "" {
@@ -452,19 +488,31 @@ func (f *fakeAPI) handle(w http.ResponseWriter, r *http.Request) {
 		f.lastCreateBody = string(encoded)
 		f.mu.Unlock()
 		if f.createStatus != http.StatusCreated {
-			http.Error(w, "create failed", f.createStatus)
+			f.writeProviderFailure(w, "create failed", f.createStatus)
 			return
 		}
 		writeJSON(w, http.StatusCreated, contaboResponse[contaboInstance]{Data: []contaboInstance{fakeInstance(12345, "hoopoe-acfs-test")}})
 	case r.Method == http.MethodPost && r.URL.Path == "/compute/instances/12345/cancel":
 		if f.cancelStatus != http.StatusCreated {
-			http.Error(w, "cancel failed", f.cancelStatus)
+			f.writeProviderFailure(w, "cancel failed", f.cancelStatus)
 			return
 		}
 		writeJSON(w, http.StatusCreated, contaboResponse[contaboCancelResult]{Data: []contaboCancelResult{{CancelDate: "2026-05-04"}}})
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+func (f *fakeAPI) writeProviderFailure(w http.ResponseWriter, fallback string, status int) {
+	if f.retryAfter != "" {
+		w.Header().Set("Retry-After", f.retryAfter)
+	}
+	if f.errorBody != "" {
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(f.errorBody))
+		return
+	}
+	http.Error(w, fallback, status)
 }
 
 func (f *fakeAPI) count(key string) int {

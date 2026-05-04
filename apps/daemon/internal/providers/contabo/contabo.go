@@ -331,11 +331,13 @@ func (p *Plugin) createComputeInstance(ctx context.Context, opts schemas.Provide
 func (p *Plugin) deleteSecret(ctx context.Context, secretID int64) error {
 	var out map[string]any
 	err := p.do(ctx, http.MethodDelete, fmt.Sprintf("/secrets/%d", secretID), nil, nil, &out)
-	if err != nil {
-		var perr *ProviderError
-		if errors.As(err, &perr) && perr.StatusCode == http.StatusNotFound {
-			return nil
-		}
+	if err == nil {
+		return nil
+	}
+	var perr *ProviderError
+	alreadyDeleted := errors.As(err, &perr) && perr.StatusCode == http.StatusNotFound
+	if alreadyDeleted {
+		return nil
 	}
 	return err
 }
@@ -413,7 +415,7 @@ func (p *Plugin) do(ctx context.Context, method, path string, query url.Values, 
 		return err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		perr := newProviderError(method, path, resp.StatusCode, data)
+		perr := newProviderError(method, path, resp.StatusCode, resp.Header, data, p.now().UTC())
 		errorClass = perr.ErrorClass
 		return perr
 	}
@@ -505,24 +507,30 @@ func providerErrorClass(err error) string {
 }
 
 type ProviderError struct {
-	Method     string
-	Path       string
-	StatusCode int
-	ErrorClass string
-	Body       string
+	Method            string
+	Path              string
+	StatusCode        int
+	ErrorClass        string
+	Retryable         bool
+	RetryAfterSeconds *int
+	SuggestedAction   string
+	Body              string
 }
 
 func (e *ProviderError) Error() string {
 	return fmt.Sprintf("contabo: %s %s failed: %s (%d)", e.Method, e.Path, e.ErrorClass, e.StatusCode)
 }
 
-func newProviderError(method, path string, status int, body []byte) *ProviderError {
+func newProviderError(method, path string, status int, headers http.Header, body []byte, now time.Time) *ProviderError {
 	return &ProviderError{
-		Method:     method,
-		Path:       path,
-		StatusCode: status,
-		ErrorClass: classifyStatus(status),
-		Body:       strings.TrimSpace(string(body)),
+		Method:            method,
+		Path:              path,
+		StatusCode:        status,
+		ErrorClass:        classifyStatus(status),
+		Retryable:         retryableStatus(status),
+		RetryAfterSeconds: parseRetryAfter(headers.Get("Retry-After"), now),
+		SuggestedAction:   suggestedActionForStatus(status),
+		Body:              sanitizeProviderBody(body),
 	}
 }
 
@@ -545,6 +553,59 @@ func classifyStatus(status int) string {
 		}
 		return "unknown"
 	}
+}
+
+func retryableStatus(status int) bool {
+	return status == http.StatusTooManyRequests || status == http.StatusRequestTimeout || status >= 500
+}
+
+func suggestedActionForStatus(status int) string {
+	switch {
+	case status == http.StatusUnauthorized || status == http.StatusForbidden:
+		return "Verify the Contabo API credential in CAAM, then retry."
+	case status == http.StatusTooManyRequests:
+		return "Wait for the provider rate-limit window before retrying with the same request."
+	case status == http.StatusConflict:
+		return "Check whether the instance or secret already exists before retrying."
+	case status >= 500:
+		return "Retry after the provider recovers; keep the same idempotent request inputs."
+	case status >= 400:
+		return "Correct the rejected provider request before retrying."
+	default:
+		return "Inspect the provider response before retrying."
+	}
+}
+
+func parseRetryAfter(value string, now time.Time) *int {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	if seconds, parseIntErr := strconv.Atoi(value); parseIntErr == nil && seconds >= 0 {
+		return &seconds
+	}
+	at, parseTimeErr := http.ParseTime(value)
+	if parseTimeErr != nil {
+		return nil
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	seconds := int(at.Sub(now.UTC()).Seconds())
+	if seconds < 0 {
+		seconds = 0
+	}
+	return &seconds
+}
+
+func sanitizeProviderBody(body []byte) string {
+	const maxBodyBytes = 4096
+	redacted, _ := redaction.NewDefault().RedactText(redaction.SurfaceLogger, "providers.contabo.response", strings.TrimSpace(string(body)))
+	if len(redacted) <= maxBodyBytes {
+		return redacted
+	}
+	redacted = strings.ToValidUTF8(redacted[:maxBodyBytes], "")
+	return redacted + "...[truncated]"
 }
 
 type contaboResponse[T any] struct {
