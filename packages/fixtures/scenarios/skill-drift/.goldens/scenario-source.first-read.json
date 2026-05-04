@@ -1,0 +1,330 @@
+{
+  "agentMailDump": {
+    "messages": [
+      {
+        "ack_required": true,
+        "body_md": "jsm verify reports the installed vibing-with-ntm skill SHA-256 differs from the project pin. tend-swarm has paused GreenBear. Approve to repin against the new hash, or hold to investigate.",
+        "from": "orchestrator",
+        "id": "msg-skill-drift-001",
+        "sent_at": "2026-05-04T17:13:56Z",
+        "subject": "[hp-49f] vibing-with-ntm skill drift — repin approval required",
+        "thread_id": "hp-49f",
+        "to": [
+          "operator"
+        ]
+      }
+    ],
+    "threads": [
+      {
+        "id": "hp-49f",
+        "message_count": 1,
+        "subject": "[hp-49f] vibing-with-ntm skill drift — repin approval required"
+      }
+    ],
+    "unread_total": 1
+  },
+  "brList": {
+    "issues": [
+      {
+        "created_at": "2026-05-04T17:14:00Z",
+        "description": "Fixture scenario bead used to prove jsm SHA-256 drift on a tending-required skill blocks the agent run and surfaces an approval to repin.",
+        "id": "hp-49f",
+        "issue_type": "task",
+        "priority": 1,
+        "status": "in_progress",
+        "title": "[test] missing tending fixture skill-drift",
+        "updated_at": "2026-05-04T17:14:00Z"
+      }
+    ],
+    "total": 1
+  },
+  "buildLogs": [
+    {
+      "runId": "run-008",
+      "text": "2026-05-04T17:13:54Z tend-swarm pre-script start\njsm verify vibing-with-ntm: pinned=sha256:aaaa..0000 installed=sha256:aaaa..1111\nSKILL DRIFT detected (verify exit=3)\nagent.pause GreenBear reason=skill-drift\napproval.request scope=jsm.repin\n"
+    }
+  ],
+  "bvTriage": {
+    "data_hash": "skill-drift-synthetic",
+    "generated_at": "2026-05-04T17:14:00Z",
+    "triage": {
+      "meta": {
+        "compute_time_ms": 1,
+        "generated_at": "2026-05-04T17:14:00Z",
+        "issue_count": 1,
+        "phase2_ready": false,
+        "version": "1.0.0"
+      },
+      "quick_ref": {
+        "actionable_count": 0,
+        "blocked_count": 0,
+        "in_progress_count": 1,
+        "open_count": 1,
+        "top_picks": []
+      },
+      "recommendations": []
+    }
+  },
+  "capabilities": {
+    "agent_mail": {
+      "agent_mail.messages.read": {
+        "status": "ok"
+      },
+      "agent_mail.messages.send": {
+        "status": "ok"
+      },
+      "agent_mail.reservations.list": {
+        "status": "ok"
+      }
+    },
+    "br": {
+      "br.dep.add": {
+        "status": "ok"
+      },
+      "br.issues.read": {
+        "status": "ok"
+      },
+      "br.issues.update": {
+        "status": "ok"
+      },
+      "br.sync.flush_only": {
+        "status": "ok"
+      }
+    },
+    "bv": {
+      "bv.robot.diff": {
+        "status": "ok"
+      },
+      "bv.robot.insights": {
+        "status": "ok"
+      },
+      "bv.robot.plan": {
+        "status": "ok"
+      },
+      "bv.robot.triage": {
+        "status": "ok"
+      }
+    },
+    "caam": {},
+    "casr": {},
+    "caut": {},
+    "dcg": {},
+    "git": {
+      "git.diff.read": {
+        "status": "ok"
+      },
+      "git.push": {
+        "notes": "snapshot script never pushes",
+        "status": "blocked-by-policy"
+      },
+      "git.status.read": {
+        "status": "ok"
+      },
+      "git.unpushed.list": {
+        "status": "ok"
+      }
+    },
+    "health": {
+      "health.coverage": {
+        "status": "untested"
+      }
+    },
+    "jfp": {},
+    "jsm": {
+      "jsm.list": {
+        "status": "ok"
+      },
+      "jsm.update": {
+        "notes": "repin requires operator approval (jsm.repin scope)",
+        "status": "blocked-by-policy"
+      },
+      "jsm.verify": {
+        "notes": "vibing-with-ntm SHA mismatch — installed != pinned",
+        "status": "degraded"
+      }
+    },
+    "ntm": {
+      "ntm.robot.snapshot": {
+        "status": "ok"
+      },
+      "ntm.robot.status": {
+        "status": "ok"
+      },
+      "ntm.robot.tail": {
+        "status": "ok"
+      }
+    },
+    "oracle": {},
+    "pt": {},
+    "sbh": {},
+    "srp": {},
+    "ubs": {}
+  },
+  "events": [
+    {
+      "channel": "jsm",
+      "payload": {
+        "installedSha": "sha256:aaaa1111bbbb2222cccc3333dddd4444eeee5555ffff66667777888899991111",
+        "pinnedSha": "sha256:aaaa1111bbbb2222cccc3333dddd4444eeee5555ffff66667777888899990000",
+        "skill": "vibing-with-ntm",
+        "verifyExitCode": 3
+      },
+      "seq": 1,
+      "ts": "2026-05-04T17:13:54Z",
+      "type": "jsm.skill_drift"
+    },
+    {
+      "channel": "capabilities",
+      "payload": {
+        "capability": "jsm.verify",
+        "notes": "vibing-with-ntm SHA mismatch",
+        "status": "degraded",
+        "tool": "jsm"
+      },
+      "seq": 2,
+      "ts": "2026-05-04T17:13:55Z",
+      "type": "capability.changed"
+    },
+    {
+      "channel": "agent_state",
+      "payload": {
+        "agent": "GreenBear",
+        "reason": "skill-drift"
+      },
+      "seq": 3,
+      "ts": "2026-05-04T17:13:55Z",
+      "type": "agent.paused"
+    },
+    {
+      "channel": "approvals",
+      "payload": {
+        "approvalId": "appr-skill-drift-001",
+        "scope": "jsm.repin",
+        "summary": "Approve repin of vibing-with-ntm to the new SHA-256, or hold to investigate."
+      },
+      "seq": 4,
+      "ts": "2026-05-04T17:13:56Z",
+      "type": "approval.requested"
+    },
+    {
+      "channel": "activity",
+      "payload": {
+        "severity": "warning",
+        "summary": "vibing-with-ntm skill drifted from pin; GreenBear paused awaiting repin approval."
+      },
+      "seq": 5,
+      "ts": "2026-05-04T17:13:56Z",
+      "type": "activity.warning"
+    }
+  ],
+  "expectedOutcome": {
+    "actionPlan": {
+      "actions": [
+        {
+          "args": {
+            "agent": "GreenBear",
+            "reason": "skill-drift"
+          },
+          "type": "agent.pause"
+        },
+        {
+          "args": {
+            "scope": "jsm.repin",
+            "summary": "Approve repin of vibing-with-ntm to the new SHA-256, or hold to investigate."
+          },
+          "type": "approval.request"
+        }
+      ]
+    },
+    "activityBehavior": "surface",
+    "approvalsRequested": [
+      {
+        "reason": "vibing-with-ntm SHA-256 mismatch; operator must approve repin or hold",
+        "scope": "jsm.repin"
+      }
+    ],
+    "detections": [
+      {
+        "kind": "jsm.skill_drift",
+        "payload": {
+          "installedSha": "sha256:aaaa1111bbbb2222cccc3333dddd4444eeee5555ffff66667777888899991111",
+          "pinnedSha": "sha256:aaaa1111bbbb2222cccc3333dddd4444eeee5555ffff66667777888899990000",
+          "skill": "vibing-with-ntm"
+        }
+      }
+    ],
+    "meta": {
+      "capturedAt": "<scrubbed-captured-at>",
+      "fixturesVersion": "phase0-2026-05-02",
+      "kind": "synthetic",
+      "notes": "jsm verify reports the installed vibing-with-ntm skill drifted from its pinned SHA-256. Pre-script detects deterministically; the agent is paused and an approval to repin (or roll back) is surfaced. wakeAgent=false because no LLM judgement is required.",
+      "scenario": "skill-drift",
+      "source": "hand-written hp-49f skill-drift tending fixture",
+      "vpsId": "mock-flywheel"
+    },
+    "postconditions": [
+      {
+        "check": "GreenBear.state == PAUSED",
+        "expect": true
+      },
+      {
+        "check": "approvals.has_open_scope('jsm.repin')",
+        "expect": true
+      },
+      {
+        "check": "activity.warning_emitted",
+        "expect": true
+      }
+    ],
+    "wakeAgent": false
+  },
+  "id": "skill-drift",
+  "meta": {
+    "capturedAt": "<scrubbed-captured-at>",
+    "fixturesVersion": "phase0-2026-05-02",
+    "kind": "synthetic",
+    "notes": "jsm verify reports the installed vibing-with-ntm skill has drifted from its pinned SHA-256. Pre-script detects deterministically; tend-swarm blocks the agent run, requests an approval to repin (or roll back), and surfaces a warning. wakeAgent=false because the deterministic pre-script handles the decision.",
+    "scenario": "skill-drift",
+    "source": "hand-written hp-49f skill-drift tending fixture",
+    "vpsId": "mock-flywheel"
+  },
+  "ntmSnapshot": {
+    "counters": {
+      "alive": 1,
+      "errored": 0,
+      "panes": 1,
+      "sessions": 1,
+      "wedged": 0
+    },
+    "sessions": [
+      {
+        "id": "hoopoeAppCockpit",
+        "panes": [
+          {
+            "agent": "claude-code",
+            "id": "GreenBear",
+            "lastActivityAt": "2026-05-04T17:13:55Z",
+            "lastReason": "skill-drift: vibing-with-ntm SHA mismatch; awaiting repin approval",
+            "model": "claude-opus-4-7",
+            "state": "PAUSED"
+          }
+        ]
+      }
+    ]
+  },
+  "paneLogs": [
+    {
+      "agent": "GreenBear",
+      "bytes": {
+        "encoding": "base64",
+        "data": "R3JlZW5CZWFyIHBhdXNlZC4gdmliaW5nLXdpdGgtbnRtIHNraWxsIGRyaWZ0ZWQgZnJvbSBwaW47IGF3YWl0aW5nIHJlcGluIGFwcHJvdmFsLgo="
+      }
+    }
+  ],
+  "reservations": {
+    "conflicts": [],
+    "reservations": []
+  },
+  "rootPath": "<fixtures-root>/scenarios/skill-drift",
+  "toolsDegraded": null
+}

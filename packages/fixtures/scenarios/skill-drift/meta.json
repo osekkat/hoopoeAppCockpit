@@ -1,0 +1,9 @@
+{
+  "kind": "synthetic",
+  "scenario": "skill-drift",
+  "fixturesVersion": "phase0-2026-05-02",
+  "capturedAt": "2026-05-04T17:14:00Z",
+  "vpsId": "mock-flywheel",
+  "source": "hand-written hp-49f skill-drift tending fixture",
+  "notes": "jsm verify reports the installed vibing-with-ntm skill has drifted from its pinned SHA-256. Pre-script detects deterministically; tend-swarm blocks the agent run, requests an approval to repin (or roll back), and surfaces a warning. wakeAgent=false because the deterministic pre-script handles the decision."
+}

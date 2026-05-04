@@ -1,0 +1,7 @@
+{"event":{"channel":"jsm","payload":{"installedSha":"sha256:aaaa1111bbbb2222cccc3333dddd4444eeee5555ffff66667777888899991111","pinnedSha":"sha256:aaaa1111bbbb2222cccc3333dddd4444eeee5555ffff66667777888899990000","skill":"vibing-with-ntm","verifyExitCode":3},"seq":1,"ts":"2026-05-04T17:13:54Z","type":"jsm.skill_drift"},"index":0,"kind":"event"}
+{"event":{"channel":"capabilities","payload":{"capability":"jsm.verify","notes":"vibing-with-ntm SHA mismatch","status":"degraded","tool":"jsm"},"seq":2,"ts":"2026-05-04T17:13:55Z","type":"capability.changed"},"index":1,"kind":"event"}
+{"event":{"channel":"agent_state","payload":{"agent":"GreenBear","reason":"skill-drift"},"seq":3,"ts":"2026-05-04T17:13:55Z","type":"agent.paused"},"index":2,"kind":"event"}
+{"event":{"channel":"approvals","payload":{"approvalId":"appr-skill-drift-001","scope":"jsm.repin","summary":"Approve repin of vibing-with-ntm to the new SHA-256, or hold to investigate."},"seq":4,"ts":"2026-05-04T17:13:56Z","type":"approval.requested"},"index":3,"kind":"event"}
+{"event":{"channel":"activity","payload":{"severity":"warning","summary":"vibing-with-ntm skill drifted from pin; GreenBear paused awaiting repin approval."},"seq":5,"ts":"2026-05-04T17:13:56Z","type":"activity.warning"},"index":4,"kind":"event"}
+{"cursors":{"activity":5,"agent_state":3,"approvals":4,"capabilities":2,"jsm":1},"kind":"end-cursors"}
+{"cursors":{"activity":5,"agent_state":3,"approvals":4,"capabilities":2,"jsm":1},"kind":"derived-cursors"}

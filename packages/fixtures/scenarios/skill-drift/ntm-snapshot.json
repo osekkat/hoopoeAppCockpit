@@ -1,0 +1,24 @@
+{
+  "sessions": [
+    {
+      "id": "hoopoeAppCockpit",
+      "panes": [
+        {
+          "id": "GreenBear",
+          "agent": "claude-code",
+          "model": "claude-opus-4-7",
+          "state": "PAUSED",
+          "lastActivityAt": "2026-05-04T17:13:55Z",
+          "lastReason": "skill-drift: vibing-with-ntm SHA mismatch; awaiting repin approval"
+        }
+      ]
+    }
+  ],
+  "counters": {
+    "sessions": 1,
+    "panes": 1,
+    "alive": 1,
+    "wedged": 0,
+    "errored": 0
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "issues": [
+    {
+      "id": "hp-49f",
+      "title": "[test] missing tending fixture skill-drift",
+      "description": "Fixture scenario bead used to prove jsm SHA-256 drift on a tending-required skill blocks the agent run and surfaces an approval to repin.",
+      "status": "in_progress",
+      "priority": 1,
+      "issue_type": "task",
+      "created_at": "2026-05-04T17:14:00Z",
+      "updated_at": "2026-05-04T17:14:00Z"
+    }
+  ],
+  "total": 1
+}

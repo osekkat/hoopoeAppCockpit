@@ -1,0 +1,61 @@
+{
+  "meta": {
+    "kind": "synthetic",
+    "scenario": "skill-drift",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-04T17:14:00Z",
+    "vpsId": "mock-flywheel",
+    "source": "hand-written hp-49f skill-drift tending fixture",
+    "notes": "jsm verify reports the installed vibing-with-ntm skill drifted from its pinned SHA-256. Pre-script detects deterministically; the agent is paused and an approval to repin (or roll back) is surfaced. wakeAgent=false because no LLM judgement is required."
+  },
+  "detections": [
+    {
+      "kind": "jsm.skill_drift",
+      "payload": {
+        "skill": "vibing-with-ntm",
+        "pinnedSha": "sha256:aaaa1111bbbb2222cccc3333dddd4444eeee5555ffff66667777888899990000",
+        "installedSha": "sha256:aaaa1111bbbb2222cccc3333dddd4444eeee5555ffff66667777888899991111"
+      }
+    }
+  ],
+  "wakeAgent": false,
+  "actionPlan": {
+    "actions": [
+      {
+        "type": "agent.pause",
+        "args": {
+          "agent": "GreenBear",
+          "reason": "skill-drift"
+        }
+      },
+      {
+        "type": "approval.request",
+        "args": {
+          "scope": "jsm.repin",
+          "summary": "Approve repin of vibing-with-ntm to the new SHA-256, or hold to investigate."
+        }
+      }
+    ]
+  },
+  "approvalsRequested": [
+    {
+      "scope": "jsm.repin",
+      "reason": "vibing-with-ntm SHA-256 mismatch; operator must approve repin or hold"
+    }
+  ],
+  "postconditions": [
+    {
+      "check": "GreenBear.state == PAUSED",
+      "expect": true
+    },
+    {
+      "check": "approvals.has_open_scope('jsm.repin')",
+      "expect": true
+    },
+    {
+      "check": "activity.warning_emitted",
+      "expect": true
+    }
+  ],
+  "activityBehavior": "surface"
+}

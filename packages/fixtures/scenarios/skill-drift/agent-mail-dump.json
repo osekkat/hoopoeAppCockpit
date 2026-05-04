@@ -1,0 +1,24 @@
+{
+  "messages": [
+    {
+      "id": "msg-skill-drift-001",
+      "thread_id": "hp-49f",
+      "from": "orchestrator",
+      "to": [
+        "operator"
+      ],
+      "subject": "[hp-49f] vibing-with-ntm skill drift — repin approval required",
+      "body_md": "jsm verify reports the installed vibing-with-ntm skill SHA-256 differs from the project pin. tend-swarm has paused GreenBear. Approve to repin against the new hash, or hold to investigate.",
+      "sent_at": "2026-05-04T17:13:56Z",
+      "ack_required": true
+    }
+  ],
+  "threads": [
+    {
+      "id": "hp-49f",
+      "subject": "[hp-49f] vibing-with-ntm skill drift — repin approval required",
+      "message_count": 1
+    }
+  ],
+  "unread_total": 1
+}

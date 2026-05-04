@@ -23,6 +23,7 @@ const SCENARIOS = [
   "missing-tool",
   "budget-breach",
   "action-arbitration",
+  "skill-drift",
 ] as const;
 
 const PROJECT_ID = "mock-flywheel-project";

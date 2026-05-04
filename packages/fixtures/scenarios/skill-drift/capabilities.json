@@ -1,0 +1,95 @@
+{
+  "git": {
+    "git.status.read": {
+      "status": "ok"
+    },
+    "git.diff.read": {
+      "status": "ok"
+    },
+    "git.unpushed.list": {
+      "status": "ok"
+    },
+    "git.push": {
+      "status": "blocked-by-policy",
+      "notes": "snapshot script never pushes"
+    }
+  },
+  "br": {
+    "br.issues.read": {
+      "status": "ok"
+    },
+    "br.issues.update": {
+      "status": "ok"
+    },
+    "br.dep.add": {
+      "status": "ok"
+    },
+    "br.sync.flush_only": {
+      "status": "ok"
+    }
+  },
+  "bv": {
+    "bv.robot.triage": {
+      "status": "ok"
+    },
+    "bv.robot.plan": {
+      "status": "ok"
+    },
+    "bv.robot.insights": {
+      "status": "ok"
+    },
+    "bv.robot.diff": {
+      "status": "ok"
+    }
+  },
+  "ntm": {
+    "ntm.robot.snapshot": {
+      "status": "ok"
+    },
+    "ntm.robot.status": {
+      "status": "ok"
+    },
+    "ntm.robot.tail": {
+      "status": "ok"
+    }
+  },
+  "agent_mail": {
+    "agent_mail.messages.read": {
+      "status": "ok"
+    },
+    "agent_mail.messages.send": {
+      "status": "ok"
+    },
+    "agent_mail.reservations.list": {
+      "status": "ok"
+    }
+  },
+  "jsm": {
+    "jsm.list": {
+      "status": "ok"
+    },
+    "jsm.verify": {
+      "status": "degraded",
+      "notes": "vibing-with-ntm SHA mismatch — installed != pinned"
+    },
+    "jsm.update": {
+      "status": "blocked-by-policy",
+      "notes": "repin requires operator approval (jsm.repin scope)"
+    }
+  },
+  "caam": {},
+  "caut": {},
+  "dcg": {},
+  "casr": {},
+  "ubs": {},
+  "jfp": {},
+  "oracle": {},
+  "pt": {},
+  "srp": {},
+  "sbh": {},
+  "health": {
+    "health.coverage": {
+      "status": "untested"
+    }
+  }
+}

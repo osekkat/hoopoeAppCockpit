@@ -1,0 +1,5 @@
+2026-05-04T17:13:54Z tend-swarm pre-script start
+jsm verify vibing-with-ntm: pinned=sha256:aaaa..0000 installed=sha256:aaaa..1111
+SKILL DRIFT detected (verify exit=3)
+agent.pause GreenBear reason=skill-drift
+approval.request scope=jsm.repin
