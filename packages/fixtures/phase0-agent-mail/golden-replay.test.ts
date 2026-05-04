@@ -12,10 +12,19 @@ interface Manifest {
   transport: string;
   capturedFrom: string;
   scenarioState: string;
+  provenance: {
+    localhostRationale: string;
+    canonicalCaptures: string[];
+    replayOnlyCaptures: string[];
+    notes: string;
+  };
   captures: Array<{
     file: string;
     method: string;
     path: string;
+    operation: string;
+    canonical: boolean;
+    provenance: string;
     purpose: string;
   }>;
   drift: {
@@ -26,8 +35,40 @@ interface Manifest {
   };
 }
 
+interface OperationCapture {
+  capture: {
+    classification: string;
+    operation: string;
+    serverUrl: string;
+    transport: string;
+  };
+  request: {
+    method: string;
+    params: {
+      name: string;
+      arguments: Record<string, unknown>;
+    };
+  };
+  response: {
+    status: number;
+    body: {
+      jsonrpc: string;
+      result?: {
+        isError?: boolean;
+        structuredContent?: unknown;
+      };
+    };
+  };
+}
+
 function loadJSON<T>(path: string): T {
-  return JSON.parse(readFileSync(path, "utf8")) as T;
+  const text = readFileSync(path, "utf8");
+  try {
+    return JSON.parse(text) as T;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to parse JSON fixture ${path}: ${message}`);
+  }
 }
 
 const manifest = loadJSON<Manifest>(resolve(here, "manifest.json"));
@@ -37,7 +78,9 @@ describe("phase0-agent-mail fixture pack: live mcp-agent-mail HTTP captures repl
     expect(manifest.tool).toBe("agent_mail");
     expect(manifest.transport).toBe("streamable-http");
     expect(manifest.serverUrl).toBe("http://127.0.0.1:8765");
-    expect(manifest.captures.length).toBeGreaterThanOrEqual(6);
+    expect(manifest.capturedFrom).toBe("local-acfs-vps-loopback-agent-mail-server");
+    expect(manifest.provenance.localhostRationale).toContain("Codex agents");
+    expect(manifest.captures.length).toBeGreaterThanOrEqual(13);
   });
 
   test("every capture file referenced in the manifest exists and is non-empty", () => {
@@ -45,6 +88,16 @@ describe("phase0-agent-mail fixture pack: live mcp-agent-mail HTTP captures repl
       const path = resolve(here, capture.file);
       expect(existsSync(path)).toBe(true);
       expect(statSync(path).size).toBeGreaterThan(0);
+    }
+  });
+
+  test("manifest classifies canonical captures separately from replay-only captures", () => {
+    expect(manifest.provenance.replayOnlyCaptures).toEqual([]);
+    expect(manifest.provenance.canonicalCaptures.length).toBe(manifest.captures.length);
+    for (const capture of manifest.captures) {
+      expect(capture.canonical).toBe(true);
+      expect(capture.provenance).toMatch(/^canonical-/);
+      expect(manifest.provenance.canonicalCaptures).toContain(capture.file);
     }
   });
 
@@ -110,11 +163,83 @@ describe("phase0-agent-mail fixture pack: live mcp-agent-mail HTTP captures repl
     expect(payload.agents.some((agent) => agent.startsWith("HoopoeCC"))).toBe(true);
   });
 
-  test("manifest documents drift between the user-listed MCP tools and the HTTP-captured READ surface", () => {
+  test("operation captures cover the required Agent Mail JSON-RPC tool surface", () => {
+    const required = new Map([
+      ["ensure_project", "operation-ensure-project.json"],
+      ["register_agent:sender", "operation-register-agent-sender.json"],
+      ["register_agent:receiver", "operation-register-agent-receiver.json"],
+      ["send_message", "operation-send-message.json"],
+      ["fetch_inbox", "operation-fetch-inbox.json"],
+      ["file_reservation_paths", "operation-file-reservation-paths.json"],
+      ["release_file_reservations", "operation-release-file-reservations.json"],
+    ]);
+
+    for (const [operation, file] of required) {
+      const payload = loadJSON<OperationCapture>(resolve(here, file));
+      expect(payload.capture.classification).toBe("canonical-local-mcp-jsonrpc");
+      expect(payload.capture.serverUrl).toBe("http://127.0.0.1:8765");
+      expect(payload.request.method).toBe("tools/call");
+      expect(payload.response.status).toBe(200);
+      expect(payload.response.body.jsonrpc).toBe("2.0");
+      expect(payload.response.body.result?.isError ?? false).toBe(false);
+      if (operation.includes(":")) {
+        expect(payload.capture.operation).toBe(operation.split(":")[0]);
+      } else {
+        expect(payload.capture.operation).toBe(operation);
+      }
+    }
+  });
+
+  test("operation captures preserve project, message, inbox, and reservation semantics", () => {
+    const ensure = loadJSON<OperationCapture>(resolve(here, "operation-ensure-project.json"));
+    expect((ensure.response.body.result?.structuredContent as { slug: string }).slug).toBe(
+      "tmp-hoopoe-phase0-agent-mail-hp-pr3d",
+    );
+
+    const sender = loadJSON<OperationCapture>(
+      resolve(here, "operation-register-agent-sender.json"),
+    );
+    expect((sender.response.body.result?.structuredContent as { name: string }).name).toBe(
+      "HoopoePhase0Sender",
+    );
+
+    const message = loadJSON<OperationCapture>(resolve(here, "operation-send-message.json"));
+    const delivery = (
+      message.response.body.result?.structuredContent as {
+        deliveries: Array<{ payload: { thread_id: string; to: string[] } }>;
+      }
+    ).deliveries[0].payload;
+    expect(delivery.thread_id).toBe("hp-pr3d-phase0-agent-mail-capture");
+    expect(delivery.to).toContain("HoopoePhase0Receiver");
+
+    const inbox = loadJSON<OperationCapture>(resolve(here, "operation-fetch-inbox.json"));
+    const inboxItems = (inbox.response.body.result?.structuredContent as { result: unknown[] })
+      .result;
+    expect(inboxItems.length).toBeGreaterThan(0);
+
+    const reservation = loadJSON<OperationCapture>(
+      resolve(here, "operation-file-reservation-paths.json"),
+    );
+    const granted = (reservation.response.body.result?.structuredContent as { granted: unknown[] })
+      .granted;
+    expect(granted.length).toBe(1);
+
+    const release = loadJSON<OperationCapture>(
+      resolve(here, "operation-release-file-reservations.json"),
+    );
+    expect((release.response.body.result?.structuredContent as { released: number }).released).toBe(
+      1,
+    );
+  });
+
+  test("manifest documents resolved drift for operation-level MCP captures", () => {
     expect(manifest.drift.userListedTools).toContain("ensure_project");
     expect(manifest.drift.userListedTools).toContain("register_agent");
+    expect(manifest.drift.userListedTools).toContain("send_message");
     expect(manifest.drift.userListedTools).toContain("fetch_inbox");
-    expect(manifest.drift.deferredMcpTools.length).toBeGreaterThan(0);
-    expect(manifest.drift.notes.toLowerCase()).toContain("read-only");
+    expect(manifest.drift.userListedTools).toContain("file_reservation_paths");
+    expect(manifest.drift.userListedTools).toContain("release_file_reservations");
+    expect(manifest.drift.deferredMcpTools).toEqual([]);
+    expect(manifest.drift.notes.toLowerCase()).toContain("no replay-only captures");
   });
 });

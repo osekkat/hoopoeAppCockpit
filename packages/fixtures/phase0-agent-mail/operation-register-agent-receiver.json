@@ -1,0 +1,57 @@
+{
+  "capture": {
+    "capturedAt": "2026-05-04T18:04:23Z",
+    "classification": "canonical-local-mcp-jsonrpc",
+    "notes": "Captured from the local mcp-agent-mail server used by Codex agents; localhost is the VPS-local HTTP surface in this swarm.",
+    "operation": "register_agent",
+    "serverUrl": "http://127.0.0.1:8765",
+    "transport": "streamable-http"
+  },
+  "request": {
+    "id": "hp-pr3d-03",
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+      "arguments": {
+        "model": "gpt-5.5",
+        "name": "HoopoePhase0Receiver",
+        "program": "codex-cli",
+        "project_key": "/tmp/hoopoe-phase0-agent-mail-hp-pr3d",
+        "task_description": "hp-pr3d Phase 0 Agent Mail fixture receiver capture"
+      },
+      "name": "register_agent"
+    }
+  },
+  "response": {
+    "body": {
+      "id": "hp-pr3d-03",
+      "jsonrpc": "2.0",
+      "result": {
+        "content": [
+          {
+            "text": "{\"id\":78,\"name\":\"HoopoePhase0Receiver\",\"program\":\"codex-cli\",\"model\":\"gpt-5.5\",\"task_description\":\"hp-pr3d Phase 0 Agent Mail fixture receiver capture\",\"inception_ts\":\"2026-05-04T16:04:22.425685+00:00\",\"last_active_ts\":\"2026-05-04T16:04:22.425708+00:00\",\"project_id\":10,\"attachments_policy\":\"auto\",\"is_active\":true,\"deleted_ts\":null}",
+            "type": "text"
+          }
+        ],
+        "isError": false,
+        "structuredContent": {
+          "attachments_policy": "auto",
+          "deleted_ts": null,
+          "id": 78,
+          "inception_ts": "2026-05-04T16:04:22.425685+00:00",
+          "is_active": true,
+          "last_active_ts": "2026-05-04T16:04:22.425708+00:00",
+          "model": "gpt-5.5",
+          "name": "HoopoePhase0Receiver",
+          "program": "codex-cli",
+          "project_id": 10,
+          "task_description": "hp-pr3d Phase 0 Agent Mail fixture receiver capture"
+        }
+      }
+    },
+    "headers": {
+      "content-type": "application/json"
+    },
+    "status": 200
+  }
+}

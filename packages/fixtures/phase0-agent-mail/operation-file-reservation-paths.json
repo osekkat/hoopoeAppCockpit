@@ -1,0 +1,62 @@
+{
+  "capture": {
+    "capturedAt": "2026-05-04T18:04:24Z",
+    "classification": "canonical-local-mcp-jsonrpc",
+    "notes": "Captured from the local mcp-agent-mail server used by Codex agents; localhost is the VPS-local HTTP surface in this swarm.",
+    "operation": "file_reservation_paths",
+    "serverUrl": "http://127.0.0.1:8765",
+    "transport": "streamable-http"
+  },
+  "request": {
+    "id": "hp-pr3d-06",
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+      "arguments": {
+        "arguments": {
+          "agent_name": "HoopoePhase0Sender",
+          "exclusive": true,
+          "paths": [
+            "packages/fixtures/phase0-agent-mail/**"
+          ],
+          "project_key": "/tmp/hoopoe-phase0-agent-mail-hp-pr3d",
+          "reason": "hp-pr3d Phase 0 fixture capture",
+          "ttl_seconds": 300
+        },
+        "tool_name": "file_reservation_paths"
+      },
+      "name": "call_extended_tool"
+    }
+  },
+  "response": {
+    "body": {
+      "id": "hp-pr3d-06",
+      "jsonrpc": "2.0",
+      "result": {
+        "content": [
+          {
+            "text": "{\"granted\":[{\"id\":765,\"path_pattern\":\"packages/fixtures/phase0-agent-mail/**\",\"exclusive\":true,\"reason\":\"hp-pr3d Phase 0 fixture capture\",\"expires_ts\":\"2026-05-04T16:09:23.682137+00:00\"}],\"conflicts\":[]}",
+            "type": "text"
+          }
+        ],
+        "isError": false,
+        "structuredContent": {
+          "conflicts": [],
+          "granted": [
+            {
+              "exclusive": true,
+              "expires_ts": "2026-05-04T16:09:23.682137+00:00",
+              "id": 765,
+              "path_pattern": "packages/fixtures/phase0-agent-mail/**",
+              "reason": "hp-pr3d Phase 0 fixture capture"
+            }
+          ]
+        }
+      }
+    },
+    "headers": {
+      "content-type": "application/json"
+    },
+    "status": 200
+  }
+}

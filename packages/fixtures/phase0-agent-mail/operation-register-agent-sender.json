@@ -1,0 +1,57 @@
+{
+  "capture": {
+    "capturedAt": "2026-05-04T18:04:22Z",
+    "classification": "canonical-local-mcp-jsonrpc",
+    "notes": "Captured from the local mcp-agent-mail server used by Codex agents; localhost is the VPS-local HTTP surface in this swarm.",
+    "operation": "register_agent",
+    "serverUrl": "http://127.0.0.1:8765",
+    "transport": "streamable-http"
+  },
+  "request": {
+    "id": "hp-pr3d-02",
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+      "arguments": {
+        "model": "gpt-5.5",
+        "name": "HoopoePhase0Sender",
+        "program": "codex-cli",
+        "project_key": "/tmp/hoopoe-phase0-agent-mail-hp-pr3d",
+        "task_description": "hp-pr3d Phase 0 Agent Mail fixture sender capture"
+      },
+      "name": "register_agent"
+    }
+  },
+  "response": {
+    "body": {
+      "id": "hp-pr3d-02",
+      "jsonrpc": "2.0",
+      "result": {
+        "content": [
+          {
+            "text": "{\"id\":77,\"name\":\"HoopoePhase0Sender\",\"program\":\"codex-cli\",\"model\":\"gpt-5.5\",\"task_description\":\"hp-pr3d Phase 0 Agent Mail fixture sender capture\",\"inception_ts\":\"2026-05-04T16:04:21.992355+00:00\",\"last_active_ts\":\"2026-05-04T16:04:21.992368+00:00\",\"project_id\":10,\"attachments_policy\":\"auto\",\"is_active\":true,\"deleted_ts\":null}",
+            "type": "text"
+          }
+        ],
+        "isError": false,
+        "structuredContent": {
+          "attachments_policy": "auto",
+          "deleted_ts": null,
+          "id": 77,
+          "inception_ts": "2026-05-04T16:04:21.992355+00:00",
+          "is_active": true,
+          "last_active_ts": "2026-05-04T16:04:21.992368+00:00",
+          "model": "gpt-5.5",
+          "name": "HoopoePhase0Sender",
+          "program": "codex-cli",
+          "project_id": 10,
+          "task_description": "hp-pr3d Phase 0 Agent Mail fixture sender capture"
+        }
+      }
+    },
+    "headers": {
+      "content-type": "application/json"
+    },
+    "status": 200
+  }
+}

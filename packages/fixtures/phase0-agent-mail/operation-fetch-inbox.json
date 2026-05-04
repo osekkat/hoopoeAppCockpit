@@ -1,0 +1,61 @@
+{
+  "capture": {
+    "capturedAt": "2026-05-04T18:04:23Z",
+    "classification": "canonical-local-mcp-jsonrpc",
+    "notes": "Captured from the local mcp-agent-mail server used by Codex agents; localhost is the VPS-local HTTP surface in this swarm.",
+    "operation": "fetch_inbox",
+    "serverUrl": "http://127.0.0.1:8765",
+    "transport": "streamable-http"
+  },
+  "request": {
+    "id": "hp-pr3d-05",
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+      "arguments": {
+        "agent_name": "HoopoePhase0Receiver",
+        "include_bodies": true,
+        "limit": 10,
+        "project_key": "/tmp/hoopoe-phase0-agent-mail-hp-pr3d"
+      },
+      "name": "fetch_inbox"
+    }
+  },
+  "response": {
+    "body": {
+      "id": "hp-pr3d-05",
+      "jsonrpc": "2.0",
+      "result": {
+        "content": [
+          {
+            "text": "[{\"id\":403,\"project_id\":10,\"sender_id\":77,\"thread_id\":\"hp-pr3d-phase0-agent-mail-capture\",\"subject\":\"[hp-pr3d] Phase 0 Agent Mail fixture capture\",\"importance\":\"normal\",\"ack_required\":false,\"created_ts\":\"2026-05-04T16:04:23.106768+00:00\",\"attachments\":[],\"body_md\":\"Captured by hp-pr3d to freeze send_message JSON-RPC envelope semantics.\",\"from\":\"HoopoePhase0Sender\",\"kind\":\"to\"}]",
+            "type": "text"
+          }
+        ],
+        "isError": false,
+        "structuredContent": {
+          "result": [
+            {
+              "ack_required": false,
+              "attachments": [],
+              "body_md": "Captured by hp-pr3d to freeze send_message JSON-RPC envelope semantics.",
+              "created_ts": "2026-05-04T16:04:23.106768+00:00",
+              "from": "HoopoePhase0Sender",
+              "id": 403,
+              "importance": "normal",
+              "kind": "to",
+              "project_id": 10,
+              "sender_id": 77,
+              "subject": "[hp-pr3d] Phase 0 Agent Mail fixture capture",
+              "thread_id": "hp-pr3d-phase0-agent-mail-capture"
+            }
+          ]
+        }
+      }
+    },
+    "headers": {
+      "content-type": "application/json"
+    },
+    "status": 200
+  }
+}

@@ -3,46 +3,147 @@
   "tool": "agent_mail",
   "serverUrl": "http://127.0.0.1:8765",
   "transport": "streamable-http",
-  "capturedAt": "2026-05-04T15:02:51Z",
-  "capturedBy": "HoopoeCC3",
-  "capturedFrom": "local-agent-mail-server",
+  "capturedAt": "2026-05-04T18:04:24Z",
+  "capturedBy": "HoopoeRD3",
+  "capturedFrom": "local-acfs-vps-loopback-agent-mail-server",
   "scenarioState": "live-swarm-active",
+  "provenance": {
+    "localhostRationale": "The active ACFS swarm exposes mcp-agent-mail on the VPS-local loopback address used by Codex agents: http://127.0.0.1:8765. This is canonical for this fixture pack even though it is not a public remote URL.",
+    "canonicalCaptures": [
+      "health-liveness.json",
+      "health-readiness.json",
+      "oauth-server-metadata.json",
+      "mail-api-locks.json",
+      "mail-api-unified-inbox.json",
+      "api-projects-agents.json",
+      "operation-ensure-project.json",
+      "operation-register-agent-sender.json",
+      "operation-register-agent-receiver.json",
+      "operation-send-message.json",
+      "operation-fetch-inbox.json",
+      "operation-file-reservation-paths.json",
+      "operation-release-file-reservations.json"
+    ],
+    "replayOnlyCaptures": [],
+    "notes": "The operation-* captures are live JSON-RPC tools/call envelopes captured from the running mcp-agent-mail streamable-http endpoint. They use an isolated synthetic project key under /tmp so the canonical operation shape is real while the active Hoopoe swarm inbox is not polluted."
+  },
   "captures": [
     {
       "file": "health-liveness.json",
       "method": "GET",
       "path": "/health/liveness",
+      "operation": "health_check",
+      "canonical": true,
+      "provenance": "canonical-http-read",
       "purpose": "Liveness probe; daemon health endpoint mirror."
     },
     {
       "file": "health-readiness.json",
       "method": "GET",
       "path": "/health/readiness",
+      "operation": "health_check",
+      "canonical": true,
+      "provenance": "canonical-http-read",
       "purpose": "Readiness probe; daemon health endpoint mirror."
     },
     {
       "file": "oauth-server-metadata.json",
       "method": "GET",
       "path": "/.well-known/oauth-authorization-server",
+      "operation": "oauth_metadata",
+      "canonical": true,
+      "provenance": "canonical-http-read",
       "purpose": "OAuth metadata advertised by the MCP gateway; pinned for the bearer flow contract."
     },
     {
       "file": "mail-api-locks.json",
       "method": "GET",
       "path": "/mail/api/locks",
+      "operation": "agent_mail.reservations.list",
+      "canonical": true,
+      "provenance": "canonical-http-read",
       "purpose": "File-reservation lock metadata snapshot — feeds the Hoopoe reservation surface and the activity panel reservation card."
     },
     {
       "file": "mail-api-unified-inbox.json",
       "method": "GET",
       "path": "/mail/api/unified-inbox?limit=50&include_projects=true",
+      "operation": "agent_mail.messages.read",
+      "canonical": true,
+      "provenance": "canonical-http-read",
       "purpose": "Unified inbox JSON feed across all projects + agents; canonical input for the Activity panel mail row and the daemon mail-summary capture."
     },
     {
       "file": "api-projects-agents.json",
       "method": "GET",
       "path": "/api/projects/home-ubuntu-projects-hoopoeappcockpit/agents",
+      "operation": "agent_mail.agent.list",
+      "canonical": true,
+      "provenance": "canonical-http-read",
       "purpose": "Registered agent roster for the Hoopoe project (project_slug='home-ubuntu-projects-hoopoeappcockpit')."
+    },
+    {
+      "file": "operation-ensure-project.json",
+      "method": "POST",
+      "path": "/mcp",
+      "operation": "ensure_project",
+      "canonical": true,
+      "provenance": "canonical-mcp-jsonrpc",
+      "purpose": "Live JSON-RPC tools/call capture proving project creation/ensure envelope shape."
+    },
+    {
+      "file": "operation-register-agent-sender.json",
+      "method": "POST",
+      "path": "/mcp",
+      "operation": "register_agent",
+      "canonical": true,
+      "provenance": "canonical-mcp-jsonrpc",
+      "purpose": "Live JSON-RPC tools/call capture registering the sender identity for the synthetic fixture project."
+    },
+    {
+      "file": "operation-register-agent-receiver.json",
+      "method": "POST",
+      "path": "/mcp",
+      "operation": "register_agent",
+      "canonical": true,
+      "provenance": "canonical-mcp-jsonrpc",
+      "purpose": "Live JSON-RPC tools/call capture registering the receiver identity for the synthetic fixture project."
+    },
+    {
+      "file": "operation-send-message.json",
+      "method": "POST",
+      "path": "/mcp",
+      "operation": "send_message",
+      "canonical": true,
+      "provenance": "canonical-mcp-jsonrpc",
+      "purpose": "Live JSON-RPC tools/call capture sending a message between the synthetic sender and receiver."
+    },
+    {
+      "file": "operation-fetch-inbox.json",
+      "method": "POST",
+      "path": "/mcp",
+      "operation": "fetch_inbox",
+      "canonical": true,
+      "provenance": "canonical-mcp-jsonrpc",
+      "purpose": "Live JSON-RPC tools/call capture fetching the synthetic receiver inbox after send_message."
+    },
+    {
+      "file": "operation-file-reservation-paths.json",
+      "method": "POST",
+      "path": "/mcp",
+      "operation": "file_reservation_paths",
+      "canonical": true,
+      "provenance": "canonical-mcp-jsonrpc",
+      "purpose": "Live JSON-RPC tools/call capture granting an exclusive fixture-path reservation."
+    },
+    {
+      "file": "operation-release-file-reservations.json",
+      "method": "POST",
+      "path": "/mcp",
+      "operation": "release_file_reservations",
+      "canonical": true,
+      "provenance": "canonical-mcp-jsonrpc",
+      "purpose": "Live JSON-RPC tools/call capture releasing the exclusive fixture-path reservation."
     }
   ],
   "drift": {
@@ -51,19 +152,22 @@
       "ensure_project",
       "register_agent",
       "fetch_inbox",
-      "send_message dry-run"
+      "send_message",
+      "file_reservation_paths",
+      "release_file_reservations"
     ],
     "captured": [
       "health-liveness + health-readiness (combined: health_check)",
       "mail-api-unified-inbox (read-only inbox feed; equivalent to fetch_inbox at the HTTP layer)",
-      "api-projects-agents (registered agents list — read-side of register_agent)"
-    ],
-    "deferredMcpTools": [
-      "ensure_project",
-      "register_agent",
+      "api-projects-agents (registered agents list — read-side of register_agent)",
+      "ensure_project via JSON-RPC POST /mcp",
+      "register_agent via JSON-RPC POST /mcp",
+      "send_message via JSON-RPC POST /mcp",
       "fetch_inbox via JSON-RPC POST /mcp",
-      "send_message dry-run via JSON-RPC POST /mcp"
+      "file_reservation_paths via call_extended_tool JSON-RPC POST /mcp",
+      "release_file_reservations via call_extended_tool JSON-RPC POST /mcp"
     ],
-    "notes": "Read-only HTTP capture against the locally-running mcp-agent-mail server at 127.0.0.1:8765. Tool-level MCP JSON-RPC calls (POST /mcp body) are not captured here because they require a live MCP client session and would mutate state; the corresponding READ surfaces (/mail/api/unified-inbox, /api/projects/.../agents, /mail/api/locks) cover the same data shape without writes. A follow-up bead should capture MCP tool envelopes via the streamable-http transport once a non-mutating dry-run path lands."
+    "deferredMcpTools": [],
+    "notes": "The earlier read-only localhost pack has been extended with live operation captures. The server URL remains 127.0.0.1 because mcp-agent-mail is intentionally bound to loopback on the ACFS execution host; that loopback endpoint is the canonical HTTP surface used by the running Codex agents. No replay-only captures are used in this pack."
   }
 }

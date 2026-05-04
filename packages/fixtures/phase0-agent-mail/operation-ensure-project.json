@@ -1,0 +1,46 @@
+{
+  "capture": {
+    "capturedAt": "2026-05-04T18:04:21Z",
+    "classification": "canonical-local-mcp-jsonrpc",
+    "notes": "Captured from the local mcp-agent-mail server used by Codex agents; localhost is the VPS-local HTTP surface in this swarm.",
+    "operation": "ensure_project",
+    "serverUrl": "http://127.0.0.1:8765",
+    "transport": "streamable-http"
+  },
+  "request": {
+    "id": "hp-pr3d-01",
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+      "arguments": {
+        "human_key": "/tmp/hoopoe-phase0-agent-mail-hp-pr3d"
+      },
+      "name": "ensure_project"
+    }
+  },
+  "response": {
+    "body": {
+      "id": "hp-pr3d-01",
+      "jsonrpc": "2.0",
+      "result": {
+        "content": [
+          {
+            "text": "{\"id\":10,\"slug\":\"tmp-hoopoe-phase0-agent-mail-hp-pr3d\",\"human_key\":\"/tmp/hoopoe-phase0-agent-mail-hp-pr3d\",\"created_at\":\"2026-05-04T16:04:21.952239+00:00\"}",
+            "type": "text"
+          }
+        ],
+        "isError": false,
+        "structuredContent": {
+          "created_at": "2026-05-04T16:04:21.952239+00:00",
+          "human_key": "/tmp/hoopoe-phase0-agent-mail-hp-pr3d",
+          "id": 10,
+          "slug": "tmp-hoopoe-phase0-agent-mail-hp-pr3d"
+        }
+      }
+    },
+    "headers": {
+      "content-type": "application/json"
+    },
+    "status": 200
+  }
+}

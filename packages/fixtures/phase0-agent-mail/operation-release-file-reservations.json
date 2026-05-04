@@ -1,0 +1,51 @@
+{
+  "capture": {
+    "capturedAt": "2026-05-04T18:04:24Z",
+    "classification": "canonical-local-mcp-jsonrpc",
+    "notes": "Captured from the local mcp-agent-mail server used by Codex agents; localhost is the VPS-local HTTP surface in this swarm.",
+    "operation": "release_file_reservations",
+    "serverUrl": "http://127.0.0.1:8765",
+    "transport": "streamable-http"
+  },
+  "request": {
+    "id": "hp-pr3d-07",
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+      "arguments": {
+        "arguments": {
+          "agent_name": "HoopoePhase0Sender",
+          "paths": [
+            "packages/fixtures/phase0-agent-mail/**"
+          ],
+          "project_key": "/tmp/hoopoe-phase0-agent-mail-hp-pr3d"
+        },
+        "tool_name": "release_file_reservations"
+      },
+      "name": "call_extended_tool"
+    }
+  },
+  "response": {
+    "body": {
+      "id": "hp-pr3d-07",
+      "jsonrpc": "2.0",
+      "result": {
+        "content": [
+          {
+            "text": "{\"released\":1,\"released_at\":\"2026-05-04T18:04:24.602705+00:00\"}",
+            "type": "text"
+          }
+        ],
+        "isError": false,
+        "structuredContent": {
+          "released": 1,
+          "released_at": "2026-05-04T18:04:24.602705+00:00"
+        }
+      }
+    },
+    "headers": {
+      "content-type": "application/json"
+    },
+    "status": 200
+  }
+}
