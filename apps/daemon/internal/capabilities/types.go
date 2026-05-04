@@ -68,6 +68,7 @@ const (
 	ToolJSM       ToolID = "jsm"
 	ToolJFP       ToolID = "jfp"
 	ToolOracle    ToolID = "oracle"
+	ToolRCH       ToolID = "rch"
 )
 
 // KnownClosedTools lists the ToolID values that are not health-prefixed. Used
@@ -76,7 +77,7 @@ var KnownClosedTools = []ToolID{
 	ToolNTM, ToolBR, ToolBV, ToolAgentMail, ToolGit, ToolRU,
 	ToolCAAM, ToolCAUT, ToolDCG, ToolCASR,
 	ToolPT, ToolSRP, ToolSBH,
-	ToolUBS, ToolJSM, ToolJFP, ToolOracle,
+	ToolUBS, ToolJSM, ToolJFP, ToolOracle, ToolRCH,
 }
 
 // IsHealthTool reports whether id matches the open-ended health_<lang> shape.
@@ -151,11 +152,11 @@ func (r *ToolReport) Validate() error {
 
 // CapabilityRegistry is the GET /v1/capabilities response.
 type CapabilityRegistry struct {
-	SchemaVersion    int                     `json:"schemaVersion"`
-	SnapshotAt       string                  `json:"snapshotAt"`
-	DaemonAPIVersion string                  `json:"daemonApiVersion"`
-	FixturesVersion  string                  `json:"fixturesVersion"`
-	Tools            map[ToolID]*ToolReport  `json:"tools"`
+	SchemaVersion    int                    `json:"schemaVersion"`
+	SnapshotAt       string                 `json:"snapshotAt"`
+	DaemonAPIVersion string                 `json:"daemonApiVersion"`
+	FixturesVersion  string                 `json:"fixturesVersion"`
+	Tools            map[ToolID]*ToolReport `json:"tools"`
 }
 
 // Validate ensures every embedded ToolReport is well-formed and the envelope
@@ -187,9 +188,9 @@ func (cr *CapabilityRegistry) Validate() error {
 type IfMissingRequired string
 
 const (
-	BlockJob        IfMissingRequired = "block_job"
-	RunReadOnly     IfMissingRequired = "run_read_only"
-	EmitDiagnostic  IfMissingRequired = "emit_diagnostic"
+	BlockJob       IfMissingRequired = "block_job"
+	RunReadOnly    IfMissingRequired = "run_read_only"
+	EmitDiagnostic IfMissingRequired = "emit_diagnostic"
 )
 
 func (v IfMissingRequired) Valid() bool {
@@ -205,8 +206,8 @@ func (v IfMissingRequired) Valid() bool {
 type IfMissingOptional string
 
 const (
-	ContinueWithWarning         IfMissingOptional = "continue_with_warning"
-	SuppressRelatedDetections   IfMissingOptional = "suppress_related_detections"
+	ContinueWithWarning       IfMissingOptional = "continue_with_warning"
+	SuppressRelatedDetections IfMissingOptional = "suppress_related_detections"
 )
 
 func (v IfMissingOptional) Valid() bool {
@@ -284,13 +285,13 @@ func (r *FeatureCapabilityRequirement) Validate() error {
 // version, event schema versions, migration state, and unsupported-client
 // warnings.
 type CompatibilityReport struct {
-	SchemaVersion             int                  `json:"schemaVersion"`
-	DaemonAPIVersion          string               `json:"daemonApiVersion"`
-	MinDesktopVersion         string               `json:"minDesktopVersion"`
-	EventSchemaVersions       map[string]int       `json:"eventSchemaVersions"`
-	MigrationState            MigrationState       `json:"migrationState"`
-	Capabilities              *CapabilityRegistry  `json:"capabilities"`
-	UnsupportedClientWarnings []string             `json:"unsupportedClientWarnings,omitempty"`
+	SchemaVersion             int                 `json:"schemaVersion"`
+	DaemonAPIVersion          string              `json:"daemonApiVersion"`
+	MinDesktopVersion         string              `json:"minDesktopVersion"`
+	EventSchemaVersions       map[string]int      `json:"eventSchemaVersions"`
+	MigrationState            MigrationState      `json:"migrationState"`
+	Capabilities              *CapabilityRegistry `json:"capabilities"`
+	UnsupportedClientWarnings []string            `json:"unsupportedClientWarnings,omitempty"`
 }
 
 // MigrationPhase is an optional high-level signal complementing the
@@ -300,9 +301,9 @@ type CompatibilityReport struct {
 type MigrationPhase string
 
 const (
-	MigrationIdle      MigrationPhase = "idle"
-	MigrationRunning   MigrationPhase = "running"
-	MigrationFailed    MigrationPhase = "failed"
+	MigrationIdle       MigrationPhase = "idle"
+	MigrationRunning    MigrationPhase = "running"
+	MigrationFailed     MigrationPhase = "failed"
 	MigrationRolledBack MigrationPhase = "rolled_back"
 )
 
