@@ -15,6 +15,7 @@ import (
 
 	gitadapter "github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/adapters/git"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/projects"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/search"
 	schemas "github.com/hoopoe-cockpit/hoopoe/packages/schemas/go"
 )
 
@@ -44,6 +45,10 @@ type GitClient interface {
 
 type GitClientFactory func(repoPath string) GitClient
 
+type Searcher interface {
+	Search(context.Context, search.Request) (search.Response, error)
+}
+
 type Logger interface {
 	Info(ctx context.Context, message string, fields map[string]any)
 	Error(ctx context.Context, message string, fields map[string]any)
@@ -53,6 +58,7 @@ type Config struct {
 	Projects         ProjectResolver
 	GitClientFactory GitClientFactory
 	Cache            *DiffCache
+	Searcher         Searcher
 	Logger           Logger
 	Now              func() time.Time
 }
@@ -61,6 +67,7 @@ type Service struct {
 	projects ProjectResolver
 	newGit   GitClientFactory
 	cache    *DiffCache
+	searcher Searcher
 	logger   Logger
 	now      func() time.Time
 }
@@ -78,10 +85,15 @@ func NewService(cfg Config) *Service {
 	if now == nil {
 		now = time.Now
 	}
+	searcher := cfg.Searcher
+	if searcher == nil {
+		searcher = search.NewService(search.Config{Now: now})
+	}
 	return &Service{
 		projects: cfg.Projects,
 		newGit:   newGit,
 		cache:    cache,
+		searcher: searcher,
 		logger:   cfg.Logger,
 		now:      now,
 	}
@@ -208,22 +220,45 @@ func (s *Service) OpenFiles(ctx context.Context, projectID string) (OpenFilesRes
 	}, nil
 }
 
+func (s *Service) Grep(ctx context.Context, projectID string, req search.Request) (search.Response, error) {
+	project, repoPath, err := s.projectRepo(ctx, projectID)
+	if err != nil {
+		return search.Response{}, err
+	}
+	req.ProjectID = project.Id
+	req.RepoPath = repoPath
+	response, err := s.searcher.Search(ctx, req)
+	if err != nil {
+		return search.Response{}, err
+	}
+	s.auditRead(ctx, project.Id, "git.grep")
+	return response, nil
+}
+
 func (s *Service) projectClient(ctx context.Context, projectID string) (schemas.Project, string, GitClient, error) {
+	project, repoPath, err := s.projectRepo(ctx, projectID)
+	if err != nil {
+		return schemas.Project{}, "", nil, err
+	}
+	return project, repoPath, s.newGit(repoPath), nil
+}
+
+func (s *Service) projectRepo(ctx context.Context, projectID string) (schemas.Project, string, error) {
 	if s.projects == nil {
-		return schemas.Project{}, "", nil, ErrProjectResolverMissing
+		return schemas.Project{}, "", ErrProjectResolverMissing
 	}
 	project, err := s.projects.Project(ctx, strings.TrimSpace(projectID))
 	if err != nil {
-		return schemas.Project{}, "", nil, err
+		return schemas.Project{}, "", err
 	}
 	repoPath := ""
 	if project.Repo.VpsClonePath != nil {
 		repoPath = strings.TrimSpace(*project.Repo.VpsClonePath)
 	}
 	if repoPath == "" {
-		return schemas.Project{}, "", nil, ErrProjectRepoMissing
+		return schemas.Project{}, "", ErrProjectRepoMissing
 	}
-	return project, repoPath, s.newGit(repoPath), nil
+	return project, repoPath, nil
 }
 
 func (s *Service) statusHead(ctx context.Context, client GitClient) (*gitadapter.Status, string, error) {
@@ -372,6 +407,14 @@ func mapProjectError(err error) (int, string, string) {
 		return 422, "project.vps_clone_missing", "project has no VPS clone path"
 	case errors.Is(err, ErrInvalidDiffKind):
 		return 400, "git.diff.invalid_kind", "invalid diff kind"
+	case errors.Is(err, search.ErrInvalidRequest):
+		return 400, "search.invalid_request", "invalid search request"
+	case errors.Is(err, search.ErrPathOutsideRoot):
+		return 400, "search.path_outside_root", "search path outside project root"
+	case errors.Is(err, search.ErrMalformedOutput):
+		return 502, "search.malformed_output", "malformed ripgrep output"
+	case errors.Is(err, search.ErrCommandFailed):
+		return 502, "search.command_failed", "search command failed"
 	default:
 		return 502, "git.command_failed", "git command failed"
 	}

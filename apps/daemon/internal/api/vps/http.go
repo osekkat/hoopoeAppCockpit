@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/search"
 	schemas "github.com/hoopoe-cockpit/hoopoe/packages/schemas/go"
 )
 
@@ -17,6 +18,7 @@ func MountGitRoutes(r chi.Router, cfg Config) {
 	r.Get("/git/unstaged-diff", h.diff(DiffKindUnstaged))
 	r.Get("/git/unpushed-commits", h.unpushedCommits)
 	r.Get("/git/open-files", h.openFiles)
+	r.Get("/grep", h.grep)
 }
 
 type handler struct {
@@ -65,6 +67,29 @@ func (h *handler) openFiles(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, response)
 }
 
+func (h *handler) grep(w http.ResponseWriter, r *http.Request) {
+	projectID := strings.TrimSpace(chi.URLParam(r, "projectId"))
+	response, err := h.service.Grep(r.Context(), projectID, parseSearchRequest(r))
+	if err != nil {
+		writeServiceProblem(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func parseSearchRequest(r *http.Request) search.Request {
+	query := strings.TrimSpace(r.URL.Query().Get("query"))
+	if query == "" {
+		query = strings.TrimSpace(r.URL.Query().Get("q"))
+	}
+	return search.Request{
+		Query:      query,
+		Paths:      cleanQueryValues(r.URL.Query()["path"]),
+		Literal:    parseBool(r.URL.Query().Get("literal")),
+		MaxResults: parsePositiveInt(r.URL.Query().Get("maxResults")),
+	}
+}
+
 func parseDiffPage(r *http.Request) DiffPage {
 	return DiffPage{
 		StartLine: parsePositiveInt(r.URL.Query().Get("startLine")),
@@ -78,6 +103,22 @@ func parsePositiveInt(raw string) int {
 		return 0
 	}
 	return value
+}
+
+func parseBool(raw string) bool {
+	value, err := strconv.ParseBool(strings.TrimSpace(raw))
+	return err == nil && value
+}
+
+func cleanQueryValues(values []string) []string {
+	clean := make([]string, 0, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed != "" {
+			clean = append(clean, trimmed)
+		}
+	}
+	return clean
 }
 
 func writeServiceProblem(w http.ResponseWriter, err error) {

@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	gitadapter "github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/adapters/git"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/search"
 	schemas "github.com/hoopoe-cockpit/hoopoe/packages/schemas/go"
 )
 
@@ -100,6 +101,70 @@ func TestHTTPMountServesOpenFiles(t *testing.T) {
 	}
 	if len(got.Files) != 4 {
 		t.Fatalf("open files = %+v", got.Files)
+	}
+}
+
+func TestGrepUsesProjectVPSClonePath(t *testing.T) {
+	t.Parallel()
+	service, _ := newTestService(t)
+	searcher := &fakeSearcher{response: search.Response{
+		SchemaVersion: search.SchemaVersion,
+		ProjectID:     "proj_1",
+		Results: []search.Result{{
+			Path:   "README.md",
+			Line:   2,
+			Column: 4,
+			Text:   "find needle here",
+		}},
+	}}
+	service.searcher = searcher
+	got, err := service.Grep(context.Background(), "proj_1", search.Request{
+		Query:      "needle",
+		Paths:      []string{"README.md"},
+		Literal:    true,
+		MaxResults: 7,
+	})
+	if err != nil {
+		t.Fatalf("Grep: %v", err)
+	}
+	if len(got.Results) != 1 || got.Results[0].Path != "README.md" {
+		t.Fatalf("grep results = %+v", got.Results)
+	}
+	if searcher.request.ProjectID != "proj_1" || searcher.request.RepoPath == "" || searcher.request.Query != "needle" || !searcher.request.Literal || searcher.request.MaxResults != 7 {
+		t.Fatalf("search request = %+v", searcher.request)
+	}
+}
+
+func TestHTTPMountServesGrepFallback(t *testing.T) {
+	t.Parallel()
+	service, _ := newTestService(t)
+	router := chi.NewRouter()
+	router.Route("/v1/projects/{projectId}", func(r chi.Router) {
+		MountGitRoutes(r, Config{
+			Projects:         service.projects,
+			GitClientFactory: service.newGit,
+			Cache:            service.cache,
+			Searcher: &fakeSearcher{response: search.Response{
+				SchemaVersion: search.SchemaVersion,
+				ProjectID:     "proj_1",
+				Query:         "needle",
+				Results:       []search.Result{{Path: "README.md", Line: 1, Column: 1, Text: "needle"}},
+			}},
+			Now: service.now,
+		})
+	})
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects/proj_1/grep?query=needle&literal=true&maxResults=3&path=README.md", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got search.Response
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Query != "needle" || len(got.Results) != 1 {
+		t.Fatalf("grep response = %+v", got)
 	}
 }
 
@@ -227,4 +292,15 @@ func (g *fakeGit) UnpushedCommits(_ context.Context, branch string) (*gitadapter
 
 func (g *fakeGit) RevParse(context.Context, string) (string, error) {
 	return g.head, nil
+}
+
+type fakeSearcher struct {
+	request  search.Request
+	response search.Response
+	err      error
+}
+
+func (s *fakeSearcher) Search(_ context.Context, req search.Request) (search.Response, error) {
+	s.request = req
+	return s.response, s.err
 }
