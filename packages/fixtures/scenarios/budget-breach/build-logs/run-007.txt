@@ -1,0 +1,5 @@
+2026-05-04T17:09:54Z tend-swarm pre-script start
+caut snapshot: day cap 500.00 / spent 500.42 USD (100%)
+caam alternatives: 0 (all accounts exhausted today)
+agent.pause GreenBear reason=budget-breach
+approval.request scope=budget.overshoot

@@ -1,0 +1,15 @@
+{
+  "issues": [
+    {
+      "id": "hp-q6d",
+      "title": "[test] missing tending fixture budget-breach",
+      "description": "Fixture scenario bead used to prove daily-budget breach pauses the agent and surfaces an approval gate.",
+      "status": "in_progress",
+      "priority": 1,
+      "issue_type": "task",
+      "created_at": "2026-05-04T17:10:00Z",
+      "updated_at": "2026-05-04T17:10:00Z"
+    }
+  ],
+  "total": 1
+}

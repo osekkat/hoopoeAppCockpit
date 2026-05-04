@@ -1,0 +1,21 @@
+{
+  "generated_at": "2026-05-04T17:10:00Z",
+  "data_hash": "budget-breach-synthetic",
+  "triage": {
+    "meta": {
+      "version": "1.0.0",
+      "generated_at": "2026-05-04T17:10:00Z",
+      "phase2_ready": false,
+      "issue_count": 1,
+      "compute_time_ms": 1
+    },
+    "quick_ref": {
+      "open_count": 1,
+      "actionable_count": 0,
+      "blocked_count": 0,
+      "in_progress_count": 1,
+      "top_picks": []
+    },
+    "recommendations": []
+  }
+}

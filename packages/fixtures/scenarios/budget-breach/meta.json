@@ -1,0 +1,9 @@
+{
+  "kind": "synthetic",
+  "scenario": "budget-breach",
+  "fixturesVersion": "phase0-2026-05-02",
+  "capturedAt": "2026-05-04T17:10:00Z",
+  "vpsId": "mock-flywheel",
+  "source": "hand-written hp-q6d budget-breach tending fixture",
+  "notes": "Daily provider-spend cap hit across all CAAM accounts. tend-swarm pauses the agent and surfaces an approval request — operator must confirm overshoot or shut down. wakeAgent=false because the pre-script's deterministic detection is enough; the LLM decision is replaced by a typed ActionPlan awaiting human input."
+}

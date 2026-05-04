@@ -1,0 +1,5 @@
+{"channel":"caut","seq":1,"ts":"2026-05-04T17:09:54Z","type":"caut.budget_threshold","payload":{"window":"day","cap_usd":500,"spent_usd":500.42,"percent":100}}
+{"channel":"caam","seq":2,"ts":"2026-05-04T17:09:55Z","type":"caam.account_status","payload":{"active_account":"primary","available_accounts":3,"alternatives":[],"all_exhausted_for_today":true}}
+{"channel":"agent_state","seq":3,"ts":"2026-05-04T17:09:55Z","type":"agent.paused","payload":{"agent":"GreenBear","reason":"budget-breach"}}
+{"channel":"approvals","seq":4,"ts":"2026-05-04T17:09:56Z","type":"approval.requested","payload":{"approvalId":"appr-budget-breach-001","scope":"budget.overshoot","summary":"Daily provider budget exhausted; approve overshoot or hold."}}
+{"channel":"activity","seq":5,"ts":"2026-05-04T17:09:56Z","type":"activity.warning","payload":{"severity":"warning","summary":"Daily provider budget hit; GreenBear paused awaiting approval."}}

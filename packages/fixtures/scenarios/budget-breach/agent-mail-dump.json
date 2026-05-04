@@ -1,0 +1,24 @@
+{
+  "messages": [
+    {
+      "id": "msg-budget-breach-001",
+      "thread_id": "hp-q6d",
+      "from": "orchestrator",
+      "to": [
+        "operator"
+      ],
+      "subject": "[hp-q6d] Daily provider budget exhausted — approval required",
+      "body_md": "Today's provider spend across all CAAM accounts has crossed the configured daily cap (USD 500). GreenBear is paused. Approve to continue (overshoot is logged) or hold to shut down.",
+      "sent_at": "2026-05-04T17:09:56Z",
+      "ack_required": true
+    }
+  ],
+  "threads": [
+    {
+      "id": "hp-q6d",
+      "subject": "[hp-q6d] Daily provider budget exhausted — approval required",
+      "message_count": 1
+    }
+  ],
+  "unread_total": 1
+}

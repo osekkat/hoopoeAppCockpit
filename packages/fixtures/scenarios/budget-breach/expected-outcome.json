@@ -1,0 +1,68 @@
+{
+  "meta": {
+    "kind": "synthetic",
+    "scenario": "budget-breach",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-04T17:10:00Z",
+    "vpsId": "mock-flywheel",
+    "source": "hand-written hp-q6d budget-breach tending fixture",
+    "notes": "Daily provider-spend cap hit across all CAAM accounts. Pre-script detects the budget breach deterministically; the agent is paused and an approval request is surfaced. wakeAgent=false because no LLM judgement is required."
+  },
+  "detections": [
+    {
+      "kind": "caut.budget_breach",
+      "payload": {
+        "window": "day",
+        "cap_usd": 500,
+        "spent_usd": 500.42,
+        "percent": 100
+      }
+    },
+    {
+      "kind": "caam.no_alternative",
+      "payload": {
+        "reason": "all CAAM accounts exhausted for today"
+      }
+    }
+  ],
+  "wakeAgent": false,
+  "actionPlan": {
+    "actions": [
+      {
+        "type": "agent.pause",
+        "args": {
+          "agent": "GreenBear",
+          "reason": "budget-breach"
+        }
+      },
+      {
+        "type": "approval.request",
+        "args": {
+          "scope": "budget.overshoot",
+          "summary": "Daily provider budget exhausted; approve overshoot or hold."
+        }
+      }
+    ]
+  },
+  "approvalsRequested": [
+    {
+      "scope": "budget.overshoot",
+      "reason": "daily cap hit; operator must approve overshoot or shut down"
+    }
+  ],
+  "postconditions": [
+    {
+      "check": "GreenBear.state == PAUSED",
+      "expect": true
+    },
+    {
+      "check": "approvals.has_open_scope('budget.overshoot')",
+      "expect": true
+    },
+    {
+      "check": "activity.warning_emitted",
+      "expect": true
+    }
+  ],
+  "activityBehavior": "surface"
+}

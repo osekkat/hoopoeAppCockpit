@@ -1,0 +1,338 @@
+{
+  "agentMailDump": {
+    "messages": [
+      {
+        "ack_required": true,
+        "body_md": "Today's provider spend across all CAAM accounts has crossed the configured daily cap (USD 500). GreenBear is paused. Approve to continue (overshoot is logged) or hold to shut down.",
+        "from": "orchestrator",
+        "id": "msg-budget-breach-001",
+        "sent_at": "2026-05-04T17:09:56Z",
+        "subject": "[hp-q6d] Daily provider budget exhausted — approval required",
+        "thread_id": "hp-q6d",
+        "to": [
+          "operator"
+        ]
+      }
+    ],
+    "threads": [
+      {
+        "id": "hp-q6d",
+        "message_count": 1,
+        "subject": "[hp-q6d] Daily provider budget exhausted — approval required"
+      }
+    ],
+    "unread_total": 1
+  },
+  "brList": {
+    "issues": [
+      {
+        "created_at": "2026-05-04T17:10:00Z",
+        "description": "Fixture scenario bead used to prove daily-budget breach pauses the agent and surfaces an approval gate.",
+        "id": "hp-q6d",
+        "issue_type": "task",
+        "priority": 1,
+        "status": "in_progress",
+        "title": "[test] missing tending fixture budget-breach",
+        "updated_at": "2026-05-04T17:10:00Z"
+      }
+    ],
+    "total": 1
+  },
+  "buildLogs": [
+    {
+      "runId": "run-007",
+      "text": "2026-05-04T17:09:54Z tend-swarm pre-script start\ncaut snapshot: day cap 500.00 / spent 500.42 USD (100%)\ncaam alternatives: 0 (all accounts exhausted today)\nagent.pause GreenBear reason=budget-breach\napproval.request scope=budget.overshoot\n"
+    }
+  ],
+  "bvTriage": {
+    "data_hash": "budget-breach-synthetic",
+    "generated_at": "2026-05-04T17:10:00Z",
+    "triage": {
+      "meta": {
+        "compute_time_ms": 1,
+        "generated_at": "2026-05-04T17:10:00Z",
+        "issue_count": 1,
+        "phase2_ready": false,
+        "version": "1.0.0"
+      },
+      "quick_ref": {
+        "actionable_count": 0,
+        "blocked_count": 0,
+        "in_progress_count": 1,
+        "open_count": 1,
+        "top_picks": []
+      },
+      "recommendations": []
+    }
+  },
+  "capabilities": {
+    "agent_mail": {
+      "agent_mail.messages.read": {
+        "status": "ok"
+      },
+      "agent_mail.messages.send": {
+        "status": "ok"
+      },
+      "agent_mail.reservations.list": {
+        "status": "ok"
+      }
+    },
+    "br": {
+      "br.dep.add": {
+        "status": "ok"
+      },
+      "br.issues.read": {
+        "status": "ok"
+      },
+      "br.issues.update": {
+        "status": "ok"
+      },
+      "br.sync.flush_only": {
+        "status": "ok"
+      }
+    },
+    "bv": {
+      "bv.robot.diff": {
+        "status": "ok"
+      },
+      "bv.robot.insights": {
+        "status": "ok"
+      },
+      "bv.robot.plan": {
+        "status": "ok"
+      },
+      "bv.robot.triage": {
+        "status": "ok"
+      }
+    },
+    "caam": {
+      "caam.account.switch": {
+        "notes": "all CAAM accounts hit daily cap; switching cannot resolve",
+        "status": "blocked-by-policy"
+      },
+      "caam.accounts.list": {
+        "status": "ok"
+      }
+    },
+    "casr": {},
+    "caut": {
+      "caut.usage.snapshot": {
+        "notes": "daily cap reached; spent_usd > cap_usd",
+        "status": "ok"
+      }
+    },
+    "dcg": {},
+    "git": {
+      "git.diff.read": {
+        "status": "ok"
+      },
+      "git.push": {
+        "notes": "snapshot script never pushes",
+        "status": "blocked-by-policy"
+      },
+      "git.status.read": {
+        "status": "ok"
+      },
+      "git.unpushed.list": {
+        "status": "ok"
+      }
+    },
+    "health": {
+      "health.coverage": {
+        "status": "untested"
+      }
+    },
+    "jfp": {},
+    "jsm": {},
+    "ntm": {
+      "ntm.robot.snapshot": {
+        "status": "ok"
+      },
+      "ntm.robot.status": {
+        "status": "ok"
+      },
+      "ntm.robot.tail": {
+        "status": "ok"
+      }
+    },
+    "oracle": {},
+    "pt": {},
+    "sbh": {},
+    "srp": {},
+    "ubs": {}
+  },
+  "events": [
+    {
+      "channel": "caut",
+      "payload": {
+        "cap_usd": 500,
+        "percent": 100,
+        "spent_usd": 500.42,
+        "window": "day"
+      },
+      "seq": 1,
+      "ts": "2026-05-04T17:09:54Z",
+      "type": "caut.budget_threshold"
+    },
+    {
+      "channel": "caam",
+      "payload": {
+        "active_account": "primary",
+        "all_exhausted_for_today": true,
+        "alternatives": [],
+        "available_accounts": 3
+      },
+      "seq": 2,
+      "ts": "2026-05-04T17:09:55Z",
+      "type": "caam.account_status"
+    },
+    {
+      "channel": "agent_state",
+      "payload": {
+        "agent": "GreenBear",
+        "reason": "budget-breach"
+      },
+      "seq": 3,
+      "ts": "2026-05-04T17:09:55Z",
+      "type": "agent.paused"
+    },
+    {
+      "channel": "approvals",
+      "payload": {
+        "approvalId": "appr-budget-breach-001",
+        "scope": "budget.overshoot",
+        "summary": "Daily provider budget exhausted; approve overshoot or hold."
+      },
+      "seq": 4,
+      "ts": "2026-05-04T17:09:56Z",
+      "type": "approval.requested"
+    },
+    {
+      "channel": "activity",
+      "payload": {
+        "severity": "warning",
+        "summary": "Daily provider budget hit; GreenBear paused awaiting approval."
+      },
+      "seq": 5,
+      "ts": "2026-05-04T17:09:56Z",
+      "type": "activity.warning"
+    }
+  ],
+  "expectedOutcome": {
+    "actionPlan": {
+      "actions": [
+        {
+          "args": {
+            "agent": "GreenBear",
+            "reason": "budget-breach"
+          },
+          "type": "agent.pause"
+        },
+        {
+          "args": {
+            "scope": "budget.overshoot",
+            "summary": "Daily provider budget exhausted; approve overshoot or hold."
+          },
+          "type": "approval.request"
+        }
+      ]
+    },
+    "activityBehavior": "surface",
+    "approvalsRequested": [
+      {
+        "reason": "daily cap hit; operator must approve overshoot or shut down",
+        "scope": "budget.overshoot"
+      }
+    ],
+    "detections": [
+      {
+        "kind": "caut.budget_breach",
+        "payload": {
+          "cap_usd": 500,
+          "percent": 100,
+          "spent_usd": 500.42,
+          "window": "day"
+        }
+      },
+      {
+        "kind": "caam.no_alternative",
+        "payload": {
+          "reason": "all CAAM accounts exhausted for today"
+        }
+      }
+    ],
+    "meta": {
+      "capturedAt": "<scrubbed-captured-at>",
+      "fixturesVersion": "phase0-2026-05-02",
+      "kind": "synthetic",
+      "notes": "Daily provider-spend cap hit across all CAAM accounts. Pre-script detects the budget breach deterministically; the agent is paused and an approval request is surfaced. wakeAgent=false because no LLM judgement is required.",
+      "scenario": "budget-breach",
+      "source": "hand-written hp-q6d budget-breach tending fixture",
+      "vpsId": "mock-flywheel"
+    },
+    "postconditions": [
+      {
+        "check": "GreenBear.state == PAUSED",
+        "expect": true
+      },
+      {
+        "check": "approvals.has_open_scope('budget.overshoot')",
+        "expect": true
+      },
+      {
+        "check": "activity.warning_emitted",
+        "expect": true
+      }
+    ],
+    "wakeAgent": false
+  },
+  "id": "budget-breach",
+  "meta": {
+    "capturedAt": "<scrubbed-captured-at>",
+    "fixturesVersion": "phase0-2026-05-02",
+    "kind": "synthetic",
+    "notes": "Daily provider-spend cap hit across all CAAM accounts. tend-swarm pauses the agent and surfaces an approval request — operator must confirm overshoot or shut down. wakeAgent=false because the pre-script's deterministic detection is enough; the LLM decision is replaced by a typed ActionPlan awaiting human input.",
+    "scenario": "budget-breach",
+    "source": "hand-written hp-q6d budget-breach tending fixture",
+    "vpsId": "mock-flywheel"
+  },
+  "ntmSnapshot": {
+    "counters": {
+      "alive": 1,
+      "errored": 0,
+      "panes": 1,
+      "sessions": 1,
+      "wedged": 0
+    },
+    "sessions": [
+      {
+        "id": "hoopoeAppCockpit",
+        "panes": [
+          {
+            "agent": "claude-code",
+            "id": "GreenBear",
+            "lastActivityAt": "2026-05-04T17:09:55Z",
+            "lastReason": "budget-breach: awaiting operator approval",
+            "model": "claude-opus-4-7",
+            "state": "PAUSED"
+          }
+        ]
+      }
+    ]
+  },
+  "paneLogs": [
+    {
+      "agent": "GreenBear",
+      "bytes": {
+        "encoding": "base64",
+        "data": "R3JlZW5CZWFyIHBhdXNlZC4gRGFpbHkgcHJvdmlkZXIgYnVkZ2V0IGV4aGF1c3RlZDsgYXdhaXRpbmcgYXBwcm92YWwuCg=="
+      }
+    }
+  ],
+  "reservations": {
+    "conflicts": [],
+    "reservations": []
+  },
+  "rootPath": "<fixtures-root>/scenarios/budget-breach",
+  "toolsDegraded": null
+}

@@ -1,0 +1,96 @@
+{
+  "git": {
+    "git.status.read": {
+      "status": "ok"
+    },
+    "git.diff.read": {
+      "status": "ok"
+    },
+    "git.unpushed.list": {
+      "status": "ok"
+    },
+    "git.push": {
+      "status": "blocked-by-policy",
+      "notes": "snapshot script never pushes"
+    }
+  },
+  "br": {
+    "br.issues.read": {
+      "status": "ok"
+    },
+    "br.issues.update": {
+      "status": "ok"
+    },
+    "br.dep.add": {
+      "status": "ok"
+    },
+    "br.sync.flush_only": {
+      "status": "ok"
+    }
+  },
+  "bv": {
+    "bv.robot.triage": {
+      "status": "ok"
+    },
+    "bv.robot.plan": {
+      "status": "ok"
+    },
+    "bv.robot.insights": {
+      "status": "ok"
+    },
+    "bv.robot.diff": {
+      "status": "ok"
+    }
+  },
+  "ntm": {
+    "ntm.robot.snapshot": {
+      "status": "ok"
+    },
+    "ntm.robot.status": {
+      "status": "ok"
+    },
+    "ntm.robot.tail": {
+      "status": "ok"
+    }
+  },
+  "agent_mail": {
+    "agent_mail.messages.read": {
+      "status": "ok"
+    },
+    "agent_mail.messages.send": {
+      "status": "ok"
+    },
+    "agent_mail.reservations.list": {
+      "status": "ok"
+    }
+  },
+  "caam": {
+    "caam.accounts.list": {
+      "status": "ok"
+    },
+    "caam.account.switch": {
+      "status": "blocked-by-policy",
+      "notes": "all CAAM accounts hit daily cap; switching cannot resolve"
+    }
+  },
+  "caut": {
+    "caut.usage.snapshot": {
+      "status": "ok",
+      "notes": "daily cap reached; spent_usd > cap_usd"
+    }
+  },
+  "dcg": {},
+  "casr": {},
+  "ubs": {},
+  "jsm": {},
+  "jfp": {},
+  "oracle": {},
+  "pt": {},
+  "srp": {},
+  "sbh": {},
+  "health": {
+    "health.coverage": {
+      "status": "untested"
+    }
+  }
+}
