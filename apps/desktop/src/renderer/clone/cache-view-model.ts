@@ -2,9 +2,9 @@
 //
 // The Settings card consumes a list of CloneCacheRow entries (one per
 // project) + the global cap config + a bridge for the destructive
-// actions (Clear / Reveal / Open in terminal). The bridge defaults to
-// stubs that throw a typed "not yet wired" error pending the
-// `hoopoe.clone.*` preload channels (filed as a follow-up bead).
+// actions (Clear / Reveal / Open in terminal). The production bridge is
+// resolved from the typed `window.hoopoe.clone.*` preload channels; the
+// fallback stub keeps tests and non-Electron renders deterministic.
 //
 // All sort + format helpers live here as pure functions so the
 // rendering tests don't have to deal with dates / Intl quirks.
@@ -182,14 +182,13 @@ export interface CloneActionsBridge {
   }) => Promise<void>;
 }
 
-/** Default bridge — every action throws a typed error pointing at the
- *  follow-up bead that wires the preload channels. UI uses this so the
- *  card stays exercisable even when the preload integration isn't wired. */
+/** Fallback bridge — every action throws a typed error. UI uses this so
+ *  the card stays exercisable when the Electron preload bridge is absent. */
 export class CloneActionsBridgeUnavailableError extends Error {
   override readonly name = "CloneActionsBridgeUnavailableError";
   constructor(action: string) {
     super(
-      `Hoopoe clone actions bridge not yet wired for "${action}" — pending the hp-58wp / clone-actions preload channels.`,
+      `Hoopoe clone actions bridge is not available for "${action}" — verify the Electron preload exposed window.hoopoe.clone.`,
     );
   }
 }
@@ -200,3 +199,47 @@ export const STUB_CLONE_ACTIONS_BRIDGE: CloneActionsBridge = {
   openInTerminal: () => Promise.reject(new CloneActionsBridgeUnavailableError("openInTerminal")),
   setCapOverride: () => Promise.reject(new CloneActionsBridgeUnavailableError("setCapOverride")),
 };
+
+interface ClonePreloadBridge {
+  readonly discardLocalChanges?: (input: { readonly projectId: string }) => Promise<unknown>;
+  readonly revealInFinder?: (input: { readonly projectId: string }) => Promise<void>;
+  readonly openInTerminal?: (input: { readonly projectId: string }) => Promise<void>;
+  readonly setCapOverride?: (input: {
+    readonly projectId: string;
+    readonly capsOverride: CapOverrideForm | null;
+  }) => Promise<unknown>;
+}
+
+interface CloneActionsBridgeScope {
+  readonly window?: {
+    readonly hoopoe?: {
+      readonly clone?: ClonePreloadBridge;
+    };
+  };
+}
+
+export function resolveCloneActionsBridge(
+  scope: CloneActionsBridgeScope = globalThis,
+): CloneActionsBridge {
+  const clone = scope.window?.hoopoe?.clone;
+  const discardLocalChanges = clone?.discardLocalChanges;
+  const revealInFinder = clone?.revealInFinder;
+  const openInTerminal = clone?.openInTerminal;
+  const setCapOverride = clone?.setCapOverride;
+
+  if (
+    typeof discardLocalChanges !== "function" ||
+    typeof revealInFinder !== "function" ||
+    typeof openInTerminal !== "function" ||
+    typeof setCapOverride !== "function"
+  ) {
+    return STUB_CLONE_ACTIONS_BRIDGE;
+  }
+
+  return {
+    clearLocalClone: (input) => discardLocalChanges(input).then(() => undefined),
+    revealInFinder,
+    openInTerminal,
+    setCapOverride: (input) => setCapOverride(input).then(() => undefined),
+  };
+}

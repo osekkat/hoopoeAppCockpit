@@ -9,9 +9,9 @@
 //   - Auth-fallback warning when initial clone fails with auth_missing.
 //
 // The card is presentation-only. The destructive actions (Clear / cap
-// override save) flow through the CloneActionsBridge contract. Default
-// bridge throws the typed CloneActionsBridgeUnavailableError pending
-// the `hoopoe.clone.*` preload channels.
+// override save) flow through the CloneActionsBridge contract. Production
+// resolves the bridge from `window.hoopoe.clone.*`; tests may inject a
+// custom bridge or fall back to the typed unavailable stub.
 
 import { useMemo, useState } from "react";
 import {
@@ -30,9 +30,9 @@ import {
 import {
   CAP_HARD_MAX_BYTES,
   DEFAULT_CACHE_SORT,
-  STUB_CLONE_ACTIONS_BRIDGE,
   formatBytes,
   formatRelativeTime,
+  resolveCloneActionsBridge,
   sortCacheRows,
   totalCacheBytes,
   validateCapOverride,
@@ -50,9 +50,8 @@ export interface CloneSettingsCardProps {
   readonly rows: readonly CloneCacheRow[];
   /** Default cap config used when a row has capsOverride === null. */
   readonly defaultCaps: { readonly softCapBytes: number; readonly hardCapBytes: number };
-  /** Bridge for destructive actions. Defaults to a stub that throws
-   *  CloneActionsBridgeUnavailableError so the card renders without
-   *  requiring the preload channels to be wired. */
+  /** Bridge for destructive actions. Defaults to the Electron preload
+   *  bridge when present, otherwise to a typed unavailable stub. */
   readonly actions?: CloneActionsBridge;
   /** Initial sort. Default: lastAccessed desc. */
   readonly initialSort?: CloneCacheSort;
@@ -68,7 +67,7 @@ interface ActionState {
 const EMPTY_ACTION_STATE: ActionState = { busy: new Set(), error: {} };
 
 export function CloneSettingsCard({
-  actions = STUB_CLONE_ACTIONS_BRIDGE,
+  actions = resolveCloneActionsBridge(),
   defaultCaps,
   initialSort = DEFAULT_CACHE_SORT,
   now,
@@ -154,6 +153,21 @@ export function CloneSettingsCard({
       // version would obscure which clone failed.
       // eslint-disable-next-line no-await-in-loop
       await runAction(id, "clear");
+    }
+  }
+
+  async function saveCapOverride(
+    projectId: string,
+    capsOverride: CapOverrideForm | null,
+  ): Promise<void> {
+    try {
+      await actions.setCapOverride({ projectId, capsOverride });
+      setEditingCapsId(null);
+    } catch (err) {
+      setActionState((prev) => ({
+        ...prev,
+        error: { ...prev.error, [`${projectId}:caps`]: (err as Error).message },
+      }));
     }
   }
 
@@ -249,17 +263,7 @@ export function CloneSettingsCard({
                   onAction={(action) => void runAction(row.projectId, action)}
                   onEditCaps={() => setEditingCapsId(row.projectId)}
                   onCapsClose={() => setEditingCapsId(null)}
-                  onCapsSave={async (caps) => {
-                    try {
-                      await actions.setCapOverride({ projectId: row.projectId, capsOverride: caps });
-                      setEditingCapsId(null);
-                    } catch (err) {
-                      setActionState((prev) => ({
-                        ...prev,
-                        error: { ...prev.error, [`${row.projectId}:caps`]: (err as Error).message },
-                      }));
-                    }
-                  }}
+                  onCapsSave={(caps) => saveCapOverride(row.projectId, caps)}
                   onSelectionToggle={() => toggleSelected(row.projectId)}
                   row={row}
                   selected={selected.has(row.projectId)}

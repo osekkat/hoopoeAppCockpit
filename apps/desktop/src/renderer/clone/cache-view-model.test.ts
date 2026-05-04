@@ -7,6 +7,7 @@ import {
   STUB_CLONE_ACTIONS_BRIDGE,
   formatBytes,
   formatRelativeTime,
+  resolveCloneActionsBridge,
   sortCacheRows,
   totalCacheBytes,
   validateCapOverride,
@@ -154,6 +155,58 @@ test("STUB_CLONE_ACTIONS_BRIDGE: every method rejects with the bridge-unavailabl
     }
     expect(captured).toBeInstanceOf(CloneActionsBridgeUnavailableError);
     expect(captured?.message).toContain(action);
-    expect(captured?.message.toLowerCase()).toContain("not yet wired");
+    expect(captured?.message.toLowerCase()).toContain("not available");
   }
+});
+
+test("resolveCloneActionsBridge: falls back to typed unavailable bridge without preload channels", async () => {
+  const bridge = resolveCloneActionsBridge({});
+  let captured: Error | null = null;
+  try {
+    await bridge.revealInFinder({ projectId: "p" });
+  } catch (err) {
+    captured = err as Error;
+  }
+  expect(captured).toBeInstanceOf(CloneActionsBridgeUnavailableError);
+});
+
+test("resolveCloneActionsBridge: adapts window.hoopoe.clone preload channels", async () => {
+  const calls: string[] = [];
+  const bridge = resolveCloneActionsBridge({
+    window: {
+      hoopoe: {
+        clone: {
+          discardLocalChanges: async ({ projectId }) => {
+            calls.push(`clear:${projectId}`);
+          },
+          revealInFinder: async ({ projectId }) => {
+            calls.push(`reveal:${projectId}`);
+          },
+          openInTerminal: async ({ projectId }) => {
+            calls.push(`terminal:${projectId}`);
+          },
+          setCapOverride: async ({ capsOverride, projectId }) => {
+            calls.push(`caps:${projectId}:${capsOverride?.softCapBytes ?? "default"}`);
+          },
+        },
+      },
+    },
+  });
+
+  await bridge.clearLocalClone({ projectId: "alpha" });
+  await bridge.revealInFinder({ projectId: "beta" });
+  await bridge.openInTerminal({ projectId: "gamma" });
+  await bridge.setCapOverride({
+    projectId: "delta",
+    capsOverride: { softCapBytes: 1024, hardCapBytes: 2048 },
+  });
+  await bridge.setCapOverride({ projectId: "epsilon", capsOverride: null });
+
+  expect(calls).toEqual([
+    "clear:alpha",
+    "reveal:beta",
+    "terminal:gamma",
+    "caps:delta:1024",
+    "caps:epsilon:default",
+  ]);
 });

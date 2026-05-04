@@ -33,6 +33,7 @@ export {
   STUB_CLONE_ACTIONS_BRIDGE,
   formatBytes,
   formatRelativeTime,
+  resolveCloneActionsBridge,
   sortCacheRows,
   totalCacheBytes,
   validateCapOverride,

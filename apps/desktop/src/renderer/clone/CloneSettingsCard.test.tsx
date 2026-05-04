@@ -181,7 +181,7 @@ test("CloneSettingsCard: passes through a custom CloneActionsBridge", async () =
   ]);
 });
 
-test("CloneSettingsCard: stub bridge is the default — surfaces the typed unavailable error", async () => {
+test("CloneSettingsCard: fallback stub bridge surfaces the typed unavailable error", async () => {
   let captured: Error | null = null;
   try {
     await STUB_CLONE_ACTIONS_BRIDGE.clearLocalClone({ projectId: "p" });
