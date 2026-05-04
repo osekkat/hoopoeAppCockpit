@@ -39,6 +39,7 @@ type Config struct {
 	Redactor     Redactor
 	WSValidator  WebSocketTokenValidator
 	Capabilities *capabilities.Registry
+	Auth         *AuthConfig
 	Now          func() time.Time
 }
 
@@ -68,6 +69,7 @@ type server struct {
 	redactor     Redactor
 	wsValidator  WebSocketTokenValidator
 	capabilities *capabilities.Registry
+	authConfig   *AuthConfig
 	now          func() time.Time
 }
 
@@ -97,6 +99,11 @@ func NewRouter(cfg Config) http.Handler {
 	r.Get("/v1/events/ws", s.handleEventWS)
 	s.mountCapabilityRoutes(r)
 	s.mountSeedContractRoutes(r)
+	// Auth routes mount AFTER the seed contract so they override the
+	// `handlePlannedWrite` stubs at /v1/auth/bootstrap/bearer + ws-token
+	// + session/revoke (chi's last registration wins for a given path +
+	// method). When the AuthConfig is unset, the stubs answer with 501.
+	s.mountAuthRoutes(r)
 
 	return r
 }
@@ -147,6 +154,7 @@ func normalizeConfig(cfg Config) *server {
 		redactor:     redactor,
 		wsValidator:  wsValidator,
 		capabilities: cfg.Capabilities,
+		authConfig:   cfg.Auth,
 		now:          now,
 	}
 }
