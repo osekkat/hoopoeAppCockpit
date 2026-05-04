@@ -1,0 +1,69 @@
+{
+  "fixturesVersion": "phase0-agent-mail-2026-05-04",
+  "tool": "agent_mail",
+  "serverUrl": "http://127.0.0.1:8765",
+  "transport": "streamable-http",
+  "capturedAt": "2026-05-04T15:02:51Z",
+  "capturedBy": "HoopoeCC3",
+  "capturedFrom": "local-agent-mail-server",
+  "scenarioState": "live-swarm-active",
+  "captures": [
+    {
+      "file": "health-liveness.json",
+      "method": "GET",
+      "path": "/health/liveness",
+      "purpose": "Liveness probe; daemon health endpoint mirror."
+    },
+    {
+      "file": "health-readiness.json",
+      "method": "GET",
+      "path": "/health/readiness",
+      "purpose": "Readiness probe; daemon health endpoint mirror."
+    },
+    {
+      "file": "oauth-server-metadata.json",
+      "method": "GET",
+      "path": "/.well-known/oauth-authorization-server",
+      "purpose": "OAuth metadata advertised by the MCP gateway; pinned for the bearer flow contract."
+    },
+    {
+      "file": "mail-api-locks.json",
+      "method": "GET",
+      "path": "/mail/api/locks",
+      "purpose": "File-reservation lock metadata snapshot — feeds the Hoopoe reservation surface and the activity panel reservation card."
+    },
+    {
+      "file": "mail-api-unified-inbox.json",
+      "method": "GET",
+      "path": "/mail/api/unified-inbox?limit=50&include_projects=true",
+      "purpose": "Unified inbox JSON feed across all projects + agents; canonical input for the Activity panel mail row and the daemon mail-summary capture."
+    },
+    {
+      "file": "api-projects-agents.json",
+      "method": "GET",
+      "path": "/api/projects/home-ubuntu-projects-hoopoeappcockpit/agents",
+      "purpose": "Registered agent roster for the Hoopoe project (project_slug='home-ubuntu-projects-hoopoeappcockpit')."
+    }
+  ],
+  "drift": {
+    "userListedTools": [
+      "health_check",
+      "ensure_project",
+      "register_agent",
+      "fetch_inbox",
+      "send_message dry-run"
+    ],
+    "captured": [
+      "health-liveness + health-readiness (combined: health_check)",
+      "mail-api-unified-inbox (read-only inbox feed; equivalent to fetch_inbox at the HTTP layer)",
+      "api-projects-agents (registered agents list — read-side of register_agent)"
+    ],
+    "deferredMcpTools": [
+      "ensure_project",
+      "register_agent",
+      "fetch_inbox via JSON-RPC POST /mcp",
+      "send_message dry-run via JSON-RPC POST /mcp"
+    ],
+    "notes": "Read-only HTTP capture against the locally-running mcp-agent-mail server at 127.0.0.1:8765. Tool-level MCP JSON-RPC calls (POST /mcp body) are not captured here because they require a live MCP client session and would mutate state; the corresponding READ surfaces (/mail/api/unified-inbox, /api/projects/.../agents, /mail/api/locks) cover the same data shape without writes. A follow-up bead should capture MCP tool envelopes via the streamable-http transport once a non-mutating dry-run path lands."
+  }
+}
