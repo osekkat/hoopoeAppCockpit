@@ -19,7 +19,7 @@ import {
   ServerCog,
   Zap,
 } from "lucide-react";
-import { useActivityStore } from "../activity/index.ts";
+import { useActivityStore, type ActivityEventInput } from "../activity/index.ts";
 import {
   codeHealthAria,
   dotClass,
@@ -42,7 +42,7 @@ interface PillProps {
   readonly project: ShellProjectSummary | null;
 }
 
-interface PowerAssertionSnapshot {
+export interface PowerAssertionSnapshot {
   readonly active: boolean;
   readonly assertionId: string | null;
   readonly mechanism: "powersaveblocker" | "nsprocessinfo" | "caffeinate" | null;
@@ -52,13 +52,25 @@ interface PowerAssertionSnapshot {
   readonly acquiredAt: string | null;
 }
 
-interface PowerBridge {
-  readonly snapshot?: <O>() => Promise<O>;
-}
-
 interface ResolvedPowerBridge {
   readonly snapshot: <O>() => Promise<O>;
 }
+
+type WindowTimerHandle = ReturnType<Window["setTimeout"]>;
+
+interface PowerSnapshotPollerOptions {
+  readonly bridge: ResolvedPowerBridge;
+  readonly onSnapshot: (snapshot: PowerAssertionSnapshot) => void;
+  readonly onFailure: (event: ActivityEventInput) => void;
+  readonly now?: () => string;
+  readonly pollIntervalMs?: number;
+  readonly failureRetryMs?: number;
+  readonly setTimeoutFn?: Window["setTimeout"];
+  readonly clearTimeoutFn?: Window["clearTimeout"];
+}
+
+const POWER_SNAPSHOT_POLL_INTERVAL_MS = 5_000;
+const POWER_SNAPSHOT_FAILURE_RETRY_MS = 30_000;
 
 // ── Mac awake assertion ─────────────────────────────────────────────────────
 
@@ -70,20 +82,12 @@ export function PowerAssertionPill({ project }: PillProps) {
   useEffect(() => {
     const bridge = resolvePowerBridge();
     if (!bridge) return;
-    let cancelled = false;
-    const load = async () => {
-      const next = await bridge.snapshot<PowerAssertionSnapshot>();
-      if (!cancelled) setSnapshot(next);
-    };
-    void load();
-    const timer = window.setInterval(() => {
-      void load();
-    }, 5_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, []);
+    return startPowerSnapshotPoller({
+      bridge,
+      onSnapshot: setSnapshot,
+      onFailure: addEvent,
+    });
+  }, [addEvent]);
 
   useEffect(() => {
     if (!snapshot?.active || !snapshot.assertionId) return;
@@ -125,6 +129,75 @@ export function PowerAssertionPill({ project }: PillProps) {
   );
 }
 
+export function startPowerSnapshotPoller({
+  bridge,
+  onSnapshot,
+  onFailure,
+  now = () => new Date().toISOString(),
+  pollIntervalMs = POWER_SNAPSHOT_POLL_INTERVAL_MS,
+  failureRetryMs = POWER_SNAPSHOT_FAILURE_RETRY_MS,
+  setTimeoutFn = window.setTimeout.bind(window),
+  clearTimeoutFn = window.clearTimeout.bind(window),
+}: PowerSnapshotPollerOptions): () => void {
+  let cancelled = false;
+  let timer: WindowTimerHandle | null = null;
+  let failureAnnounced = false;
+
+  const schedule = (delayMs: number) => {
+    if (cancelled) return;
+    timer = setTimeoutFn(() => {
+      void load();
+    }, delayMs);
+  };
+
+  const load = async () => {
+    try {
+      const next = await bridge.snapshot<PowerAssertionSnapshot>();
+      if (cancelled) return;
+      failureAnnounced = false;
+      onSnapshot(next);
+      schedule(pollIntervalMs);
+    } catch {
+      if (cancelled) return;
+      if (!failureAnnounced) {
+        failureAnnounced = true;
+        onFailure(buildPowerSnapshotFailureEvent(now()));
+      }
+      schedule(failureRetryMs);
+    }
+  };
+
+  void load();
+
+  return () => {
+    cancelled = true;
+    if (timer !== null) {
+      clearTimeoutFn(timer);
+    }
+  };
+}
+
+export function buildPowerSnapshotFailureEvent(timestamp: string): ActivityEventInput {
+  return {
+    kind: "health.snapshot_updated",
+    importance: "warn",
+    summary: "Power assertion status unavailable; polling slowed while the bridge recovers",
+    timestamp,
+    actor: {
+      id: "desktop-power",
+      displayName: "Desktop power manager",
+      kind: "system",
+    },
+    inlinePreview:
+      "The top bar could not read hoopoe.power.snapshot. Pro-round power assertions may still be active; check Diagnostics if this persists.",
+    pills: [
+      { id: "surface", label: "Diagnostics", tone: "warn" },
+      { id: "retry", label: "retrying slowly", tone: "muted" },
+    ],
+    correlationId: "desktop-power-snapshot",
+  };
+}
+
 function resolvePowerBridge(): ResolvedPowerBridge | null {
   if (typeof window === "undefined") return null;
   const snapshot = window.hoopoe?.power?.snapshot;
@@ -133,9 +206,10 @@ function resolvePowerBridge(): ResolvedPowerBridge | null {
 }
 
 export function powerAssertionAria(snapshot: PowerAssertionSnapshot): string {
-  const rounds = snapshot.ownerRoundIds.length === 1
-    ? snapshot.ownerRoundIds[0]
-    : `${snapshot.ownerRoundIds.length} Pro rounds`;
+  const rounds =
+    snapshot.ownerRoundIds.length === 1
+      ? snapshot.ownerRoundIds[0]
+      : `${snapshot.ownerRoundIds.length} Pro rounds`;
   return `Mac kept awake for ${rounds}; ${snapshot.heldCount} active assertion${snapshot.heldCount === 1 ? "" : "s"} via ${snapshot.mechanism ?? "unknown mechanism"}`;
 }
 
@@ -298,7 +372,9 @@ export function CodeHealthPill({ project }: PillProps) {
       {data.hotspotCount > 0 ? (
         <>
           <span className="hh-pill-sep">·</span>
-          <span className="hh-pill-alert">{data.hotspotCount} hotspot{data.hotspotCount === 1 ? "" : "s"}</span>
+          <span className="hh-pill-alert">
+            {data.hotspotCount} hotspot{data.hotspotCount === 1 ? "" : "s"}
+          </span>
         </>
       ) : null}
     </PillLink>
@@ -349,24 +425,12 @@ interface PillLinkProps {
   readonly "data-variant"?: string;
 }
 
-function PillLink({
-  ariaLabel,
-  children,
-  icon,
-  label,
-  project,
-  stage,
-  ...rest
-}: PillLinkProps) {
+function PillLink({ ariaLabel, children, icon, label, project, stage, ...rest }: PillLinkProps) {
   // Without a project, render a non-interactive pill so the chrome still
   // shows seed data on the project picker route.
   if (!project) {
     return (
-      <span
-        aria-label={ariaLabel}
-        className="hh-topbar-pill hh-topbar-pill-disabled"
-        {...rest}
-      >
+      <span aria-label={ariaLabel} className="hh-topbar-pill hh-topbar-pill-disabled" {...rest}>
         {icon}
         <span>{label}</span>
         {children}

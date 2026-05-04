@@ -20,6 +20,8 @@ import {
   ToolHealthPill,
   powerAssertionAria,
 } from "./index.ts";
+import { startPowerSnapshotPoller, type PowerAssertionSnapshot } from "./TopbarPills.tsx";
+import type { ActivityEventInput } from "../activity/index.ts";
 import { useTunnelStore } from "../tunnel/tunnel-store.ts";
 
 function withQueryClient(node: React.ReactNode): React.ReactNode {
@@ -31,6 +33,37 @@ function withQueryClient(node: React.ReactNode): React.ReactNode {
 
 function render(node: React.ReactNode): string {
   return renderToStaticMarkup(withQueryClient(node));
+}
+
+async function flushMicrotasks(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
+function createTimerHarness() {
+  const scheduled: Array<{
+    readonly delayMs: number;
+    readonly callback: () => void;
+    readonly cancelled: boolean;
+  }> = [];
+  const setTimeoutFn = ((handler: Parameters<Window["setTimeout"]>[0], delayMs?: number) => {
+    const callback = typeof handler === "function" ? () => handler() : () => {};
+    scheduled.push({ callback, delayMs: delayMs ?? 0, cancelled: false });
+    return scheduled.length - 1;
+  }) as Window["setTimeout"];
+  const clearTimeoutFn = ((handle?: ReturnType<Window["setTimeout"]>) => {
+    if (handle === undefined) return;
+    const entry = scheduled[handle];
+    if (entry) {
+      scheduled[handle] = { ...entry, cancelled: true };
+    }
+  }) as Window["clearTimeout"];
+
+  return {
+    scheduled,
+    setTimeoutFn,
+    clearTimeoutFn,
+  };
 }
 
 // hp-m79e: ensure the topbar render tests see a clean tunnel store —
@@ -46,7 +79,7 @@ afterEach(() => {
 
 test("ToolHealthPill: null project renders disabled span with 5 unknown dots", () => {
   const html = render(<ToolHealthPill project={null} />);
-  expect(html).toContain("data-testid=\"topbar-tool-health\"");
+  expect(html).toContain('data-testid="topbar-tool-health"');
   expect(html).toContain("hh-topbar-pill-disabled");
   // 5 dots, all unknown (vps/ntm/mail/br/bv).
   const matches = html.match(/hh-tool-dot hh-dot-unknown/g) ?? [];
@@ -71,8 +104,8 @@ test("ToolHealthPill: null project renders disabled span with 5 unknown dots", (
 
 test("SwarmStatePill: null project shows 0/0 idle counts + idle variant", () => {
   const html = render(<SwarmStatePill project={null} />);
-  expect(html).toContain("data-testid=\"topbar-swarm\"");
-  expect(html).toContain("data-variant=\"idle\"");
+  expect(html).toContain('data-testid="topbar-swarm"');
+  expect(html).toContain('data-variant="idle"');
   expect(html).toContain("Swarm: 0 running, 0 idle, 0 wedged");
   // Running count == 0.
   expect(html).toMatch(/<strong>0<\/strong>/);
@@ -80,17 +113,17 @@ test("SwarmStatePill: null project shows 0/0 idle counts + idle variant", () => 
 
 test("BeadsPulsePill: null project shows 0 ready / 0 WIP", () => {
   const html = render(<BeadsPulsePill project={null} />);
-  expect(html).toContain("data-testid=\"topbar-beads\"");
+  expect(html).toContain('data-testid="topbar-beads"');
   expect(html).toContain("Beads: 0 ready, 0 in progress, 0 blocked");
   expect(html).toContain("0 WIP");
 });
 
 test("CodeHealthPill: 'no snapshot' state when seed", () => {
   const html = render(<CodeHealthPill project={null} />);
-  expect(html).toContain("data-testid=\"topbar-code-health\"");
-  expect(html).toContain("data-variant=\"unknown\"");
+  expect(html).toContain('data-testid="topbar-code-health"');
+  expect(html).toContain('data-variant="unknown"');
   expect(html).toContain("no snapshot");
-  expect(html).toContain("aria-label=\"No code-health snapshot yet\"");
+  expect(html).toContain('aria-label="No code-health snapshot yet"');
 });
 
 test("CodeHealthPill: zero hotspots → no hotspots callout", () => {
@@ -101,9 +134,9 @@ test("CodeHealthPill: zero hotspots → no hotspots callout", () => {
 
 test("SubscriptionPill: idle when seed shows no usage", () => {
   const html = render(<SubscriptionPill project={null} />);
-  expect(html).toContain("data-testid=\"topbar-subscription\"");
-  expect(html).toContain("data-variant=\"ok\"");
-  expect(html).toContain("aria-label=\"Subscription usage idle\"");
+  expect(html).toContain('data-testid="topbar-subscription"');
+  expect(html).toContain('data-variant="ok"');
+  expect(html).toContain('aria-label="Subscription usage idle"');
 });
 
 test("powerAssertionAria names active Pro rounds and mechanism", () => {
@@ -118,6 +151,88 @@ test("powerAssertionAria names active Pro rounds and mechanism", () => {
       acquiredAt: "2026-05-04T00:00:00Z",
     }),
   ).toBe("Mac kept awake for 2 Pro rounds; 2 active assertions via nsprocessinfo");
+});
+
+test("power snapshot poller catches snapshot failures and backs off with one Activity warning", async () => {
+  const timers = createTimerHarness();
+  const events: ActivityEventInput[] = [];
+  const stop = startPowerSnapshotPoller({
+    bridge: {
+      snapshot: async () => {
+        throw new Error("IPC handler missing");
+      },
+    },
+    onSnapshot: () => {
+      throw new Error("unexpected snapshot");
+    },
+    onFailure: (event) => events.push(event),
+    now: () => "2026-05-04T08:55:00.000Z",
+    pollIntervalMs: 5,
+    failureRetryMs: 30,
+    setTimeoutFn: timers.setTimeoutFn,
+    clearTimeoutFn: timers.clearTimeoutFn,
+  });
+
+  await flushMicrotasks();
+  expect(events).toHaveLength(1);
+  expect(events[0]?.kind).toBe("health.snapshot_updated");
+  expect(events[0]?.importance).toBe("warn");
+  expect(events[0]?.summary).toContain("Power assertion status unavailable");
+  expect(timers.scheduled[0]?.delayMs).toBe(30);
+
+  timers.scheduled[0]?.callback();
+  await flushMicrotasks();
+  expect(events).toHaveLength(1);
+  expect(timers.scheduled[1]?.delayMs).toBe(30);
+
+  stop();
+  expect(timers.scheduled[1]?.cancelled).toBe(true);
+});
+
+test("power snapshot poller resumes normal cadence after a recovered snapshot", async () => {
+  const timers = createTimerHarness();
+  const events: ActivityEventInput[] = [];
+  const snapshots: PowerAssertionSnapshot[] = [];
+  let callCount = 0;
+
+  const stop = startPowerSnapshotPoller({
+    bridge: {
+      snapshot: async <O,>() => {
+        callCount += 1;
+        if (callCount === 1) {
+          throw new Error("temporary bridge failure");
+        }
+        return {
+          active: true,
+          assertionId: "pa-1",
+          mechanism: "powersaveblocker",
+          level: "system",
+          ownerRoundIds: ["round-1"],
+          heldCount: 1,
+          acquiredAt: "2026-05-04T08:00:00.000Z",
+        } as O;
+      },
+    },
+    onSnapshot: (snapshot) => snapshots.push(snapshot),
+    onFailure: (event) => events.push(event),
+    now: () => "2026-05-04T08:55:00.000Z",
+    pollIntervalMs: 5,
+    failureRetryMs: 30,
+    setTimeoutFn: timers.setTimeoutFn,
+    clearTimeoutFn: timers.clearTimeoutFn,
+  });
+
+  await flushMicrotasks();
+  expect(events).toHaveLength(1);
+  expect(timers.scheduled[0]?.delayMs).toBe(30);
+
+  timers.scheduled[0]?.callback();
+  await flushMicrotasks();
+  expect(snapshots).toHaveLength(1);
+  expect(snapshots[0]?.assertionId).toBe("pa-1");
+  expect(timers.scheduled[1]?.delayMs).toBe(5);
+
+  stop();
 });
 
 test("Seed pills render together without conflicting test-ids", () => {
