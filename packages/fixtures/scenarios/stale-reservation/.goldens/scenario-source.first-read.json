@@ -293,40 +293,72 @@
       "payload": {
         "actions": [
           {
+            "approvalScope": "reservation.force_release",
+            "requiresApproval": true,
             "reservation_id": 144,
             "type": "reservation.force_release"
           }
         ],
         "jobId": "tend-swarm",
         "requested_by": "GreenBear",
-        "summary": "Coordinator will release stale Agent Mail reservation 144"
+        "summary": "Coordinator will release stale Agent Mail reservation 144 after approval"
       },
       "seq": 5,
       "ts": "2026-05-02T20:10:03Z",
       "type": "activity.action_plan"
     },
     {
+      "channel": "approvals",
+      "payload": {
+        "approvalId": "appr-stale-reservation-144",
+        "evidence": [
+          "agent_mail.reservations",
+          "ntm.robot.snapshot",
+          "mail.thread.hp-tjf"
+        ],
+        "scope": "reservation.force_release",
+        "summary": "Force-release stale Agent Mail reservation 144 for packages/schemas/openapi.yaml; AmberSky is absent from NTM and GreenBear is blocked."
+      },
+      "seq": 6,
+      "ts": "2026-05-02T20:10:03Z",
+      "type": "approval.requested"
+    },
+    {
+      "channel": "approvals",
+      "payload": {
+        "approvalId": "appr-stale-reservation-144",
+        "approvedBy": "operator",
+        "reason": "evidence confirms stale owner and blocked work",
+        "scope": "reservation.force_release"
+      },
+      "seq": 7,
+      "ts": "2026-05-02T20:10:04Z",
+      "type": "approval.approved"
+    },
+    {
       "channel": "reservations",
       "payload": {
         "actor": "tending:reservation-stale-check",
+        "approvalId": "appr-stale-reservation-144",
         "postcondition": "agent_mail.reservations no longer reports reservation",
         "reservation_id": 144
       },
-      "seq": 6,
-      "ts": "2026-05-02T20:10:04Z",
+      "seq": 8,
+      "ts": "2026-05-02T20:10:05Z",
       "type": "reservation.released"
     },
     {
       "channel": "audit",
       "payload": {
+        "approvalId": "appr-stale-reservation-144",
         "coordinator": "orchestrator",
         "message_id": "msg-stale-reservation-003",
         "requested_by": "GreenBear",
         "reservation_id": 144,
         "thread_id": "hp-tjf"
       },
-      "seq": 7,
-      "ts": "2026-05-02T20:10:05Z",
+      "seq": 9,
+      "ts": "2026-05-02T20:10:06Z",
       "type": "reservation.force_release_audited"
     }
   ],
@@ -347,7 +379,12 @@
       ]
     },
     "activityBehavior": "surface",
-    "approvalsRequested": [],
+    "approvalsRequested": [
+      {
+        "reason": "force-releasing reservation 144 for packages/schemas/openapi.yaml after AmberSky disappeared",
+        "scope": "reservation.force_release"
+      }
+    ],
     "detections": [
       {
         "kind": "reservation.stale",
@@ -381,12 +418,16 @@
       "capturedAt": "<scrubbed-captured-at>",
       "fixturesVersion": "phase0-2026-05-02",
       "kind": "synthetic",
-      "notes": "Expired reservation is older than the stale threshold and the owning agent is absent from NTM. GreenBear asks the coordinator to force-release it, the tending run wakes an agent to produce a typed ActionPlan, and the executor verifies the reservation disappeared from Agent Mail with an audit reply recorded.",
+      "notes": "Expired reservation is older than the stale threshold and the owning agent is absent from NTM. GreenBear asks the coordinator to force-release it, the tending run wakes an agent to produce a typed ActionPlan, the force-release requires operator approval, and the executor verifies the reservation disappeared from Agent Mail with an audit reply recorded.",
       "scenario": "stale-reservation",
       "source": "hand-written hp-tjf stale-reservation tending fixture",
       "vpsId": "mock-flywheel"
     },
     "postconditions": [
+      {
+        "check": "approval.appr-stale-reservation-144.requested_and_approved",
+        "expect": true
+      },
       {
         "check": "reservation_144.absent_from_agent_mail",
         "expect": true
