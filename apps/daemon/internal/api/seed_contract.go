@@ -306,17 +306,17 @@ func (s *server) handleProjectCreate(w http.ResponseWriter, r *http.Request) {
 	if !s.requireProjectCapabilities(w, "projects.create", projectImportRequiredCaps) {
 		return
 	}
+	idempotencyKey, ok := s.requireIdempotencyKey(w, r, "POST /v1/projects")
+	if !ok {
+		return
+	}
 	var body schemas.ProjectCreateRequest
 	if err := decodeRequiredJSON(r, &body); err != nil {
 		s.writeProblemCode(w, http.StatusBadRequest, "request.invalid_json", "invalid request body", err.Error())
 		return
 	}
 	request := projects.ImportRequest{ProjectCreateRequest: body}
-	request.IdempotencyKey = strings.TrimSpace(r.Header.Get("Idempotency-Key"))
-	if request.IdempotencyKey == "" {
-		s.writeProblemCode(w, http.StatusBadRequest, "idempotency.required", "idempotency key required", "POST /v1/projects requires Idempotency-Key")
-		return
-	}
+	request.IdempotencyKey = idempotencyKey
 	project, err := s.projects.Import(r.Context(), request)
 	if err != nil {
 		s.writeProjectError(w, err)
@@ -470,6 +470,13 @@ func (s *server) handleApprovalDecision(w http.ResponseWriter, r *http.Request, 
 		s.writeProblemCode(w, http.StatusNotImplemented, "approvals.unavailable", "approvals unavailable", "the unified approval queue is not configured")
 		return
 	}
+	verb := "approve"
+	if !approve {
+		verb = "deny"
+	}
+	if _, ok := s.requireIdempotencyKey(w, r, "POST /v1/projects/{projectId}/approvals/{approvalId}/"+verb); !ok {
+		return
+	}
 	var request schemas.ApprovalDecisionRequest
 	if err := decodeRequiredJSON(r, &request); err != nil {
 		s.writeProblemCode(w, http.StatusBadRequest, "request.invalid_json", "invalid request body", err.Error())
@@ -557,6 +564,28 @@ func (s *server) requireProjectCapabilities(w http.ResponseWriter, code string, 
 	}
 	s.writeProblemCode(w, http.StatusServiceUnavailable, code+".capabilities_unavailable", "required capabilities unavailable", detail.String())
 	return false
+}
+
+// requireIdempotencyKey enforces the OpenAPI Idempotency-Key contract for
+// retryable mutating routes. Returns the trimmed key and true on success;
+// writes a 400 idempotency.required problem and returns false when the
+// header is missing or empty. Per plan.md §2.6 every retryable mutating
+// route must accept the header so a network drop after the server has
+// processed the request lets the client retry without double-applying.
+//
+// hp-0uh: this is the daemon-side helper; the OpenAPI side (which routes
+// declare it required) and the desktop harness side (idempotency-contract
+// table) are tracked in separate followups so the contract decision is
+// made by COD1 + desktop before the daemon enforces it across all routes.
+// This helper currently fronts handleProjectCreate and the unified
+// approval decision routes.
+func (s *server) requireIdempotencyKey(w http.ResponseWriter, r *http.Request, route string) (string, bool) {
+	key := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	if key == "" {
+		s.writeProblemCode(w, http.StatusBadRequest, "idempotency.required", "idempotency key required", route+" requires Idempotency-Key")
+		return "", false
+	}
+	return key, true
 }
 
 func (s *server) writeJobError(w http.ResponseWriter, err error) {

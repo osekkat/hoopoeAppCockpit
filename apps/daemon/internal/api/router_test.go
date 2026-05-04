@@ -529,6 +529,7 @@ func TestApprovalRoutesMutateQueueUsedByAuthLookup(t *testing.T) {
 
 	approveReq := httptest.NewRequest(http.MethodPost, "/v1/projects/proj_01/approvals/appr_rotate/approve", strings.NewReader(`{"decisionActor":{"kind":"user","id":"owner"}}`))
 	approveReq.Header.Set("Content-Type", "application/json")
+	approveReq.Header.Set("Idempotency-Key", "01HXTESTAPPROVE")
 	approveRec := httptest.NewRecorder()
 	router.ServeHTTP(approveRec, approveReq)
 	if approveRec.Code != http.StatusOK {
@@ -548,6 +549,79 @@ func TestApprovalRoutesMutateQueueUsedByAuthLookup(t *testing.T) {
 	}
 	if fromAuthLookup.State != schemas.Approved {
 		t.Fatalf("auth lookup state = %s, want approved", fromAuthLookup.State)
+	}
+}
+
+func TestApprovalDecisionRoutesRequireIdempotencyKey(t *testing.T) {
+	// hp-0uh: approval approve/deny are retryable mutating routes; per the
+	// OpenAPI Idempotency-Key contract they must reject requests that omit
+	// the header. (handleProjectCreate has been requiring the header
+	// since 2026-05-04; this slice extends enforcement to the unified
+	// approvals queue. Audit-export, action-plan, provider create/destroy,
+	// job-cancel are deferred — those need OpenAPI alignment first.)
+	now := time.Date(2026, 5, 4, 12, 0, 0, 0, time.UTC)
+	queue := approvals.NewQueue(approvals.Config{
+		Now:   func() time.Time { return now },
+		NewID: func(approvals.Request) (string, error) { return "appr_idem", nil },
+	})
+	if _, _, err := queue.Request(context.Background(), approvals.Request{
+		Source:          schemas.ApprovalSourceHoopoePolicy,
+		PolicyRule:      "hoopoe-policy:auth.rotate_secret",
+		RequestedAction: schemas.CommandSpec{Kind: "auth.rotate_secret"},
+		RequestActor:    schemas.Actor{Kind: schemas.ActorKindSystem},
+		ProjectID:       "proj_01",
+		Scope:           schemas.Once,
+		RiskClass:       schemas.Critical,
+	}); err != nil {
+		t.Fatalf("queue.Request: %v", err)
+	}
+	router := NewRouter(Config{
+		Approvals: queue,
+		Now:       func() time.Time { return now },
+	})
+
+	for _, verb := range []string{"approve", "deny"} {
+		verb := verb
+		t.Run(verb+"-rejects-missing-idempotency-key", func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/v1/projects/proj_01/approvals/appr_idem/"+verb, strings.NewReader(`{"decisionActor":{"kind":"user","id":"owner"}}`))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+			}
+			if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "application/problem+json") {
+				t.Fatalf("content-type = %q, want problem+json", got)
+			}
+			var problem schemas.Problem
+			if err := json.Unmarshal(rec.Body.Bytes(), &problem); err != nil {
+				t.Fatalf("decode problem: %v", err)
+			}
+			if problem.Code != "idempotency.required" {
+				t.Fatalf("problem.Code = %q, want idempotency.required", problem.Code)
+			}
+			if problem.Detail == nil || !strings.Contains(*problem.Detail, "/"+verb) {
+				t.Fatalf("problem.Detail = %v, want a hint at the verb", problem.Detail)
+			}
+		})
+
+		t.Run(verb+"-rejects-empty-idempotency-key", func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/v1/projects/proj_01/approvals/appr_idem/"+verb, strings.NewReader(`{"decisionActor":{"kind":"user","id":"owner"}}`))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Idempotency-Key", "   ")
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+			}
+			var problem schemas.Problem
+			if err := json.Unmarshal(rec.Body.Bytes(), &problem); err != nil {
+				t.Fatalf("decode problem: %v", err)
+			}
+			if problem.Code != "idempotency.required" {
+				t.Fatalf("problem.Code = %q, want idempotency.required (whitespace-only must be rejected)", problem.Code)
+			}
+		})
 	}
 }
 
