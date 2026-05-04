@@ -6,18 +6,14 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 	"time"
-)
 
-const (
-	defaultLogReadLimit = int64(256 * 1024)
-	maxLogReadLimit     = int64(4 * 1024 * 1024)
+	joblog "github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/jobs/log"
 )
 
 type idempotencyRecord struct {
@@ -470,25 +466,11 @@ func (r *FileRegistry) AppendLog(ctx context.Context, jobID string, data []byte)
 	if r.logsDir == "" {
 		return 0, fmt.Errorf("%w: empty logs dir", ErrInvalidRequest)
 	}
-	if err := os.MkdirAll(r.logsDir, 0o700); err != nil {
-		return 0, err
-	}
-	f, err := os.OpenFile(r.logPath(jobID), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	next, err := joblog.Store{Dir: r.logsDir}.Append(ctx, jobID, data)
 	if err != nil {
 		return 0, err
 	}
-	defer f.Close()
-	start, err := f.Seek(0, io.SeekEnd)
-	if err != nil {
-		return 0, err
-	}
-	if _, err := f.Write(data); err != nil {
-		return 0, err
-	}
-	if err := f.Sync(); err != nil {
-		return 0, err
-	}
-	return start + int64(len(data)), nil
+	return next, nil
 }
 
 func (r *FileRegistry) ReadLog(ctx context.Context, jobID string, offset int64, limit int64) (LogChunk, error) {
@@ -498,47 +480,22 @@ func (r *FileRegistry) ReadLog(ctx context.Context, jobID string, offset int64, 
 	if !validID(jobID) || offset < 0 {
 		return LogChunk{}, ErrInvalidRequest
 	}
-	if _, err := r.Get(ctx, jobID); err != nil {
-		return LogChunk{}, err
-	}
-	if limit <= 0 {
-		limit = defaultLogReadLimit
-	}
-	if limit > maxLogReadLimit {
-		limit = maxLogReadLimit
-	}
-
-	f, err := os.Open(r.logPath(jobID))
-	if os.IsNotExist(err) {
-		return LogChunk{JobID: jobID, Offset: offset, NextOffset: offset, EOF: true}, nil
-	}
+	job, err := r.Get(ctx, jobID)
 	if err != nil {
 		return LogChunk{}, err
 	}
-	defer f.Close()
-
-	info, err := f.Stat()
+	chunk, err := joblog.Store{Dir: r.logsDir}.Read(ctx, jobID, offset, limit)
 	if err != nil {
 		return LogChunk{}, err
 	}
-	if offset >= info.Size() {
-		return LogChunk{JobID: jobID, Offset: offset, NextOffset: offset, EOF: true}, nil
-	}
-	if _, err := f.Seek(offset, io.SeekStart); err != nil {
-		return LogChunk{}, err
-	}
-	buf := make([]byte, limit)
-	n, err := f.Read(buf)
-	if err != nil && err != io.EOF {
-		return LogChunk{}, err
-	}
-	next := offset + int64(n)
 	return LogChunk{
 		JobID:      jobID,
-		Offset:     offset,
-		NextOffset: next,
-		Data:       buf[:n],
-		EOF:        next >= info.Size(),
+		Offset:     chunk.Offset,
+		NextOffset: chunk.NextOffset,
+		TotalBytes: chunk.TotalBytes,
+		Data:       chunk.Data,
+		EOF:        chunk.EOF,
+		Final:      job.Status.Terminal(),
 	}, nil
 }
 

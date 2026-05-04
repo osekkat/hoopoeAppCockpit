@@ -228,8 +228,10 @@ type LogChunk struct {
 	JobID      string `json:"jobId"`
 	Offset     int64  `json:"offset"`
 	NextOffset int64  `json:"nextOffset"`
+	TotalBytes int64  `json:"totalBytes"`
 	Data       []byte `json:"data"`
 	EOF        bool   `json:"eof"`
+	Final      bool   `json:"final"`
 }
 
 func artifactRefKind(kind string) schemas.ArtifactRefKind {

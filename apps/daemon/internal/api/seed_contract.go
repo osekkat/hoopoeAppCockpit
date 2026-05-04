@@ -147,22 +147,7 @@ func (s *server) handleJobCancel(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handleJobLog(w http.ResponseWriter, r *http.Request) {
-	offset, err := parseInt64Query(r, "offset", 0)
-	if err != nil {
-		s.writeProblemCode(w, http.StatusBadRequest, "request.invalid_offset", "invalid offset", err.Error())
-		return
-	}
-	limit, err := parseInt64Query(r, "limit", 64*1024)
-	if err != nil {
-		s.writeProblemCode(w, http.StatusBadRequest, "request.invalid_limit", "invalid limit", err.Error())
-		return
-	}
-	chunk, err := s.jobs.ReadLog(r.Context(), chi.URLParam(r, "jobId"), offset, limit)
-	if err != nil {
-		s.writeJobError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, chunk)
+	s.handleJobLogChunk(w, r)
 }
 
 func (s *server) handleJobArtifacts(w http.ResponseWriter, r *http.Request) {

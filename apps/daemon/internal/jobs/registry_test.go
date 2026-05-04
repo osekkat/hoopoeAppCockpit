@@ -302,8 +302,72 @@ func TestChunkedLogReadsByOffset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read log: %v", err)
 	}
-	if !bytes.Equal(chunk.Data, []byte("world")) || chunk.NextOffset != 11 || !chunk.EOF {
+	if !bytes.Equal(chunk.Data, []byte("world")) || chunk.NextOffset != 11 || chunk.TotalBytes != 11 || !chunk.EOF || chunk.Final {
 		t.Fatalf("bad chunk: %+v data=%q", chunk, string(chunk.Data))
+	}
+}
+
+func TestChunkedLogReconnectReadsMissingBytesByOffset(t *testing.T) {
+	ctx := context.Background()
+	reg := newTestRegistry(t)
+	job, err := reg.Create(ctx, CreateRequest{ID: "job_log_reconnect", Kind: "bootstrap.acfs"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := reg.AppendLog(ctx, job.ID, []byte("0123456789")); err != nil {
+		t.Fatalf("append first: %v", err)
+	}
+
+	first, err := reg.ReadLog(ctx, job.ID, 0, 4)
+	if err != nil {
+		t.Fatalf("read first: %v", err)
+	}
+	if string(first.Data) != "0123" || first.NextOffset != 4 || first.TotalBytes != 10 || first.EOF {
+		t.Fatalf("bad first chunk: %+v data=%q", first, string(first.Data))
+	}
+
+	if _, err := reg.AppendLog(ctx, job.ID, []byte("abcdef")); err != nil {
+		t.Fatalf("append second: %v", err)
+	}
+	second, err := reg.ReadLog(ctx, job.ID, first.NextOffset, 32)
+	if err != nil {
+		t.Fatalf("read reconnect: %v", err)
+	}
+	if string(second.Data) != "456789abcdef" || second.NextOffset != 16 || second.TotalBytes != 16 || !second.EOF {
+		t.Fatalf("bad reconnect chunk: %+v data=%q", second, string(second.Data))
+	}
+}
+
+func TestChunkedLogFinalTracksTerminalJobState(t *testing.T) {
+	ctx := context.Background()
+	reg := newTestRegistry(t)
+	job, err := reg.Create(ctx, CreateRequest{ID: "job_log_final", Kind: "health.go"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := reg.AppendLog(ctx, job.ID, []byte("done")); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	runningChunk, err := reg.ReadLog(ctx, job.ID, 0, 4)
+	if err != nil {
+		t.Fatalf("read running: %v", err)
+	}
+	if runningChunk.Final {
+		t.Fatalf("non-terminal job reported final: %+v", runningChunk)
+	}
+
+	if _, err := reg.Lease(ctx, LeaseRequest{JobID: job.ID, Holder: "worker-a", Duration: time.Minute}); err != nil {
+		t.Fatalf("lease: %v", err)
+	}
+	if _, err := reg.Complete(ctx, CompleteRequest{JobID: job.ID, Holder: "worker-a"}); err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+	finalChunk, err := reg.ReadLog(ctx, job.ID, 0, 4)
+	if err != nil {
+		t.Fatalf("read final: %v", err)
+	}
+	if !finalChunk.Final {
+		t.Fatalf("terminal job did not report final: %+v", finalChunk)
 	}
 }
 
