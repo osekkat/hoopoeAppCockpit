@@ -9,6 +9,8 @@ export {
   createCloneWatcher,
   CloneWatcherError,
   type CloneWatcher,
+  type CloneWatcherDiagnostic,
+  type CloneWatcherDiagnosticSink,
   type CreateWatcherOptions,
   type FsWatchHandle,
 } from "./watcher.ts";

@@ -17,6 +17,7 @@ import {
 import {
   createCloneWatcher,
   createMockClock,
+  type CloneWatcherDiagnostic,
   type CloneWatcherEvent,
 } from "./index.ts";
 
@@ -41,10 +42,14 @@ interface FakeFsWatcher extends EventEmitter {
 function createFakeFsWatch() {
   const created: FakeFsWatcher[] = [];
   let nextThrow: Error | null = null;
+  let closeThrow: Error | null = null;
   function makeWatcher(callback: (event: string, filename: string) => void): FakeFsWatcher {
     const emitter = new EventEmitter() as FakeFsWatcher;
     emitter.closed = false;
-    emitter.close = () => { emitter.closed = true; };
+    emitter.close = () => {
+      if (closeThrow) throw closeThrow;
+      emitter.closed = true;
+    };
     emitter.triggerChange = (filename: string) => callback("change", filename);
     return emitter;
   }
@@ -62,6 +67,7 @@ function createFakeFsWatch() {
     fsWatchImpl,
     created,
     setNextThrow: (err: Error) => { nextThrow = err; },
+    setCloseThrow: (err: Error) => { closeThrow = err; },
   };
 }
 
@@ -248,6 +254,59 @@ test("CloneWatcher: probe-time error emits error event but doesn't stop the watc
   if (error?.kind === "error") {
     expect(error.code).toBe("probe_failed");
   }
+});
+
+test("CloneWatcher: listener failures are reported to diagnostics", () => {
+  setupClone("p1");
+  const fake = createFakeFsWatch();
+  const clock = createMockClock();
+  const diagnostics: CloneWatcherDiagnostic[] = [];
+  const watcher = createCloneWatcher({
+    projectId: "p1",
+    layout,
+    fsWatchImpl: fake.fsWatchImpl,
+    clock,
+    probeImpl: () => CLEAN_CLONE_STATE,
+    onEvent: () => { throw new Error("listener failed"); },
+    onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+  });
+  watcher.start();
+  expect(watcher.status()).toBe("running");
+  expect(diagnostics).toEqual([
+    {
+      projectId: "p1",
+      code: "listener_failed",
+      phase: "emit:started",
+      message: "listener failed",
+    },
+  ]);
+});
+
+test("CloneWatcher: close failures are reported to diagnostics", () => {
+  setupClone("p1");
+  const fake = createFakeFsWatch();
+  const clock = createMockClock();
+  const diagnostics: CloneWatcherDiagnostic[] = [];
+  const watcher = createCloneWatcher({
+    projectId: "p1",
+    layout,
+    fsWatchImpl: fake.fsWatchImpl,
+    clock,
+    probeImpl: () => CLEAN_CLONE_STATE,
+    onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+  });
+  watcher.start();
+  fake.setCloseThrow(new Error("close failed"));
+  watcher.stop();
+  expect(watcher.status()).toBe("stopped");
+  expect(diagnostics).toEqual([
+    {
+      projectId: "p1",
+      code: "handle_close_failed",
+      phase: "stop",
+      message: "close failed",
+    },
+  ]);
 });
 
 test("CloneWatcher: start() is idempotent", () => {

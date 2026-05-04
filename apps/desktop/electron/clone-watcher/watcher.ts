@@ -42,6 +42,15 @@ export interface FsWatchHandle {
   readonly onError: (cb: (err: Error) => void) => void;
 }
 
+export interface CloneWatcherDiagnostic {
+  readonly projectId: string;
+  readonly code: "listener_failed" | "handle_close_failed";
+  readonly phase: string;
+  readonly message: string;
+}
+
+export type CloneWatcherDiagnosticSink = (diagnostic: CloneWatcherDiagnostic) => void;
+
 export interface CreateWatcherOptions {
   readonly projectId: string;
   readonly layout: CloneStorageLayout;
@@ -58,6 +67,8 @@ export interface CreateWatcherOptions {
   readonly runCommand?: ProbeDirtyStateInput["runCommand"];
   /** Event sink. Production wires this to the registry → IPC. */
   readonly onEvent?: CloneWatcherListener;
+  /** Diagnostics sink for best-effort errors that cannot be emitted as normal watcher events. */
+  readonly onDiagnostic?: CloneWatcherDiagnosticSink;
   /** Override the retry delay (tests). */
   readonly retryDelayMs?: number;
 }
@@ -88,6 +99,7 @@ export function createCloneWatcher(options: CreateWatcherOptions): CloneWatcher 
     clock = realClock,
     fsWatchImpl = watch,
     onEvent,
+    onDiagnostic,
     retryDelayMs = WATCHER_RETRY_DELAY_MS,
   } = options;
   const probeImpl = options.probeImpl ?? probeDirtyState;
@@ -101,19 +113,21 @@ export function createCloneWatcher(options: CreateWatcherOptions): CloneWatcher 
   const probeDebounced: DebouncedHandle = debounce(runProbe, debounceMs, clock);
 
   function emit(event: CloneWatcherEvent): void {
-    if (onEvent) {
-      try { onEvent(event); } catch { /* listener throws are swallowed */ }
+    emitWatcherEvent(projectId, event, onEvent, onDiagnostic);
+  }
+
+  function closeActiveHandle(phase: string): void {
+    const active = handle;
+    handle = null;
+    if (active !== null) {
+      closeWatcherHandle(projectId, active, phase, onDiagnostic);
     }
   }
 
   function runProbe(): void {
-    const probeInput: ProbeDirtyStateInput = {
-      cloneRepoPath: repoPath,
-      ...(options.runCommand ? { runCommand: options.runCommand } : {}),
-    };
     let dirtyState: CloneDirtyState;
     try {
-      dirtyState = probeImpl(probeInput);
+      dirtyState = probeImpl(probeInput(repoPath, options.runCommand));
     } catch (err) {
       emit({
         kind: "error",
@@ -155,10 +169,7 @@ export function createCloneWatcher(options: CreateWatcherOptions): CloneWatcher 
   }
 
   function handleFsError(err: Error): void {
-    if (handle) {
-      try { handle.close(); } catch { /* ignore double-close */ }
-      handle = null;
-    }
+    closeActiveHandle("fs_error");
     emit({ kind: "error", projectId, code: "fs_watch_failed", message: err.message });
     if (attempts >= 1) {
       // Already retried once; give up.
@@ -192,10 +203,7 @@ export function createCloneWatcher(options: CreateWatcherOptions): CloneWatcher 
         clock.clearTimeout(retryTimer);
         retryTimer = null;
       }
-      if (handle) {
-        try { handle.close(); } catch { /* ignore */ }
-        handle = null;
-      }
+      closeActiveHandle("stop");
       status = "stopped";
       emit({ kind: "stopped", projectId, reason: "explicit" });
     },
@@ -204,4 +212,58 @@ export function createCloneWatcher(options: CreateWatcherOptions): CloneWatcher 
       runProbe();
     },
   };
+}
+
+function probeInput(
+  repoPath: string,
+  runCommand: ProbeDirtyStateInput["runCommand"] | undefined,
+): ProbeDirtyStateInput {
+  return {
+    cloneRepoPath: repoPath,
+    ...(runCommand ? { runCommand } : {}),
+  };
+}
+
+function emitWatcherEvent(
+  projectId: string,
+  event: CloneWatcherEvent,
+  listener: CloneWatcherListener | undefined,
+  diagnostics: CloneWatcherDiagnosticSink | undefined,
+): void {
+  if (!listener) return;
+  try {
+    listener(event);
+  } catch (err) {
+    reportDiagnostic(projectId, diagnostics, {
+      code: "listener_failed",
+      phase: `emit:${event.kind}`,
+      message: (err as Error).message,
+    });
+  }
+}
+
+function closeWatcherHandle(
+  projectId: string,
+  handle: FSWatcher,
+  phase: string,
+  diagnostics: CloneWatcherDiagnosticSink | undefined,
+): void {
+  try {
+    handle.close();
+  } catch (err) {
+    reportDiagnostic(projectId, diagnostics, {
+      code: "handle_close_failed",
+      phase,
+      message: (err as Error).message,
+    });
+  }
+}
+
+function reportDiagnostic(
+  projectId: string,
+  sink: CloneWatcherDiagnosticSink | undefined,
+  diagnostic: Omit<CloneWatcherDiagnostic, "projectId">,
+): void {
+  if (!sink) return;
+  sink({ projectId, ...diagnostic });
 }
