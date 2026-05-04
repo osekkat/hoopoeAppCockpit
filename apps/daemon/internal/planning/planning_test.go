@@ -67,6 +67,7 @@ func TestServiceRunPersistsArtifactsAndCompletesJobs(t *testing.T) {
 		"refinement-round-001.md",
 		"refinement-round-002.md",
 		"unresolved-decisions.md",
+		"quality.json",
 		"meta.json",
 		"history.jsonl",
 	} {
@@ -92,8 +93,73 @@ func TestServiceRunPersistsArtifactsAndCompletesJobs(t *testing.T) {
 	if result.Meta.InputSHA256 == "" || result.Meta.LockState != "draft" {
 		t.Fatalf("unexpected meta: %+v", result.Meta)
 	}
+	if result.Meta.Quality == nil || result.Meta.Artifacts["quality"] != "quality.json" {
+		t.Fatalf("quality metadata = %+v artifacts=%+v", result.Meta.Quality, result.Meta.Artifacts)
+	}
+	if len(result.Meta.Quality.Dimensions) != 7 || !result.Meta.Quality.Advisory {
+		t.Fatalf("quality report = %+v", result.Meta.Quality)
+	}
 	if runner.callCount("candidate-draft") != 3 {
 		t.Fatalf("candidate prompt calls = %d, want 3", runner.callCount("candidate-draft"))
+	}
+}
+
+func TestEvaluatePlanQualityScoresEvidenceAndDeltas(t *testing.T) {
+	markdown := strings.Join([]string{
+		"# Goal",
+		"Build a safer planning workflow with explicit success outcomes and acceptance criteria.",
+		"# Architecture",
+		"Components: desktop, daemon, SQLite cache, typed API, event stream, and schema boundaries.",
+		"Files: apps/daemon/internal/planning/planning.go and apps/desktop/src/renderer/Planning.tsx.",
+		"# Workflow",
+		"- Happy path: user can paste an idea and compare model candidates.",
+		"- Edge case: retry after offline or provider failure.",
+		"- Failure path: fallback to saved draft.",
+		"- User journey: lock, convert, then review.",
+		"# Implementation",
+		"```bash",
+		"rch exec -- go test ./internal/planning/...",
+		"```",
+		"Use structs, endpoints, and a test harness.",
+		"# Testing",
+		"Unit test, integration fixture, e2e regression, coverage evidence, and assertions.",
+		"# Risks",
+		"Security, credential redaction, timeout, rate limit, rollback, and fallback mitigations.",
+		"# Beads",
+		"1. Create tracker.",
+		"2. Wire dependencies.",
+		"3. Add acceptance criteria.",
+		"4. Verify test evidence.",
+		"5. Sequence downstream work.",
+		"6. Mark blocked items.",
+		"7. File conversion beads.",
+	}, "\n")
+	previous := &QualityReport{Dimensions: []QualityDimensionScore{{Dimension: QualityIntentClarity, Score: 10}}}
+
+	report, err := EvaluatePlanQuality(QualityRequest{
+		PlanID:       "Plan 123",
+		SourceStepID: "lock readiness",
+		Markdown:     markdown,
+		GeneratedAt:  fixedNow("2026-05-04T04:00:00Z")(),
+		Previous:     previous,
+	})
+	if err != nil {
+		t.Fatalf("EvaluatePlanQuality: %v", err)
+	}
+	if report.PlanID != "plan-123" || report.SourceStepID != "lock-readiness" || report.OverallScore < 70 {
+		t.Fatalf("report = %+v", report)
+	}
+	intent, ok := report.dimensionScore(QualityIntentClarity)
+	if !ok || intent.Delta == nil || *intent.Delta <= 0 {
+		t.Fatalf("intent score = %+v", intent)
+	}
+	for _, dimension := range report.Dimensions {
+		if dimension.Score < 0 || dimension.Score > 100 || len(dimension.Evidence) == 0 || dimension.Guidance == "" {
+			t.Fatalf("dimension = %+v", dimension)
+		}
+	}
+	if !report.Advisory || !strings.Contains(report.Guidance, "advisory") {
+		t.Fatalf("guidance = %q advisory=%v", report.Guidance, report.Advisory)
 	}
 }
 
@@ -136,7 +202,8 @@ func TestServiceResumesFromCompletedJobsWithoutRerunningModels(t *testing.T) {
 		t.Fatalf("first candidate calls = %d, want 3", firstCandidateCalls)
 	}
 
-	if _, err := svc.Run(ctx, req); err != nil {
+	resumed, err := svc.Run(ctx, req)
+	if err != nil {
 		t.Fatalf("resume Run: %v", err)
 	}
 	if got := runner.callCount("candidate-draft"); got != firstCandidateCalls {
@@ -144,6 +211,14 @@ func TestServiceResumesFromCompletedJobsWithoutRerunningModels(t *testing.T) {
 	}
 	if got := runner.callCount("synthesis-best-of-all-worlds"); got != 1 {
 		t.Fatalf("resume reran synthesis: got %d calls, want 1", got)
+	}
+	if resumed.Meta.Quality == nil {
+		t.Fatalf("resume quality report missing")
+	}
+	for _, dimension := range resumed.Meta.Quality.Dimensions {
+		if dimension.Delta == nil || *dimension.Delta != 0 {
+			t.Fatalf("resume quality delta for %s = %v", dimension.Dimension, dimension.Delta)
+		}
 	}
 }
 
