@@ -108,7 +108,14 @@ export interface paths {
         /** List projects this VPS hosts. */
         get: operations["listProjects"];
         put?: never;
-        post?: never;
+        /**
+         * Import an existing VPS checkout into Hoopoe.
+         * @description Registers a project rooted at an existing VPS Git checkout. Hoopoe v1
+         *     requires an origin remote, initializes `.hoopoe/`, runs `br init` when
+         *     `.beads/` is missing, records detected project tools, and returns the
+         *     persisted project registry row.
+         */
+        post: operations["createProject"];
         delete?: never;
         options?: never;
         head?: never;
@@ -868,6 +875,27 @@ export interface components {
             desktopMirrorPath?: string;
             /** Format: date-time */
             lastFetchedAt?: string;
+        };
+        /**
+         * @description Request body for importing an existing project checkout into the daemon
+         *     registry. `Idempotency-Key` is supplied as an HTTP header, not in this
+         *     JSON body.
+         */
+        ProjectCreateRequest: {
+            /** @description Optional stable project ID override; omitted values are daemon-generated. */
+            id?: string;
+            /** @description Optional display name; defaults to the project root basename. */
+            name?: string;
+            /** @description Optional route-safe slug; defaults to a slugified name. */
+            slug?: string;
+            /** @description Absolute path to an existing VPS Git checkout. */
+            rootPath: string;
+            /** @description Optional VPS host ID; defaults to the local daemon host. */
+            vpsId?: string;
+            /** @description Read-only desktop sync mirror path once the desktop clone is created. */
+            desktopMirrorPath?: string;
+            /** @description Permit documentation-only repos without package manifests during readiness checks. */
+            allowNoLanguageManifest?: boolean;
         };
         /**
          * @description One project on this VPS. Lifecycle states + gate invariants are
@@ -1932,6 +1960,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProjectListResponse"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    createProject: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Stable client-generated key (ULID/UUID) for safe retries. The daemon
+                 *     dedupes by key within a sliding window (default 24h) and replays the
+                 *     original status + body. Required on retryable writes; clients that omit
+                 *     it on a write that turns out to be retryable will receive a
+                 *     `precondition-failed` problem on the second attempt.
+                 */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Project imported. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project"];
                 };
             };
             default: components["responses"]["Problem"];

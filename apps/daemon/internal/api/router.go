@@ -17,6 +17,8 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/capabilities"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/jobs"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/projects"
+	schemas "github.com/hoopoe-cockpit/hoopoe/packages/schemas/go"
 	"nhooyr.io/websocket"
 )
 
@@ -35,6 +37,7 @@ type Config struct {
 	Build        BuildInfo
 	Events       *EventHub
 	Jobs         JobsReader
+	Projects     ProjectRegistry
 	Logger       Logger
 	Redactor     Redactor
 	WSValidator  WebSocketTokenValidator
@@ -61,10 +64,18 @@ type WebSocketTokenValidator interface {
 	ValidateWebSocketToken(ctx context.Context, token string) error
 }
 
+type ProjectRegistry interface {
+	List(ctx context.Context) ([]schemas.Project, error)
+	Project(ctx context.Context, id string) (schemas.Project, error)
+	Import(ctx context.Context, req projects.ImportRequest) (schemas.Project, error)
+	Readiness(ctx context.Context, id string) (schemas.ProjectReadiness, error)
+}
+
 type server struct {
 	build        BuildInfo
 	events       *EventHub
 	jobs         JobsReader
+	projects     ProjectRegistry
 	logger       Logger
 	redactor     Redactor
 	wsValidator  WebSocketTokenValidator
@@ -150,6 +161,7 @@ func normalizeConfig(cfg Config) *server {
 		build:        build,
 		events:       events,
 		jobs:         jobs,
+		projects:     cfg.Projects,
 		logger:       logger,
 		redactor:     redactor,
 		wsValidator:  wsValidator,

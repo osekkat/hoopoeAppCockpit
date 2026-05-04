@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/jobs"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/projects"
 	schemas "github.com/hoopoe-cockpit/hoopoe/packages/schemas/go"
 )
 
@@ -35,7 +37,7 @@ func (s *server) mountSeedContractRoutes(r chi.Router) {
 	})
 
 	r.Get("/v1/projects", s.handleProjects)
-	r.Post("/v1/projects", s.handlePlannedWrite("projects.create"))
+	r.Post("/v1/projects", s.handleProjectCreate)
 	r.Route("/v1/projects/{projectId}", func(r chi.Router) {
 		r.Get("/", s.handleProject)
 		r.Post("/activate", s.handlePlannedWrite("projects.activate"))
@@ -162,23 +164,61 @@ func (s *server) handleJobArtifacts(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *server) handleProjects(w http.ResponseWriter, _ *http.Request) {
+func (s *server) handleProjects(w http.ResponseWriter, r *http.Request) {
+	if s.projects == nil {
+		writeJSON(w, http.StatusOK, schemas.ProjectListResponse{
+			Items: []schemas.Project{},
+			Page:  emptyPageMeta(),
+		})
+		return
+	}
+	items, err := s.projects.List(r.Context())
+	if err != nil {
+		s.writeProjectError(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, schemas.ProjectListResponse{
-		Items: []schemas.Project{},
-		Page:  emptyPageMeta(),
+		Items: items,
+		Page:  pageMeta(len(items)),
 	})
 }
 
 func (s *server) handleProject(w http.ResponseWriter, r *http.Request) {
-	s.writeProblemCode(w, http.StatusNotFound, "project.not_found", "project not found", fmt.Sprintf("project %q is not registered in the seed daemon", chi.URLParam(r, "projectId")))
+	projectID, ok := s.projectIDParam(w, r)
+	if !ok {
+		return
+	}
+	if s.projects == nil {
+		s.writeProblemCode(w, http.StatusNotFound, "project.not_found", "project not found", fmt.Sprintf("project %q is not registered in the seed daemon", projectID))
+		return
+	}
+	project, err := s.projects.Project(r.Context(), projectID)
+	if err != nil {
+		s.writeProjectError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, project)
 }
 
 func (s *server) handleProjectReadiness(w http.ResponseWriter, r *http.Request) {
+	projectID, ok := s.projectIDParam(w, r)
+	if !ok {
+		return
+	}
+	if s.projects != nil {
+		readiness, err := s.projects.Readiness(r.Context(), projectID)
+		if err != nil {
+			s.writeProjectError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, readiness)
+		return
+	}
 	state := schemas.ProjectLifecycleStateImported
 	detail := "project registry adapter is not configured in the seed daemon"
 	writeJSON(w, http.StatusOK, schemas.ProjectReadiness{
 		SchemaVersion:         schemaVersion,
-		ProjectId:             chi.URLParam(r, "projectId"),
+		ProjectId:             projectID,
 		CheckedAt:             s.now().UTC(),
 		CurrentLifecycleState: &state,
 		Gates: []schemas.ProjectReadinessGate{{
@@ -191,6 +231,52 @@ func (s *server) handleProjectReadiness(w http.ResponseWriter, r *http.Request) 
 			}},
 		}},
 	})
+}
+
+func (s *server) projectIDParam(w http.ResponseWriter, r *http.Request) (string, bool) {
+	projectID := strings.TrimSpace(chi.URLParam(r, "projectId"))
+	if !validProjectID(projectID) {
+		s.writeProblemCode(w, http.StatusBadRequest, "projects.invalid_id", "invalid project id", "projectId must be 1-128 characters of letters, numbers, dot, dash, or underscore")
+		return "", false
+	}
+	return projectID, true
+}
+
+func validProjectID(projectID string) bool {
+	if projectID == "" || len(projectID) > 128 {
+		return false
+	}
+	for _, r := range projectID {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '.' || r == '-' || r == '_' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func (s *server) handleProjectCreate(w http.ResponseWriter, r *http.Request) {
+	if s.projects == nil {
+		s.writeProblemCode(w, http.StatusNotImplemented, "projects.create.unavailable", "endpoint unavailable", "project registry is not configured")
+		return
+	}
+	var body schemas.ProjectCreateRequest
+	if err := decodeRequiredJSON(r, &body); err != nil {
+		s.writeProblemCode(w, http.StatusBadRequest, "request.invalid_json", "invalid request body", err.Error())
+		return
+	}
+	request := projects.ImportRequest{ProjectCreateRequest: body}
+	request.IdempotencyKey = strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	if request.IdempotencyKey == "" {
+		s.writeProblemCode(w, http.StatusBadRequest, "idempotency.required", "idempotency key required", "POST /v1/projects requires Idempotency-Key")
+		return
+	}
+	project, err := s.projects.Import(r.Context(), request)
+	if err != nil {
+		s.writeProjectError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, project)
 }
 
 func (s *server) handlePlans(w http.ResponseWriter, _ *http.Request) {
@@ -260,6 +346,31 @@ func (s *server) writeJobError(w http.ResponseWriter, err error) {
 	default:
 		s.writeProblemCode(w, http.StatusInternalServerError, "jobs.error", "job request failed", err.Error())
 	}
+}
+
+func (s *server) writeProjectError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, projects.ErrNotFound):
+		s.writeProblemCode(w, http.StatusNotFound, "project.not_found", "project not found", err.Error())
+	case errors.Is(err, projects.ErrInvalidRequest):
+		s.writeProblemCode(w, http.StatusBadRequest, "projects.invalid_request", "invalid project request", err.Error())
+	case errors.Is(err, projects.ErrNotGitRepo):
+		s.writeProblemCode(w, http.StatusUnprocessableEntity, "projects.not_git_repo", "not a git repository", err.Error())
+	case errors.Is(err, projects.ErrMissingOrigin):
+		s.writeProblemCode(w, http.StatusUnprocessableEntity, "projects.missing_origin", "origin remote required", err.Error())
+	case errors.Is(err, projects.ErrDetachedHead):
+		s.writeProblemCode(w, http.StatusUnprocessableEntity, "projects.detached_head", "branch required", err.Error())
+	case errors.Is(err, projects.ErrIdempotencyConflict):
+		s.writeProblemCode(w, http.StatusConflict, "idempotency.conflict", "idempotency key conflict", err.Error())
+	case errors.Is(err, projects.ErrCommandFailed):
+		s.writeProblemCode(w, http.StatusBadGateway, "projects.command_failed", "project command failed", err.Error())
+	default:
+		s.writeProblemCode(w, http.StatusInternalServerError, "projects.error", "project request failed", err.Error())
+	}
+}
+
+func pageMeta(total int) schemas.PageMeta {
+	return schemas.PageMeta{HasMore: false, Total: &total}
 }
 
 func decodeOptionalJSON(r *http.Request, target any) error {

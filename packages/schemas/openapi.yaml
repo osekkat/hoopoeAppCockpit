@@ -175,6 +175,29 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ProjectListResponse' }
         default: { $ref: '#/components/responses/Problem' }
+    post:
+      tags: [Projects]
+      operationId: createProject
+      summary: Import an existing VPS checkout into Hoopoe.
+      description: |
+        Registers a project rooted at an existing VPS Git checkout. Hoopoe v1
+        requires an origin remote, initializes `.hoopoe/`, runs `br init` when
+        `.beads/` is missing, records detected project tools, and returns the
+        persisted project registry row.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProjectCreateRequest' }
+      responses:
+        '201':
+          description: Project imported.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Project' }
+        default: { $ref: '#/components/responses/Problem' }
 
   /v1/projects/{projectId}:
     parameters:
@@ -1150,6 +1173,36 @@ components:
           type: string
           description: 'Read-only sync mirror path on the desktop (§7.7).'
         lastFetchedAt: { type: string, format: date-time }
+
+    ProjectCreateRequest:
+      type: object
+      description: |
+        Request body for importing an existing project checkout into the daemon
+        registry. `Idempotency-Key` is supplied as an HTTP header, not in this
+        JSON body.
+      required: [rootPath]
+      properties:
+        id:
+          type: string
+          description: 'Optional stable project ID override; omitted values are daemon-generated.'
+        name:
+          type: string
+          description: 'Optional display name; defaults to the project root basename.'
+        slug:
+          type: string
+          description: 'Optional route-safe slug; defaults to a slugified name.'
+        rootPath:
+          type: string
+          description: 'Absolute path to an existing VPS Git checkout.'
+        vpsId:
+          type: string
+          description: 'Optional VPS host ID; defaults to the local daemon host.'
+        desktopMirrorPath:
+          type: string
+          description: 'Read-only desktop sync mirror path once the desktop clone is created.'
+        allowNoLanguageManifest:
+          type: boolean
+          description: 'Permit documentation-only repos without package manifests during readiness checks.'
 
     Project:
       type: object

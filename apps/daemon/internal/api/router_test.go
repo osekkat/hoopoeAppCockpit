@@ -2,15 +2,21 @@ package api
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	jobstore "github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/jobs"
+	projectstore "github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/projects"
 	schemas "github.com/hoopoe-cockpit/hoopoe/packages/schemas/go"
+	_ "modernc.org/sqlite"
 	"nhooyr.io/websocket"
 )
 
@@ -165,6 +171,99 @@ func TestSeedWriteEndpointAcceptsIdempotencyKeyAndReturnsGeneratedProblem(t *tes
 	}
 	if body.Code != "bootstrap.acfs.start.unavailable" || body.Status != http.StatusNotImplemented {
 		t.Fatalf("unexpected problem: %+v", body)
+	}
+}
+
+func TestProjectRoutesUseRegistry(t *testing.T) {
+	root := t.TempDir()
+	writeRouterTestFile(t, filepath.Join(root, "AGENTS.md"), "agent instructions\n")
+	writeRouterTestFile(t, filepath.Join(root, "README.md"), "readme\n")
+	writeRouterTestFile(t, filepath.Join(root, "go.mod"), "module example.invalid/api\n\ngo 1.26\n")
+	service := newRouterProjectService(t, root)
+	router := NewRouter(Config{
+		Projects: service,
+		Now: func() time.Time {
+			return time.Date(2026, 5, 4, 0, 0, 0, 0, time.UTC)
+		},
+	})
+	body, err := json.Marshal(map[string]string{
+		"id":       "proj_api",
+		"name":     "API Project",
+		"rootPath": root,
+	})
+	if err != nil {
+		t.Fatalf("marshal project request: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Idempotency-Key", "idem-api")
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	var created schemas.Project
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode created project: %v", err)
+	}
+	if created.Id != "proj_api" || created.Repo.Origin != "https://example.invalid/api.git" {
+		t.Fatalf("created project = %+v", created)
+	}
+
+	for _, tc := range []struct {
+		name   string
+		path   string
+		target any
+	}{
+		{
+			name:   "list",
+			path:   "/v1/projects",
+			target: &schemas.ProjectListResponse{},
+		},
+		{
+			name:   "get",
+			path:   "/v1/projects/proj_api",
+			target: &schemas.Project{},
+		},
+		{
+			name:   "readiness",
+			path:   "/v1/projects/proj_api/readiness",
+			target: &schemas.ProjectReadiness{},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			rec := httptest.NewRecorder()
+
+			router.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), tc.target); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+		})
+	}
+
+	readinessReq := httptest.NewRequest(http.MethodGet, "/v1/projects/proj_api/readiness", nil)
+	readinessRec := httptest.NewRecorder()
+	router.ServeHTTP(readinessRec, readinessReq)
+	var readiness schemas.ProjectReadiness
+	if err := json.Unmarshal(readinessRec.Body.Bytes(), &readiness); err != nil {
+		t.Fatalf("decode readiness: %v", err)
+	}
+	if len(readiness.Gates) != 1 || !readiness.Gates[0].Satisfied {
+		t.Fatalf("readiness = %+v, want satisfied", readiness)
+	}
+
+	missingReq := httptest.NewRequest(http.MethodGet, "/v1/projects/proj_missing", nil)
+	missingRec := httptest.NewRecorder()
+	router.ServeHTTP(missingRec, missingReq)
+	if missingRec.Code != http.StatusNotFound {
+		t.Fatalf("missing status = %d, want %d; body=%s", missingRec.Code, http.StatusNotFound, missingRec.Body.String())
 	}
 }
 
@@ -582,6 +681,64 @@ type staticJobReader struct {
 	jobs      []jobstore.Job
 	logs      map[string][]byte
 	artifacts map[string][]jobstore.Artifact
+}
+
+type routerProjectRunner struct {
+	root string
+}
+
+func (r routerProjectRunner) Run(_ context.Context, dir string, argv []string) (projectstore.CommandResult, error) {
+	switch {
+	case reflect.DeepEqual(argv, []string{"git", "rev-parse", "--is-inside-work-tree"}):
+		if filepath.Clean(dir) != filepath.Clean(r.root) {
+			return projectstore.CommandResult{ExitCode: 1}, nil
+		}
+		return projectstore.CommandResult{Stdout: []byte("true\n")}, nil
+	case reflect.DeepEqual(argv, []string{"git", "remote", "get-url", "origin"}):
+		return projectstore.CommandResult{Stdout: []byte("https://example.invalid/api.git\n")}, nil
+	case reflect.DeepEqual(argv, []string{"git", "branch", "--show-current"}):
+		return projectstore.CommandResult{Stdout: []byte("main\n")}, nil
+	case reflect.DeepEqual(argv, []string{"br", "init"}):
+		if err := os.MkdirAll(filepath.Join(dir, ".beads"), 0o755); err != nil {
+			return projectstore.CommandResult{}, err
+		}
+		return projectstore.CommandResult{}, nil
+	default:
+		return projectstore.CommandResult{ExitCode: 127, Stderr: []byte("unexpected command")}, nil
+	}
+}
+
+func newRouterProjectService(t *testing.T, root string) *projectstore.Service {
+	t.Helper()
+	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "projects.db"))
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = db.Close()
+	})
+	store, err := projectstore.NewSQLStore(context.Background(), db)
+	if err != nil {
+		t.Fatalf("new project store: %v", err)
+	}
+	service, err := projectstore.NewService(projectstore.ServiceConfig{
+		Store:  store,
+		Runner: routerProjectRunner{root: root},
+		Now: func() time.Time {
+			return time.Date(2026, 5, 4, 0, 0, 0, 0, time.UTC)
+		},
+	})
+	if err != nil {
+		t.Fatalf("new project service: %v", err)
+	}
+	return service
+}
+
+func writeRouterTestFile(t *testing.T, path string, body string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
 }
 
 func (r staticJobReader) List(context.Context, jobstore.ListFilter) ([]jobstore.Job, error) {

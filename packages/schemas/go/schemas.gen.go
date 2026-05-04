@@ -1381,6 +1381,32 @@ type Project struct {
 	VpsId string `json:"vpsId"`
 }
 
+// ProjectCreateRequest Request body for importing an existing project checkout into the daemon
+// registry. `Idempotency-Key` is supplied as an HTTP header, not in this
+// JSON body.
+type ProjectCreateRequest struct {
+	// AllowNoLanguageManifest Permit documentation-only repos without package manifests during readiness checks.
+	AllowNoLanguageManifest *bool `json:"allowNoLanguageManifest,omitempty"`
+
+	// DesktopMirrorPath Read-only desktop sync mirror path once the desktop clone is created.
+	DesktopMirrorPath *string `json:"desktopMirrorPath,omitempty"`
+
+	// Id Optional stable project ID override; omitted values are daemon-generated.
+	Id *string `json:"id,omitempty"`
+
+	// Name Optional display name; defaults to the project root basename.
+	Name *string `json:"name,omitempty"`
+
+	// RootPath Absolute path to an existing VPS Git checkout.
+	RootPath string `json:"rootPath"`
+
+	// Slug Optional route-safe slug; defaults to a slugified name.
+	Slug *string `json:"slug,omitempty"`
+
+	// VpsId Optional VPS host ID; defaults to the local daemon host.
+	VpsId *string `json:"vpsId,omitempty"`
+}
+
 // ProjectGate Named gate per §4.2. Used to key `ProjectReadiness.gates`.
 type ProjectGate string
 
@@ -1816,6 +1842,16 @@ type ListProjectsParams struct {
 	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
+// CreateProjectParams defines parameters for CreateProject.
+type CreateProjectParams struct {
+	// IdempotencyKey Stable client-generated key (ULID/UUID) for safe retries. The daemon
+	// dedupes by key within a sliding window (default 24h) and replays the
+	// original status + body. Required on retryable writes; clients that omit
+	// it on a write that turns out to be retryable will receive a
+	// `precondition-failed` problem on the second attempt.
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
 // ListApprovalsParams defines parameters for ListApprovals.
 type ListApprovalsParams struct {
 	// State Filter by approval state.
@@ -1890,6 +1926,9 @@ type DestroyProviderInstanceParams struct {
 
 // CancelJobJSONRequestBody defines body for CancelJob for application/json ContentType.
 type CancelJobJSONRequestBody = JobCancelRequest
+
+// CreateProjectJSONRequestBody defines body for CreateProject for application/json ContentType.
+type CreateProjectJSONRequestBody = ProjectCreateRequest
 
 // ApproveApprovalJSONRequestBody defines body for ApproveApproval for application/json ContentType.
 type ApproveApprovalJSONRequestBody = ApprovalDecisionRequest
