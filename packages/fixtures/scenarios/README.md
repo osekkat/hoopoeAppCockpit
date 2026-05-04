@@ -1,6 +1,6 @@
 # Mock Flywheel Scenario Goldens
 
-Each of the five active Section 8.8 scenarios has a `.goldens/` directory with three frozen artifacts:
+Each active Section 8.8 scenario has a `.goldens/` directory with three frozen artifacts:
 
 - `scenario-source.first-read.json` records the canonical output of `loadTendingScenario()`.
 - `event-stream.ndjson` records the instant replay order plus final cursor maps from `startReplay()`.

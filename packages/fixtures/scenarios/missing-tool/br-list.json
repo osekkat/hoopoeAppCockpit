@@ -1,0 +1,15 @@
+{
+  "issues": [
+    {
+      "id": "hp-zql",
+      "title": "[test] missing tending fixture missing-tool",
+      "description": "Fixture scenario bead used to prove required tool absence blocks tending jobs.",
+      "status": "blocked",
+      "priority": 1,
+      "issue_type": "task",
+      "created_at": "2026-05-02T23:33:12Z",
+      "updated_at": "2026-05-02T23:33:12Z"
+    }
+  ],
+  "total": 1
+}

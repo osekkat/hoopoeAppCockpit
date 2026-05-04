@@ -1,0 +1,9 @@
+{
+  "kind": "synthetic",
+  "scenario": "missing-tool",
+  "fixturesVersion": "phase0-2026-05-02",
+  "capturedAt": "2026-05-02T23:33:12Z",
+  "vpsId": "mock-flywheel",
+  "source": "hand-written hp-zql missing-tool tending fixture",
+  "notes": "NTM is absent from PATH. Required NTM capabilities are missing, so tend-swarm blocks instead of waking an agent or silently continuing."
+}

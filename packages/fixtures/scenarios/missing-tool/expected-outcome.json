@@ -1,0 +1,40 @@
+{
+  "meta": {
+    "kind": "synthetic",
+    "scenario": "missing-tool",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-02T23:33:12Z",
+    "vpsId": "mock-flywheel",
+    "source": "hand-written hp-zql missing-tool tending fixture",
+    "notes": "Required NTM capability is absent. The job blocks deterministically and surfaces a warning without waking an LLM."
+  },
+  "detections": [
+    {
+      "kind": "tool.missing",
+      "payload": {
+        "tool": "ntm",
+        "reason": "missing binary on PATH: ntm"
+      }
+    },
+    {
+      "kind": "capability.missing_required",
+      "payload": {
+        "jobId": "tend-swarm",
+        "capability": "ntm.robot.snapshot"
+      }
+    }
+  ],
+  "wakeAgent": false,
+  "approvalsRequested": [],
+  "postconditions": [
+    {
+      "check": "tend-swarm.state == BLOCKED",
+      "expect": true
+    },
+    {
+      "check": "activity.warning_emitted",
+      "expect": true
+    }
+  ],
+  "activityBehavior": "surface"
+}

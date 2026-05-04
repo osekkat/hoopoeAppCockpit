@@ -1,0 +1,308 @@
+{
+  "agentMailDump": {
+    "messages": [
+      {
+        "ack_required": false,
+        "body_md": "tend-swarm cannot run because ntm.robot.snapshot is missing.",
+        "from": "orchestrator",
+        "id": "msg-missing-tool-001",
+        "sent_at": "2026-05-02T23:33:13Z",
+        "subject": "[hp-zql] Missing NTM capability blocks tending",
+        "thread_id": "hp-zql",
+        "to": [
+          "HoopoeCOD3"
+        ]
+      }
+    ],
+    "threads": [
+      {
+        "id": "hp-zql",
+        "message_count": 1,
+        "subject": "[hp-zql] Missing NTM capability blocks tending"
+      }
+    ],
+    "unread_total": 0
+  },
+  "brList": {
+    "issues": [
+      {
+        "created_at": "2026-05-02T23:33:12Z",
+        "description": "Fixture scenario bead used to prove required tool absence blocks tending jobs.",
+        "id": "hp-zql",
+        "issue_type": "task",
+        "priority": 1,
+        "status": "blocked",
+        "title": "[test] missing tending fixture missing-tool",
+        "updated_at": "2026-05-02T23:33:12Z"
+      }
+    ],
+    "total": 1
+  },
+  "buildLogs": [
+    {
+      "runId": "run-006",
+      "text": "2026-05-02T23:33:12Z tend-swarm pre-script start\nrequired capability ntm.robot.snapshot: missing\ntend-swarm blocked before agent wake\n"
+    }
+  ],
+  "bvTriage": {
+    "data_hash": "missing-tool-synthetic",
+    "generated_at": "2026-05-02T23:33:12Z",
+    "triage": {
+      "meta": {
+        "compute_time_ms": 1,
+        "generated_at": "2026-05-02T23:33:12Z",
+        "issue_count": 1,
+        "phase2_ready": false,
+        "version": "1.0.0"
+      },
+      "quick_ref": {
+        "actionable_count": 0,
+        "blocked_count": 1,
+        "in_progress_count": 0,
+        "open_count": 1,
+        "top_picks": []
+      },
+      "recommendations": []
+    }
+  },
+  "capabilities": {
+    "agent_mail": {
+      "agent_mail.messages.read": {
+        "status": "ok"
+      },
+      "agent_mail.messages.send": {
+        "status": "ok"
+      },
+      "agent_mail.reservations.list": {
+        "status": "ok"
+      }
+    },
+    "br": {
+      "br.dep.add": {
+        "status": "ok"
+      },
+      "br.issues.read": {
+        "status": "ok"
+      },
+      "br.issues.update": {
+        "status": "ok"
+      },
+      "br.sync.flush_only": {
+        "status": "ok"
+      }
+    },
+    "bv": {
+      "bv.robot.diff": {
+        "status": "ok"
+      },
+      "bv.robot.insights": {
+        "status": "ok"
+      },
+      "bv.robot.plan": {
+        "status": "ok"
+      },
+      "bv.robot.triage": {
+        "status": "ok"
+      },
+      "bv.tui": {
+        "notes": "Guardrail 1: bare bv launches TUI; never invoked",
+        "status": "blocked-by-policy"
+      }
+    },
+    "caam": {},
+    "casr": {},
+    "caut": {},
+    "dcg": {},
+    "git": {
+      "git.diff.read": {
+        "status": "ok"
+      },
+      "git.push": {
+        "notes": "snapshot script never pushes",
+        "status": "blocked-by-policy"
+      },
+      "git.status.read": {
+        "status": "ok"
+      },
+      "git.unpushed.list": {
+        "status": "ok"
+      }
+    },
+    "health": {
+      "health.complexity": {
+        "status": "untested"
+      },
+      "health.coverage": {
+        "status": "untested"
+      }
+    },
+    "jfp": {},
+    "jsm": {},
+    "ntm": {
+      "ntm.robot.snapshot": {
+        "notes": "missing binary on PATH: ntm",
+        "status": "missing"
+      },
+      "ntm.robot.status": {
+        "notes": "missing binary on PATH: ntm",
+        "status": "missing"
+      },
+      "ntm.robot.tail": {
+        "notes": "missing binary on PATH: ntm",
+        "status": "missing"
+      }
+    },
+    "oracle": {},
+    "pt": {},
+    "sbh": {},
+    "srp": {},
+    "ubs": {}
+  },
+  "events": [
+    {
+      "channel": "capabilities",
+      "payload": {
+        "capability": "ntm.robot.snapshot",
+        "requiredBy": [
+          "tend-swarm"
+        ],
+        "status": "missing",
+        "tool": "ntm"
+      },
+      "seq": 1,
+      "ts": "2026-05-02T23:33:12Z",
+      "type": "capability.changed"
+    },
+    {
+      "channel": "tending",
+      "payload": {
+        "jobId": "tend-swarm",
+        "missingCapabilities": [
+          "ntm.robot.snapshot"
+        ],
+        "reason": "missing required capability"
+      },
+      "seq": 2,
+      "ts": "2026-05-02T23:33:13Z",
+      "type": "tending.job_blocked"
+    },
+    {
+      "channel": "activity",
+      "payload": {
+        "severity": "warning",
+        "summary": "tend-swarm blocked: NTM is missing"
+      },
+      "seq": 3,
+      "ts": "2026-05-02T23:33:14Z",
+      "type": "activity.warning"
+    }
+  ],
+  "expectedOutcome": {
+    "activityBehavior": "surface",
+    "approvalsRequested": [],
+    "detections": [
+      {
+        "kind": "tool.missing",
+        "payload": {
+          "reason": "missing binary on PATH: ntm",
+          "tool": "ntm"
+        }
+      },
+      {
+        "kind": "capability.missing_required",
+        "payload": {
+          "capability": "ntm.robot.snapshot",
+          "jobId": "tend-swarm"
+        }
+      }
+    ],
+    "meta": {
+      "capturedAt": "<scrubbed-captured-at>",
+      "fixturesVersion": "phase0-2026-05-02",
+      "kind": "synthetic",
+      "notes": "Required NTM capability is absent. The job blocks deterministically and surfaces a warning without waking an LLM.",
+      "scenario": "missing-tool",
+      "source": "hand-written hp-zql missing-tool tending fixture",
+      "vpsId": "mock-flywheel"
+    },
+    "postconditions": [
+      {
+        "check": "tend-swarm.state == BLOCKED",
+        "expect": true
+      },
+      {
+        "check": "activity.warning_emitted",
+        "expect": true
+      }
+    ],
+    "wakeAgent": false
+  },
+  "id": "missing-tool",
+  "meta": {
+    "capturedAt": "<scrubbed-captured-at>",
+    "fixturesVersion": "phase0-2026-05-02",
+    "kind": "synthetic",
+    "notes": "NTM is absent from PATH. Required NTM capabilities are missing, so tend-swarm blocks instead of waking an agent or silently continuing.",
+    "scenario": "missing-tool",
+    "source": "hand-written hp-zql missing-tool tending fixture",
+    "vpsId": "mock-flywheel"
+  },
+  "ntmSnapshot": {
+    "counters": {
+      "alive": 0,
+      "errored": 0,
+      "panes": 0,
+      "sessions": 0,
+      "wedged": 0
+    },
+    "error": {
+      "kind": "missing_tool",
+      "message": "missing binary on PATH: ntm",
+      "tool": "ntm"
+    },
+    "sessions": []
+  },
+  "paneLogs": [
+    {
+      "agent": "GreenBear",
+      "bytes": {
+        "encoding": "base64",
+        "data": "R3JlZW5CZWFyIGlkbGUuIE5UTSB1bmF2YWlsYWJsZTsgbm8gcGFuZSB0YWlsIGNhbiBiZSBjYXB0dXJlZC4K"
+      }
+    }
+  ],
+  "reservations": {
+    "conflicts": [],
+    "reservations": []
+  },
+  "rootPath": "<fixtures-root>/scenarios/missing-tool",
+  "toolsDegraded": {
+    "degraded": [],
+    "missing": [
+      {
+        "capability": "ntm.robot.snapshot",
+        "reason": "missing binary on PATH: ntm",
+        "requiredBy": [
+          "tend-swarm"
+        ],
+        "tool": "ntm"
+      },
+      {
+        "capability": "ntm.robot.status",
+        "reason": "missing binary on PATH: ntm",
+        "requiredBy": [
+          "tend-swarm"
+        ],
+        "tool": "ntm"
+      },
+      {
+        "capability": "ntm.robot.tail",
+        "reason": "missing binary on PATH: ntm",
+        "requiredBy": [
+          "tend-swarm"
+        ],
+        "tool": "ntm"
+      }
+    ]
+  }
+}

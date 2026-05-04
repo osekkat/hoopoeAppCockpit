@@ -1,0 +1,29 @@
+{
+  "missing": [
+    {
+      "tool": "ntm",
+      "capability": "ntm.robot.snapshot",
+      "requiredBy": [
+        "tend-swarm"
+      ],
+      "reason": "missing binary on PATH: ntm"
+    },
+    {
+      "tool": "ntm",
+      "capability": "ntm.robot.status",
+      "requiredBy": [
+        "tend-swarm"
+      ],
+      "reason": "missing binary on PATH: ntm"
+    },
+    {
+      "tool": "ntm",
+      "capability": "ntm.robot.tail",
+      "requiredBy": [
+        "tend-swarm"
+      ],
+      "reason": "missing binary on PATH: ntm"
+    }
+  ],
+  "degraded": []
+}

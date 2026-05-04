@@ -1,0 +1,24 @@
+{
+  "messages": [
+    {
+      "id": "msg-missing-tool-001",
+      "thread_id": "hp-zql",
+      "from": "orchestrator",
+      "to": [
+        "HoopoeCOD3"
+      ],
+      "subject": "[hp-zql] Missing NTM capability blocks tending",
+      "body_md": "tend-swarm cannot run because ntm.robot.snapshot is missing.",
+      "sent_at": "2026-05-02T23:33:13Z",
+      "ack_required": false
+    }
+  ],
+  "threads": [
+    {
+      "id": "hp-zql",
+      "subject": "[hp-zql] Missing NTM capability blocks tending",
+      "message_count": 1
+    }
+  ],
+  "unread_total": 0
+}

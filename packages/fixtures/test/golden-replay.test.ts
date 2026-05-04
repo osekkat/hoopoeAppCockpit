@@ -18,6 +18,7 @@ const SCENARIOS = [
   "wedged-pane",
   "rate-limited-no-caam",
   "rate-limited-with-caam",
+  "missing-tool",
 ] as const;
 
 const PROJECT_ID = "mock-flywheel-project";

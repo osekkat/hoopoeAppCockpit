@@ -1,0 +1,15 @@
+{
+  "sessions": [],
+  "counters": {
+    "sessions": 0,
+    "panes": 0,
+    "alive": 0,
+    "wedged": 0,
+    "errored": 0
+  },
+  "error": {
+    "kind": "missing_tool",
+    "tool": "ntm",
+    "message": "missing binary on PATH: ntm"
+  }
+}

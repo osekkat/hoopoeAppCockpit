@@ -1,0 +1,5 @@
+{"event":{"channel":"capabilities","payload":{"capability":"ntm.robot.snapshot","requiredBy":["tend-swarm"],"status":"missing","tool":"ntm"},"seq":1,"ts":"2026-05-02T23:33:12Z","type":"capability.changed"},"index":0,"kind":"event"}
+{"event":{"channel":"tending","payload":{"jobId":"tend-swarm","missingCapabilities":["ntm.robot.snapshot"],"reason":"missing required capability"},"seq":2,"ts":"2026-05-02T23:33:13Z","type":"tending.job_blocked"},"index":1,"kind":"event"}
+{"event":{"channel":"activity","payload":{"severity":"warning","summary":"tend-swarm blocked: NTM is missing"},"seq":3,"ts":"2026-05-02T23:33:14Z","type":"activity.warning"},"index":2,"kind":"event"}
+{"cursors":{"activity":3,"capabilities":1,"tending":2},"kind":"end-cursors"}
+{"cursors":{"activity":3,"capabilities":1,"tending":2},"kind":"derived-cursors"}
