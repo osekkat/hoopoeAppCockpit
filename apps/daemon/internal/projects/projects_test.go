@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/modelcontext"
 	schemas "github.com/hoopoe-cockpit/hoopoe/packages/schemas/go"
 	_ "modernc.org/sqlite"
 )
@@ -103,6 +104,17 @@ func TestServiceImportInitializesHoopoeBeadsAndRegistry(t *testing.T) {
 	}
 	if projectJSON.Project.ID != project.Id || projectJSON.Project.Slug != "hoopoe-test" {
 		t.Fatalf("project.json = %+v, want imported project metadata", projectJSON.Project)
+	}
+	policyFile, err := modelcontext.LoadPolicyFile(filepath.Join(root, ".hoopoe", "model-context-policy.json"))
+	if err != nil {
+		t.Fatalf("load model-context policy: %v", err)
+	}
+	if policyFile.ContextPolicy.RawSourceMode != modelcontext.RawSourceSummariesOnly {
+		t.Fatalf("raw source mode = %q, want %q", policyFile.ContextPolicy.RawSourceMode, modelcontext.RawSourceSummariesOnly)
+	}
+	tendingPolicy := policyFile.ContextPolicy.ForStage(modelcontext.StageTending)
+	if tendingPolicy.SecretHandling != modelcontext.SecretHandlingBlock || tendingPolicy.RawSourceMode != modelcontext.RawSourceNever {
+		t.Fatalf("tending policy = %+v, want blocked secrets and no raw source", tendingPolicy)
 	}
 	listed, err := service.List(context.Background())
 	if err != nil {

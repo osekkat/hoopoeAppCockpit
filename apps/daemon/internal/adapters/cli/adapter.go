@@ -4,9 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/modelcontext"
 )
 
 var (
@@ -93,7 +97,12 @@ func (a *Adapter) Run(ctx context.Context, req RunRequest, onChunk func(StreamCh
 		result.Error = err.Error()
 		return result, err
 	}
-	manifest := a.contextManifest(req, result, started)
+	manifest, err := a.contextManifest(req, result, started)
+	if err != nil {
+		result.CompletedAt = nowUTC(now)
+		result.Error = err.Error()
+		return result, err
+	}
 	manifestBytes, manifestHash, err := digestJSON(manifest)
 	if err != nil {
 		result.CompletedAt = nowUTC(now)
@@ -102,6 +111,15 @@ func (a *Adapter) Run(ctx context.Context, req RunRequest, onChunk func(StreamCh
 	}
 	result.InputSHA256 = manifest.InputSHA256
 	result.ManifestSHA256 = manifestHash
+	projectManifestRef, err := a.writeProjectContextManifest(ctx, req, manifest)
+	if err != nil {
+		result.CompletedAt = nowUTC(now)
+		result.Error = err.Error()
+		return result, err
+	}
+	if projectManifestRef.Written {
+		result.Artifacts = append(result.Artifacts, projectManifestRef)
+	}
 
 	if err := a.recordAudit(ctx, AuditEvent{
 		Type:           AuditModelCallStarted,
@@ -143,7 +161,7 @@ func (a *Adapter) Run(ctx context.Context, req RunRequest, onChunk func(StreamCh
 	}
 
 	artifactRefs, artifactErr := a.writeArtifacts(ctx, req, result, manifestBytes)
-	result.Artifacts = artifactRefs
+	result.Artifacts = append(result.Artifacts, artifactRefs...)
 	if artifactErr != nil && runErr == nil {
 		runErr = artifactErr
 	}
@@ -199,17 +217,90 @@ func (a *Adapter) accountEnv(ctx context.Context, accountID string) ([]string, e
 	return env, nil
 }
 
-func (a *Adapter) contextManifest(req RunRequest, result RunResult, started time.Time) ContextManifest {
-	manifest := req.Context
-	manifest.Harness = a.Config.Harness
-	manifest.Model = result.Model
-	manifest.AccountID = result.AccountID
-	if strings.TrimSpace(manifest.PolicyRule) == "" {
-		manifest.PolicyRule = "subscription_cli_only"
+func (a *Adapter) contextManifest(req RunRequest, result RunResult, started time.Time) (modelcontext.Manifest, error) {
+	policy, err := a.contextPolicy(req)
+	if err != nil {
+		return modelcontext.Manifest{}, err
 	}
-	manifest.InputSHA256 = digestBytes([]byte(req.Prompt))
-	manifest.GeneratedAt = started
-	return manifest
+	stage := req.ContextStage
+	if stage == "" {
+		stage = modelcontext.StagePlanning
+	}
+	policyRule := strings.TrimSpace(req.Context.PolicyRule)
+	if policyRule == "" {
+		policyRule = "subscription_cli_only"
+	}
+	resultManifest, err := modelcontext.Evaluate(policy, modelcontext.EvaluationRequest{
+		Stage:      stage,
+		Harness:    string(a.Config.Harness),
+		Model:      result.Model,
+		AccountID:  result.AccountID,
+		PolicyRule: policyRule,
+		Prompt:     []byte(req.Prompt),
+		Sources:    modelContextSources(req),
+		Now:        func() time.Time { return started },
+	})
+	if err != nil {
+		return modelcontext.Manifest{}, err
+	}
+	return resultManifest.Manifest, nil
+}
+
+func (a *Adapter) contextPolicy(req RunRequest) (modelcontext.Policy, error) {
+	if req.ContextPolicy != nil {
+		return *req.ContextPolicy, nil
+	}
+	if strings.TrimSpace(req.WorkDir) == "" {
+		return modelcontext.DefaultPolicy(), nil
+	}
+	policyFile, err := modelcontext.LoadPolicyFile(filepath.Join(req.WorkDir, ".hoopoe", "model-context-policy.json"))
+	if err == nil {
+		return policyFile.ContextPolicy, nil
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		return modelcontext.DefaultPolicy(), nil
+	}
+	return modelcontext.Policy{}, err
+}
+
+func (a *Adapter) writeProjectContextManifest(ctx context.Context, req RunRequest, manifest modelcontext.Manifest) (ArtifactRef, error) {
+	if strings.TrimSpace(req.WorkDir) == "" {
+		return ArtifactRef{}, nil
+	}
+	ref, err := (modelcontext.ManifestStore{ProjectRoot: req.WorkDir}).Write(ctx, manifest)
+	if err != nil {
+		return ArtifactRef{}, err
+	}
+	return ArtifactRef{
+		Kind:    ArtifactContextManifest,
+		Path:    ref.Path,
+		SHA256:  strings.TrimPrefix(ref.SHA256, "sha256:"),
+		Size:    ref.Size,
+		Written: ref.Written,
+	}, nil
+}
+
+func modelContextSources(req RunRequest) []modelcontext.Source {
+	sources := append([]modelcontext.Source(nil), req.ContextSources...)
+	for _, sourceRef := range req.Context.SourceRefs {
+		sourceRef = strings.TrimSpace(sourceRef)
+		if sourceRef == "" {
+			continue
+		}
+		source := modelcontext.Source{Kind: "source_ref", Path: sourceRef}
+		if strings.Contains(sourceRef, "://") {
+			source.Path = ""
+			source.URI = sourceRef
+		}
+		sources = append(sources, source)
+	}
+	for _, artifact := range req.Context.InputArtifacts {
+		if strings.TrimSpace(artifact.Path) == "" {
+			continue
+		}
+		sources = append(sources, modelcontext.Source{Kind: string(artifact.Kind), Path: artifact.Path})
+	}
+	return sources
 }
 
 func (a *Adapter) commandSpec(req RunRequest, accountEnv []string) (CommandSpec, error) {

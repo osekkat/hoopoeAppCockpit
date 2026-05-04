@@ -3,23 +3,32 @@ package cli
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/modelcontext"
 )
 
 type fakeExecutor struct {
-	specs  []CommandSpec
-	chunks []StreamChunk
-	result CommandResult
-	err    error
+	specs     []CommandSpec
+	chunks    []StreamChunk
+	result    CommandResult
+	err       error
+	beforeRun func() error
 }
 
 func (f *fakeExecutor) Run(_ context.Context, spec CommandSpec, onChunk func(StreamChunk) error) (CommandResult, error) {
 	f.specs = append(f.specs, spec)
+	if f.beforeRun != nil {
+		if err := f.beforeRun(); err != nil {
+			return f.result, err
+		}
+	}
 	for _, chunk := range f.chunks {
 		if onChunk != nil {
 			if err := onChunk(chunk); err != nil {
@@ -165,6 +174,59 @@ func TestRunStreamsAuditsRoutesAccountAndWritesArtifacts(t *testing.T) {
 	}
 	if string(data) != string(result.Stdout) {
 		t.Fatalf("candidate artifact mismatch: %q", data)
+	}
+}
+
+func TestRunWritesProjectContextManifestBeforeCommand(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	exec := &fakeExecutor{
+		result: CommandResult{Stdout: []byte("ok")},
+		beforeRun: func() error {
+			matches, err := filepath.Glob(filepath.Join(root, ".hoopoe", "context-manifests", "planning", "*.json"))
+			if err != nil {
+				return err
+			}
+			if len(matches) != 1 {
+				return fmt.Errorf("context manifest matches = %d, want 1", len(matches))
+			}
+			return nil
+		},
+	}
+	adapter := NewAdapter(DefaultHarnessConfigs()[1], exec)
+	result, err := adapter.Run(context.Background(), RunRequest{
+		Prompt:  "draft plan",
+		Model:   "gpt-5.2",
+		WorkDir: root,
+	}, nil)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(result.Artifacts) != 1 || !strings.HasPrefix(result.Artifacts[0].Path, ".hoopoe/context-manifests/planning/") {
+		t.Fatalf("project context manifest artifact = %+v", result.Artifacts)
+	}
+}
+
+func TestRunEnforcesModelContextPolicyBeforeCommand(t *testing.T) {
+	t.Parallel()
+	policy := modelcontext.DefaultPolicy()
+	policy.SecretHandling = modelcontext.SecretHandlingBlock
+	policy.StageDefaults = nil
+	exec := &fakeExecutor{}
+	adapter := NewAdapter(DefaultHarnessConfigs()[1], exec)
+	_, err := adapter.Run(context.Background(), RunRequest{
+		Prompt:        "review",
+		Model:         "gpt-5.2",
+		ContextPolicy: &policy,
+		ContextSources: []modelcontext.Source{
+			{Kind: "file", Path: "README.md", Content: []byte("Authorization: Bearer abcdefghijklmnopqrstuvwxyz")},
+		},
+	}, nil)
+	if !errors.Is(err, modelcontext.ErrSecretBlocked) {
+		t.Fatalf("err = %v, want ErrSecretBlocked", err)
+	}
+	if len(exec.specs) != 0 {
+		t.Fatalf("command should not run when model-context policy blocks input")
 	}
 }
 

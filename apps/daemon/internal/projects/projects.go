@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/modelcontext"
 	schemas "github.com/hoopoe-cockpit/hoopoe/packages/schemas/go"
 )
 
@@ -577,14 +578,7 @@ func InitializeHoopoeDir(root string, opts InitializeOptions) (InitializeResult,
 	}); err != nil {
 		return InitializeResult{}, err
 	}
-	if err := writeJSONFileIfMissing(filepath.Join(hoopoeDir, "model-context-policy.json"), map[string]any{
-		"schemaVersion": 1,
-		"contextPolicy": map[string]any{
-			"includeAuditLog":  false,
-			"includeFileGlobs": []string{},
-			"excludeFileGlobs": []string{".env*", "**/secrets/**"},
-		},
-	}); err != nil {
+	if err := modelcontext.WriteDefaultPolicyIfMissing(ctx, filepath.Join(hoopoeDir, "model-context-policy.json")); err != nil {
 		return InitializeResult{}, err
 	}
 	return InitializeResult{

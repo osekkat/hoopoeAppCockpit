@@ -6,7 +6,11 @@
 // import or configure direct provider SDKs.
 package cli
 
-import "time"
+import (
+	"time"
+
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/modelcontext"
+)
 
 type Harness string
 
@@ -31,16 +35,19 @@ type StreamChunk struct {
 }
 
 type RunRequest struct {
-	Prompt        string
-	Model         string
-	AccountID     string
-	MaxTokens     int
-	Timeout       time.Duration
-	WorkDir       string
-	Env           []string
-	PlanID        string
-	CandidateSlug string
-	Context       ContextManifest
+	Prompt         string
+	Model          string
+	AccountID      string
+	MaxTokens      int
+	Timeout        time.Duration
+	WorkDir        string
+	Env            []string
+	PlanID         string
+	CandidateSlug  string
+	Context        ContextManifest
+	ContextStage   modelcontext.Stage
+	ContextPolicy  *modelcontext.Policy
+	ContextSources []modelcontext.Source
 }
 
 type RunResult struct {
