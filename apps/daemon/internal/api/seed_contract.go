@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/api/vps"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/approvals"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/jobs"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/projects"
 	schemas "github.com/hoopoe-cockpit/hoopoe/packages/schemas/go"
@@ -98,9 +99,9 @@ func (s *server) mountSeedContractRoutes(r chi.Router) {
 		r.Post("/tending/actionplans", s.handleActionPlan)
 
 		r.Get("/approvals", s.handleApprovals)
-		r.Get("/approvals/{approvalId}", s.handlePlannedRead("approvals.get"))
-		r.Post("/approvals/{approvalId}/approve", s.handleApprovalDecision)
-		r.Post("/approvals/{approvalId}/deny", s.handleApprovalDecision)
+		r.Get("/approvals/{approvalId}", s.handleApproval)
+		r.Post("/approvals/{approvalId}/approve", s.handleApprovalApprove)
+		r.Post("/approvals/{approvalId}/deny", s.handleApprovalDeny)
 		r.Post("/approvals/{approvalId}/extend", s.handlePlannedWrite("approvals.extend"))
 	})
 }
@@ -304,20 +305,75 @@ func (s *server) handleBead(w http.ResponseWriter, r *http.Request) {
 	s.writeProblemCode(w, http.StatusNotFound, "bead.not_found", "bead not found", fmt.Sprintf("bead %q is not available in the seed daemon", chi.URLParam(r, "beadId")))
 }
 
-func (s *server) handleApprovals(w http.ResponseWriter, _ *http.Request) {
+func (s *server) handleApprovals(w http.ResponseWriter, r *http.Request) {
+	if s.approvals == nil {
+		s.writeProblemCode(w, http.StatusNotImplemented, "approvals.unavailable", "approvals unavailable", "the unified approval queue is not configured")
+		return
+	}
+	items, err := s.approvals.List(r.Context(), approvals.ListFilter{
+		ProjectID:      chi.URLParam(r, "projectId"),
+		IncludeExpired: true,
+	})
+	if err != nil {
+		s.writeApprovalQueueError(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, schemas.ApprovalListResponse{
-		Items: []schemas.Approval{},
-		Page:  emptyPageMeta(),
+		Items: items,
+		Page:  pageMeta(len(items)),
 	})
 }
 
-func (s *server) handleApprovalDecision(w http.ResponseWriter, r *http.Request) {
+func (s *server) handleApproval(w http.ResponseWriter, r *http.Request) {
+	if s.approvals == nil {
+		s.writeProblemCode(w, http.StatusNotImplemented, "approvals.unavailable", "approvals unavailable", "the unified approval queue is not configured")
+		return
+	}
+	approval, ok, err := (ApprovalQueueLookup{Queue: s.approvals}).LookupApproval(r.Context(), chi.URLParam(r, "approvalId"))
+	if err != nil {
+		s.writeApprovalQueueError(w, err)
+		return
+	}
+	if !ok {
+		s.writeProblemCode(w, http.StatusNotFound, "approvals.not_found", "approval not found", "approval id does not exist")
+		return
+	}
+	writeJSON(w, http.StatusOK, approval)
+}
+
+func (s *server) handleApprovalApprove(w http.ResponseWriter, r *http.Request) {
+	s.handleApprovalDecision(w, r, true)
+}
+
+func (s *server) handleApprovalDeny(w http.ResponseWriter, r *http.Request) {
+	s.handleApprovalDecision(w, r, false)
+}
+
+func (s *server) handleApprovalDecision(w http.ResponseWriter, r *http.Request, approve bool) {
+	if s.approvals == nil {
+		s.writeProblemCode(w, http.StatusNotImplemented, "approvals.unavailable", "approvals unavailable", "the unified approval queue is not configured")
+		return
+	}
 	var request schemas.ApprovalDecisionRequest
 	if err := decodeRequiredJSON(r, &request); err != nil {
 		s.writeProblemCode(w, http.StatusBadRequest, "request.invalid_json", "invalid request body", err.Error())
 		return
 	}
-	s.writeProblemCode(w, http.StatusNotImplemented, "approvals.decide_unavailable", "approval decision unavailable", "approval persistence is not configured in the seed daemon")
+	var (
+		approval schemas.Approval
+		err      error
+	)
+	approvalID := chi.URLParam(r, "approvalId")
+	if approve {
+		approval, err = s.approvals.Approve(r.Context(), approvalID, request)
+	} else {
+		approval, err = s.approvals.Deny(r.Context(), approvalID, request)
+	}
+	if err != nil {
+		s.writeApprovalQueueError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, approval)
 }
 
 func (s *server) handleActionPlan(w http.ResponseWriter, r *http.Request) {
@@ -373,6 +429,21 @@ func (s *server) writeProjectError(w http.ResponseWriter, err error) {
 		s.writeProblemCode(w, http.StatusBadGateway, "projects.command_failed", "project command failed", err.Error())
 	default:
 		s.writeProblemCode(w, http.StatusInternalServerError, "projects.error", "project request failed", err.Error())
+	}
+}
+
+func (s *server) writeApprovalQueueError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, approvals.ErrNotFound):
+		s.writeProblemCode(w, http.StatusNotFound, "approvals.not_found", "approval not found", err.Error())
+	case errors.Is(err, approvals.ErrInvalidRequest):
+		s.writeProblemCode(w, http.StatusBadRequest, "approvals.invalid_request", "invalid approval request", err.Error())
+	case errors.Is(err, approvals.ErrInvalidTransition):
+		s.writeProblemCode(w, http.StatusConflict, "approvals.invalid_transition", "invalid approval transition", err.Error())
+	case errors.Is(err, approvals.ErrExpired):
+		s.writeProblemCode(w, http.StatusConflict, "approvals.expired", "approval expired", err.Error())
+	default:
+		s.writeProblemCode(w, http.StatusInternalServerError, "approvals.error", "approval request failed", err.Error())
 	}
 }
 

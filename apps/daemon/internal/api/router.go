@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/approvals"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/audit"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/capabilities"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/jobs"
@@ -51,6 +52,7 @@ type Config struct {
 	Onboarding   *checkpoints.Service
 	Audit        AuditLog
 	Auth         *AuthConfig
+	Approvals    ApprovalQueue
 	Upgrade      http.Handler
 	Metrics      *daemonmetrics.Registry
 	Telemetry    *telemetry.Service
@@ -95,6 +97,7 @@ type server struct {
 	inventory    InventoryService
 	onboarding   *checkpoints.Service
 	authConfig   *AuthConfig
+	approvals    ApprovalQueue
 	upgrade      http.Handler
 	metrics      *daemonmetrics.Registry
 	telemetry    *telemetry.Service
@@ -104,6 +107,14 @@ type server struct {
 
 type AuditLog interface {
 	Query(query audit.Query) ([]audit.Entry, error)
+}
+
+type ApprovalQueue interface {
+	Get(ctx context.Context, id string) (schemas.Approval, bool, error)
+	List(ctx context.Context, filter approvals.ListFilter) ([]schemas.Approval, error)
+	Approve(ctx context.Context, id string, decision schemas.ApprovalDecisionRequest) (schemas.Approval, error)
+	Deny(ctx context.Context, id string, decision schemas.ApprovalDecisionRequest) (schemas.Approval, error)
+	Extend(ctx context.Context, id string, expiresAt time.Time) (schemas.Approval, error)
 }
 
 type subscribeRequest struct {
@@ -211,6 +222,7 @@ func normalizeConfig(cfg Config) *server {
 		inventory:    inventory,
 		onboarding:   cfg.Onboarding,
 		authConfig:   cfg.Auth,
+		approvals:    cfg.Approvals,
 		upgrade:      cfg.Upgrade,
 		metrics:      metrics,
 		telemetry:    telemetryService,

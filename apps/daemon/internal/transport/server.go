@@ -34,6 +34,7 @@ type Config struct {
 	Events              *api.EventHub
 	Jobs                jobstore.Reader
 	Auth                *api.AuthConfig
+	Approvals           api.ApprovalQueue
 	Onboarding          *checkpoints.Service
 	Logger              api.Logger
 	Redactor            api.Redactor
@@ -133,11 +134,16 @@ func Run(ctx context.Context, args []string, cfg Config) error {
 	if wsValidator == nil {
 		wsValidator = api.StaticWebSocketTokenValidator{Token: *wsToken}
 	}
+	approvalQueue := cfg.Approvals
+	if approvalQueue == nil {
+		approvalQueue = authRuntime.approvals
+	}
 	router := api.NewRouter(api.Config{
 		Build:        cfg.Build,
 		Events:       cfg.Events,
 		Jobs:         cfg.Jobs,
 		Auth:         authRuntime.config,
+		Approvals:    approvalQueue,
 		Onboarding:   onboarding,
 		Audit:        auditWriter,
 		Logger:       cfg.Logger,
@@ -221,6 +227,7 @@ func prepareOnboardingRuntime(ctx context.Context, stateDir string, now func() t
 
 type authRuntime struct {
 	config                *api.AuthConfig
+	approvals             api.ApprovalQueue
 	wsValidator           api.WebSocketTokenValidator
 	initialPairing        auth.IssuedPairing
 	initialPairingCreated bool
@@ -228,7 +235,13 @@ type authRuntime struct {
 
 func prepareAuthRuntime(ctx context.Context, stateDir string, now func() time.Time, configured *api.AuthConfig) (authRuntime, error) {
 	if configured != nil {
-		return authRuntime{config: configured}, nil
+		runtime := authRuntime{config: configured}
+		if lookup, ok := configured.Approvals.(api.ApprovalQueueLookup); ok {
+			if queue, ok := lookup.Queue.(api.ApprovalQueue); ok {
+				runtime.approvals = queue
+			}
+		}
+		return runtime, nil
 	}
 	authDir := filepath.Join(stateDir, "auth")
 	pairings, err := auth.NewBootstrapCredentialService(auth.BootstrapCredentialConfig{
@@ -259,12 +272,14 @@ func prepareAuthRuntime(ctx context.Context, stateDir string, now func() time.Ti
 	if err != nil {
 		return authRuntime{}, err
 	}
+	approvalQueue := approvals.NewQueue(approvals.Config{Now: now})
 	return authRuntime{
 		config: &api.AuthConfig{
 			Service:   sessions,
 			Pairing:   pairings,
-			Approvals: api.ApprovalQueueLookup{Queue: approvals.NewQueue(approvals.Config{Now: now})},
+			Approvals: api.ApprovalQueueLookup{Queue: approvalQueue},
 		},
+		approvals:             approvalQueue,
 		wsValidator:           sessionWebSocketValidator{service: sessions},
 		initialPairing:        initial,
 		initialPairingCreated: created,

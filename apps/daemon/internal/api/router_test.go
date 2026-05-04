@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/approvals"
 	jobstore "github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/jobs"
 	projectstore "github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/projects"
 	schemas "github.com/hoopoe-cockpit/hoopoe/packages/schemas/go"
@@ -118,8 +119,10 @@ func TestVersionRoundTrip(t *testing.T) {
 
 func TestSeedContractGeneratedSchemaRoundTrips(t *testing.T) {
 	now := time.Date(2026, 5, 4, 0, 0, 0, 0, time.UTC)
+	approvalQueue := approvals.NewQueue(approvals.Config{Now: func() time.Time { return now }})
 	router := NewRouter(Config{
-		Now: func() time.Time { return now },
+		Now:       func() time.Time { return now },
+		Approvals: approvalQueue,
 	})
 
 	for _, tc := range []struct {
@@ -148,6 +151,69 @@ func TestSeedContractGeneratedSchemaRoundTrips(t *testing.T) {
 				t.Fatalf("decode generated schema target: %v", err)
 			}
 		})
+	}
+}
+
+func TestApprovalRoutesMutateQueueUsedByAuthLookup(t *testing.T) {
+	now := time.Date(2026, 5, 4, 12, 0, 0, 0, time.UTC)
+	queue := approvals.NewQueue(approvals.Config{
+		Now: func() time.Time { return now },
+		NewID: func(approvals.Request) (string, error) {
+			return "appr_rotate", nil
+		},
+	})
+	approval, created, err := queue.Request(context.Background(), approvals.Request{
+		Source:          schemas.ApprovalSourceHoopoePolicy,
+		PolicyRule:      "hoopoe-policy:auth.rotate_secret",
+		RequestedAction: schemas.CommandSpec{Kind: "auth.rotate_secret", Target: map[string]interface{}{"scope": "daemon"}},
+		RequestActor:    schemas.Actor{Kind: schemas.ActorKindSystem},
+		ProjectID:       "proj_01",
+		Scope:           schemas.Once,
+		RiskClass:       schemas.Critical,
+	})
+	if err != nil || !created {
+		t.Fatalf("Request approval = %v created=%v", err, created)
+	}
+	router := NewRouter(Config{
+		Approvals: queue,
+		Now:       func() time.Time { return now },
+	})
+
+	listReq := httptest.NewRequest(http.MethodGet, "/v1/projects/proj_01/approvals", nil)
+	listRec := httptest.NewRecorder()
+	router.ServeHTTP(listRec, listReq)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("list status = %d; body=%s", listRec.Code, listRec.Body.String())
+	}
+	var list schemas.ApprovalListResponse
+	if err := json.Unmarshal(listRec.Body.Bytes(), &list); err != nil {
+		t.Fatalf("decode list: %v", err)
+	}
+	if len(list.Items) != 1 || list.Items[0].Id != approval.Id {
+		t.Fatalf("list = %+v, want queued approval", list)
+	}
+
+	approveReq := httptest.NewRequest(http.MethodPost, "/v1/projects/proj_01/approvals/appr_rotate/approve", strings.NewReader(`{"decisionActor":{"kind":"user","id":"owner"}}`))
+	approveReq.Header.Set("Content-Type", "application/json")
+	approveRec := httptest.NewRecorder()
+	router.ServeHTTP(approveRec, approveReq)
+	if approveRec.Code != http.StatusOK {
+		t.Fatalf("approve status = %d; body=%s", approveRec.Code, approveRec.Body.String())
+	}
+	var approved schemas.Approval
+	if err := json.Unmarshal(approveRec.Body.Bytes(), &approved); err != nil {
+		t.Fatalf("decode approve: %v", err)
+	}
+	if approved.State != schemas.Approved {
+		t.Fatalf("approved state = %s, want approved", approved.State)
+	}
+	lookup := ApprovalQueueLookup{Queue: queue}
+	fromAuthLookup, ok, err := lookup.LookupApproval(context.Background(), "appr_rotate")
+	if err != nil || !ok {
+		t.Fatalf("auth lookup ok=%v err=%v", ok, err)
+	}
+	if fromAuthLookup.State != schemas.Approved {
+		t.Fatalf("auth lookup state = %s, want approved", fromAuthLookup.State)
 	}
 }
 
