@@ -29,7 +29,12 @@ func (s *server) mountSeedContractRoutes(r chi.Router) {
 	r.Post("/v1/bootstrap/preflight", s.handlePlannedWrite("bootstrap.preflight"))
 	r.Post("/v1/bootstrap/acfs/start", s.handlePlannedWrite("bootstrap.acfs.start"))
 	r.Post("/v1/bootstrap/acfs/resume", s.handlePlannedWrite("bootstrap.acfs.resume"))
-	r.Post("/v1/bootstrap/daemon/upgrade", s.handlePlannedWrite("bootstrap.daemon.upgrade"))
+	if s.upgrade != nil {
+		r.Method(http.MethodGet, "/v1/bootstrap/daemon/upgrade", s.upgrade)
+		r.Method(http.MethodPost, "/v1/bootstrap/daemon/upgrade", s.upgrade)
+	} else {
+		r.Post("/v1/bootstrap/daemon/upgrade", s.handlePlannedWrite("bootstrap.daemon.upgrade"))
+	}
 
 	r.Route("/v1/jobs/{jobId}", func(r chi.Router) {
 		r.Post("/cancel", s.handleJobCancel)

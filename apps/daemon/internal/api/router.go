@@ -43,6 +43,7 @@ type Config struct {
 	WSValidator  WebSocketTokenValidator
 	Capabilities *capabilities.Registry
 	Auth         *AuthConfig
+	Upgrade      http.Handler
 	Now          func() time.Time
 }
 
@@ -81,6 +82,7 @@ type server struct {
 	wsValidator  WebSocketTokenValidator
 	capabilities *capabilities.Registry
 	authConfig   *AuthConfig
+	upgrade      http.Handler
 	now          func() time.Time
 }
 
@@ -167,6 +169,7 @@ func normalizeConfig(cfg Config) *server {
 		wsValidator:  wsValidator,
 		capabilities: cfg.Capabilities,
 		authConfig:   cfg.Auth,
+		upgrade:      cfg.Upgrade,
 		now:          now,
 	}
 }
