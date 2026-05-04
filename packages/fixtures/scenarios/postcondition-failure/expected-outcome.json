@@ -5,8 +5,8 @@
     "fixturesVersion": "phase0-2026-05-02",
     "capturedAt": "2026-05-04T15:10:00Z",
     "vpsId": "mock-flywheel",
-    "source": "hand-written hp-2rp postcondition-failure tending fixture",
-    "notes": "ActionPlan exec succeeds (git push exit 0) but the post-execution postcondition (origin SHA == local SHA) fails because of a concurrent force-push from a peer agent. Daemon rolls back the cached 'branch up-to-date' flag, refuses to mark the bead as pushed, surfaces an activity warning, and audit fires regardless of [SILENT] (Guardrail 10). wakeAgent stays false: the deterministic rollback covers recovery; the next tend tick re-checks origin without an LLM reach."
+    "source": "hand-written hp-2rp postcondition-failure tending fixture, corrected by hp-zm7",
+    "notes": "ActionPlan exec succeeds (git push exit 0) but the post-execution postcondition (origin SHA == local SHA) fails because of a concurrent force-push from a peer agent. Daemon rolls back the cached 'branch up-to-date' flag, refuses to mark the bead as pushed, emits a follow-up detection with sourceActionId=ap-001, surfaces an activity warning, and audit fires regardless of [SILENT] (Guardrail 10). wakeAgent stays false: the deterministic rollback covers recovery, while the follow-up detection gives the next tend tick restartable input."
   },
   "detections": [
     {
@@ -46,6 +46,18 @@
         "rollbackKind": "cache.invalidate",
         "cacheKey": "branch.up_to_date.agent/hp-2rp-demo"
       }
+    },
+    {
+      "kind": "action_plan.follow_up_detection",
+      "payload": {
+        "jobId": "push-stale-commits",
+        "detectionId": "det-postcondition-ap-001",
+        "sourceActionId": "ap-001",
+        "sourceActionType": "git.push_branch",
+        "sourceRiskClass": "medium",
+        "severity": "medium",
+        "nextEscalator": "tend-swarm"
+      }
     }
   ],
   "wakeAgent": false,
@@ -65,6 +77,18 @@
     },
     {
       "check": "cache.branch_up_to_date.invalidated",
+      "expect": true
+    },
+    {
+      "check": "detection.det-postcondition-ap-001.sourceActionId == ap-001",
+      "expect": true
+    },
+    {
+      "check": "detection.det-postcondition-ap-001.severity == medium",
+      "expect": true
+    },
+    {
+      "check": "next_escalator_tick.has_input.det-postcondition-ap-001",
       "expect": true
     }
   ],

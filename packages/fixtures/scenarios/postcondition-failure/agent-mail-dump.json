@@ -8,7 +8,7 @@
         "HoopoeCC2"
       ],
       "subject": "[hp-2rp-demo] push-stale-commits postcondition failed; rolled back",
-      "body_md": "push-stale-commits ActionPlan ap-001 returned exit 0 but the postcondition origin/<branch>.sha == local.<branch>.sha failed because of a concurrent force-push during the push window. Cached branch-up-to-date flag invalidated; next tend tick will re-check origin without an LLM reach.",
+      "body_md": "push-stale-commits ActionPlan ap-001 returned exit 0 but the postcondition origin/<branch>.sha == local.<branch>.sha failed because of a concurrent force-push during the push window. Cached branch-up-to-date flag invalidated; follow-up detection det-postcondition-ap-001 was emitted with sourceActionId=ap-001 for the next tend tick.",
       "sent_at": "2026-05-04T15:10:02.6Z",
       "ack_required": false
     }

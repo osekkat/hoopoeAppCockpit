@@ -1,3 +1,6 @@
-2026-05-02T23:33:12Z tend-swarm pre-script start
-required capability ntm.robot.snapshot: missing
-tend-swarm blocked before agent wake
+2026-05-04T15:10:00Z push-stale-commits pre-script start
+ap-001 preconditions passed: branch.exists, branch.has_unpushed_commits, origin.reachable
+git push origin agent/hp-2rp-demo exited 0
+postcondition failed: origin.<branch>.sha != local.<branch>.sha
+rollback executed: cache.invalidate branch.up_to_date.agent/hp-2rp-demo
+follow-up detection emitted: det-postcondition-ap-001 sourceActionId=ap-001 severity=medium

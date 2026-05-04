@@ -3,7 +3,7 @@
     "messages": [
       {
         "ack_required": false,
-        "body_md": "push-stale-commits ActionPlan ap-001 returned exit 0 but the postcondition origin/<branch>.sha == local.<branch>.sha failed because of a concurrent force-push during the push window. Cached branch-up-to-date flag invalidated; next tend tick will re-check origin without an LLM reach.",
+        "body_md": "push-stale-commits ActionPlan ap-001 returned exit 0 but the postcondition origin/<branch>.sha == local.<branch>.sha failed because of a concurrent force-push during the push window. Cached branch-up-to-date flag invalidated; follow-up detection det-postcondition-ap-001 was emitted with sourceActionId=ap-001 for the next tend tick.",
         "from": "orchestrator",
         "id": "msg-postcondition-failure-001",
         "sent_at": "2026-05-04T15:10:02.6Z",
@@ -41,7 +41,7 @@
   "buildLogs": [
     {
       "runId": "run-006",
-      "text": "2026-05-02T23:33:12Z tend-swarm pre-script start\nrequired capability ntm.robot.snapshot: missing\ntend-swarm blocked before agent wake\n"
+      "text": "2026-05-04T15:10:00Z push-stale-commits pre-script start\nap-001 preconditions passed: branch.exists, branch.has_unpushed_commits, origin.reachable\ngit push origin agent/hp-2rp-demo exited 0\npostcondition failed: origin.<branch>.sha != local.<branch>.sha\nrollback executed: cache.invalidate branch.up_to_date.agent/hp-2rp-demo\nfollow-up detection emitted: det-postcondition-ap-001 sourceActionId=ap-001 severity=medium\n"
     }
   ],
   "bvTriage": {
@@ -239,6 +239,31 @@
       "type": "tending.action_plan.rollback"
     },
     {
+      "channel": "tending",
+      "payload": {
+        "beadId": "hp-2rp-demo",
+        "branch": "agent/hp-2rp-demo",
+        "detectionId": "det-postcondition-ap-001",
+        "evidenceRefs": [
+          "action:ap-001",
+          "postcondition:origin.<branch>.sha == local.<branch>.sha",
+          "origin:deadbeefcafef00d0102030405060708090a0b0c",
+          "local:a1b2c3d4e5f60718293a4b5c6d7e8f9012345678"
+        ],
+        "jobId": "push-stale-commits",
+        "kind": "action_plan.postcondition_failed",
+        "nextEscalator": "tend-swarm",
+        "severity": "medium",
+        "sourceActionId": "ap-001",
+        "sourceActionType": "git.push_branch",
+        "sourceRiskClass": "medium",
+        "summary": "git.push_branch completed but origin SHA did not match local SHA after canonical verification"
+      },
+      "seq": 7,
+      "ts": "2026-05-04T15:10:02.45Z",
+      "type": "tending.detection.emitted"
+    },
+    {
       "channel": "audit",
       "payload": {
         "actionPlanId": "ap-001",
@@ -249,28 +274,30 @@
         "rollbackExecuted": true,
         "silent": false
       },
-      "seq": 7,
+      "seq": 8,
       "ts": "2026-05-04T15:10:02.5Z",
       "type": "audit.action_plan.postcondition_failed"
     },
     {
       "channel": "activity",
       "payload": {
+        "detectionId": "det-postcondition-ap-001",
         "severity": "warning",
-        "summary": "push-stale-commits: postcondition failed for agent/hp-2rp-demo (origin diverged); rolled back, re-checking next tick"
+        "summary": "push-stale-commits: postcondition failed for agent/hp-2rp-demo (origin diverged); rolled back, follow-up detection det-postcondition-ap-001 queued for next tick"
       },
-      "seq": 8,
+      "seq": 9,
       "ts": "2026-05-04T15:10:02.6Z",
       "type": "activity.warning"
     },
     {
       "channel": "tending",
       "payload": {
+        "followUpDetectionId": "det-postcondition-ap-001",
         "jobId": "push-stale-commits",
         "outcome": "postcondition_failed_with_rollback",
         "wakeAgent": false
       },
-      "seq": 9,
+      "seq": 10,
       "ts": "2026-05-04T15:10:02.7Z",
       "type": "tending.job_completed"
     }
@@ -316,15 +343,27 @@
           "jobId": "push-stale-commits",
           "rollbackKind": "cache.invalidate"
         }
+      },
+      {
+        "kind": "action_plan.follow_up_detection",
+        "payload": {
+          "detectionId": "det-postcondition-ap-001",
+          "jobId": "push-stale-commits",
+          "nextEscalator": "tend-swarm",
+          "severity": "medium",
+          "sourceActionId": "ap-001",
+          "sourceActionType": "git.push_branch",
+          "sourceRiskClass": "medium"
+        }
       }
     ],
     "meta": {
       "capturedAt": "<scrubbed-captured-at>",
       "fixturesVersion": "phase0-2026-05-02",
       "kind": "synthetic",
-      "notes": "ActionPlan exec succeeds (git push exit 0) but the post-execution postcondition (origin SHA == local SHA) fails because of a concurrent force-push from a peer agent. Daemon rolls back the cached 'branch up-to-date' flag, refuses to mark the bead as pushed, surfaces an activity warning, and audit fires regardless of [SILENT] (Guardrail 10). wakeAgent stays false: the deterministic rollback covers recovery; the next tend tick re-checks origin without an LLM reach.",
+      "notes": "ActionPlan exec succeeds (git push exit 0) but the post-execution postcondition (origin SHA == local SHA) fails because of a concurrent force-push from a peer agent. Daemon rolls back the cached 'branch up-to-date' flag, refuses to mark the bead as pushed, emits a follow-up detection with sourceActionId=ap-001, surfaces an activity warning, and audit fires regardless of [SILENT] (Guardrail 10). wakeAgent stays false: the deterministic rollback covers recovery, while the follow-up detection gives the next tend tick restartable input.",
       "scenario": "postcondition-failure",
-      "source": "hand-written hp-2rp postcondition-failure tending fixture",
+      "source": "hand-written hp-2rp postcondition-failure tending fixture, corrected by hp-zm7",
       "vpsId": "mock-flywheel"
     },
     "postconditions": [
@@ -343,6 +382,18 @@
       {
         "check": "cache.branch_up_to_date.invalidated",
         "expect": true
+      },
+      {
+        "check": "detection.det-postcondition-ap-001.sourceActionId == ap-001",
+        "expect": true
+      },
+      {
+        "check": "detection.det-postcondition-ap-001.severity == medium",
+        "expect": true
+      },
+      {
+        "check": "next_escalator_tick.has_input.det-postcondition-ap-001",
+        "expect": true
       }
     ],
     "wakeAgent": false
@@ -352,9 +403,9 @@
     "capturedAt": "<scrubbed-captured-at>",
     "fixturesVersion": "phase0-2026-05-02",
     "kind": "synthetic",
-    "notes": "A push-stale-commits ActionPlan executes successfully (git push returns 0) but the post-execution postcondition that origin/<branch> SHA equals the local <branch> SHA fails — origin still points at the old SHA because of a race with another agent's force-push that arrived between the local commit and our push. Per plan.md §8.3.1 the daemon rolls back the action's cached state ('branch-up-to-date' flag), refuses to mark the bead as pushed, emits an activity warning, and the audit log records the precondition pass + postcondition fail + rollback decision regardless of [SILENT] semantics (Guardrail 10). wakeAgent stays false because the deterministic rollback covers the recovery path; an LLM reach is unnecessary.",
+    "notes": "A push-stale-commits ActionPlan executes successfully (git push returns 0) but the post-execution postcondition that origin/<branch> SHA equals the local <branch> SHA fails — origin still points at the old SHA because of a race with another agent's force-push that arrived between the local commit and our push. Per plan.md §8.3.1 the daemon rolls back the action's cached state ('branch-up-to-date' flag), refuses to mark the bead as pushed, emits a follow-up detection with sourceActionId=ap-001 and severity tied to the failed git.push_branch risk class, emits an activity warning, and the audit log records the precondition pass + postcondition fail + rollback decision regardless of [SILENT] semantics (Guardrail 10). wakeAgent stays false because deterministic rollback covers immediate recovery while the follow-up detection gives the next tend tick restartable input.",
     "scenario": "postcondition-failure",
-    "source": "hand-written hp-2rp postcondition-failure tending fixture",
+    "source": "hand-written hp-2rp postcondition-failure tending fixture, corrected by hp-zm7",
     "vpsId": "mock-flywheel"
   },
   "ntmSnapshot": {
