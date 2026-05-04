@@ -325,6 +325,13 @@ func (h *EventHub) CompatibilityWarning(clientSchemaVersion int) Event {
 }
 
 func (h *EventHub) Subscribe(ctx context.Context, channels []string) *Subscriber {
+	// Reject nil ctx by substituting context.Background — the watcher
+	// goroutine below selects on ctx.Done(), and a nil ctx would panic
+	// the goroutine on the very first select. Mirrors the WaitContext
+	// pattern in scheduler.go.
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if len(channels) == 0 {
 		channels = []string{"_system"}
 	}
@@ -351,6 +358,18 @@ func (h *EventHub) Subscribe(ctx context.Context, channels []string) *Subscriber
 	}
 	go func() {
 		defer close(wrapped.watcherDone)
+		// Mirror scheduler.recoverDispatch: a daemon-level goroutine
+		// must never be able to take the process down. If anything
+		// panics inside the select (a future ctx that violates the
+		// context.Context contract, an exotic cancel propagation, or
+		// any later code added here), the recover absorbs it and the
+		// subscriber is best-effort closed so the EventHub map doesn't
+		// leak the entry.
+		defer func() {
+			if r := recover(); r != nil {
+				wrapped.Close()
+			}
+		}()
 		select {
 		case <-ctx.Done():
 			wrapped.Close()

@@ -1124,6 +1124,30 @@ func TestSlowConsumerReceivesLagEvent(t *testing.T) {
 	}
 }
 
+// TestEventHubSubscribeAcceptsNilCtxWithoutPanic guards hp-uvjg: the
+// Subscribe watcher goroutine used to call ctx.Done() on whatever ctx
+// the caller passed. A nil ctx panicked the goroutine ("nil pointer
+// dereference"), and there was no recover guard — the panic crashed
+// the daemon. Subscribe now substitutes context.Background for a nil
+// ctx and the goroutine has a defer/recover mirror of
+// scheduler.recoverDispatch.
+func TestEventHubSubscribeAcceptsNilCtxWithoutPanic(t *testing.T) {
+	hub := NewEventHub(EventHubConfig{})
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("Subscribe(nil, ...) panicked: %v", r)
+		}
+	}()
+	//nolint:staticcheck // SA1012: passing nil context is the regression we're guarding
+	sub := hub.Subscribe(nil, []string{"project:test"})
+	sub.Close()
+	select {
+	case <-sub.watcherDone:
+	case <-time.After(time.Second):
+		t.Fatal("subscriber watcher goroutine did not exit after Close (nil-ctx path leaked it)")
+	}
+}
+
 func TestEventHubSubscriberCloseStopsContextWatcher(t *testing.T) {
 	hub := NewEventHub(EventHubConfig{})
 	sub := hub.Subscribe(context.Background(), []string{"project:test"})
