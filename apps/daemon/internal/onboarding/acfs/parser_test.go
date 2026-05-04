@@ -138,6 +138,30 @@ func TestMarkerMismatchFallsBackToRawLog(t *testing.T) {
 	}
 }
 
+func TestPhaseFailMarkerIsNotDuplicatedAtProcessExit(t *testing.T) {
+	t.Parallel()
+	parser := NewParser(ParserConfig{RunID: "run_failed_marker"})
+	var events []Event
+	for _, line := range []string{
+		"[acfs] phase.start source-pins Verify bootstrap source pins",
+		"[acfs] phase.fail source-pins rc=23",
+	} {
+		next, err := parser.Observe(Line{Stream: StreamStderr, Text: line})
+		if err != nil {
+			t.Fatalf("Observe: %v", err)
+		}
+		events = append(events, next...)
+	}
+	next, err := parser.Finish(23, time.Now())
+	if err != nil {
+		t.Fatalf("Finish: %v", err)
+	}
+	events = append(events, next...)
+	if got := countEvents(events, EventPhaseFail); got != 1 {
+		t.Fatalf("phase.fail count = %d, want 1; events=%+v", got, events)
+	}
+}
+
 func TestRunnerPersistsLogAndStreamsEvents(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 5, 4, 12, 0, 0, 0, time.UTC)
