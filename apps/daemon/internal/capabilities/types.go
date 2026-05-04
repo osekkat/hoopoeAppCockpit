@@ -70,6 +70,11 @@ const (
 	ToolOracle    ToolID = "oracle"
 	ToolRCH       ToolID = "rch"
 	ToolRano      ToolID = "rano"
+	// ToolVPS namespaces provider-plugin capabilities (vps.list-regions,
+	// vps.list-sizes, vps.estimate-cost, vps.create, vps.destroy). The
+	// values match `schemas.ProviderPluginManifestCapabilities` exactly so a
+	// plugin's manifest enum doubles as the registry cap-ref key.
+	ToolVPS ToolID = "vps"
 )
 
 // KnownClosedTools lists the ToolID values that are not health-prefixed. Used
@@ -79,6 +84,7 @@ var KnownClosedTools = []ToolID{
 	ToolCAAM, ToolCAUT, ToolDCG, ToolCASR,
 	ToolPT, ToolSRP, ToolSBH,
 	ToolUBS, ToolJSM, ToolJFP, ToolOracle, ToolRCH, ToolRano,
+	ToolVPS,
 }
 
 // IsHealthTool reports whether id matches the open-ended health_<lang> shape.

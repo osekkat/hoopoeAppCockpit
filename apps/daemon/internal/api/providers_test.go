@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/capabilities"
 	providerplugins "github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/providers"
 	schemas "github.com/hoopoe-cockpit/hoopoe/packages/schemas/go"
 )
@@ -208,6 +209,142 @@ func newProviderRouter(t *testing.T, plugin schemas.ProviderPlugin) http.Handler
 		t.Fatalf("NewRegistry: %v", err)
 	}
 	return NewRouter(Config{Providers: registry})
+}
+
+// vpsCapabilityRegistry seeds a live capabilities.Registry whose vps.*
+// reports default to OK. Per-test overrides flip individual cap-refs to
+// missing/blocked-by-policy/untested so the new gate in providerPlugin
+// can be exercised without a real provider probe.
+func vpsCapabilityRegistry(t *testing.T, overrides map[string]capabilities.CapabilityStatus) *capabilities.Registry {
+	t.Helper()
+	stamp := "2026-05-04T00:00:00Z"
+	stampParsed, err := time.Parse(time.RFC3339, stamp)
+	if err != nil {
+		t.Fatalf("parse stamp: %v", err)
+	}
+	r := capabilities.New("0.1.0")
+	r.SetClock(func() time.Time { return stampParsed })
+	caps := map[string]capabilities.Capability{
+		"vps.list-regions":  {Status: capabilities.StatusOK},
+		"vps.list-sizes":    {Status: capabilities.StatusOK},
+		"vps.estimate-cost": {Status: capabilities.StatusOK},
+		"vps.create":        {Status: capabilities.StatusOK},
+		"vps.destroy":       {Status: capabilities.StatusOK},
+	}
+	for ref, status := range overrides {
+		caps[ref] = capabilities.Capability{Status: status}
+	}
+	if err := r.SetReport(&capabilities.ToolReport{
+		Tool: capabilities.ToolVPS, Version: "test", Source: "test",
+		LastCheckedAt: stamp, Capabilities: caps,
+	}); err != nil {
+		t.Fatalf("seed vps report: %v", err)
+	}
+	return r
+}
+
+func newProviderRouterWithCaps(t *testing.T, plugin schemas.ProviderPlugin, registry *capabilities.Registry) http.Handler {
+	t.Helper()
+	providerRegistry, err := providerplugins.NewRegistry(plugin)
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
+	return NewRouter(Config{Providers: providerRegistry, Capabilities: registry})
+}
+
+func TestProviderRoutesBlockWhenCapabilityMissing(t *testing.T) {
+	t.Parallel()
+	plugin := newRecordingProvider()
+	registry := vpsCapabilityRegistry(t, map[string]capabilities.CapabilityStatus{
+		"vps.create": capabilities.StatusMissing,
+	})
+	router := newProviderRouterWithCaps(t, plugin, registry)
+	payload := []byte(`{"region":"eu-central-1","size":"cloud-vps-50","name":"hoopoe-test","sshPubKey":"ssh-ed25519 AAAATEST"}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/providers/contabo/instances", bytes.NewReader(payload))
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503; body=%s", rec.Code, rec.Body.String())
+	}
+	var body schemas.Problem
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode problem: %v", err)
+	}
+	if body.Code != "provider.capability_unavailable" {
+		t.Fatalf("problem code = %q, want provider.capability_unavailable; body=%s", body.Code, rec.Body.String())
+	}
+	if plugin.lastCreate.Name != "" {
+		t.Errorf("plugin.CreateInstance fired despite missing capability: %+v", plugin.lastCreate)
+	}
+}
+
+func TestProviderRoutesBlockWhenCapabilityBlockedByPolicy(t *testing.T) {
+	t.Parallel()
+	plugin := newRecordingProvider()
+	registry := vpsCapabilityRegistry(t, map[string]capabilities.CapabilityStatus{
+		"vps.destroy": capabilities.StatusBlockedByPolicy,
+	})
+	router := newProviderRouterWithCaps(t, plugin, registry)
+	req := httptest.NewRequest(http.MethodDelete, "/v1/providers/contabo/instances/i-blocked", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503; body=%s", rec.Code, rec.Body.String())
+	}
+	var body schemas.Problem
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode problem: %v", err)
+	}
+	if body.Code != "provider.capability_blocked" {
+		t.Fatalf("problem code = %q, want provider.capability_blocked", body.Code)
+	}
+	if plugin.lastDestroy != "" {
+		t.Errorf("plugin.DestroyInstance fired despite blocked-by-policy: %q", plugin.lastDestroy)
+	}
+}
+
+func TestProviderReadRouteBlockWhenCapabilityUntested(t *testing.T) {
+	t.Parallel()
+	plugin := newRecordingProvider()
+	registry := vpsCapabilityRegistry(t, map[string]capabilities.CapabilityStatus{
+		"vps.list-regions": capabilities.StatusUntested,
+	})
+	router := newProviderRouterWithCaps(t, plugin, registry)
+	req := httptest.NewRequest(http.MethodGet, "/v1/providers/contabo/regions", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503; body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestProviderRoutesAllowWhenCapabilitiesOK(t *testing.T) {
+	t.Parallel()
+	plugin := newRecordingProvider()
+	registry := vpsCapabilityRegistry(t, nil)
+	router := newProviderRouterWithCaps(t, plugin, registry)
+	req := httptest.NewRequest(http.MethodGet, "/v1/providers/contabo/regions", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestProviderRoutesBlockWhenVPSToolReportAbsent(t *testing.T) {
+	t.Parallel()
+	plugin := newRecordingProvider()
+	// Registry exists but has no vps tool report — every vps.* lookup
+	// returns StatusMissing.
+	registry := capabilities.New("0.1.0")
+	registry.SetClock(func() time.Time { return time.Date(2026, 5, 4, 0, 0, 0, 0, time.UTC) })
+	router := newProviderRouterWithCaps(t, plugin, registry)
+	req := httptest.NewRequest(http.MethodGet, "/v1/providers/contabo/regions", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503; body=%s", rec.Code, rec.Body.String())
+	}
 }
 
 type recordingProvider struct {

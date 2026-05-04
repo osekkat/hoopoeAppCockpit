@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/capabilities"
 	providerplugins "github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/providers"
 	schemas "github.com/hoopoe-cockpit/hoopoe/packages/schemas/go"
 )
@@ -138,7 +139,47 @@ func (s *server) providerPlugin(w http.ResponseWriter, r *http.Request, capabili
 		s.writeProviderError(w, err)
 		return "", nil, false
 	}
+	if !s.requireProviderRegistryCapability(w, capability) {
+		return "", nil, false
+	}
 	return id, plugin, true
+}
+
+// requireProviderRegistryCapability consults the live capability registry
+// for a vps.* capability ref. The plugin manifest already declared support
+// (via providerplugins.RequireCapability above), but live probing or policy
+// can mark a capability missing/untested/blocked-by-policy at runtime — the
+// registry is the source of truth, the manifest is a static promise.
+//
+// When s.capabilities is nil (smoke routers without a registry), this gate
+// is a no-op so existing tests that build NewRouter(Config{Providers: ...})
+// without Capabilities keep working.
+func (s *server) requireProviderRegistryCapability(w http.ResponseWriter, capability schemas.ProviderPluginManifestCapabilities) bool {
+	if s.capabilities == nil {
+		return true
+	}
+	ref := string(capability)
+	status, ok := s.capabilities.LookupCapabilityStatus(ref)
+	switch {
+	case !ok || status == capabilities.StatusMissing || status == capabilities.StatusUntested:
+		s.writeProblemCode(w, http.StatusServiceUnavailable, "provider.capability_unavailable",
+			"provider capability unavailable",
+			fmt.Sprintf("capability %s is %s in /v1/capabilities", ref, providerCapabilityStatus(status, ok)))
+		return false
+	case status == capabilities.StatusBlockedByPolicy:
+		s.writeProblemCode(w, http.StatusServiceUnavailable, "provider.capability_blocked",
+			"provider capability blocked-by-policy",
+			fmt.Sprintf("capability %s is blocked-by-policy in /v1/capabilities", ref))
+		return false
+	}
+	return true
+}
+
+func providerCapabilityStatus(status capabilities.CapabilityStatus, ok bool) string {
+	if !ok {
+		return "missing"
+	}
+	return string(status)
 }
 
 func (s *server) providerByRegisteredManifestID(id schemas.ProviderId) (schemas.ProviderPlugin, error) {
