@@ -11,7 +11,7 @@
           "type_method": "process",
           "state": "active",
           "last_output_age_sec": 4,
-          "current_bead": "hp-n7u-target",
+          "current_bead": "hp-15z-target",
           "agent_id": "HoopoeCC1",
           "pending_mail": 0
         },
@@ -22,17 +22,28 @@
           "type_method": "process",
           "state": "active",
           "last_output_age_sec": 6,
-          "current_bead": "hp-n7u-target",
+          "current_bead": "hp-15z-target",
           "agent_id": "HoopoeCC2",
           "pending_mail": 0
+        },
+        {
+          "pane": "0.3",
+          "type": "codex",
+          "type_confidence": 0.95,
+          "type_method": "process",
+          "state": "tool_use",
+          "last_output_age_sec": 585,
+          "current_bead": "hp-15z-target",
+          "agent_id": "GreenBear",
+          "pending_mail": 1
         }
       ]
     }
   ],
   "counters": {
     "sessions": 1,
-    "panes": 2,
-    "alive": 2,
+    "panes": 3,
+    "alive": 3,
     "wedged": 0,
     "errored": 0
   }

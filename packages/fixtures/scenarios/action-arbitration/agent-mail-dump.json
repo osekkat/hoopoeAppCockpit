@@ -2,29 +2,29 @@
   "messages": [
     {
       "id": "msg-action-arbitration-001",
-      "thread_id": "hp-n7u-target",
+      "thread_id": "hp-15z-target",
       "from": "HoopoeCC1",
       "to": ["orchestrator", "HoopoeCC2"],
-      "subject": "[hp-n7u-target] Start: wizard deploy copy fix",
-      "body_md": "Claiming hp-n7u-target. Reserving apps/desktop/src/wizard/StepDeploy.tsx.",
-      "sent_at": "2026-05-04T17:08:00Z",
+      "subject": "[hp-15z-target] Safer recovery in flight",
+      "body_md": "Submitted plan-safe-001: ask GreenBear for status before any destructive process action.",
+      "sent_at": "2026-05-04T17:55:00Z",
       "ack_required": false
     },
     {
       "id": "msg-action-arbitration-002",
-      "thread_id": "hp-n7u-target",
+      "thread_id": "hp-15z-target",
       "from": "HoopoeCC2",
       "to": ["orchestrator", "HoopoeCC1"],
-      "subject": "[hp-n7u-target] Also picking this — already started locally",
-      "body_md": "Did not see HoopoeCC1's reservation in time; my plan modifies the same file with a different copy approach.",
-      "sent_at": "2026-05-04T17:08:01Z",
+      "subject": "[hp-15z-target] Destructive recovery rejected",
+      "body_md": "Submitted plan-kill-001 to kill GreenBear, but daemon rejected it as superseded_by plan-safe-001.",
+      "sent_at": "2026-05-04T17:55:02Z",
       "ack_required": true
     }
   ],
   "threads": [
     {
-      "id": "hp-n7u-target",
-      "subject": "[hp-n7u-target] Start: wizard deploy copy fix",
+      "id": "hp-15z-target",
+      "subject": "[hp-15z-target] Safer recovery in flight",
       "message_count": 2
     }
   ],

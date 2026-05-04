@@ -16,9 +16,9 @@
       "in_progress_count": 1,
       "top_picks": [
         {
-          "id": "hp-n7u-target",
+          "id": "hp-15z-target",
           "score": 0.5,
-          "rationale": "Two agents are already working on this bead; arbitration in progress."
+          "rationale": "A safer recovery ActionPlan is in flight; destructive recovery must be superseded."
         }
       ]
     },

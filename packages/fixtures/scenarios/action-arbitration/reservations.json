@@ -1,23 +1,4 @@
 {
-  "reservations": [
-    {
-      "id": "res-001",
-      "agent": "HoopoeCC1",
-      "paths": ["apps/desktop/src/wizard/StepDeploy.tsx"],
-      "exclusive": true,
-      "reason": "hp-n7u-target",
-      "acquired_at": "2026-05-04T17:08:00Z",
-      "expires_at": "2026-05-04T18:08:00Z"
-    }
-  ],
-  "conflicts": [
-    {
-      "id": "conflict-001",
-      "loser_agent": "HoopoeCC2",
-      "winner_reservation_id": "res-001",
-      "paths": ["apps/desktop/src/wizard/StepDeploy.tsx"],
-      "detected_at": "2026-05-04T17:08:01Z",
-      "reason": "exclusive reservation already held"
-    }
-  ]
+  "reservations": [],
+  "conflicts": []
 }

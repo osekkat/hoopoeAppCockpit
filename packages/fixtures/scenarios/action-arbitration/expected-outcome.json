@@ -3,30 +3,29 @@
     "kind": "synthetic",
     "scenario": "action-arbitration",
     "fixturesVersion": "phase0-2026-05-02",
-    "capturedAt": "2026-05-04T17:08:00Z",
+    "capturedAt": "2026-05-04T17:55:00Z",
     "vpsId": "mock-flywheel",
-    "source": "hand-written hp-n7u action-arbitration tending fixture",
-    "notes": "Two ActionPlans target the same bead and same file path. Arbitration accepts the first-arrived plan that holds the exclusive reservation and rejects the conflicting plan with outcome=conflict. The losing agent receives a problem envelope referencing the winning plan_id."
+    "source": "hand-written hp-15z corrected action-arbitration tending fixture",
+    "notes": "A less-destructive recovery ActionPlan is already accepted and in flight for GreenBear. A later destructive kill plan targets the same agent and is rejected as superseded_by the safer plan, with the rejected plan linked to the winning safety run."
   },
   "detections": [
     {
-      "kind": "actionplan.conflict",
+      "kind": "actionplan.destructive_superseded",
       "payload": {
-        "beadId": "hp-n7u-target",
-        "targetPaths": ["apps/desktop/src/wizard/StepDeploy.tsx"],
-        "winnerPlanId": "plan-cc1-001",
-        "winnerAgent": "HoopoeCC1",
-        "loserPlanId": "plan-cc2-001",
-        "loserAgent": "HoopoeCC2"
+        "targetSwarm": "hoopoeAppCockpit",
+        "targetAgent": "GreenBear",
+        "winnerPlanId": "plan-safe-001",
+        "winnerAction": "agent.ask_status",
+        "loserPlanId": "plan-kill-001",
+        "loserAction": "agent.kill_wedged_process",
+        "supersededBy": "plan-safe-001"
       }
     },
     {
-      "kind": "reservation.conflict",
+      "kind": "actionplan.safety_preferred",
       "payload": {
-        "winnerReservationId": "res-001",
-        "winnerAgent": "HoopoeCC1",
-        "loserAgent": "HoopoeCC2",
-        "paths": ["apps/desktop/src/wizard/StepDeploy.tsx"]
+        "reason": "less-destructive recovery plan in flight",
+        "policy": "destructive actions lose while a bounded safer intervention is active"
       }
     }
   ],
@@ -34,15 +33,19 @@
   "approvalsRequested": [],
   "postconditions": [
     {
-      "check": "actionplan.plan-cc1-001.status == accepted",
+      "check": "actionplan.plan-safe-001.status == in_flight",
       "expect": true
     },
     {
-      "check": "actionplan.plan-cc2-001.status == rejected",
+      "check": "actionplan.plan-kill-001.status == rejected",
       "expect": true
     },
     {
-      "check": "actionplan.plan-cc2-001.problem.code == 'actionplan.conflict'",
+      "check": "actionplan.plan-kill-001.superseded_by == plan-safe-001",
+      "expect": true
+    },
+    {
+      "check": "approvals.no_request_for_rejected_destructive_plan",
       "expect": true
     },
     {

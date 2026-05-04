@@ -40,7 +40,9 @@
   "jsm": {},
   "jfp": {},
   "oracle": {},
-  "pt": {},
+  "pt": {
+    "pt.process.kill": { "status": "ok" }
+  },
   "srp": {},
   "sbh": {}
 }

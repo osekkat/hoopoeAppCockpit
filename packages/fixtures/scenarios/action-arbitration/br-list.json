@@ -1,9 +1,9 @@
 {
   "issues": [
     {
-      "id": "hp-n7u-target",
-      "title": "[fixture] Wizard deploy step copy fix (target of conflicting ActionPlans)",
-      "description": "Synthetic bead used by the action-arbitration tending fixture. Two agents claim this bead within the same arbitration window and submit conflicting ActionPlans for the same file.",
+      "id": "hp-15z-target",
+      "title": "[fixture] GreenBear recovery arbitration",
+      "description": "Synthetic bead used by the action-arbitration tending fixture. A less-destructive recovery ActionPlan is in flight for GreenBear when a later destructive kill plan targets the same agent and must be rejected as superseded_by.",
       "status": "in_progress",
       "priority": 2,
       "issue_type": "task",
