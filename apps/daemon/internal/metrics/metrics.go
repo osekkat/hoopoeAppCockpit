@@ -379,8 +379,9 @@ func (r *Registry) PrometheusText() string {
 	b.WriteString("hoopoe_metrics_schema_version ")
 	b.WriteString(strconv.Itoa(snapshot.SchemaVersion))
 	b.WriteByte('\n')
+	types := prometheusTypeSet{}
 	for _, series := range snapshot.Series {
-		writePrometheusSeries(&b, series)
+		writePrometheusSeries(&b, series, types)
 	}
 	return b.String()
 }

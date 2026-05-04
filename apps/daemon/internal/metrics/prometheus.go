@@ -7,7 +7,17 @@ import (
 	"strings"
 )
 
-func writePrometheusSeries(b *strings.Builder, series Series) {
+type prometheusTypeSet map[string]struct{}
+
+func (s prometheusTypeSet) write(b *strings.Builder, name string, kind string) {
+	if _, ok := s[name]; ok {
+		return
+	}
+	s[name] = struct{}{}
+	fmt.Fprintf(b, "# TYPE %s %s\n", name, kind)
+}
+
+func writePrometheusSeries(b *strings.Builder, series Series, types prometheusTypeSet) {
 	name := prometheusName(series.Name)
 	labels := prometheusLabels(series.Labels)
 	switch series.Kind {
@@ -15,30 +25,30 @@ func writePrometheusSeries(b *strings.Builder, series Series) {
 		if series.Value == nil {
 			return
 		}
-		fmt.Fprintf(b, "# TYPE hoopoe_%s counter\n", name)
+		types.write(b, "hoopoe_"+name, "counter")
 		fmt.Fprintf(b, "hoopoe_%s%s %s\n", name, labels, formatFloat(*series.Value))
 	case KindGauge:
 		if series.Value == nil {
 			return
 		}
-		fmt.Fprintf(b, "# TYPE hoopoe_%s gauge\n", name)
+		types.write(b, "hoopoe_"+name, "gauge")
 		fmt.Fprintf(b, "hoopoe_%s%s %s\n", name, labels, formatFloat(*series.Value))
 	case KindHistogram:
-		writePrometheusHistogram(b, name, labels, series)
+		writePrometheusHistogram(b, name, labels, series, types)
 	}
 }
 
-func writePrometheusHistogram(b *strings.Builder, name string, labels string, series Series) {
-	fmt.Fprintf(b, "# TYPE hoopoe_%s_count counter\n", name)
+func writePrometheusHistogram(b *strings.Builder, name string, labels string, series Series, types prometheusTypeSet) {
+	types.write(b, "hoopoe_"+name+"_count", "counter")
 	fmt.Fprintf(b, "hoopoe_%s_count%s %d\n", name, labels, series.Count)
-	fmt.Fprintf(b, "# TYPE hoopoe_%s_sum counter\n", name)
+	types.write(b, "hoopoe_"+name+"_sum", "counter")
 	fmt.Fprintf(b, "hoopoe_%s_sum%s %s\n", name, labels, formatFloat(series.Sum))
 	if series.P95 != nil {
-		fmt.Fprintf(b, "# TYPE hoopoe_%s_p95 gauge\n", name)
+		types.write(b, "hoopoe_"+name+"_p95", "gauge")
 		fmt.Fprintf(b, "hoopoe_%s_p95%s %s\n", name, labels, formatFloat(*series.P95))
 	}
 	if series.Max != nil {
-		fmt.Fprintf(b, "# TYPE hoopoe_%s_max gauge\n", name)
+		types.write(b, "hoopoe_"+name+"_max", "gauge")
 		fmt.Fprintf(b, "hoopoe_%s_max%s %s\n", name, labels, formatFloat(*series.Max))
 	}
 }

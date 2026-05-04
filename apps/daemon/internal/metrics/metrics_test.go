@@ -81,14 +81,32 @@ func TestPrometheusTextIsDeterministicAndEscapesLabels(t *testing.T) {
 	}, 125*time.Millisecond); err != nil {
 		t.Fatalf("ObserveDuration: %v", err)
 	}
+	if err := registry.ObserveDuration(MetricRequestDurationSeconds, Labels{
+		"method": "POST",
+		"route":  "/v1/jobs",
+	}, 250*time.Millisecond); err != nil {
+		t.Fatalf("ObserveDuration second label set: %v", err)
+	}
 	text := registry.PrometheusText()
 	for _, want := range []string{
 		"hoopoe_metrics_schema_version 1",
 		`hoopoe_request_duration_seconds_count{method="GET",route="/v1/\"quoted\""} 1`,
 		`hoopoe_request_duration_seconds_p95{method="GET",route="/v1/\"quoted\""} 0.125`,
+		`hoopoe_request_duration_seconds_count{method="POST",route="/v1/jobs"} 1`,
+		`hoopoe_request_duration_seconds_p95{method="POST",route="/v1/jobs"} 0.25`,
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("prometheus text missing %q:\n%s", want, text)
+		}
+	}
+	for _, want := range []string{
+		"# TYPE hoopoe_request_duration_seconds_count counter",
+		"# TYPE hoopoe_request_duration_seconds_sum counter",
+		"# TYPE hoopoe_request_duration_seconds_p95 gauge",
+		"# TYPE hoopoe_request_duration_seconds_max gauge",
+	} {
+		if count := strings.Count(text, want); count != 1 {
+			t.Fatalf("prometheus type line %q appears %d times:\n%s", want, count, text)
 		}
 	}
 }
