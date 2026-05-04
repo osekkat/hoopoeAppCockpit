@@ -2,6 +2,8 @@
 
 Each active Section 8.8 scenario has a `.goldens/` directory with three frozen artifacts:
 
+Active scenarios currently covered by replay goldens: `healthy-hour`, `idle-but-not-stuck`, `wedged-pane`, `rate-limited-no-caam`, `rate-limited-with-caam`, and `missing-tool`.
+
 - `scenario-source.first-read.json` records the canonical output of `loadTendingScenario()`.
 - `event-stream.ndjson` records the instant replay order plus final cursor maps from `startReplay()`.
 - `mock-daemon.responses.json` records a fixed set of `MockDaemonClient` responses (`br.list`, `bv.triage`, `ntm.snapshot`, Agent Mail, reservations, logs, auth, and subscribe cursors).
