@@ -1,9 +1,11 @@
 package api
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -12,6 +14,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/approvals"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/audit"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/redaction"
 	schemas "github.com/hoopoe-cockpit/hoopoe/packages/schemas/go"
@@ -20,9 +23,14 @@ import (
 const (
 	maxAuditQueryLimit                 = 1000
 	maxAuditSearchQueryLen             = 256
+	auditExportApprovalActionKind      = "audit.export"
+	auditExportApprovalHeader          = "X-Hoopoe-Approval-Id"
+	auditExportApprovalMaxAge          = 2 * time.Minute
 	auditHTTPStatusOK                  = 200
+	auditHTTPStatusUnauthorized        = 401
 	auditHTTPStatusBadRequest          = 400
 	auditHTTPStatusUnprocessableEntity = 422
+	auditHTTPStatusServiceUnavailable  = 503
 	auditHTTPStatusInternalServerError = 500
 )
 
@@ -137,21 +145,40 @@ func (s *server) handleAuditExport(w http.ResponseWriter, r *http.Request) {
 		s.writeProblemCode(w, auditHTTPStatusBadRequest, "audit.invalid_export_filter", "invalid audit export filter", err.Error())
 		return
 	}
+	approvalRef := ""
 	if requiresAuditExportApproval(query) {
-		approvalID := strings.TrimSpace(r.Header.Get("X-Hoopoe-Approval-Id"))
-		if approvalID == "" {
-			s.writeProblemCode(w, auditHTTPStatusUnprocessableEntity, "audit.export_requires_approval", "audit export requires approval", "exports wider than seven days require X-Hoopoe-Approval-Id")
+		approvalRef = firstAuditHeaderValue(r.Header, auditExportApprovalHeader)
+		if approvalRef == "" {
+			s.writeProblemCode(w, auditHTTPStatusUnprocessableEntity, "audit.export_requires_approval", "audit export requires approval", "exports wider than seven days require "+auditExportApprovalHeader)
+			return
+		}
+		parsedApprovalRef, err := parseAuditApprovalID(approvalRef)
+		if err != nil {
+			writeAuditExportApprovalProblem(s, w, auditExportApprovalError{
+				status: auditHTTPStatusUnauthorized,
+				code:   "audit.export_approval_invalid",
+				title:  "approval invalid",
+				detail: err.Error(),
+			})
+			return
+		}
+		approvalRef = parsedApprovalRef
+		if err := s.validateAuditExportApproval(r.Context(), approvalRef, query); err != nil {
+			writeAuditExportApprovalProblem(s, w, err)
+			return
+		}
+		if err := s.consumeAuditExportApproval(r.Context(), approvalRef); err != nil {
+			writeAuditExportApprovalProblem(s, w, err)
 			return
 		}
 	}
-	approvalID := strings.TrimSpace(r.Header.Get("X-Hoopoe-Approval-Id"))
-	_ = s.appendAudit("audit.export_started", audit.ResultSuccess, request.ProjectID, approvalID, map[string]any{
+	_ = s.appendAudit("audit.export_started", audit.ResultSuccess, request.ProjectID, approvalRef, map[string]any{
 		"correlationId": request.CorrelationID,
 		"actorKind":     request.ActorKind,
 	})
 	entries, err := s.queryAudit(query)
 	if err != nil {
-		_ = s.appendAudit("audit.export_failed", audit.ResultFailure, request.ProjectID, approvalID, map[string]any{"error": err.Error()})
+		_ = s.appendAudit("audit.export_failed", audit.ResultFailure, request.ProjectID, approvalRef, map[string]any{"error": err.Error()})
 		s.writeProblemCode(w, auditHTTPStatusInternalServerError, "audit.export_failed", "audit export failed", err.Error())
 		return
 	}
@@ -164,14 +191,14 @@ func (s *server) handleAuditExport(w http.ResponseWriter, r *http.Request) {
 	}
 	sum := sha256.Sum256(body)
 	fileName := fmt.Sprintf("audit-slice-%s.json", exportedAt.Format("20060102T150405Z"))
-	_ = s.appendAudit("audit.export_completed", audit.ResultSuccess, request.ProjectID, approvalID, map[string]any{
+	_ = s.appendAudit("audit.export_completed", audit.ResultSuccess, request.ProjectID, approvalRef, map[string]any{
 		"fileName":     fileName,
 		"sha256":       hex.EncodeToString(sum[:]),
 		"totalEntries": len(items),
 	})
 	var approval *string
-	if approvalID != "" {
-		approval = &approvalID
+	if approvalRef != "" {
+		approval = &approvalRef
 	}
 	writeJSON(w, auditHTTPStatusOK, auditExportResponse{
 		SchemaVersion: schemaVersion,
@@ -183,6 +210,159 @@ func (s *server) handleAuditExport(w http.ResponseWriter, r *http.Request) {
 		ApprovalID:    approval,
 		Items:         items,
 	})
+}
+
+type auditExportApprovalError struct {
+	status int
+	code   string
+	title  string
+	detail string
+}
+
+func (e auditExportApprovalError) Error() string { return e.detail }
+
+func (s *server) validateAuditExportApproval(ctx context.Context, approvalRef string, query audit.Query) error {
+	if s.approvals == nil {
+		return auditExportApprovalError{
+			status: auditHTTPStatusServiceUnavailable,
+			code:   "audit.export_approvals_unavailable",
+			title:  "approval queue unavailable",
+			detail: "audit export requires the unified approvals queue",
+		}
+	}
+	approval, ok, err := (ApprovalQueueLookup{Queue: s.approvals}).LookupApproval(ctx, approvalRef)
+	if err != nil {
+		return auditExportApprovalError{
+			status: auditHTTPStatusInternalServerError,
+			code:   "audit.export_approval_lookup_failed",
+			title:  "approval lookup failed",
+			detail: err.Error(),
+		}
+	}
+	if !ok {
+		return auditExportApprovalError{
+			status: auditHTTPStatusUnauthorized,
+			code:   "audit.export_approval_not_found",
+			title:  "approval not found",
+			detail: "approval id does not exist",
+		}
+	}
+	if approval.State == schemas.Revoked {
+		return auditExportApprovalError{
+			status: auditHTTPStatusUnauthorized,
+			code:   "audit.export_approval_consumed",
+			title:  "approval already used",
+			detail: "audit export approval must still be approved and unused",
+		}
+	}
+	if approval.State != schemas.Approved {
+		return auditExportApprovalError{
+			status: auditHTTPStatusUnauthorized,
+			code:   "audit.export_approval_not_approved",
+			title:  "approval is not approved",
+			detail: "approval must be approved before exporting audit data",
+		}
+	}
+	if approval.RiskClass != schemas.Critical || approval.Scope != schemas.Once {
+		return auditExportApprovalError{
+			status: auditHTTPStatusUnauthorized,
+			code:   "audit.export_approval_scope_invalid",
+			title:  "approval scope invalid",
+			detail: "approval must be riskClass=critical and scope=once",
+		}
+	}
+	if approval.RequestedAction.Kind != auditExportApprovalActionKind {
+		return auditExportApprovalError{
+			status: auditHTTPStatusUnauthorized,
+			code:   "audit.export_approval_action_invalid",
+			title:  "approval action invalid",
+			detail: "approval must cover audit.export",
+		}
+	}
+	if approval.ProjectId != nil {
+		approvedProject := strings.TrimSpace(*approval.ProjectId)
+		if approvedProject != "" && approvedProject != strings.TrimSpace(query.ProjectID) {
+			return auditExportApprovalError{
+				status: auditHTTPStatusUnauthorized,
+				code:   "audit.export_approval_project_invalid",
+				title:  "approval project invalid",
+				detail: "approval does not cover the requested project",
+			}
+		}
+	}
+
+	now := s.now().UTC()
+	freshFrom := approval.RequestedAt
+	if approval.DecidedAt != nil {
+		freshFrom = *approval.DecidedAt
+	}
+	if now.Sub(freshFrom.UTC()) > auditExportApprovalMaxAge {
+		return auditExportApprovalError{
+			status: auditHTTPStatusUnauthorized,
+			code:   "audit.export_approval_expired",
+			title:  "approval too old",
+			detail: "audit export approval must be fresh within 2 minutes",
+		}
+	}
+	return nil
+}
+
+func (s *server) consumeAuditExportApproval(ctx context.Context, approvalRef string) error {
+	if s.approvals == nil {
+		return auditExportApprovalError{
+			status: auditHTTPStatusServiceUnavailable,
+			code:   "audit.export_approvals_unavailable",
+			title:  "approval queue unavailable",
+			detail: "audit export requires the unified approvals queue",
+		}
+	}
+	actorID := "daemon.api"
+	note := "consumed by audit.export"
+	if _, err := (ApprovalQueueLookup{Queue: s.approvals}).ConsumeOnceApproval(ctx, approvalRef, schemas.ApprovalDecisionRequest{
+		DecisionActor: schemas.Actor{Kind: schemas.ActorKindSystem, Id: &actorID},
+		Note:          &note,
+	}); err != nil {
+		switch {
+		case errors.Is(err, approvals.ErrNotFound):
+			return auditExportApprovalError{
+				status: auditHTTPStatusUnauthorized,
+				code:   "audit.export_approval_not_found",
+				title:  "approval not found",
+				detail: "approval id does not exist",
+			}
+		case errors.Is(err, approvals.ErrExpired):
+			return auditExportApprovalError{
+				status: auditHTTPStatusUnauthorized,
+				code:   "audit.export_approval_expired",
+				title:  "approval too old",
+				detail: "audit export approval must be fresh within 2 minutes",
+			}
+		case errors.Is(err, approvals.ErrInvalidTransition):
+			return auditExportApprovalError{
+				status: auditHTTPStatusUnauthorized,
+				code:   "audit.export_approval_consumed",
+				title:  "approval already used",
+				detail: "audit export approval must still be approved and unused",
+			}
+		default:
+			return auditExportApprovalError{
+				status: auditHTTPStatusInternalServerError,
+				code:   "audit.export_approval_consume_failed",
+				title:  "approval consume failed",
+				detail: err.Error(),
+			}
+		}
+	}
+	return nil
+}
+
+func writeAuditExportApprovalProblem(s *server, w http.ResponseWriter, err error) {
+	var approvalErr auditExportApprovalError
+	if errors.As(err, &approvalErr) {
+		s.writeProblemCode(w, approvalErr.status, approvalErr.code, approvalErr.title, approvalErr.detail)
+		return
+	}
+	s.writeProblemCode(w, auditHTTPStatusInternalServerError, "audit.export_approval_error", "approval check failed", err.Error())
 }
 
 func (s *server) auditQueryFromRequest(w http.ResponseWriter, r *http.Request) (audit.Query, bool) {
@@ -323,6 +503,31 @@ func parseOptionalAuditTime(value string) (time.Time, error) {
 		return time.Time{}, err
 	}
 	return parsed.UTC(), nil
+}
+
+func firstAuditHeaderValue(header http.Header, name string) string {
+	values := header.Values(name)
+	if len(values) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(values[0])
+}
+
+func parseAuditApprovalID(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", nil
+	}
+	if len(value) > 160 {
+		return "", fmt.Errorf("approvalId is too long")
+	}
+	for _, r := range value {
+		if isAuditLookupRune(r) {
+			continue
+		}
+		return "", fmt.Errorf("approvalId contains unsupported character %q", r)
+	}
+	return value, nil
 }
 
 func parseAuditLookupToken(value string, field string) (string, error) {

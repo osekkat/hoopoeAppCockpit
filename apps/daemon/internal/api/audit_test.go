@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -8,7 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/approvals"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/audit"
+	schemas "github.com/hoopoe-cockpit/hoopoe/packages/schemas/go"
 )
 
 func TestAuditQueryFiltersAndReturnsFacets(t *testing.T) {
@@ -140,6 +143,83 @@ func TestAuditCorrelationFilterAndExportEndpoint(t *testing.T) {
 	}
 }
 
+func TestAuditExportApprovalIDMustValidateAndConsumeOnce(t *testing.T) {
+	now := time.Date(2026, 5, 4, 8, 0, 0, 0, time.UTC)
+	writer, err := audit.NewWriter(audit.Config{Writer: nopSyncWriter{}, Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatalf("new audit writer: %v", err)
+	}
+	appendAuditEntry(t, writer, audit.Entry{
+		ProjectID: "proj_a",
+		Action:    "auth.bootstrap",
+		Actor:     audit.Actor{Kind: audit.ActorUser, ID: "operator"},
+		Result:    audit.ResultSuccess,
+	})
+	approvalQueue := approvals.NewQueue(approvals.Config{
+		Now: func() time.Time { return now },
+		NewID: func(approvals.Request) (string, error) {
+			return "appr_export_01", nil
+		},
+	})
+	router := NewRouter(Config{
+		Audit:     writer,
+		Approvals: approvalQueue,
+		Now:       func() time.Time { return now },
+	})
+	wideBody := `{"projectId":"proj_a","from":"2026-04-01T00:00:00Z","to":"2026-05-04T00:00:00Z"}`
+
+	emptyHeader := httptest.NewRequest(http.MethodPost, "/v1/audit/export", strings.NewReader(wideBody))
+	emptyHeader.Header.Set("Content-Type", "application/json")
+	emptyRec := httptest.NewRecorder()
+	router.ServeHTTP(emptyRec, emptyHeader)
+	if emptyRec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("empty approval status = %d, want %d; body=%s", emptyRec.Code, http.StatusUnprocessableEntity, emptyRec.Body.String())
+	}
+
+	madeUp := httptest.NewRequest(http.MethodPost, "/v1/audit/export", strings.NewReader(wideBody))
+	madeUp.Header.Set("Content-Type", "application/json")
+	madeUp.Header.Set(auditExportApprovalHeader, "appr_made_up")
+	madeUpRec := httptest.NewRecorder()
+	router.ServeHTTP(madeUpRec, madeUp)
+	if madeUpRec.Code != http.StatusUnauthorized {
+		t.Fatalf("made-up approval status = %d, want %d; body=%s", madeUpRec.Code, http.StatusUnauthorized, madeUpRec.Body.String())
+	}
+
+	approvalID := createApprovedAuditExportApproval(t, approvalQueue, now, "proj_a")
+	valid := httptest.NewRequest(http.MethodPost, "/v1/audit/export", strings.NewReader(wideBody))
+	valid.Header.Set("Content-Type", "application/json")
+	valid.Header.Set(auditExportApprovalHeader, approvalID)
+	validRec := httptest.NewRecorder()
+	router.ServeHTTP(validRec, valid)
+	if validRec.Code != http.StatusOK {
+		t.Fatalf("valid approval status = %d, want %d; body=%s", validRec.Code, http.StatusOK, validRec.Body.String())
+	}
+	var validExport auditExportResponse
+	if err := json.Unmarshal(validRec.Body.Bytes(), &validExport); err != nil {
+		t.Fatalf("decode valid export: %v", err)
+	}
+	if validExport.ApprovalID == nil || *validExport.ApprovalID != approvalID {
+		t.Fatalf("export approval id = %v, want %q", validExport.ApprovalID, approvalID)
+	}
+
+	consumed, ok, err := approvalQueue.Get(context.Background(), approvalID)
+	if err != nil || !ok {
+		t.Fatalf("lookup consumed approval: approval=%+v ok=%v err=%v", consumed, ok, err)
+	}
+	if consumed.State != schemas.Revoked {
+		t.Fatalf("approval state after export = %s, want revoked", consumed.State)
+	}
+
+	replay := httptest.NewRequest(http.MethodPost, "/v1/audit/export", strings.NewReader(wideBody))
+	replay.Header.Set("Content-Type", "application/json")
+	replay.Header.Set(auditExportApprovalHeader, approvalID)
+	replayRec := httptest.NewRecorder()
+	router.ServeHTTP(replayRec, replay)
+	if replayRec.Code != http.StatusUnauthorized {
+		t.Fatalf("replay approval status = %d, want %d; body=%s", replayRec.Code, http.StatusUnauthorized, replayRec.Body.String())
+	}
+}
+
 func TestAuditQueryRejectsOverlongSearch(t *testing.T) {
 	now := time.Date(2026, 5, 4, 8, 0, 0, 0, time.UTC)
 	writer, err := audit.NewWriter(audit.Config{Writer: nopSyncWriter{}, Now: func() time.Time { return now }})
@@ -183,6 +263,39 @@ func TestAuditQueryAcceptsBoundedSearch(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("at-max query status = %d, want 200; body=%s", rec.Code, rec.Body.String())
 	}
+}
+
+func createApprovedAuditExportApproval(t *testing.T, queue *approvals.Queue, now time.Time, projectID string) string {
+	t.Helper()
+	approval, _, err := queue.Request(context.Background(), approvals.Request{
+		Source:          schemas.ApprovalSourceHoopoePolicy,
+		PolicyRule:      "hoopoe-policy:audit.export",
+		RequestedAction: schemas.CommandSpec{Kind: auditExportApprovalActionKind, Target: map[string]any{"projectId": projectID}},
+		RequestActor:    schemas.Actor{Kind: schemas.ActorKindUser, Id: stringPtr("operator")},
+		Reason:          "wide audit export requires operator approval",
+		EvidenceRefs:    []string{"audit.export.request"},
+		ProjectID:       projectID,
+		Scope:           schemas.Once,
+		RiskClass:       schemas.Critical,
+		RequestedAt:     now.Add(-time.Minute),
+		ExpiresAt:       timePtr(now.Add(10 * time.Minute)),
+		IdempotencyKey:  "audit-export-" + projectID,
+	})
+	if err != nil {
+		t.Fatalf("request approval: %v", err)
+	}
+	approved, err := queue.Approve(context.Background(), approval.Id, schemas.ApprovalDecisionRequest{
+		DecisionActor: schemas.Actor{Kind: schemas.ActorKindUser, Id: stringPtr("operator")},
+		Note:          stringPtr("approved for test export"),
+	})
+	if err != nil {
+		t.Fatalf("approve audit export approval: %v", err)
+	}
+	return approved.Id
+}
+
+func timePtr(value time.Time) *time.Time {
+	return &value
 }
 
 func appendAuditEntry(t *testing.T, writer *audit.Writer, entry audit.Entry) audit.Entry {
