@@ -7,10 +7,18 @@ import "../error-ux/error-ux.css";
 import {
   stageDefinitions,
   stageForPathname,
-  topBarPlaceholders,
 } from "../stages.ts";
 import { useShellUiStore } from "../store.ts";
-import { ProjectRunningPill, ProjectSwitcher } from "../topbar/ProjectSwitcher.tsx";
+import {
+  BeadsPulsePill,
+  CodeHealthPill,
+  ProjectRunningPill,
+  ProjectSwitcher,
+  SubscriptionPill,
+  SwarmStatePill,
+  ToolHealthPill,
+} from "../topbar/index.ts";
+import "../topbar/topbar-pills.css";
 import { CommandPaletteHost } from "./command-palette/CommandPaletteHost.tsx";
 
 export function RootLayout() {
@@ -128,16 +136,11 @@ export function RootLayout() {
 
           <div className="hh-topbar-status" aria-label="Project status">
             <ProjectRunningPill project={activeProject} />
-            {topBarPlaceholders.map((item) => {
-              const Icon = item.icon;
-              return (
-                <span className="hh-topbar-pill" key={item.label}>
-                  <Icon size={14} strokeWidth={2} />
-                  <span>{item.label}</span>
-                  <strong>{item.value}</strong>
-                </span>
-              );
-            })}
+            <ToolHealthPill project={activeProject} />
+            <SwarmStatePill project={activeProject} />
+            <BeadsPulsePill project={activeProject} />
+            <CodeHealthPill project={activeProject} />
+            <SubscriptionPill project={activeProject} />
           </div>
 
           <div className="hh-topbar-actions">

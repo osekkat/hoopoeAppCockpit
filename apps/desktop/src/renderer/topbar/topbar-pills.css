@@ -1,0 +1,78 @@
+/* hp-4ya — top-bar pill variants. */
+
+.hh-topbar-pill-disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+
+.hh-topbar-pill-link {
+  text-decoration: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.hh-topbar-pill-link:hover {
+  color: var(--text-primary);
+  border-color: rgba(229, 130, 83, 0.55);
+}
+
+.hh-topbar-pill[data-variant="alert"] {
+  border-color: rgba(255, 142, 142, 0.45);
+  background: rgba(255, 142, 142, 0.10);
+}
+
+.hh-topbar-pill[data-variant="warning"] {
+  border-color: rgba(229, 196, 100, 0.45);
+  background: rgba(229, 196, 100, 0.10);
+}
+
+.hh-topbar-pill[data-variant="active"] {
+  border-color: rgba(123, 198, 138, 0.4);
+  background: rgba(123, 198, 138, 0.10);
+}
+
+.hh-pill-sep {
+  opacity: 0.5;
+}
+
+.hh-pill-alert {
+  color: var(--danger, #ff8e8e);
+  font-weight: 700;
+}
+
+.hh-pill-muted {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.hh-tool-dots {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.hh-tool-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--text-muted);
+}
+
+.hh-dot-healthy {
+  background: #7bc68a;
+  box-shadow: 0 0 0 1px rgba(123, 198, 138, 0.35);
+}
+
+.hh-dot-degraded {
+  background: #e5c464;
+  box-shadow: 0 0 0 1px rgba(229, 196, 100, 0.35);
+}
+
+.hh-dot-offline {
+  background: #ff8e8e;
+  box-shadow: 0 0 0 1px rgba(255, 142, 142, 0.35);
+}
+
+.hh-dot-unknown {
+  background: rgba(255, 255, 255, 0.18);
+}

@@ -3,7 +3,6 @@ import {
   Activity,
   Bug,
   CircleDot,
-  GitBranch,
   LayoutDashboard,
   ListChecks,
 } from "lucide-react";
@@ -94,8 +93,3 @@ export function projectDisplayName(projectId: string | undefined): string {
   return projectId.replaceAll("-", " ");
 }
 
-export const topBarPlaceholders = [
-  { label: "Repo", value: "mirror pending", icon: GitBranch },
-  { label: "Tools", value: "capabilities pending", icon: Activity },
-  { label: "Swarm", value: "idle", icon: LayoutDashboard },
-] as const;
