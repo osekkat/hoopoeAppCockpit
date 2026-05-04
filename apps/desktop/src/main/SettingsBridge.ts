@@ -59,6 +59,9 @@ export interface DesktopSettings {
   readonly serverExposureMode: "local-only" | "network-accessible";
   readonly updateChannel: "latest" | "nightly";
   readonly updateChannelConfiguredByUser: boolean;
+  /** Default false: Hoopoe may keep the Mac awake during active ChatGPT Pro
+   * Oracle browser rounds. True is an explicit user opt-out. */
+  readonly disablePowerAssertions: boolean;
 }
 
 export interface ClientSettings {
@@ -85,6 +88,7 @@ export const DEFAULT_HOOPOE_SETTINGS: HoopoeSettings = {
     serverExposureMode: "local-only",
     updateChannel: "latest",
     updateChannelConfiguredByUser: false,
+    disablePowerAssertions: false,
   },
   client: {
     activeProjectId: null,
@@ -728,7 +732,8 @@ export function diffKeyPaths(previous: unknown, next: unknown, prefix = ""): rea
     return prefix ? [prefix] : [];
   }
   if (Array.isArray(previous) && Array.isArray(next)) {
-    return arraysEqual(previous, next) ? [] : prefix ? [prefix] : [];
+    if (arraysEqual(previous, next)) return [];
+    return prefix ? [prefix] : [];
   }
   const out: string[] = [];
   const prev = previous as Record<string, unknown>;

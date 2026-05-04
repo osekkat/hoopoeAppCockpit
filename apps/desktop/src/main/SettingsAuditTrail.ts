@@ -37,6 +37,7 @@ export const SECURITY_RELEVANT_SETTING_KEYS: ReadonlySet<string> = new Set<strin
   "desktop.serverExposureMode",
   "desktop.telemetryOptIn",
   "desktop.mockFlywheelEnabled",
+  "desktop.disablePowerAssertions",
   "skills.installerPreference",
   "skills.lockfile",
   "project.pushPolicy",

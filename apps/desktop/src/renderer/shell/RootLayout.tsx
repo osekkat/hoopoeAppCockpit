@@ -14,6 +14,7 @@ import { useShellUiStore } from "../store.ts";
 import {
   BeadsPulsePill,
   CodeHealthPill,
+  PowerAssertionPill,
   ProjectRunningPill,
   ProjectSwitcher,
   SubscriptionPill,
@@ -148,6 +149,7 @@ export function RootLayout() {
           <div className="hh-topbar-status" aria-label="Project status">
             <ProjectRunningPill project={activeProject} />
             <ConnectionStatusPill />
+            <PowerAssertionPill project={activeProject} />
             <ToolHealthPill project={activeProject} />
             <SwarmStatePill project={activeProject} />
             <BeadsPulsePill project={activeProject} />
@@ -239,10 +241,12 @@ interface ActivityToggleButtonProps {
 function ActivityToggleButton({ open, onClick }: ActivityToggleButtonProps) {
   const unreadCount = useActivityStore((state) => state.unreadCount);
   const Icon = open ? PanelRightClose : PanelRightOpen;
+  const unreadLabel = unreadCount > 0 ? ` (${unreadCount} unread)` : "";
+  const ariaLabel = open ? "Close Activity drawer" : `Open Activity drawer${unreadLabel}`;
   return (
     <button
       aria-expanded={open}
-      aria-label={open ? "Close Activity drawer" : `Open Activity drawer${unreadCount > 0 ? ` (${unreadCount} unread)` : ""}`}
+      aria-label={ariaLabel}
       className="hh-icon-button hh-activity-toggle"
       data-unread={unreadCount > 0}
       onClick={onClick}

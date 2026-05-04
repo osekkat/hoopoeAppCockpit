@@ -167,6 +167,14 @@ export const PRELOAD_IPC_CHANNELS = {
   cloneRevealInFinder: "hoopoe.clone.reveal-in-finder",
   cloneOpenInTerminal: "hoopoe.clone.open-in-terminal",
   cloneSetCapOverride: "hoopoe.clone.set-cap-override",
+  // hp-6gs4: ChatGPT Pro Oracle rounds run through the user's Mac-side
+  // browser session in v1. These channels let the Plan workspace acquire
+  // and release a scoped main-process power assertion while a Pro round is
+  // actually running. Renderer input carries only round metadata; main owns
+  // the OS-level mechanisms (powerSaveBlocker / NSProcessInfo / caffeinate).
+  powerAcquire: "hoopoe.power.acquire",
+  powerRelease: "hoopoe.power.release",
+  powerSnapshot: "hoopoe.power.snapshot",
 } as const satisfies Record<string, `hoopoe.${string}`>;
 
 export type PreloadIpcChannelKey = keyof typeof PRELOAD_IPC_CHANNELS;

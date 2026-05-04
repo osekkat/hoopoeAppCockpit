@@ -127,6 +127,16 @@ export const SETTING_DESCRIPTORS: readonly SettingDescriptor[] = [
     keywords: ["network", "exposure", "tailnet", "binding", "security"],
   },
   {
+    key: "desktop.disablePowerAssertions",
+    section: "global",
+    label: "Disable Pro-round power assertions",
+    description: "Allow the Mac to sleep during ChatGPT Pro browser rounds.",
+    widget: "toggle",
+    defaultValue: false,
+    audited: true,
+    keywords: ["power", "sleep", "awake", "oracle", "chatgpt", "pro", "battery"],
+  },
+  {
     key: "desktop.editorCommand",
     section: "global",
     label: 'Editor command for "Open in editor"',

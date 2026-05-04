@@ -4,6 +4,7 @@
 // or Diagnostics. Co-located here because they share style hooks.
 
 import { Link } from "@tanstack/react-router";
+import { useEffect, useRef, useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -16,7 +17,9 @@ import {
   ListChecks,
   Network,
   ServerCog,
+  Zap,
 } from "lucide-react";
+import { useActivityStore } from "../activity/index.ts";
 import {
   codeHealthAria,
   dotClass,
@@ -37,6 +40,103 @@ import type { ShellProjectSummary } from "../store.ts";
 
 interface PillProps {
   readonly project: ShellProjectSummary | null;
+}
+
+interface PowerAssertionSnapshot {
+  readonly active: boolean;
+  readonly assertionId: string | null;
+  readonly mechanism: "powersaveblocker" | "nsprocessinfo" | "caffeinate" | null;
+  readonly level: "display" | "app-suspension" | "system" | null;
+  readonly ownerRoundIds: readonly string[];
+  readonly heldCount: number;
+  readonly acquiredAt: string | null;
+}
+
+interface PowerBridge {
+  readonly snapshot?: <O>() => Promise<O>;
+}
+
+interface ResolvedPowerBridge {
+  readonly snapshot: <O>() => Promise<O>;
+}
+
+// ── Mac awake assertion ─────────────────────────────────────────────────────
+
+export function PowerAssertionPill({ project }: PillProps) {
+  const [snapshot, setSnapshot] = useState<PowerAssertionSnapshot | null>(null);
+  const addEvent = useActivityStore((state) => state.addEvent);
+  const announcedAssertionId = useRef<string | null>(null);
+
+  useEffect(() => {
+    const bridge = resolvePowerBridge();
+    if (!bridge) return;
+    let cancelled = false;
+    const load = async () => {
+      const next = await bridge.snapshot<PowerAssertionSnapshot>();
+      if (!cancelled) setSnapshot(next);
+    };
+    void load();
+    const timer = window.setInterval(() => {
+      void load();
+    }, 5_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!snapshot?.active || !snapshot.assertionId) return;
+    if (announcedAssertionId.current === snapshot.assertionId) return;
+    announcedAssertionId.current = snapshot.assertionId;
+    addEvent({
+      kind: "orchestrator.intervention",
+      importance: "urgent",
+      summary: `Pro round started — Mac will stay awake until ${snapshot.ownerRoundIds.join(", ") || "the round"} completes`,
+      timestamp: new Date().toISOString(),
+      actor: {
+        id: "desktop-power",
+        displayName: "Desktop power manager",
+        kind: "system",
+      },
+      pills: [
+        { id: "mechanism", label: snapshot.mechanism ?? "power assertion", tone: "warn" },
+        { id: "held", label: `${snapshot.heldCount} active`, tone: "ok" },
+      ],
+      correlationId: snapshot.assertionId,
+    });
+  }, [addEvent, snapshot]);
+
+  if (!snapshot?.active) return null;
+  return (
+    <PillLink
+      ariaLabel={powerAssertionAria(snapshot)}
+      data-testid="topbar-power-assertion"
+      data-variant="warning"
+      icon={<Zap size={14} strokeWidth={2.1} />}
+      label="Awake"
+      project={project}
+      stage="diag"
+    >
+      <strong>{snapshot.heldCount}</strong>
+      <span className="hh-pill-sep">·</span>
+      <span>{snapshot.level ?? "held"}</span>
+    </PillLink>
+  );
+}
+
+function resolvePowerBridge(): ResolvedPowerBridge | null {
+  if (typeof window === "undefined") return null;
+  const snapshot = window.hoopoe?.power?.snapshot;
+  if (typeof snapshot !== "function") return null;
+  return { snapshot };
+}
+
+export function powerAssertionAria(snapshot: PowerAssertionSnapshot): string {
+  const rounds = snapshot.ownerRoundIds.length === 1
+    ? snapshot.ownerRoundIds[0]
+    : `${snapshot.ownerRoundIds.length} Pro rounds`;
+  return `Mac kept awake for ${rounds}; ${snapshot.heldCount} active assertion${snapshot.heldCount === 1 ? "" : "s"} via ${snapshot.mechanism ?? "unknown mechanism"}`;
 }
 
 // ── Tool health ───────────────────────────────────────────────────────────
@@ -108,8 +208,7 @@ function DotSpan({ dot, title }: { readonly dot: HealthDot; readonly title: stri
 export function SwarmStatePill({ project }: PillProps) {
   const query = useSwarmStateQuery(project);
   const data = query.data ?? { running: 0, idle: 0, wedged: 0, total: 0 };
-  const Icon = data.wedged > 0 ? AlertTriangle : data.running > 0 ? Activity : CirclePause;
-  const variant = data.wedged > 0 ? "alert" : data.running > 0 ? "active" : "idle";
+  const { Icon, variant } = swarmVisual(data);
   return (
     <PillLink
       ariaLabel={`Swarm: ${data.running} running, ${data.idle} idle, ${data.wedged} wedged`}
@@ -131,6 +230,16 @@ export function SwarmStatePill({ project }: PillProps) {
       ) : null}
     </PillLink>
   );
+}
+
+function swarmVisual(data: { readonly wedged: number; readonly running: number }) {
+  if (data.wedged > 0) {
+    return { Icon: AlertTriangle, variant: "alert" };
+  }
+  if (data.running > 0) {
+    return { Icon: Activity, variant: "active" };
+  }
+  return { Icon: CirclePause, variant: "idle" };
 }
 
 // ── Beads pulse ──────────────────────────────────────────────────────────

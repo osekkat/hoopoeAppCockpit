@@ -120,6 +120,23 @@ export interface HoopoeBridge {
       capsOverride: { softCapBytes: number; hardCapBytes: number } | null;
     }) => Promise<O>;
   };
+  readonly power: {
+    /** hp-6gs4: Scoped Mac awake assertion while a ChatGPT Pro Oracle
+     *  browser round is actively running. Main owns the OS mechanisms;
+     *  renderer passes only round metadata. */
+    readonly acquire: <O>(input: {
+      roundId: string;
+      modelId?: string;
+      oracleTopology?: "mac" | "vps";
+      estimatedDurationMs?: number;
+      reason?: string;
+    }) => Promise<O>;
+    readonly release: <O>(input: {
+      assertionId: string;
+      reason?: "round_complete" | "round_failed" | "round_cancelled" | "watchdog_force_release" | "user_disabled" | "shutdown";
+    }) => Promise<O>;
+    readonly snapshot: <O>() => Promise<O>;
+  };
 }
 
 export const hoopoeBridge: HoopoeBridge = {
@@ -182,6 +199,11 @@ export const hoopoeBridge: HoopoeBridge = {
     revealInFinder: (input) => invoke(CHANNELS.cloneRevealInFinder, input),
     openInTerminal: (input) => invoke(CHANNELS.cloneOpenInTerminal, input),
     setCapOverride: (input) => invoke(CHANNELS.cloneSetCapOverride, input),
+  },
+  power: {
+    acquire: (input) => invoke(CHANNELS.powerAcquire, input),
+    release: (input) => invoke(CHANNELS.powerRelease, input),
+    snapshot: () => invoke(CHANNELS.powerSnapshot, {}),
   },
 };
 

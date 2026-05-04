@@ -17,9 +17,11 @@ export {
 export {
   BeadsPulsePill,
   CodeHealthPill,
+  PowerAssertionPill,
   SubscriptionPill,
   SwarmStatePill,
   ToolHealthPill,
+  powerAssertionAria,
 } from "./TopbarPills.tsx";
 
 export {

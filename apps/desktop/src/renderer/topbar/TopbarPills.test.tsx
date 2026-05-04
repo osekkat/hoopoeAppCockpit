@@ -1,4 +1,4 @@
-// hp-4ya — render tests for the five top-bar pill components.
+// hp-4ya — render tests for the seeded top-bar pill components.
 // hp-m79e — ToolHealthPill VPS dot now reads from the tunnel FSM store.
 //
 // We focus on the "no active project" variant where each pill renders as
@@ -18,6 +18,7 @@ import {
   SubscriptionPill,
   SwarmStatePill,
   ToolHealthPill,
+  powerAssertionAria,
 } from "./index.ts";
 import { useTunnelStore } from "../tunnel/tunnel-store.ts";
 
@@ -105,7 +106,21 @@ test("SubscriptionPill: idle when seed shows no usage", () => {
   expect(html).toContain("aria-label=\"Subscription usage idle\"");
 });
 
-test("All five pills render together without conflicting test-ids", () => {
+test("powerAssertionAria names active Pro rounds and mechanism", () => {
+  expect(
+    powerAssertionAria({
+      active: true,
+      assertionId: "pa-1",
+      mechanism: "nsprocessinfo",
+      level: "app-suspension",
+      ownerRoundIds: ["round-1", "round-2"],
+      heldCount: 2,
+      acquiredAt: "2026-05-04T00:00:00Z",
+    }),
+  ).toBe("Mac kept awake for 2 Pro rounds; 2 active assertions via nsprocessinfo");
+});
+
+test("Seed pills render together without conflicting test-ids", () => {
   const html = render(
     <>
       <ToolHealthPill project={null} />

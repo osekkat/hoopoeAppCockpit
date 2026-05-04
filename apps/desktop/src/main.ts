@@ -8,7 +8,9 @@
 // exposes a typed `bootstrapDesktop` factory that the test harness (and
 // hp-191's smoke build) can call.
 
+import * as FS from "node:fs";
 import * as Path from "node:path";
+import Electron from "electron";
 import { spawnBackend, type BackendHandle } from "./main/BackendLifecycle.ts";
 import { createUpdateMachine, type UpdateMachine } from "./main/UpdateMachine.ts";
 import { IpcRegistry } from "./main/IpcRegistry.ts";
@@ -22,6 +24,12 @@ import {
   type SettingsActor,
 } from "./main/SettingsAuditTrail.ts";
 import { AuthBridge } from "./main/AuthBridge.ts";
+import {
+  PowerAssertionManager,
+  registerPowerAssertionIpc,
+  type PowerAssertionAuditEvent,
+  type PowerSaveBlockerLike,
+} from "./main/macPowerAssert.ts";
 import { resolveDesktopRuntimeInfo } from "./vendored/t3code/runtimeArch.ts";
 import {
   resolveDefaultDesktopUpdateChannel,
@@ -33,6 +41,15 @@ import type { DesktopSecretStorage } from "./vendored/t3code/clientPersistence.t
  *  settings batches (POSIX `O_APPEND` ≤ PIPE_BUF / 4 KiB). */
 export function defaultSettingsAuditPath(homeDir: string): string {
   return Path.join(homeDir, ".hoopoe", "audit.jsonl");
+}
+
+function appendPowerAssertionAuditEvent(filePath: string, event: PowerAssertionAuditEvent): void {
+  FS.mkdirSync(Path.dirname(filePath), { recursive: true });
+  FS.appendFileSync(
+    filePath,
+    `${JSON.stringify({ entry: "power_assertion", actor: DESKTOP_MAIN_DEFAULT_ACTOR, ...event })}\n`,
+    { encoding: "utf8" },
+  );
 }
 
 /** Default actor stamped on audit entries when the call site doesn't pass
@@ -82,6 +99,7 @@ export interface DesktopBootstrapInput {
   readonly platform?: NodeJS.Platform;
   readonly processArch?: string;
   readonly runningUnderArm64Translation?: boolean;
+  readonly powerSaveBlocker?: PowerSaveBlockerLike;
 }
 
 export interface DesktopBootstrapHandle {
@@ -90,6 +108,7 @@ export interface DesktopBootstrapHandle {
   readonly ipc: IpcRegistry;
   readonly updates: UpdateMachine;
   readonly backend: BackendHandle;
+  readonly powerAssertions: PowerAssertionManager;
   readonly shutdown: () => Promise<void>;
 }
 
@@ -118,6 +137,17 @@ export async function bootstrapDesktop(
   });
 
   const ipc = new IpcRegistry();
+  const powerAssertions = new PowerAssertionManager({
+    powerSaveBlocker: input.powerSaveBlocker ?? Electron.powerSaveBlocker,
+    disabled: settings.resolved().desktop.disablePowerAssertions,
+    audit: (event) => appendPowerAssertionAuditEvent(defaultSettingsAuditPath(input.homeDir), event),
+  });
+  registerPowerAssertionIpc(ipc, powerAssertions);
+  const powerSettingsSubscription = settings.subscribe((event) => {
+    if (event.changedKeys.includes("desktop.disablePowerAssertions")) {
+      powerAssertions.setDisabled(event.resolved.desktop.disablePowerAssertions);
+    }
+  });
 
   const updates = createUpdateMachine({
     currentVersion: input.currentAppVersion,
@@ -136,7 +166,10 @@ export async function bootstrapDesktop(
     ipc,
     updates,
     backend,
+    powerAssertions,
     shutdown: async () => {
+      powerSettingsSubscription.unsubscribe();
+      powerAssertions.shutdown();
       await backend.stop();
     },
   };
