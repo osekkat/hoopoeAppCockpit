@@ -1,0 +1,181 @@
+{
+  "tool": "git",
+  "toolVersion": "2.44.0-stub",
+  "fixturesVersion": "phase0-git-stub-2026-05-04",
+  "source": "synthetic-stub; replace with real Phase 0 VPS capture when available",
+  "repoPath": "/repo",
+  "commands": {
+    "version": {
+      "argv": ["git", "--version"],
+      "exit": 0,
+      "stdoutText": "git version 2.44.0\n"
+    },
+    "status": {
+      "argv": ["git", "status", "--porcelain=v1", "--branch"],
+      "exit": 0,
+      "stdoutText": "## main...origin/main [ahead 2, behind 1]\n M apps/daemon/main.go\n?? packages/fixtures/phase0-git/captures/git-stub-2.44.0.json\nR  old.go -> new.go\n"
+    },
+    "diffUnstaged": {
+      "argv": ["git", "diff", "--no-color"],
+      "exit": 0,
+      "stdoutText": "diff --git a/apps/daemon/main.go b/apps/daemon/main.go\nindex 1111111..2222222 100644\n--- a/apps/daemon/main.go\n+++ b/apps/daemon/main.go\n@@ -1 +1,2 @@\n package main\n+// conformance\n"
+    },
+    "diffStaged": {
+      "argv": ["git", "diff", "--no-color", "--staged"],
+      "exit": 0,
+      "stdoutText": "diff --git a/README.md b/README.md\nindex 3333333..4444444 100644\n--- a/README.md\n+++ b/README.md\n@@ -1 +1,2 @@\n # Hoopoe\n+conformance fixture\n"
+    },
+    "logTwo": {
+      "argv": [
+        "git",
+        "log",
+        "--no-color",
+        "-n",
+        "2",
+        "--pretty=format:%H%x00%h%x00%an%x00%ae%x00%aI%x00%cn%x00%ce%x00%cI%x00%P%x00%s%x00%b%x1e"
+      ],
+      "exit": 0,
+      "stdoutText": "1111111111111111111111111111111111111111\u00001111111\u0000Hoopoe Test\u0000hoopoe@test.invalid\u00002026-05-04T12:00:00Z\u0000Hoopoe Test\u0000hoopoe@test.invalid\u00002026-05-04T12:01:00Z\u00002222222222222222222222222222222222222222\u0000add conformance fixture\u0000body line 1\nbody line 2\n\u001e2222222222222222222222222222222222222222\u00002222222\u0000Hoopoe Test\u0000hoopoe@test.invalid\u00002026-05-03T12:00:00Z\u0000Hoopoe Test\u0000hoopoe@test.invalid\u00002026-05-03T12:01:00Z\u0000\u0000initial commit\u0000\u001e"
+    },
+    "logOne": {
+      "argv": [
+        "git",
+        "log",
+        "--no-color",
+        "-n",
+        "1",
+        "--pretty=format:%H%x00%h%x00%an%x00%ae%x00%aI%x00%cn%x00%ce%x00%cI%x00%P%x00%s%x00%b%x1e"
+      ],
+      "exit": 0,
+      "stdoutText": "1111111111111111111111111111111111111111\u00001111111\u0000Hoopoe Test\u0000hoopoe@test.invalid\u00002026-05-04T12:00:00Z\u0000Hoopoe Test\u0000hoopoe@test.invalid\u00002026-05-04T12:01:00Z\u00002222222222222222222222222222222222222222\u0000add conformance fixture\u0000body line 1\nbody line 2\n\u001e"
+    },
+    "showHead": {
+      "argv": ["git", "show", "--no-color", "HEAD"],
+      "exit": 0,
+      "stdoutText": "commit 1111111111111111111111111111111111111111\nAuthor: Hoopoe Test <hoopoe@test.invalid>\nDate:   Mon May 4 12:00:00 2026 +0000\n\n    add conformance fixture\n\ndiff --git a/README.md b/README.md\n"
+    },
+    "showCommit": {
+      "argv": ["git", "show", "--no-color", "1111111111111111111111111111111111111111"],
+      "exit": 0,
+      "stdoutText": "commit 1111111111111111111111111111111111111111\nAuthor: Hoopoe Test <hoopoe@test.invalid>\nDate:   Mon May 4 12:00:00 2026 +0000\n\n    add conformance fixture\n\ndiff --git a/README.md b/README.md\n"
+    },
+    "remotes": {
+      "argv": ["git", "remote", "-v"],
+      "exit": 0,
+      "stdoutText": "origin\tgit@github.com:org/repo.git (fetch)\norigin\tgit@github.com:org/repo.git (push)\n"
+    },
+    "branches": {
+      "argv": ["git", "branch", "-v", "--no-abbrev"],
+      "exit": 0,
+      "stdoutText": "* main   1111111111111111111111111111111111111111 add conformance fixture\n  review 2222222222222222222222222222222222222222 initial commit\n"
+    },
+    "blameReadme": {
+      "argv": ["git", "blame", "--porcelain", "--", "README.md"],
+      "exit": 0,
+      "stdoutText": "1111111111111111111111111111111111111111 1 1 1\nauthor Hoopoe Test\nauthor-mail <hoopoe@test.invalid>\nauthor-time 1777896000\nauthor-tz +0000\ncommitter Hoopoe Test\nsummary add conformance fixture\n\t# Hoopoe\n"
+    },
+    "revListUnpushed": {
+      "argv": ["git", "rev-list", "origin/HEAD..HEAD"],
+      "exit": 0,
+      "stdoutText": "1111111111111111111111111111111111111111\n"
+    },
+    "push": {
+      "argv": ["git", "push", "--porcelain", "--no-color", "origin", "main"],
+      "exit": 0,
+      "stdoutText": "To git@github.com:org/repo.git\n \trefs/heads/main:refs/heads/main\t1111111..2222222\nDone\n"
+    }
+  },
+  "expected": {
+    "status": {
+      "branch": "main",
+      "upstream": "origin/main",
+      "aheadBy": 2,
+      "behindBy": 1,
+      "detached": false,
+      "clean": false,
+      "entries": [
+        { "xy": " M", "path": "apps/daemon/main.go" },
+        {
+          "xy": "??",
+          "path": "packages/fixtures/phase0-git/captures/git-stub-2.44.0.json"
+        },
+        { "xy": "R ", "path": "new.go", "oldPath": "old.go" }
+      ]
+    },
+    "log": {
+      "limit": 2,
+      "count": 2,
+      "commits": [
+        {
+          "sha": "1111111111111111111111111111111111111111",
+          "shortSha": "1111111",
+          "authorName": "Hoopoe Test",
+          "authorEmail": "hoopoe@test.invalid",
+          "authoredAt": "2026-05-04T12:00:00Z",
+          "committerName": "Hoopoe Test",
+          "committerEmail": "hoopoe@test.invalid",
+          "committedAt": "2026-05-04T12:01:00Z",
+          "subject": "add conformance fixture",
+          "body": "body line 1\nbody line 2",
+          "parentShas": ["2222222222222222222222222222222222222222"]
+        },
+        {
+          "sha": "2222222222222222222222222222222222222222",
+          "shortSha": "2222222",
+          "authorName": "Hoopoe Test",
+          "authorEmail": "hoopoe@test.invalid",
+          "authoredAt": "2026-05-03T12:00:00Z",
+          "committerName": "Hoopoe Test",
+          "committerEmail": "hoopoe@test.invalid",
+          "committedAt": "2026-05-03T12:01:00Z",
+          "subject": "initial commit",
+          "body": "",
+          "parentShas": []
+        }
+      ]
+    },
+    "diffUnstaged": "diff --git a/apps/daemon/main.go b/apps/daemon/main.go\nindex 1111111..2222222 100644\n--- a/apps/daemon/main.go\n+++ b/apps/daemon/main.go\n@@ -1 +1,2 @@\n package main\n+// conformance\n",
+    "diffStaged": "diff --git a/README.md b/README.md\nindex 3333333..4444444 100644\n--- a/README.md\n+++ b/README.md\n@@ -1 +1,2 @@\n # Hoopoe\n+conformance fixture\n",
+    "show": {
+      "sha": "1111111111111111111111111111111111111111",
+      "text": "commit 1111111111111111111111111111111111111111\nAuthor: Hoopoe Test <hoopoe@test.invalid>\nDate:   Mon May 4 12:00:00 2026 +0000\n\n    add conformance fixture\n\ndiff --git a/README.md b/README.md\n"
+    },
+    "remotes": [
+      {
+        "name": "origin",
+        "fetchUrl": "git@github.com:org/repo.git",
+        "pushUrl": "git@github.com:org/repo.git"
+      }
+    ],
+    "push": {
+      "ok": true,
+      "forced": false,
+      "remoteRef": "git@github.com:org/repo.git",
+      "oldSha": "1111111",
+      "newSha": "2222222",
+      "summary": "1111111..2222222",
+      "updatedRefs": [
+        {
+          "status": " ",
+          "summary": "1111111..2222222",
+          "source": "refs/heads/main",
+          "destination": "refs/heads/main"
+        }
+      ]
+    },
+    "probe": {
+      "version": "2.44.0",
+      "capabilities": {
+        "git.status.read": "ok",
+        "git.diff.read": "ok",
+        "git.push": "untested",
+        "git.unpushed.list": "ok",
+        "git.log.read": "ok",
+        "git.show.read": "ok",
+        "git.blame.read": "ok",
+        "git.remote.read": "ok",
+        "git.branch.read": "ok"
+      }
+    }
+  }
+}
