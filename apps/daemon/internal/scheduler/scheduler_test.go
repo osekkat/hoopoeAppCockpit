@@ -704,6 +704,34 @@ func TestSchedulerWaitContextDoesNotLeakWaitersOnCallerCancellation(t *testing.T
 	}
 }
 
+// TestSchedulerNewRefusesNilRunner guards hp-6pn: the previous silent
+// no-op default made every dispatched run look like a healthy
+// `wakeAgent: false` tick (Guardrail 9), which would mask missing
+// production wiring of the layer-3 agent runtime. Construction must
+// fail loudly the same way it does for a nil registry, so the bug is
+// visible at startup instead of buried in audit logs.
+func TestSchedulerNewRefusesNilRunner(t *testing.T) {
+	ctx := context.Background()
+	registry, err := NewRegistry(ctx, RegistryConfig{
+		Store: NewMemoryStore(),
+		Now:   time.Now,
+	})
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
+	scheduler, err := New(Config{Registry: registry})
+	if err == nil {
+		scheduler.Stop()
+		t.Fatal("New(Config{Registry: registry}) succeeded with nil Runner; expected ErrInvalidState")
+	}
+	if !errors.Is(err, ErrInvalidState) {
+		t.Fatalf("err = %v, want errors.Is(_, ErrInvalidState)", err)
+	}
+	if !strings.Contains(err.Error(), "nil runner") {
+		t.Fatalf("err = %q, want substring %q", err.Error(), "nil runner")
+	}
+}
+
 func TestDefinitionFilesRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()

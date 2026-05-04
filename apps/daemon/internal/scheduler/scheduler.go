@@ -34,16 +34,21 @@ func New(cfg Config) (*Scheduler, error) {
 	if cfg.Registry == nil {
 		return nil, fmt.Errorf("%w: nil registry", ErrInvalidState)
 	}
+	// A nil Runner is a programmer error, never a legitimate
+	// configuration. The previous silent no-op default made every
+	// dispatched run look like a legitimate `wakeAgent: false` healthy
+	// tick (Guardrail 9), masking missing production wiring of the layer-3
+	// agent runtime. Refuse construction the same way the nil-registry
+	// check above does so the bug is visible at startup, not in audit
+	// logs months later.
+	if cfg.Runner == nil {
+		return nil, fmt.Errorf("%w: nil runner", ErrInvalidState)
+	}
 	workers := cfg.MaxWorkers
 	if workers <= 0 {
 		workers = 4
 	}
 	runner := cfg.Runner
-	if runner == nil {
-		runner = RunnerFunc(func(context.Context, Run) (RunResult, error) {
-			return RunResult{WakeAgent: false}, nil
-		})
-	}
 	root := cfg.Context
 	if root == nil {
 		root = context.Background()
