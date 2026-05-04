@@ -6,7 +6,7 @@
     "capturedAt": "2026-05-02T23:36:12Z",
     "vpsId": "mock-flywheel",
     "source": "hand-written hp-tjf stale-reservation tending fixture",
-    "notes": "Expired reservation is older than the stale threshold and the owning agent is absent from NTM. The tending run wakes an agent to produce a typed ActionPlan, then the executor verifies the reservation disappeared from Agent Mail."
+    "notes": "Expired reservation is older than the stale threshold and the owning agent is absent from NTM. GreenBear asks the coordinator to force-release it, the tending run wakes an agent to produce a typed ActionPlan, and the executor verifies the reservation disappeared from Agent Mail with an audit reply recorded."
   },
   "detections": [
     {
@@ -25,6 +25,15 @@
         "reservation_id": 144,
         "blocked_agent": "GreenBear",
         "path": "packages/schemas/openapi.yaml"
+      }
+    },
+    {
+      "kind": "mail.peer_requested_force_release",
+      "payload": {
+        "thread_id": "hp-tjf",
+        "from": "GreenBear",
+        "to": "orchestrator",
+        "reservation_id": 144
       }
     }
   ],
@@ -56,6 +65,10 @@
     },
     {
       "check": "audit.reservation_release_recorded",
+      "expect": true
+    },
+    {
+      "check": "agent_mail.thread_hp_tjf_contains_peer_request_and_coordinator_release",
       "expect": true
     }
   ],

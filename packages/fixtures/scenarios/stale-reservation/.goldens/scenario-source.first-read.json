@@ -14,12 +14,24 @@
         ]
       },
       {
-        "ack_required": false,
-        "body_md": "Reservation 144 expired at 2026-05-02T19:05:00Z and owner AmberSky is absent from NTM.",
-        "from": "orchestrator",
+        "ack_required": true,
+        "body_md": "Reservation 144 is past TTL, AmberSky is absent from NTM, and packages/schemas/openapi.yaml is blocking hp-r3i. Please ask the coordinator to force-release it.",
+        "from": "GreenBear",
         "id": "msg-stale-reservation-002",
-        "sent_at": "2026-05-02T20:10:02Z",
-        "subject": "[hp-tjf] Stale reservation blocks schema work",
+        "sent_at": "2026-05-02T20:10:01Z",
+        "subject": "[hp-tjf] Please force-release reservation 144",
+        "thread_id": "hp-tjf",
+        "to": [
+          "orchestrator"
+        ]
+      },
+      {
+        "ack_required": false,
+        "body_md": "Coordinator force-released Agent Mail reservation 144 after GreenBear requested help. Evidence: reservation expired at 2026-05-02T19:05:00Z, AmberSky is absent from NTM, and the postcondition confirms Agent Mail no longer reports the reservation.",
+        "from": "orchestrator",
+        "id": "msg-stale-reservation-003",
+        "sent_at": "2026-05-02T20:10:04Z",
+        "subject": "[hp-tjf] Coordinator force-released stale reservation 144",
         "thread_id": "hp-tjf",
         "to": [
           "HoopoeCOD3"
@@ -34,7 +46,7 @@
       },
       {
         "id": "hp-tjf",
-        "message_count": 1,
+        "message_count": 2,
         "subject": "[hp-tjf] Stale reservation blocks schema work"
       }
     ],
@@ -68,7 +80,7 @@
   "buildLogs": [
     {
       "runId": "run-007",
-      "text": "tend-swarm pre-script scanned Agent Mail reservations.\nreservation 144 expired 3900s ago and owner AmberSky was absent from NTM.\ntyped action intent: reservation.force_release reservation_id=144\n"
+      "text": "tend-swarm pre-script scanned Agent Mail reservations.\nreservation 144 expired 3900s ago and owner AmberSky was absent from NTM.\nGreenBear asked orchestrator to force-release the expired reservation.\ntyped action intent: reservation.force_release reservation_id=144\npostcondition: Agent Mail no longer reports reservation 144; audit reply msg-stale-reservation-003 recorded.\n"
     }
   ],
   "bvTriage": {
@@ -250,6 +262,21 @@
       "type": "swarm.tick"
     },
     {
+      "channel": "agent_mail",
+      "payload": {
+        "ack_required": true,
+        "from": "GreenBear",
+        "subject": "[hp-tjf] Please force-release reservation 144",
+        "thread_id": "hp-tjf",
+        "to": [
+          "orchestrator"
+        ]
+      },
+      "seq": 3,
+      "ts": "2026-05-02T20:10:01Z",
+      "type": "mail.received"
+    },
+    {
       "channel": "reservations",
       "payload": {
         "age_after_expiry_s": 3900,
@@ -257,8 +284,8 @@
         "owner_present": false,
         "reservation_id": 144
       },
-      "seq": 3,
-      "ts": "2026-05-02T20:10:01Z",
+      "seq": 4,
+      "ts": "2026-05-02T20:10:02Z",
       "type": "reservation.stale_detected"
     },
     {
@@ -271,10 +298,11 @@
           }
         ],
         "jobId": "tend-swarm",
-        "summary": "Release stale Agent Mail reservation 144"
+        "requested_by": "GreenBear",
+        "summary": "Coordinator will release stale Agent Mail reservation 144"
       },
-      "seq": 4,
-      "ts": "2026-05-02T20:10:02Z",
+      "seq": 5,
+      "ts": "2026-05-02T20:10:03Z",
       "type": "activity.action_plan"
     },
     {
@@ -284,9 +312,22 @@
         "postcondition": "agent_mail.reservations no longer reports reservation",
         "reservation_id": 144
       },
-      "seq": 5,
-      "ts": "2026-05-02T20:10:03Z",
+      "seq": 6,
+      "ts": "2026-05-02T20:10:04Z",
       "type": "reservation.released"
+    },
+    {
+      "channel": "audit",
+      "payload": {
+        "coordinator": "orchestrator",
+        "message_id": "msg-stale-reservation-003",
+        "requested_by": "GreenBear",
+        "reservation_id": 144,
+        "thread_id": "hp-tjf"
+      },
+      "seq": 7,
+      "ts": "2026-05-02T20:10:05Z",
+      "type": "reservation.force_release_audited"
     }
   ],
   "expectedOutcome": {
@@ -325,13 +366,22 @@
           "path": "packages/schemas/openapi.yaml",
           "reservation_id": 144
         }
+      },
+      {
+        "kind": "mail.peer_requested_force_release",
+        "payload": {
+          "from": "GreenBear",
+          "reservation_id": 144,
+          "thread_id": "hp-tjf",
+          "to": "orchestrator"
+        }
       }
     ],
     "meta": {
       "capturedAt": "<scrubbed-captured-at>",
       "fixturesVersion": "phase0-2026-05-02",
       "kind": "synthetic",
-      "notes": "Expired reservation is older than the stale threshold and the owning agent is absent from NTM. The tending run wakes an agent to produce a typed ActionPlan, then the executor verifies the reservation disappeared from Agent Mail.",
+      "notes": "Expired reservation is older than the stale threshold and the owning agent is absent from NTM. GreenBear asks the coordinator to force-release it, the tending run wakes an agent to produce a typed ActionPlan, and the executor verifies the reservation disappeared from Agent Mail with an audit reply recorded.",
       "scenario": "stale-reservation",
       "source": "hand-written hp-tjf stale-reservation tending fixture",
       "vpsId": "mock-flywheel"
@@ -348,6 +398,10 @@
       {
         "check": "audit.reservation_release_recorded",
         "expect": true
+      },
+      {
+        "check": "agent_mail.thread_hp_tjf_contains_peer_request_and_coordinator_release",
+        "expect": true
       }
     ],
     "wakeAgent": true
@@ -357,7 +411,7 @@
     "capturedAt": "<scrubbed-captured-at>",
     "fixturesVersion": "phase0-2026-05-02",
     "kind": "synthetic",
-    "notes": "Agent Mail reports an expired exclusive reservation whose owner no longer has a live NTM pane. tend-swarm should release it through a typed reservation.force_release action and verify Agent Mail state.",
+    "notes": "Agent Mail reports an expired exclusive reservation whose owner no longer has a live NTM pane. A peer asks the coordinator to unblock packages/schemas work; tend-swarm should release the reservation through a typed reservation.force_release action and record the Agent Mail audit trail.",
     "scenario": "stale-reservation",
     "source": "hand-written hp-tjf stale-reservation tending fixture",
     "vpsId": "mock-flywheel"
@@ -406,7 +460,7 @@
       "agent": "GreenBear",
       "bytes": {
         "encoding": "base64",
-        "data": "R3JlZW5CZWFyIHdhaXRpbmcgb24gcGFja2FnZXMvc2NoZW1hcy9vcGVuYXBpLnlhbWwuCkFnZW50IE1haWwgcmVwb3J0cyBwYWNrYWdlcy9zY2hlbWFzLyoqIGhlbGQgYnkgZXhwaXJlZCByZXNlcnZhdGlvbiAxNDQgZnJvbSBBbWJlclNreS4K"
+        "data": "R3JlZW5CZWFyIHdhaXRpbmcgb24gcGFja2FnZXMvc2NoZW1hcy9vcGVuYXBpLnlhbWwuCkFnZW50IE1haWwgcmVwb3J0cyBwYWNrYWdlcy9zY2hlbWFzLyoqIGhlbGQgYnkgZXhwaXJlZCByZXNlcnZhdGlvbiAxNDQgZnJvbSBBbWJlclNreS4KQXNrZWQgb3JjaGVzdHJhdG9yIHRvIGZvcmNlLXJlbGVhc2UgcmVzZXJ2YXRpb24gMTQ0IHNvIGhwLXIzaSBjYW4gcHJvY2VlZC4K"
       }
     }
   ],

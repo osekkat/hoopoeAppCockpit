@@ -1,3 +1,5 @@
 tend-swarm pre-script scanned Agent Mail reservations.
 reservation 144 expired 3900s ago and owner AmberSky was absent from NTM.
+GreenBear asked orchestrator to force-release the expired reservation.
 typed action intent: reservation.force_release reservation_id=144
+postcondition: Agent Mail no longer reports reservation 144; audit reply msg-stale-reservation-003 recorded.

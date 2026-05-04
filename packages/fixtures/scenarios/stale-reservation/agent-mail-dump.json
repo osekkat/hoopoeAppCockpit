@@ -15,13 +15,25 @@
     {
       "id": "msg-stale-reservation-002",
       "thread_id": "hp-tjf",
+      "from": "GreenBear",
+      "to": [
+        "orchestrator"
+      ],
+      "subject": "[hp-tjf] Please force-release reservation 144",
+      "body_md": "Reservation 144 is past TTL, AmberSky is absent from NTM, and packages/schemas/openapi.yaml is blocking hp-r3i. Please ask the coordinator to force-release it.",
+      "sent_at": "2026-05-02T20:10:01Z",
+      "ack_required": true
+    },
+    {
+      "id": "msg-stale-reservation-003",
+      "thread_id": "hp-tjf",
       "from": "orchestrator",
       "to": [
         "HoopoeCOD3"
       ],
-      "subject": "[hp-tjf] Stale reservation blocks schema work",
-      "body_md": "Reservation 144 expired at 2026-05-02T19:05:00Z and owner AmberSky is absent from NTM.",
-      "sent_at": "2026-05-02T20:10:02Z",
+      "subject": "[hp-tjf] Coordinator force-released stale reservation 144",
+      "body_md": "Coordinator force-released Agent Mail reservation 144 after GreenBear requested help. Evidence: reservation expired at 2026-05-02T19:05:00Z, AmberSky is absent from NTM, and the postcondition confirms Agent Mail no longer reports the reservation.",
+      "sent_at": "2026-05-02T20:10:04Z",
       "ack_required": false
     }
   ],
@@ -34,7 +46,7 @@
     {
       "id": "hp-tjf",
       "subject": "[hp-tjf] Stale reservation blocks schema work",
-      "message_count": 1
+      "message_count": 2
     }
   ],
   "unread_total": 0
