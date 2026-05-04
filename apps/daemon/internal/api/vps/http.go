@@ -125,7 +125,7 @@ func writeServiceProblem(w http.ResponseWriter, err error) {
 	status, code, title := mapProjectError(err)
 	detail := err.Error()
 	writeProblem(w, status, schemas.Problem{
-		Type:   "urn:hoopoe:" + code,
+		Type:   "urn:hoopoe:problem:" + strings.ReplaceAll(code, ".", "-"),
 		Title:  title,
 		Status: status,
 		Code:   code,
@@ -134,13 +134,17 @@ func writeServiceProblem(w http.ResponseWriter, err error) {
 }
 
 func writeProblem(w http.ResponseWriter, status int, problem schemas.Problem) {
-	w.Header().Set("Content-Type", "application/problem+json")
+	w.Header().Set("Content-Type", "application/problem+json; charset=utf-8")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(problem)
+	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(problem)
 }
 
 func writeJSON(w http.ResponseWriter, status int, response any) {
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(response)
+	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(response)
 }

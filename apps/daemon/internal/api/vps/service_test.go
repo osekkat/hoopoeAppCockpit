@@ -104,6 +104,41 @@ func TestHTTPMountServesOpenFiles(t *testing.T) {
 	}
 }
 
+func TestHTTPMountUsesDaemonProblemConventions(t *testing.T) {
+	t.Parallel()
+	router := chi.NewRouter()
+	router.Route("/v1/projects/{projectId}", func(r chi.Router) {
+		MountGitRoutes(r, Config{
+			Projects: fakeProjects{
+				project: schemas.Project{
+					Id:   "proj_1",
+					Repo: schemas.ProjectRepoRef{Branch: "main", Origin: "origin"},
+				},
+			},
+		})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects/proj_1/git/status", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+	if got := rec.Header().Get("Content-Type"); got != "application/problem+json; charset=utf-8" {
+		t.Fatalf("content-type = %q, want daemon problem content type", got)
+	}
+	var body schemas.Problem
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode problem: %v", err)
+	}
+	if body.Type != "urn:hoopoe:problem:project-vps_clone_missing" ||
+		body.Code != "project.vps_clone_missing" ||
+		body.Status != http.StatusUnprocessableEntity {
+		t.Fatalf("problem = %+v", body)
+	}
+}
+
 func TestGrepUsesProjectVPSClonePath(t *testing.T) {
 	t.Parallel()
 	service, _ := newTestService(t)
