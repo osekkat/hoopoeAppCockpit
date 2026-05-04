@@ -178,3 +178,269 @@
     justify-content: start;
   }
 }
+
+.hh-beads-view-toggle {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--surface-border-soft);
+  border-radius: 999px;
+  align-self: flex-start;
+}
+
+.hh-beads-view-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.hh-beads-view-tab-active {
+  background: rgba(96, 165, 250, 0.18);
+  color: rgb(199, 220, 255);
+}
+
+.hh-beads-dag-container {
+  height: 70vh;
+  min-height: 480px;
+  border: 1px solid var(--surface-border-soft);
+  border-radius: var(--radius-lg);
+  background: var(--surface-panel);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.hh-beads-dag {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  height: 100%;
+  min-height: 0;
+  background: var(--surface-panel);
+}
+
+.hh-beads-dag-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--surface-border-soft);
+  background: var(--surface-panel-alt);
+}
+
+.hh-beads-dag-metrics,
+.hh-beads-dag-switches,
+.hh-beads-dag-inspector-title,
+.hh-beads-dag-edge-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.hh-beads-dag-metrics span,
+.hh-beads-dag-switches label,
+.hh-beads-dag-edge-meta span {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  min-height: 26px;
+  padding: 5px 8px;
+  border: 1px solid var(--surface-border-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface-panel);
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.hh-beads-dag-switches label {
+  cursor: pointer;
+  user-select: none;
+}
+
+.hh-beads-dag-switches input {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: var(--hoopoe-russet);
+}
+
+.hh-beads-dag-metrics .hh-beads-dag-warning {
+  border-color: rgba(255, 142, 142, 0.42);
+  background: rgba(255, 142, 142, 0.12);
+  color: var(--danger, #ff8e8e);
+}
+
+.hh-beads-dag-canvas {
+  min-height: 0;
+  background:
+    linear-gradient(180deg, rgba(229, 130, 83, 0.05), transparent 28%),
+    var(--surface-base);
+}
+
+.hh-beads-dag-canvas .react-flow__minimap {
+  border: 1px solid var(--surface-border-soft);
+  border-radius: var(--radius-md);
+  background: rgba(18, 22, 29, 0.88);
+}
+
+.hh-beads-dag-canvas .react-flow__controls {
+  overflow: hidden;
+  border: 1px solid var(--surface-border-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface-panel);
+}
+
+.hh-beads-dag-canvas .react-flow__controls-button {
+  border-bottom-color: var(--surface-border-soft);
+  background: var(--surface-panel);
+  color: var(--text-primary);
+}
+
+.hh-beads-dag-canvas .react-flow__handle {
+  width: 1px;
+  height: 1px;
+  border: 0;
+  opacity: 0;
+}
+
+.hh-dag-flow-node {
+  width: 220px;
+}
+
+.hh-dag-node-card {
+  display: grid;
+  gap: 7px;
+  min-height: 82px;
+  padding: 10px;
+  border: 1px solid var(--surface-border-soft);
+  border-radius: var(--radius-lg);
+  background: rgba(25, 29, 37, 0.96);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.22);
+  color: var(--text-primary);
+}
+
+.hh-dag-flow-node-critical .hh-dag-node-card {
+  border-color: rgba(229, 130, 83, 0.92);
+  box-shadow: 0 0 0 2px rgba(229, 130, 83, 0.18), 0 10px 24px rgba(0, 0, 0, 0.24);
+}
+
+.hh-dag-flow-node-ready .hh-dag-node-card {
+  border-color: rgba(75, 191, 122, 0.82);
+}
+
+.hh-dag-flow-node-cluster .hh-dag-node-card {
+  border-style: dashed;
+  background: rgba(35, 40, 51, 0.96);
+}
+
+.hh-dag-node-topline,
+.hh-dag-node-flags,
+.hh-dag-node-cluster-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+}
+
+.hh-dag-node-topline {
+  justify-content: space-between;
+}
+
+.hh-dag-node-topline code,
+.hh-dag-node-topline span,
+.hh-dag-node-flags span,
+.hh-dag-node-cluster-counts span {
+  min-width: 0;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-panel-alt);
+  color: var(--text-secondary);
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.hh-dag-node-topline code {
+  color: var(--hoopoe-russet);
+  font-weight: 760;
+}
+
+.hh-dag-node-card strong {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.hh-dag-node-flags .hh-dag-node-critical-pill {
+  background: rgba(229, 130, 83, 0.18);
+  color: var(--hoopoe-russet);
+}
+
+.hh-dag-node-flags .hh-dag-node-ready-pill {
+  background: rgba(75, 191, 122, 0.16);
+  color: #75d998;
+}
+
+.hh-dag-node-cluster-counts {
+  padding-top: 2px;
+}
+
+.hh-dag-node-cluster-counts span {
+  color: var(--text-muted);
+}
+
+.hh-dag-flow-edge-critical path {
+  filter: drop-shadow(0 0 4px rgba(229, 130, 83, 0.36));
+}
+
+.hh-dag-flow-edge-cycle path {
+  filter: drop-shadow(0 0 4px rgba(255, 142, 142, 0.4));
+}
+
+.hh-beads-dag-inspector {
+  display: grid;
+  gap: 8px;
+  min-height: 86px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--surface-border-soft);
+  background: var(--surface-panel-alt);
+}
+
+.hh-beads-dag-inspector-title strong {
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.hh-beads-dag-inspector-title span,
+.hh-beads-dag-inspector p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.hh-beads-dag-inspector button {
+  justify-self: start;
+  min-height: 28px;
+  padding: 5px 9px;
+  border: 1px solid var(--surface-border-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface-panel);
+  color: var(--text-muted);
+  font-size: 11px;
+}

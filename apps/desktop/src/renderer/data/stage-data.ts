@@ -28,6 +28,19 @@ export interface BeadStageItem {
   readonly issueType: string;
   readonly updatedAt: string;
   readonly descriptionSnippet: string;
+  readonly dependencyCount: number;
+  readonly dependencies: readonly BeadDependency[];
+}
+
+export interface BeadDependency {
+  readonly id: string;
+  readonly title: string;
+  readonly status: string;
+  readonly priority: number | null;
+  readonly type: "blocks" | "soft" | "cycle" | "unknown";
+  readonly addedBy: string;
+  readonly addedAt: string;
+  readonly reason: string;
 }
 
 export interface BeadStatusCount {
@@ -158,8 +171,7 @@ export function normalizeBeadsStagePayload(
   const issueValues = arrayField(root, "issues");
   const beads = issueValues
     .map(normalizeBead)
-    .filter((bead): bead is BeadStageItem => bead !== null)
-    .slice(0, 12);
+    .filter((bead): bead is BeadStageItem => bead !== null);
 
   return {
     projectId,
@@ -253,6 +265,7 @@ function normalizeBead(value: unknown): BeadStageItem | null {
   const bead = recordOf(value);
   const id = stringField(bead, "id", "");
   if (!id) return null;
+  const dependencies = normalizeDependencies(bead);
   return {
     id,
     title: stringField(bead, "title", "Untitled bead"),
@@ -261,7 +274,72 @@ function normalizeBead(value: unknown): BeadStageItem | null {
     issueType: stringField(bead, "issue_type", "task"),
     updatedAt: stringField(bead, "updated_at", ""),
     descriptionSnippet: snippet(stringField(bead, "description", "")),
+    dependencyCount: numberField(bead, "dependency_count", dependencies.length),
+    dependencies,
   };
+}
+
+function normalizeDependencies(record: Record<string, unknown>): readonly BeadDependency[] {
+  const candidates = [
+    ...arrayField(record, "dependencies"),
+    ...arrayField(record, "depends_on"),
+    ...arrayField(record, "deps"),
+  ];
+
+  const normalized = candidates
+    .map(normalizeDependency)
+    .filter((dependency): dependency is BeadDependency => dependency !== null);
+  return dedupeDependencies(normalized);
+}
+
+function normalizeDependency(value: unknown): BeadDependency | null {
+  if (typeof value === "string") {
+    return {
+      id: value,
+      title: "",
+      status: "unknown",
+      priority: null,
+      type: "blocks",
+      addedBy: "",
+      addedAt: "",
+      reason: "",
+    };
+  }
+
+  const dependency = recordOf(value);
+  const id =
+    stringField(dependency, "id", "") ||
+    stringField(dependency, "depends_on_id", "") ||
+    stringField(dependency, "dependsOnId", "") ||
+    stringField(dependency, "issue_id", "");
+  if (!id) return null;
+
+  return {
+    id,
+    title: stringField(dependency, "title", ""),
+    status: stringField(dependency, "status", "unknown"),
+    priority: maybeNumberField(dependency, "priority"),
+    type: dependencyType(stringField(dependency, "dependency_type", "") || stringField(dependency, "type", "")),
+    addedBy: stringField(dependency, "created_by", "") || stringField(dependency, "added_by", ""),
+    addedAt: stringField(dependency, "created_at", "") || stringField(dependency, "added_at", ""),
+    reason: stringField(dependency, "reason", "") || stringField(dependency, "metadata", ""),
+  };
+}
+
+function dedupeDependencies(dependencies: readonly BeadDependency[]): readonly BeadDependency[] {
+  const seen = new Set<string>();
+  const result: BeadDependency[] = [];
+  for (const dependency of dependencies) {
+    if (seen.has(dependency.id)) continue;
+    seen.add(dependency.id);
+    result.push(dependency);
+  }
+  return result;
+}
+
+function dependencyType(value: string): BeadDependency["type"] {
+  if (value === "blocks" || value === "soft" || value === "cycle") return value;
+  return "blocks";
 }
 
 function normalizeSession(value: unknown): SwarmSession | null {
@@ -356,6 +434,11 @@ function numberField(
 ): number {
   const value = record[key];
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function maybeNumberField(record: Record<string, unknown>, key: string): number | null {
+  const value = record[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function snippet(text: string): string {
