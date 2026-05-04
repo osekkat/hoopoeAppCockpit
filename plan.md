@@ -1149,14 +1149,14 @@ The desktop maintains a local Git clone of every project, used purely as a sync-
 - **On-demand:** "Refresh" action in the project header forces a fetch immediately.
 - **Reconcile on reconnect:** when the WebSocket reconnects after a gap (§10), the desktop fetches once and reconciles its sync cursor.
 
-**What if the user edits files locally anyway.** Hoopoe does not chmod the working tree. Instead, a file watcher on the local clone detects modifications, untracked files, or local commits. When detected, the project header shows a yellow banner: *"Local clone has unsaved changes — Hoopoe ignores local edits. Make changes via the VPS (`ssh` or Cursor/VS Code Remote). [Open clone in Finder]"*. Hoopoe does not reset, clean, branch, commit, push, or otherwise mutate the desktop mirror; any repair is manual outside Hoopoe or flows through the VPS clone/origin sync contract.
+**What if the user edits files locally anyway.** Hoopoe does not chmod the working tree. Instead, a file watcher on the local clone detects modifications, untracked files, or local commits. When detected, the project header shows a yellow banner: *"Local clone has unsaved changes — Hoopoe ignores local edits. Make changes via the VPS (`ssh` or Cursor/VS Code Remote). [Open clone in Finder]"*. Hoopoe marks the mirror untrusted for freshness-sensitive views and does not reset, clean, branch, commit, push, or otherwise mutate the desktop mirror. It never tries to salvage the checkout in place; the safe recovery path is a clean origin sync contract, with VPS WIP still read through daemon RPCs.
 
 **Disk hygiene.**
 
 - **Soft cap:** 2 GB per project clone. Crossing it shows a warning in the project's settings card with options to reveal the mirror in Finder or raise the cap.
 - **Hard cap:** 5 GB per project clone. Crossing it blocks further fetches until the user raises the cap or performs manual cache cleanup outside Hoopoe.
 - **Both caps configurable** in `~/.hoopoe/userdata/desktop-settings.json` per-project and globally.
-- **Per-project actions** in settings: "Reveal in Finder," "Re-fetch from origin," and cap override. The re-fetch action uses the normal origin-sync path only; it never runs `git reset`, `git clean`, checkout rewrites, or any other local working-tree repair against the desktop mirror.
+- **Per-project actions** in settings: "Reveal in Finder," "Re-fetch from origin," and cap override. The re-fetch action uses the normal origin-sync path only; if the mirror is dirty it reports the untrusted state instead of attempting repair. It never runs `git reset`, `git clean`, checkout rewrites, or any other local working-tree repair against the desktop mirror.
 - **Project removal:** removing a project unregisters it from Hoopoe. Hoopoe does not delete the local mirror as part of project removal. If a future disk-cleanup flow evicts mirror caches, returning to the project must recreate the mirror by cloning/fetching from origin rather than repairing the previous checkout in place.
 - **Total cache view** in global settings: list of clones with size, last-fetched, last-accessed; sortable; supports re-fetch/rebuild status for mirrors that must be rehydrated from origin.
 
