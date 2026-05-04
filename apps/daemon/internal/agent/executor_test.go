@@ -1,0 +1,320 @@
+package agent
+
+import (
+	"context"
+	"reflect"
+	"strings"
+	"testing"
+	"time"
+
+	schemas "github.com/hoopoe-cockpit/hoopoe/packages/schemas/go"
+)
+
+func TestDefaultCatalogMatchesGeneratedActionKindEnum(t *testing.T) {
+	want := []schemas.ActionKind{
+		schemas.AgentAskStatus,
+		schemas.AgentKillWedgedProcess,
+		schemas.AgentPause,
+		schemas.AgentSendMarchingOrders,
+		schemas.BeadCreateBlocker,
+		schemas.CaamSwitchAccount,
+		schemas.CasrResumeSession,
+		schemas.GitPushBranch,
+		schemas.ReservationForceRelease,
+		schemas.ReviewProposeFlip,
+		schemas.SwarmHalt,
+	}
+	if got := KnownActionKinds(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("catalog action kinds drifted from generated ActionKind enum\ngot:  %v\nwant: %v", got, want)
+	}
+	for _, kind := range KnownActionKinds() {
+		if !kind.Valid() {
+			t.Fatalf("catalog contains non-generated action kind %q", kind)
+		}
+	}
+}
+
+func TestValidatePlanRejectsUnknownKindAndMissingFields(t *testing.T) {
+	plan := basePlan()
+	plan.Actions = []schemas.Action{{
+		Kind:           schemas.ActionKind("shell.exec"),
+		Target:         map[string]any{},
+		IdempotencyKey: "run-1:0",
+	}}
+	err := ValidatePlan(plan)
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !strings.Contains(err.Error(), "shell.exec") {
+		t.Fatalf("validation error did not name unknown kind: %v", err)
+	}
+
+	plan = basePlan()
+	args := map[string]any{}
+	plan.Actions = []schemas.Action{{
+		Kind:           schemas.GitPushBranch,
+		Target:         map[string]any{"projectId": "proj"},
+		Args:           &args,
+		IdempotencyKey: "run-1:0",
+	}}
+	err = ValidatePlan(plan)
+	if err == nil {
+		t.Fatal("expected missing field validation error")
+	}
+	for _, want := range []string{"target.branch", "args.expectedSha"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("validation error missing %q: %v", want, err)
+		}
+	}
+}
+
+func TestDryRunValidatesCapabilitiesAndDoesNotExecute(t *testing.T) {
+	plan := basePlan()
+	plan.Actions = []schemas.Action{askStatusAction("idem-ask-status")}
+	handler := &countingHandler{}
+	exec := NewExecutor()
+	exec.Capabilities = AllowAllCapabilities{}
+	exec.Handlers = map[schemas.ActionKind]ActionHandler{
+		schemas.AgentAskStatus: handler,
+	}
+	report, err := exec.DryRun(context.Background(), plan)
+	if err != nil {
+		t.Fatalf("dry run: %v", err)
+	}
+	if len(report.Results) != 1 || report.Results[0].Status != ActionStatusDryRunOK {
+		t.Fatalf("unexpected dry-run report: %+v", report.Results)
+	}
+	if handler.dryRuns != 1 || handler.executes != 0 || handler.verifies != 0 {
+		t.Fatalf("handler counts = dry:%d exec:%d verify:%d", handler.dryRuns, handler.executes, handler.verifies)
+	}
+}
+
+func TestExecuteRequiresApprovalBeforeMutatingHighRiskAction(t *testing.T) {
+	plan := basePlan()
+	requiresApproval := true
+	plan.RequiresApproval = &requiresApproval
+	plan.RiskClass = schemas.High
+	plan.Actions = []schemas.Action{killAction("idem-kill")}
+	handler := &countingHandler{}
+	exec := NewExecutor()
+	exec.Capabilities = AllowAllCapabilities{}
+	exec.Handlers = map[schemas.ActionKind]ActionHandler{
+		schemas.AgentKillWedgedProcess: handler,
+	}
+	report, err := exec.Execute(context.Background(), plan)
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if len(report.Results) != 1 || report.Results[0].Status != ActionStatusApprovalRequired {
+		t.Fatalf("expected approval_required, got %+v", report.Results)
+	}
+	if handler.executes != 0 || handler.verifies != 0 {
+		t.Fatalf("approval-required action executed before approval: exec:%d verify:%d", handler.executes, handler.verifies)
+	}
+}
+
+func TestExecuteRunsApprovedActionAndReplaysIdempotency(t *testing.T) {
+	plan := basePlan()
+	plan.Actions = []schemas.Action{askStatusAction("idem-ask-status")}
+	handler := &countingHandler{}
+	exec := NewExecutor()
+	exec.Capabilities = AllowAllCapabilities{}
+	exec.Handlers = map[schemas.ActionKind]ActionHandler{
+		schemas.AgentAskStatus: handler,
+	}
+	report, err := exec.Execute(context.Background(), plan)
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if len(report.Results) != 1 || report.Results[0].Status != ActionStatusExecuted {
+		t.Fatalf("expected executed, got %+v", report.Results)
+	}
+	if handler.executes != 1 || handler.verifies != 1 {
+		t.Fatalf("first execution counts = exec:%d verify:%d", handler.executes, handler.verifies)
+	}
+	replay, err := exec.Execute(context.Background(), plan)
+	if err != nil {
+		t.Fatalf("replay execute: %v", err)
+	}
+	if len(replay.Results) != 1 || replay.Results[0].Status != ActionStatusIdempotentReplay {
+		t.Fatalf("expected idempotent replay, got %+v", replay.Results)
+	}
+	if handler.executes != 1 || handler.verifies != 1 {
+		t.Fatalf("idempotent replay re-executed: exec:%d verify:%d", handler.executes, handler.verifies)
+	}
+}
+
+func TestPostconditionFailureEmitsFollowUpDetection(t *testing.T) {
+	plan := basePlan()
+	plan.Actions = []schemas.Action{askStatusAction("idem-ask-status")}
+	handler := &countingHandler{failVerification: true}
+	exec := NewExecutor()
+	exec.Capabilities = AllowAllCapabilities{}
+	exec.Handlers = map[schemas.ActionKind]ActionHandler{
+		schemas.AgentAskStatus: handler,
+	}
+	report, err := exec.Execute(context.Background(), plan)
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if len(report.Results) != 1 || report.Results[0].Status != ActionStatusPostconditionFailed {
+		t.Fatalf("expected postcondition failure, got %+v", report.Results)
+	}
+	detection := report.Results[0].FollowUpDetection
+	if detection == nil || detection.SourceActionID != "idem-ask-status" || detection.Severity != schemas.Low {
+		t.Fatalf("follow-up detection not populated correctly: %+v", detection)
+	}
+}
+
+func TestRuntimeLoadsSkillsRendersPromptSuppressesSilentActivityAndExecutesPlan(t *testing.T) {
+	plan := basePlan()
+	plan.Actions = []schemas.Action{askStatusAction("idem-runtime")}
+	handler := &countingHandler{}
+	exec := NewExecutor()
+	exec.Capabilities = AllowAllCapabilities{}
+	exec.Handlers = map[schemas.ActionKind]ActionHandler{
+		schemas.AgentAskStatus: handler,
+	}
+	audit := &recordingAudit{}
+	runtime := &Runtime{
+		Skills: StaticSkillLoader{
+			"vibing-with-ntm": {Name: "vibing-with-ntm", Content: "skill body", Source: "fixture"},
+		},
+		Runner: &fakeRunner{reply: AgentReply{
+			Body:       "[SILENT]\nqueued typed actions",
+			ActionPlan: &plan,
+		}},
+		Executor: exec,
+		Audit:    audit,
+		Now:      fixedNow,
+	}
+	report, err := runtime.Run(context.Background(), RuntimeRequest{
+		JobID:          "job-1",
+		RunID:          "run-1",
+		AgentID:        "agent-1",
+		PromptTemplate: "hello {{.bead}}",
+		Context:        map[string]any{"bead": "hp-209"},
+		Skills:         []string{"vibing-with-ntm"},
+		ReadOnlyTools:  []string{"br.show", "ntm.snapshot"},
+	})
+	if err != nil {
+		t.Fatalf("runtime run: %v", err)
+	}
+	if !report.ActivitySuppressed {
+		t.Fatalf("expected [SILENT] reply to suppress activity: %+v", report)
+	}
+	if report.ActionReport == nil || len(report.ActionReport.Results) != 1 || report.ActionReport.Results[0].Status != ActionStatusExecuted {
+		t.Fatalf("expected executed action report, got %+v", report.ActionReport)
+	}
+	if !audit.saw("runtime.reply") || !audit.saw("runtime.completed") {
+		t.Fatalf("runtime audit did not preserve silent reply events: %+v", audit.events)
+	}
+}
+
+func TestRuntimePropagatesPromptTemplateErrors(t *testing.T) {
+	runtime := &Runtime{Runner: &fakeRunner{}}
+	_, err := runtime.Run(context.Background(), RuntimeRequest{
+		JobID:          "job-1",
+		RunID:          "run-1",
+		PromptTemplate: "hello {{.missing}}",
+	})
+	if err == nil {
+		t.Fatal("expected prompt template error")
+	}
+}
+
+type countingHandler struct {
+	dryRuns          int
+	executes         int
+	verifies         int
+	failVerification bool
+}
+
+func (h *countingHandler) DryRun(context.Context, ActionContext) (DryRunResult, error) {
+	h.dryRuns++
+	return DryRunResult{OK: true, Summary: "dry-run ok"}, nil
+}
+
+func (h *countingHandler) Execute(context.Context, ActionContext) (ExecutionResult, error) {
+	h.executes++
+	return ExecutionResult{OK: true, CanonicalRef: "canonical://action"}, nil
+}
+
+func (h *countingHandler) VerifyPostconditions(context.Context, ActionContext, ExecutionResult) (PostconditionResult, error) {
+	h.verifies++
+	if h.failVerification {
+		return PostconditionResult{OK: false, CanonicalRef: "canonical://failed", Summary: "canonical state did not change"}, nil
+	}
+	return PostconditionResult{OK: true, CanonicalRef: "canonical://verified"}, nil
+}
+
+type fakeRunner struct {
+	reply AgentReply
+	err   error
+}
+
+func (r *fakeRunner) RunAgent(context.Context, AgentInvocation) (AgentReply, error) {
+	if r.err != nil {
+		return AgentReply{}, r.err
+	}
+	return r.reply, nil
+}
+
+type recordingAudit struct {
+	events []AuditEvent
+	err    error
+}
+
+func (a *recordingAudit) RecordAuditEvent(_ context.Context, event AuditEvent) error {
+	if a.err != nil {
+		return a.err
+	}
+	a.events = append(a.events, event)
+	return nil
+}
+
+func (a *recordingAudit) saw(action string) bool {
+	for _, event := range a.events {
+		if event.Action == action {
+			return true
+		}
+	}
+	return false
+}
+
+func basePlan() schemas.ActionPlan {
+	return schemas.ActionPlan{
+		SchemaVersion: ActionPlanSchemaVersion,
+		JobId:         "job-1",
+		RunId:         "run-1",
+		Summary:       "test plan",
+		RiskClass:     schemas.Low,
+		Actions:       []schemas.Action{askStatusAction("idem-ask-status")},
+	}
+}
+
+func askStatusAction(key string) schemas.Action {
+	return schemas.Action{
+		Kind: schemas.AgentAskStatus,
+		Target: map[string]any{
+			"agentId": "agent-1",
+		},
+		IdempotencyKey: key,
+	}
+}
+
+func killAction(key string) schemas.Action {
+	args := map[string]any{"reason": "wedged"}
+	return schemas.Action{
+		Kind: schemas.AgentKillWedgedProcess,
+		Target: map[string]any{
+			"agentId": "agent-1",
+		},
+		Args:           &args,
+		IdempotencyKey: key,
+	}
+}
+
+func fixedNow() time.Time {
+	return time.Date(2026, 5, 4, 1, 0, 0, 0, time.UTC)
+}
