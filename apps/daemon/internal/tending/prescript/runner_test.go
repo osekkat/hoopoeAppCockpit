@@ -1,12 +1,15 @@
 package prescript
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -323,7 +326,112 @@ func helperProcess(t *testing.T) {
 		fmt.Fprintf(os.Stderr, "decode stdin: %v\n", err)
 		os.Exit(2)
 	}
+	if mode := os.Getenv("HOOPOE_PRESCRIPT_HELPER_MODE"); mode == "spew" {
+		// hp-er4m: emit 1 MiB of stdout to drive the cap. The trailing
+		// newline keeps the helper from coexisting with the truncation
+		// marker awkwardly — the marker itself is appended by the
+		// truncatingBuffer, not by this helper.
+		chunk := bytes.Repeat([]byte("A"), 4096)
+		for written := 0; written < 1<<20; written += len(chunk) {
+			os.Stdout.Write(chunk)
+		}
+		os.Stdout.Write([]byte("\n"))
+		os.Exit(0)
+	}
 	fmt.Println("helper log line")
 	fmt.Printf("{\"wakeAgent\":false,\"context\":{\"jobId\":%q}}\n", input.Job.ID)
 	os.Exit(0)
+}
+
+func TestTruncatingBufferFitsBelowCap(t *testing.T) {
+	// Below the cap: behaves like a plain bytes.Buffer; no marker, no
+	// truncation flag.
+	buf := newTruncatingBuffer("stdout", 1024)
+	if _, err := buf.Write([]byte("hello world\n")); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if buf.didTruncate() {
+		t.Fatal("didTruncate() = true for write below cap")
+	}
+	if got := string(buf.bytes()); got != "hello world\n" {
+		t.Fatalf("bytes() = %q, want %q", got, "hello world\n")
+	}
+}
+
+func TestTruncatingBufferTruncatesOversizedWriteAndAbsorbsTail(t *testing.T) {
+	// hp-er4m: a single Write that overflows the cap fills as much as
+	// fits (less the marker), appends the marker, and silently absorbs
+	// every subsequent Write so the child process does not get EPIPE.
+	cap := 256
+	buf := newTruncatingBuffer("stdout", cap)
+	payload := bytes.Repeat([]byte("A"), 1024)
+	n, err := buf.Write(payload)
+	if err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if n != len(payload) {
+		t.Fatalf("Write returned n=%d, want %d (caller must see full byte count)", n, len(payload))
+	}
+	if !buf.didTruncate() {
+		t.Fatal("didTruncate() = false after oversized write")
+	}
+	if len(buf.bytes()) > cap {
+		t.Fatalf("len(bytes()) = %d, want <= cap %d", len(buf.bytes()), cap)
+	}
+	if !strings.Contains(string(buf.bytes()), "[TRUNCATED: stdout exceeded 256 bytes]") {
+		t.Fatalf("bytes() missing truncation marker: %q", string(buf.bytes()))
+	}
+	// Subsequent writes are silently absorbed — n=len(p), buffer
+	// unchanged, still truncated.
+	beforeLen := len(buf.bytes())
+	if _, err := buf.Write([]byte("more")); err != nil {
+		t.Fatalf("post-truncation Write: %v", err)
+	}
+	if len(buf.bytes()) != beforeLen {
+		t.Fatalf("post-truncation len = %d, want %d", len(buf.bytes()), beforeLen)
+	}
+}
+
+func TestExecScriptInvokerCapsOversizedStdoutAndReturnsErrOutputTooLarge(t *testing.T) {
+	// hp-er4m: a pre-script that spews 1 MiB to stdout used to grow the
+	// daemon's bytes.Buffer unboundedly (OOM risk). Now it is capped at
+	// MaxStreamBytes and Invoke returns ErrOutputTooLarge.
+	if os.Getenv("HOOPOE_PRESCRIPT_HELPER") == "1" {
+		helperProcess(t)
+		return
+	}
+	job := testJob()
+	run := testRun(job.Definition.ID)
+	input := Input{
+		SchemaVersion: SchemaVersion,
+		GeneratedAt:   fixedTime(),
+		Job:           job.Definition,
+		Run:           run,
+	}
+	stdin, err := json.Marshal(input)
+	if err != nil {
+		t.Fatalf("marshal input: %v", err)
+	}
+	invoker := ExecScriptInvoker{
+		Args: []string{"-test.run=TestExecScriptInvokerCapsOversizedStdoutAndReturnsErrOutputTooLarge", "--"},
+		Env:  []string{"HOOPOE_PRESCRIPT_HELPER=1", "HOOPOE_PRESCRIPT_HELPER_MODE=spew"},
+	}
+	result, err := invoker.Invoke(context.Background(), Invocation{
+		Script: os.Args[0],
+		Stdin:  stdin,
+		Job:    job,
+		Run:    run,
+	})
+	if err == nil {
+		t.Fatal("Invoke returned nil error for 1 MiB stdout; expected ErrOutputTooLarge")
+	}
+	if !errors.Is(err, ErrOutputTooLarge) {
+		t.Fatalf("Invoke err = %v, want ErrOutputTooLarge wrapped", err)
+	}
+	if len(result.Stdout) > MaxStreamBytes {
+		t.Fatalf("len(result.Stdout) = %d, want <= MaxStreamBytes %d", len(result.Stdout), MaxStreamBytes)
+	}
+	if !strings.Contains(string(result.Stdout), "[TRUNCATED: stdout exceeded 262144 bytes]") {
+		t.Fatalf("stdout missing truncation marker; tail=%q", string(result.Stdout[max(0, len(result.Stdout)-200):]))
+	}
 }

@@ -27,9 +27,19 @@ import (
 const SchemaVersion = 1
 
 var (
-	ErrInvalidInput  = errors.New("prescript: invalid input")
-	ErrInvalidOutput = errors.New("prescript: invalid output")
+	ErrInvalidInput   = errors.New("prescript: invalid input")
+	ErrInvalidOutput  = errors.New("prescript: invalid output")
+	ErrOutputTooLarge = errors.New("prescript: output exceeded MaxStreamBytes")
 )
+
+// MaxStreamBytes caps per-stream capture for ExecScriptInvoker. 256 KiB is
+// large enough to hold realistic pre-script output (typed JSON + log
+// lines) while preventing a runaway script from OOM-killing the daemon
+// (hp-er4m). When this cap trips, the captured bytes are truncated, a
+// `[TRUNCATED: …]` marker is appended, and Invoke returns
+// ErrOutputTooLarge so the run is treated as a deterministic failure
+// instead of silently shipping a half-result.
+const MaxStreamBytes = 256 * 1024
 
 type DefinitionSource interface {
 	GetJob(ctx context.Context, id string) (scheduler.Job, error)
@@ -268,15 +278,63 @@ func (i ExecScriptInvoker) Invoke(ctx context.Context, invocation Invocation) (I
 		cmd.Env = append(cmd.Environ(), i.Env...)
 	}
 	cmd.Stdin = bytes.NewReader(invocation.Stdin)
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return InvocationResult{Stdout: stdout.Bytes(), Stderr: stderr.Bytes()}, fmt.Errorf("prescript: run %s: %w: %s", script, err, strings.TrimSpace(stderr.String()))
+	stdout := newTruncatingBuffer("stdout", MaxStreamBytes)
+	stderr := newTruncatingBuffer("stderr", MaxStreamBytes)
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	runErr := cmd.Run()
+	result := InvocationResult{Stdout: stdout.bytes(), Stderr: stderr.bytes()}
+	if runErr != nil {
+		return result, fmt.Errorf("prescript: run %s: %w: %s", script, runErr, strings.TrimSpace(string(stderr.bytes())))
 	}
-	return InvocationResult{Stdout: stdout.Bytes(), Stderr: stderr.Bytes()}, nil
+	if stdout.didTruncate() || stderr.didTruncate() {
+		return result, fmt.Errorf("prescript: run %s: %w (stdoutTruncated=%t, stderrTruncated=%t)", script, ErrOutputTooLarge, stdout.didTruncate(), stderr.didTruncate())
+	}
+	return result, nil
 }
+
+// truncatingBuffer is an io.Writer that captures up to `cap` bytes. When the
+// next Write would exceed the cap, the buffer fills the remaining space (less
+// the marker length), appends a `\n[TRUNCATED: <name> exceeded N bytes]\n`
+// sentinel, and silently absorbs any further writes (returns n,nil so the
+// child process does not get EPIPE and abort early — the caller is
+// responsible for cancelling ctx if it wants to halt the script). hp-er4m.
+type truncatingBuffer struct {
+	name      string
+	cap       int
+	data      []byte
+	truncated bool
+}
+
+func newTruncatingBuffer(name string, cap int) *truncatingBuffer {
+	return &truncatingBuffer{name: name, cap: cap, data: make([]byte, 0, 4096)}
+}
+
+func (b *truncatingBuffer) Write(p []byte) (int, error) {
+	n := len(p)
+	if b.truncated {
+		return n, nil
+	}
+	marker := fmt.Sprintf("\n[TRUNCATED: %s exceeded %d bytes]\n", b.name, b.cap)
+	keep := b.cap - len(marker)
+	if keep < 0 {
+		keep = 0
+	}
+	available := keep - len(b.data)
+	if len(p) <= available {
+		b.data = append(b.data, p...)
+		return n, nil
+	}
+	if available > 0 {
+		b.data = append(b.data, p[:available]...)
+	}
+	b.data = append(b.data, marker...)
+	b.truncated = true
+	return n, nil
+}
+
+func (b *truncatingBuffer) bytes() []byte    { return b.data }
+func (b *truncatingBuffer) didTruncate() bool { return b.truncated }
 
 type Output struct {
 	WakeAgent     bool                      `json:"wakeAgent"`
