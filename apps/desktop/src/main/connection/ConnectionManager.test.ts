@@ -113,6 +113,30 @@ describe("hp-e7k :: SshProfileManager", () => {
       }),
     ).rejects.toMatchObject({ code: "profile.private-key-not-absolute" });
   });
+
+  test("rejects malformed profile stores instead of silently resetting them", async () => {
+    const filePath = join(workDir, "profiles.json");
+    const manager = new SshProfileManager({ filePath });
+
+    await writeFile(filePath, "{", "utf8");
+    await expect(manager.listProfiles()).rejects.toMatchObject({
+      code: "profile.store-malformed",
+      details: { filePath, reason: "invalid JSON" },
+    });
+
+    await writeFile(
+      filePath,
+      JSON.stringify({ schemaVersion: 1, profiles: [], activeProfileId: "missing-profile" }),
+      "utf8",
+    );
+    await expect(manager.listProfiles()).rejects.toMatchObject({
+      code: "profile.store-malformed",
+      details: {
+        filePath,
+        reason: "expected schemaVersion 1 with valid profiles and activeProfileId",
+      },
+    });
+  });
 });
 
 describe("hp-e7k :: KnownHostStore", () => {
@@ -137,6 +161,31 @@ describe("hp-e7k :: KnownHostStore", () => {
       ok: false,
       expected: firstFingerprint,
       actual: fingerprintHostKey(secondKey),
+    });
+  });
+
+  test("rejects malformed known-host stores instead of silently trusting first use", async () => {
+    const filePath = join(workDir, "known_hosts.json");
+    const store = new KnownHostStore({ filePath });
+    const profile = fixtureProfile(join(workDir, "id_ed25519"));
+
+    await writeFile(filePath, "{", "utf8");
+    await expect(store.verifyFingerprint(profile, "SHA256:first")).rejects.toMatchObject({
+      code: "known-hosts.store-malformed",
+      details: { filePath, reason: "invalid JSON" },
+    });
+
+    await writeFile(
+      filePath,
+      JSON.stringify({ schemaVersion: 1, hosts: { "vps.example.com:22": 42 } }),
+      "utf8",
+    );
+    await expect(store.verifyFingerprint(profile, "SHA256:first")).rejects.toMatchObject({
+      code: "known-hosts.store-malformed",
+      details: {
+        filePath,
+        reason: "expected schemaVersion 1 with a string fingerprint map",
+      },
     });
   });
 });

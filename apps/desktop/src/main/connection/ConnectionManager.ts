@@ -180,11 +180,19 @@ export class SshProfileManager {
     try {
       const raw = await fs.readFile(this.filePath, "utf8");
       const parsed = JSON.parse(raw);
-      if (!isProfileStoreFile(parsed)) return emptyProfileFile();
+      if (!isProfileStoreFile(parsed)) {
+        throw malformedStoreError(
+          "profile.store-malformed",
+          this.filePath,
+          "expected schemaVersion 1 with valid profiles and activeProfileId",
+        );
+      }
       return parsed;
     } catch (err) {
       if (isErrnoCode(err, "ENOENT")) return emptyProfileFile();
-      if (err instanceof SyntaxError) return emptyProfileFile();
+      if (err instanceof SyntaxError) {
+        throw malformedStoreError("profile.store-malformed", this.filePath, "invalid JSON", err);
+      }
       throw err;
     }
   }
@@ -261,8 +269,36 @@ function upsertProfile(profiles: readonly SshProfile[], profile: SshProfile): re
 
 function isProfileStoreFile(value: unknown): value is ProfileStoreFile {
   if (typeof value !== "object" || value === null) return false;
-  const candidate = value as { readonly schemaVersion?: unknown; readonly profiles?: unknown };
-  return candidate.schemaVersion === 1 && Array.isArray(candidate.profiles);
+  const candidate = value as {
+    readonly schemaVersion?: unknown;
+    readonly profiles?: unknown;
+    readonly activeProfileId?: unknown;
+  };
+  if (candidate.schemaVersion !== 1 || !Array.isArray(candidate.profiles)) return false;
+  if (candidate.activeProfileId !== null && typeof candidate.activeProfileId !== "string") return false;
+  if (!candidate.profiles.every(isStoredSshProfile)) return false;
+  return (
+    candidate.activeProfileId === null ||
+    candidate.profiles.some((profile) => profile.id === candidate.activeProfileId)
+  );
+}
+
+function isStoredSshProfile(value: unknown): value is SshProfile {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Partial<Record<keyof SshProfile, unknown>>;
+  return (
+    typeof candidate.id === "string" &&
+    typeof candidate.name === "string" &&
+    typeof candidate.host === "string" &&
+    Number.isInteger(candidate.port) &&
+    typeof candidate.username === "string" &&
+    typeof candidate.privateKeyPath === "string" &&
+    candidate.daemonHost === "127.0.0.1" &&
+    Number.isInteger(candidate.daemonPort) &&
+    (candidate.localPortPreference === null || Number.isInteger(candidate.localPortPreference)) &&
+    typeof candidate.createdAt === "string" &&
+    typeof candidate.updatedAt === "string"
+  );
 }
 
 interface KnownHostFile {
@@ -306,11 +342,19 @@ export class KnownHostStore {
     try {
       const raw = await fs.readFile(this.filePath, "utf8");
       const parsed = JSON.parse(raw);
-      if (!isKnownHostFile(parsed)) return emptyKnownHostFile();
+      if (!isKnownHostFile(parsed)) {
+        throw malformedStoreError(
+          "known-hosts.store-malformed",
+          this.filePath,
+          "expected schemaVersion 1 with a string fingerprint map",
+        );
+      }
       return parsed;
     } catch (err) {
       if (isErrnoCode(err, "ENOENT")) return emptyKnownHostFile();
-      if (err instanceof SyntaxError) return emptyKnownHostFile();
+      if (err instanceof SyntaxError) {
+        throw malformedStoreError("known-hosts.store-malformed", this.filePath, "invalid JSON", err);
+      }
       throw err;
     }
   }
@@ -331,7 +375,16 @@ function emptyKnownHostFile(): KnownHostFile {
 function isKnownHostFile(value: unknown): value is KnownHostFile {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as { readonly schemaVersion?: unknown; readonly hosts?: unknown };
-  return candidate.schemaVersion === 1 && typeof candidate.hosts === "object" && candidate.hosts !== null;
+  return candidate.schemaVersion === 1 && isStringRecord(candidate.hosts);
+}
+
+function isStringRecord(value: unknown): value is Readonly<Record<string, string>> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.values(value).every((entry) => typeof entry === "string")
+  );
 }
 
 function knownHostKey(profile: SshProfile): string {
@@ -810,4 +863,17 @@ function isErrnoCode(err: unknown, code: string): boolean {
     "code" in err &&
     (err as { readonly code: string }).code === code
   );
+}
+
+function malformedStoreError(
+  code: "profile.store-malformed" | "known-hosts.store-malformed",
+  filePath: string,
+  reason: string,
+  err?: unknown,
+): ConnectionManagerError {
+  const details: Record<string, string> = { filePath, reason };
+  if (err instanceof Error) {
+    details.cause = err.message;
+  }
+  return new ConnectionManagerError(code, `Connection store is malformed: ${reason}.`, details);
 }
