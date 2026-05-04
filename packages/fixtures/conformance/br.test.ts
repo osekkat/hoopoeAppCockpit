@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { goldenOutputPath, type GoldenOutputFixture } from "../src/index.ts";
 import {
   BR_BEAD_SCHEMA_VERSION,
   assertToolConformance,
@@ -111,6 +112,22 @@ function expectSchemaCapture(adapter: Phase0BrAdapter): void {
 describe("br adapter contract conformance", () => {
   test("normal, round-trip, negative, and capability cases match the contract", () => {
     assertToolConformance("br");
+  });
+
+  test("timeout fixture degrades br timeout capability", () => {
+    const fixture = readJSON<GoldenOutputFixture>(goldenOutputPath("br", "timeout"));
+
+    expect(fixture.meta).toMatchObject({
+      adapter: "br",
+      state: "timeout",
+    });
+    expect(fixture.argv).toEqual(["br", "--json", "list"]);
+    expect(fixture.exit).toBe(124);
+    expect(fixture.stderrText).toContain("timeout");
+    expect(fixture.capabilities?.["br._timeout"]).toMatchObject({
+      status: "degraded",
+      notes: "exceeded ENVELOPE_TIMEOUT_S; adapter must surface; do not retry without backoff",
+    });
   });
 
   test("mapBrToBeadListResponse rewrites raw br --json into BeadListResponse shape", () => {
