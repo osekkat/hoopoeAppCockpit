@@ -13,7 +13,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/agent"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/scheduler"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/tending/prescript"
 )
 
 type tendingIO struct {
@@ -303,7 +305,7 @@ func runTendingRun(ctx context.Context, args []string, io *tendingIO) error {
 	if err != nil {
 		return err
 	}
-	sched, err := scheduler.New(scheduler.Config{Registry: registry})
+	sched, err := newTendingScheduler(io, registry)
 	if err != nil {
 		return err
 	}
@@ -411,7 +413,7 @@ func runTendingTick(ctx context.Context, args []string, io *tendingIO) error {
 	if err != nil {
 		return err
 	}
-	sched, err := scheduler.New(scheduler.Config{Registry: registry})
+	sched, err := newTendingScheduler(io, registry)
 	if err != nil {
 		return err
 	}
@@ -445,6 +447,87 @@ func openTendingRegistry(ctx context.Context, io *tendingIO) (*scheduler.Registr
 		Now:         io.Now,
 		LeaseHolder: "hoopoe-cli",
 		LeaseTTL:    time.Minute,
+	})
+}
+
+func newTendingScheduler(io *tendingIO, registry *scheduler.Registry) (*scheduler.Scheduler, error) {
+	runner, err := newTendingPrescriptRunner(io, registry)
+	if err != nil {
+		return nil, err
+	}
+	return scheduler.New(scheduler.Config{
+		Registry: registry,
+		Runner:   runner,
+	})
+}
+
+func newTendingPrescriptRunner(io *tendingIO, registry *scheduler.Registry) (*prescript.Runner, error) {
+	executor := agent.NewExecutor()
+	executor.Now = io.Now
+	executor.Audit = tendingAgentAuditSink{io: io}
+	runtime := &agent.Runtime{
+		Runner:   tendingAgentRunner{},
+		Executor: executor,
+		Audit:    tendingAgentAuditSink{io: io},
+		Now:      io.Now,
+	}
+	return prescript.New(prescript.Config{
+		Definitions: registry,
+		Snapshots:   tendingSnapshotSource{registry: registry},
+		Scripts:     prescript.ExecScriptInvoker{},
+		Executor:    executor,
+		Agent:       runtime,
+		Now:         io.Now,
+	})
+}
+
+type tendingSnapshotSource struct {
+	registry *scheduler.Registry
+}
+
+func (s tendingSnapshotSource) Snapshot(ctx context.Context, job scheduler.Job, run scheduler.Run) (prescript.Snapshot, error) {
+	state, err := s.registry.Snapshot(ctx)
+	if err != nil {
+		return prescript.Snapshot{}, err
+	}
+	return prescript.Snapshot{
+		Canonical: map[string]any{
+			"scheduler": state,
+			"job":       job,
+			"run":       run,
+		},
+		Capabilities: map[string]any{
+			"tending.prescript.runner": true,
+			"tending.prescript.exec":   true,
+			"tending.action_executor":  true,
+			"tending.agent_runtime":    true,
+		},
+	}, nil
+}
+
+type tendingAgentRunner struct{}
+
+func (tendingAgentRunner) RunAgent(context.Context, agent.AgentInvocation) (agent.AgentReply, error) {
+	return agent.AgentReply{}, fmt.Errorf("hoopoe tending: agent runtime runner is not configured for the CLI")
+}
+
+type tendingAgentAuditSink struct {
+	io *tendingIO
+}
+
+func (s tendingAgentAuditSink) RecordAuditEvent(ctx context.Context, event agent.AuditEvent) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return appendTendingAudit(s.io, "tending.agent."+event.Action, map[string]any{
+		"jobId":          event.JobID,
+		"runId":          event.RunID,
+		"action":         event.Action,
+		"actionKind":     event.ActionKind,
+		"idempotencyKey": event.IdempotencyKey,
+		"status":         event.Status,
+		"reason":         event.Reason,
+		"data":           event.Data,
 	})
 }
 
