@@ -2,14 +2,14 @@
 // overlaying whichever stage the user is on. Per plan.md §7.5 + the
 // hp-1r4 bead.
 
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useMemo, type ReactNode } from "react";
 import { ChatInput } from "./ChatInput.tsx";
 import { FilterBar } from "./FilterBar.tsx";
 import {
   TimelineList,
   type ActivityContextAction,
 } from "./TimelineList.tsx";
-import { useActivityStore } from "./store.ts";
+import { applyFilter, useActivityStore } from "./store.ts";
 import type { ActivityEvent, ActivityPivot } from "./types.ts";
 
 export interface ActivityDrawerProps {
@@ -32,8 +32,12 @@ export function ActivityDrawer({
   onContextAction,
   onChatSubmit,
 }: ActivityDrawerProps) {
-  const visibleEvents = useActivityStore((s) => s.visibleEvents());
+  // Select raw slices and derive the visible list with useMemo. Calling
+  // s.visibleEvents() inside the selector returns a fresh array every
+  // render, which makes useSyncExternalStore loop infinitely.
+  const events = useActivityStore((s) => s.events);
   const filter = useActivityStore((s) => s.filter);
+  const visibleEvents = useMemo(() => applyFilter(events, filter), [events, filter]);
   const unreadCount = useActivityStore((s) => s.unreadCount);
   const toggleCategory = useActivityStore((s) => s.toggleCategory);
   const toggleImportance = useActivityStore((s) => s.toggleImportance);
