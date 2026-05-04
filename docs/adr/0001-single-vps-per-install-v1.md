@@ -30,6 +30,15 @@ The code should leave mechanical seams for a later `Connection` entity:
 - top bar can expand from project selector to connection + project selector;
 - readiness checks already distinguish VPS lifecycle from project lifecycle.
 
+The daemon-side migration scaffold lives in
+`apps/daemon/internal/connections`. It treats v1 as one implicit
+`Connection` with `connectionId = "vps_local"` and keeps existing project
+`vpsId` values as the legacy backfill source. The eventual schema migration is
+additive: create `connections`, add nullable `projects.connection_id`,
+backfill it from `projects.vps_id`, then add indexes/foreign-key enforcement
+after all projects have converged. Connection records store secret references
+only; bearer tokens and SSH key material remain in the daemon secret store.
+
 ## Consequences
 
 - Existing-VPS onboarding stays short and boring.
