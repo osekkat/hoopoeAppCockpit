@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"sync"
 	"time"
@@ -54,9 +55,13 @@ func (o OSExecutor) Run(ctx context.Context, spec CommandSpec, onLine func(Line)
 		return result, fmt.Errorf("acfs: start bash: %w", err)
 	}
 	if err := curlCmd.Start(); err != nil {
+		_ = writer.Close()
 		_ = reader.Close()
-		_ = bashCmd.Process.Kill()
-		return result, fmt.Errorf("acfs: start curl: %w", err)
+		startErr := fmt.Errorf("acfs: start curl: %w", err)
+		if stopErr := killStartedCommand(bashCmd); stopErr != nil {
+			return result, errors.Join(startErr, fmt.Errorf("acfs: cleanup bash after curl start failure: %w", stopErr))
+		}
+		return result, startErr
 	}
 
 	var wg sync.WaitGroup
@@ -135,6 +140,29 @@ func exitCode(err error) (int, error) {
 		return exitErr.ExitCode(), nil
 	}
 	return -1, err
+}
+
+func killStartedCommand(cmd *exec.Cmd) error {
+	if cmd == nil || cmd.Process == nil {
+		return nil
+	}
+	killErr := cmd.Process.Kill()
+	waitErr := cmd.Wait()
+	if killErr != nil && !errors.Is(killErr, os.ErrProcessDone) {
+		if waitErr != nil && !isExpectedStoppedProcess(waitErr) {
+			return errors.Join(killErr, waitErr)
+		}
+		return killErr
+	}
+	if waitErr != nil && !isExpectedStoppedProcess(waitErr) {
+		return waitErr
+	}
+	return nil
+}
+
+func isExpectedStoppedProcess(err error) bool {
+	var exitErr *exec.ExitError
+	return errors.As(err, &exitErr)
 }
 
 func trimLineEnding(s string) string {
