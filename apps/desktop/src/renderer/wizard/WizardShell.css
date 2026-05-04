@@ -457,3 +457,141 @@
 @keyframes hh-spin {
   to { transform: rotate(360deg); }
 }
+
+/* hp-9z45 — streaming bootstrap wizard steps */
+
+.hh-wizard-bootstrap-step {
+  gap: 16px;
+}
+
+.hh-wizard-bootstrap-summary {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 13px 14px;
+  border: 1px solid var(--surface-border-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface-panel-alt);
+}
+
+.hh-wizard-bootstrap-summary[data-status="passed"] {
+  border-color: rgba(123, 198, 138, 0.45);
+  background: rgba(123, 198, 138, 0.10);
+}
+
+.hh-wizard-bootstrap-summary[data-status="warning"] {
+  border-color: rgba(229, 196, 100, 0.45);
+  background: rgba(229, 196, 100, 0.10);
+}
+
+.hh-wizard-bootstrap-summary[data-status="failed"] {
+  border-color: rgba(255, 142, 142, 0.55);
+  background: rgba(255, 142, 142, 0.08);
+}
+
+.hh-wizard-bootstrap-summary strong {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.hh-wizard-bootstrap-summary p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.hh-wizard-bootstrap-phases {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hh-wizard-bootstrap-phases li {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--surface-panel-alt);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.hh-wizard-bootstrap-phases li[data-status="running"] {
+  color: var(--text-primary);
+}
+
+.hh-wizard-bootstrap-phases li[data-status="passed"] {
+  color: rgba(123, 198, 138, 0.95);
+}
+
+.hh-wizard-bootstrap-phases li[data-status="warning"] {
+  color: rgba(229, 196, 100, 0.95);
+}
+
+.hh-wizard-bootstrap-phases li[data-status="failed"] {
+  color: rgba(255, 142, 142, 0.95);
+}
+
+.hh-wizard-bootstrap-phases strong {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--text-primary);
+  font-size: 12.5px;
+}
+
+.hh-wizard-bootstrap-phases p {
+  margin: 0 0 3px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.hh-wizard-bootstrap-phases code {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-panel);
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.hh-wizard-bootstrap-doctor {
+  display: grid;
+  gap: 5px;
+  margin: 8px 0 0;
+}
+
+.hh-wizard-bootstrap-doctor div {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.42fr) minmax(0, 1fr);
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-panel);
+}
+
+.hh-wizard-bootstrap-doctor dt,
+.hh-wizard-bootstrap-doctor dd {
+  margin: 0;
+}
+
+.hh-wizard-bootstrap-doctor dt {
+  color: var(--text-secondary);
+  font-weight: 700;
+}
+
+.hh-wizard-bootstrap-doctor dd {
+  color: var(--text-muted);
+}
+
+.hh-wizard-bootstrap-bridge-note {
+  color: var(--text-muted);
+  font-size: 12px;
+}

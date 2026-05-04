@@ -13,6 +13,13 @@ import { useCallback, useMemo, useState } from "react";
 import { ChevronRight, Circle, CheckCircle2, AlertTriangle, MoreHorizontal } from "lucide-react";
 import { Step1PathPicker } from "./Step1PathPicker.tsx";
 import { Step11Success } from "./Step11Success.tsx";
+import {
+  StepBootstrapStream,
+  buildBootstrapCheckpointData,
+  isBootstrapStepId,
+  type BootstrapStepFailure,
+  type BootstrapStepSelection,
+} from "./StepBootstrapStream.tsx";
 import { StepSshKey, type SshKeySelection } from "./StepSshKey.tsx";
 import { StepStub } from "./StepStub.tsx";
 import {
@@ -84,7 +91,7 @@ export const STEP_FOLLOWUPS: Record<WizardStepId, string | null> = {
   vps_connect: "hp-o7rn", // host/port/user form + tunnel TOFU
   preflight: "hp-9z45", // streaming preflight (shared with acfs_install + verify_key)
   acfs_install: "hp-9z45", // streaming ACFS install (same bead)
-  reconnect: "hp-zsp1", // automatic redirect (covered by checkpoint + auto-redirect)
+  reconnect: "hp-9z45", // automatic redirect after install (same streaming bootstrap bead)
   verify_key: "hp-9z45", // acfs doctor JSON render (same bead)
   status_check: "hp-zsp1", // tool inventory + CAAM verification
   extensions: "hp-zsp1", // Hoopoe-specific extensions step
@@ -105,6 +112,7 @@ export function WizardShell({ initialRunId, onComplete, persist, sink: providedS
   }
   const run = sink.active()!;
   const computed = computeWizardState(run);
+  const bootstrapStep = isBootstrapStepId(computed.currentStep) ? computed.currentStep : null;
 
   const recordPathPick = useCallback(
     (path: WizardPath) => {
@@ -186,6 +194,32 @@ export function WizardShell({ initialRunId, onComplete, persist, sink: providedS
     [persist, refreshUi, sink],
   );
 
+  const recordBootstrapComplete = useCallback(
+    (selection: BootstrapStepSelection) => {
+      const next = sink.recordCheckpoint({
+        stepId: selection.stepId,
+        outcome: "completed",
+        data: buildBootstrapCheckpointData(selection),
+      });
+      persist?.(next);
+      refreshUi();
+    },
+    [persist, refreshUi, sink],
+  );
+
+  const recordBootstrapFailure = useCallback(
+    (stepId: BootstrapStepSelection["stepId"], failure: BootstrapStepFailure) => {
+      const next = sink.recordCheckpoint({
+        stepId,
+        outcome: "failed",
+        failure,
+      });
+      persist?.(next);
+      refreshUi();
+    },
+    [persist, refreshUi, sink],
+  );
+
   // Pull the SSH key step's persisted private-key path so the connect
   // step can pre-fill the field — saves the user from re-typing.
   const sshKeyData = run.checkpoints.findLast(
@@ -235,6 +269,13 @@ export function WizardShell({ initialRunId, onComplete, persist, sink: providedS
               {...(sshKeyPath ? { defaultPrivateKeyPath: sshKeyPath } : {})}
               onComplete={recordVpsConnectComplete}
               onFailed={recordVpsConnectFailure}
+            />
+          ) : bootstrapStep !== null ? (
+            <StepBootstrapStream
+              runId={run.runId}
+              stepId={bootstrapStep}
+              onComplete={recordBootstrapComplete}
+              onFailed={(failure) => recordBootstrapFailure(bootstrapStep, failure)}
             />
           ) : (
             <StubStep

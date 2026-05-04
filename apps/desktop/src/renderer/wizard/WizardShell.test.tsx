@@ -158,6 +158,32 @@ test("StepStub: surfaces an optional Skip button", () => {
   expect(withSkip).toContain("data-testid=\"wizard-step-preflight-skip\"");
 });
 
+test("WizardShell: hp-9z45 steps render streaming bootstrap components instead of stubs", () => {
+  const steps = ["preflight", "acfs_install", "reconnect", "verify_key"] as const;
+  for (const stepId of steps) {
+    const sink = new WizardReplaySink();
+    sink.beginRun({ runId: `test-${stepId}` });
+    sink.recordActivePath("existing_vps");
+    sink.recordCheckpoint({ stepId: "path", outcome: "completed" });
+    sink.recordCheckpoint({ stepId: "ssh_key", outcome: "completed" });
+    sink.recordCheckpoint({ stepId: "rent_vps", outcome: "completed" });
+    sink.recordCheckpoint({ stepId: "vps_connect", outcome: "completed" });
+    if (stepId !== "preflight") {
+      sink.recordCheckpoint({ stepId: "preflight", outcome: "completed" });
+    }
+    if (stepId === "reconnect" || stepId === "verify_key") {
+      sink.recordCheckpoint({ stepId: "acfs_install", outcome: "completed" });
+    }
+    if (stepId === "verify_key") {
+      sink.recordCheckpoint({ stepId: "reconnect", outcome: "completed" });
+    }
+    const markup = renderToStaticMarkup(<WizardShell sink={sink} />);
+    expect(markup).toContain(`data-current-step="${stepId}"`);
+    expect(markup).toContain(`data-testid="wizard-step-${stepId}"`);
+    expect(markup).not.toContain("The body of this step ships in a follow-up bead");
+  }
+});
+
 // hp-sgzb: STEP_FOLLOWUPS must point at real beads (not the placeholder
 // `hp-o6q-...` shape that was filed at hp-o6q close). The shape regex
 // pins the canonical id form (`hp-` + 3-5 lowercase alphanumeric chars).

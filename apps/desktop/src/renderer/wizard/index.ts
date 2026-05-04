@@ -41,6 +41,29 @@ export { Step1PathPicker, type Step1PathPickerProps } from "./Step1PathPicker.ts
 export { Step11Success, type Step11SuccessProps } from "./Step11Success.tsx";
 export { StepStub, type StepStubProps } from "./StepStub.tsx";
 export {
+  StepAcfsInstall,
+  StepBootstrapStream,
+  StepPreflight,
+  StepReconnect,
+  StepVerifyKey,
+  buildBootstrapCheckpointData,
+  buildBootstrapFailure,
+  invokeBootstrapStep,
+  isBootstrapStepId,
+  summarizeBootstrapEvents,
+  type BootstrapDoctorCheck,
+  type BootstrapEventSink,
+  type BootstrapPhaseStatus,
+  type BootstrapStepBridge,
+  type BootstrapStepCheckpointData,
+  type BootstrapStepFailure,
+  type BootstrapStepId,
+  type BootstrapStepResult,
+  type BootstrapStepRunInput,
+  type BootstrapStepSelection,
+  type BootstrapStreamEvent,
+} from "./StepBootstrapStream.tsx";
+export {
   StepVpsConnect,
   type StepVpsConnectProps,
   type VpsConnectBridge,
