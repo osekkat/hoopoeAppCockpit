@@ -8,6 +8,9 @@
 // See `WindowManager.ts` for the BrowserWindow construction that consumes
 // these constants and the navigation-guard wiring.
 
+import * as FS from "node:fs";
+import * as Path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { WebPreferences } from "electron";
 
 export const DEFAULT_WIDTH = 1440;
@@ -62,11 +65,69 @@ export const ALLOWED_NAVIGATION_ORIGINS = [
   "http://localhost",
   "https://127.0.0.1",
   "https://localhost",
-  "file://",
 ];
 
-export function isAllowedNavigationUrl(url: string): boolean {
-  return ALLOWED_NAVIGATION_ORIGINS.some((origin) => url.startsWith(origin));
+export interface NavigationPolicy {
+  readonly appFileRootPath?: string;
+}
+
+export function navigationPolicyForInitialUrl(initialUrl: string): NavigationPolicy {
+  const parsed = parseUrl(initialUrl);
+  if (!parsed || parsed.protocol !== "file:") return {};
+  const initialFilePath = filePathFromUrl(parsed);
+  if (!initialFilePath) return {};
+  return { appFileRootPath: canonicalPath(Path.dirname(initialFilePath)) };
+}
+
+export function isAllowedNavigationUrl(url: string, policy: NavigationPolicy = {}): boolean {
+  const parsed = parseUrl(url);
+  if (!parsed) return false;
+  if (isAllowedLoopbackUrl(parsed)) return true;
+  if (parsed.protocol !== "file:") return false;
+
+  const appRoot = policy.appFileRootPath;
+  if (!appRoot) return false;
+  const targetPath = filePathFromUrl(parsed);
+  if (!targetPath) return false;
+  return isPathInsideRoot(canonicalPath(targetPath), canonicalPath(appRoot));
+}
+
+function parseUrl(value: string): URL | null {
+  try {
+    return new URL(value);
+  } catch {
+    return null;
+  }
+}
+
+function isAllowedLoopbackUrl(url: URL): boolean {
+  if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+  return url.hostname === "127.0.0.1" || url.hostname === "localhost";
+}
+
+function filePathFromUrl(url: URL): string | null {
+  try {
+    return fileURLToPath(url);
+  } catch {
+    return null;
+  }
+}
+
+function canonicalPath(filePath: string): string {
+  const resolved = Path.resolve(filePath);
+  try {
+    return FS.realpathSync.native(resolved);
+  } catch {
+    return resolved;
+  }
+}
+
+function isPathInsideRoot(filePath: string, rootPath: string): boolean {
+  const relative = Path.relative(rootPath, filePath);
+  return (
+    relative === "" ||
+    (relative !== "" && !relative.startsWith("..") && !Path.isAbsolute(relative))
+  );
 }
 
 /** Hardening response headers applied alongside CSP on every response. */

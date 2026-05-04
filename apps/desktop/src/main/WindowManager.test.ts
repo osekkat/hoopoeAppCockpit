@@ -10,6 +10,7 @@ import {
   HARDENING_RESPONSE_HEADERS,
   SAFE_WEB_PREFERENCES,
   isAllowedNavigationUrl,
+  navigationPolicyForInitialUrl,
 } from "./window-policy.ts";
 
 // ── Strict webPreferences (hp-rflj) ───────────────────────────────────────
@@ -60,29 +61,40 @@ test("window-policy: hardening response headers cover XCTO, XFO, Referrer-Policy
 
 // ── Navigation guards ─────────────────────────────────────────────────────
 
-test("window-policy: isAllowedNavigationUrl approves loopback + file://", () => {
+test("window-policy: isAllowedNavigationUrl approves exact loopback origins", () => {
   expect(isAllowedNavigationUrl("http://127.0.0.1:3779/")).toBe(true);
   expect(isAllowedNavigationUrl("http://localhost:3779/index.html")).toBe(true);
   expect(isAllowedNavigationUrl("https://localhost/")).toBe(true);
-  expect(isAllowedNavigationUrl("file:///opt/hoopoe/dist/index.html")).toBe(true);
+  expect(isAllowedNavigationUrl("http://localhost.evil.example/")).toBe(false);
+  expect(isAllowedNavigationUrl("https://127.0.0.1.evil.example/")).toBe(false);
+  expect(isAllowedNavigationUrl("https://[::1]:3779/index.html")).toBe(false);
+});
+
+test("window-policy: isAllowedNavigationUrl approves only app-root file URLs", () => {
+  const policy = navigationPolicyForInitialUrl("file:///opt/hoopoe/dist/index.html");
+  expect(isAllowedNavigationUrl("file:///opt/hoopoe/dist/index.html", policy)).toBe(true);
+  expect(isAllowedNavigationUrl("file:///opt/hoopoe/dist/assets/index.js", policy)).toBe(true);
+  expect(isAllowedNavigationUrl("file:///opt/hoopoe/dist/../evil.html", policy)).toBe(false);
+  expect(isAllowedNavigationUrl("file:///tmp/evil.html", policy)).toBe(false);
+  expect(isAllowedNavigationUrl("file:///Users/ubuntu/Downloads/evil.html", policy)).toBe(false);
+  expect(isAllowedNavigationUrl("file:///opt/hoopoe/dist/index.html")).toBe(false);
 });
 
 test("window-policy: isAllowedNavigationUrl rejects external origins + dangerous schemes", () => {
   expect(isAllowedNavigationUrl("https://evil.example.com/")).toBe(false);
   expect(isAllowedNavigationUrl("http://example.com/")).toBe(false);
-  expect(isAllowedNavigationUrl("javascript:alert(1)")).toBe(false);
+  expect(isAllowedNavigationUrl("javascript:throw 1")).toBe(false);
   expect(isAllowedNavigationUrl("data:text/html,<script>")).toBe(false);
 });
 
-test("window-policy: ALLOWED_NAVIGATION_ORIGINS pins to loopback + file", () => {
+test("window-policy: ALLOWED_NAVIGATION_ORIGINS pins to loopback origins", () => {
   expect(ALLOWED_NAVIGATION_ORIGINS).toContain("http://127.0.0.1");
   expect(ALLOWED_NAVIGATION_ORIGINS).toContain("https://127.0.0.1");
   expect(ALLOWED_NAVIGATION_ORIGINS).toContain("http://localhost");
-  expect(ALLOWED_NAVIGATION_ORIGINS).toContain("file://");
-  // No public origin sneaks in: every entry must be loopback or file://.
+  expect(ALLOWED_NAVIGATION_ORIGINS).not.toContain("file://");
+  // No public origin sneaks in: every entry must be loopback.
   for (const origin of ALLOWED_NAVIGATION_ORIGINS) {
     const isLoopback = origin.includes("127.0.0.1") || origin.includes("localhost");
-    const isFile = origin === "file://";
-    expect(isLoopback || isFile).toBe(true);
+    expect(isLoopback).toBe(true);
   }
 });

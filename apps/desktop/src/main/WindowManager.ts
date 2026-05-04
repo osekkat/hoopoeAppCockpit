@@ -16,8 +16,10 @@ import {
   DEFAULT_HEIGHT,
   DEFAULT_WIDTH,
   HARDENING_RESPONSE_HEADERS,
+  type NavigationPolicy,
   SAFE_WEB_PREFERENCES,
   isAllowedNavigationUrl,
+  navigationPolicyForInitialUrl,
 } from "./window-policy.ts";
 
 export {
@@ -26,6 +28,7 @@ export {
   HARDENING_RESPONSE_HEADERS,
   SAFE_WEB_PREFERENCES,
   isAllowedNavigationUrl,
+  navigationPolicyForInitialUrl,
 };
 
 export interface CreateMainWindowOptions {
@@ -54,13 +57,14 @@ export function createMainWindow(options: CreateMainWindowOptions): BrowserWindo
     },
   };
   const window = new BrowserWindow(ctorOptions);
+  const navigationPolicy = navigationPolicyForInitialUrl(options.initialUrl);
   knownWindows.add(window);
   window.once("closed", () => {
     knownWindows.delete(window);
   });
 
   applyResponseHeaders(window, csp);
-  applyNavigationGuards(window);
+  applyNavigationGuards(window, navigationPolicy);
 
   // Cross-platform first-paint reveal — see vendored/t3code/windowReveal.ts.
   bindFirstRevealTrigger(
@@ -94,9 +98,9 @@ function applyResponseHeaders(window: BrowserWindow, csp: string): void {
  * to the OS browser is wired through `window.hoopoe.files.openExternal`
  * (preload bridge → main IpcRegistry → `electron.shell.openExternal`) so
  * the renderer can't inherit the preload + privileges via a new window. */
-function applyNavigationGuards(window: BrowserWindow): void {
+function applyNavigationGuards(window: BrowserWindow, navigationPolicy: NavigationPolicy): void {
   window.webContents.on("will-navigate", (event, url) => {
-    if (!isAllowedNavigationUrl(url)) {
+    if (!isAllowedNavigationUrl(url, navigationPolicy)) {
       event.preventDefault();
     }
   });
@@ -137,4 +141,5 @@ export const windowManagerInternalsForTesting = {
   safeWebPreferences: SAFE_WEB_PREFERENCES,
   allowedNavigationOrigins: ALLOWED_NAVIGATION_ORIGINS,
   isAllowedNavigationUrl,
+  navigationPolicyForInitialUrl,
 };
