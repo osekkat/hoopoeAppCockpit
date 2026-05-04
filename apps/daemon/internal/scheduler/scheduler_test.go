@@ -971,6 +971,66 @@ func (a *recordingAudit) Len() int {
 	return len(a.decisions)
 }
 
+// TestParseCronRejectsImpossibleDayMonthCombinations guards hp-qq4h:
+// '* * 31 2 *' (Feb 31) and '* * 31 4,6,9,11 *' (31st of months
+// without 31 days) are structurally valid (each field's range checks
+// pass) but semantically impossible. Without parse-time rejection,
+// cronExpr.Next walked the full 5-year deadline (~2.6M minute steps)
+// every recompute, holding r.mu and spiking CPU.
+func TestParseCronRejectsImpossibleDayMonthCombinations(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		expr string
+		why  string
+	}{
+		{"* * 31 2 *", "Feb 31"},
+		{"* * 30 2 *", "Feb 30"},
+		{"* * 31 4 *", "April 31"},
+		{"* * 31 6 *", "June 31"},
+		{"* * 31 9 *", "September 31"},
+		{"* * 31 11 *", "November 31"},
+		{"* * 31 4,6,9,11 *", "31st of months without 31 days"},
+	}
+	for _, tc := range cases {
+		_, err := parseCron(tc.expr)
+		if err == nil {
+			t.Errorf("parseCron(%q) accepted impossible expression (%s)", tc.expr, tc.why)
+			continue
+		}
+		if !errors.Is(err, ErrInvalidDefinition) {
+			t.Errorf("parseCron(%q) err = %v, want ErrInvalidDefinition", tc.expr, err)
+		}
+	}
+
+	// Sanity: feasible expressions still parse.
+	feasible := []string{
+		"* * 31 * *",         // 31st when allowed
+		"* * 29 2 *",         // Feb 29 (leap year only, but possible)
+		"* * 1 2 *",          // Feb 1
+		"0 9 * * 1-5",        // weekdays at 9am
+		"* * 30 1,3,5,7 *",   // 30th of long months
+	}
+	for _, expr := range feasible {
+		if _, err := parseCron(expr); err != nil {
+			t.Errorf("parseCron(%q) rejected feasible expression: %v", expr, err)
+		}
+	}
+
+	// Bonus: confirm the bound on Next() is now decided at parse time
+	// rather than at iteration time. parseCron rejection short-circuits
+	// the 2.6M-step walk before it can begin.
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	t0 := time.Now()
+	_, err := parseCron("* * 31 2 *")
+	if err == nil {
+		t.Fatal("parseCron(\"* * 31 2 *\") accepted impossible expression")
+	}
+	if elapsed := time.Since(t0); elapsed > 10*time.Millisecond {
+		t.Errorf("parseCron took %v, expected <10ms — guard regressed and Next() is walking the full window", elapsed)
+	}
+	_ = start
+}
+
 // TestRegistryPrunesTerminalRunsBeyondRetention guards hp-dqm8: with
 // TerminalRunRetention set, every CompleteRun must keep the in-memory
 // state.Runs population at the configured cap by evicting the oldest

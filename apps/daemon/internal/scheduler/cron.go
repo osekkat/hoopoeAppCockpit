@@ -46,7 +46,32 @@ func parseCron(expr string) (cronExpr, error) {
 	if err != nil {
 		return cronExpr{}, fmt.Errorf("%w: day-of-week: %v", ErrInvalidDefinition, err)
 	}
+	if err := validateDayMonthCombination(dom, month); err != nil {
+		return cronExpr{}, fmt.Errorf("%w: %v", ErrInvalidDefinition, err)
+	}
 	return cronExpr{minute: minute, hour: hour, dayOfMonth: dom, month: month, dayOfWeek: dow}, nil
+}
+
+// validateDayMonthCombination rejects expressions like '* * 31 2 *'
+// (Feb 31, never matches) or '* * 31 4,6,9,11 *' (31st of months
+// without a 31st day). Without this guard, cronExpr.Next walks the
+// full 5-year deadline (~2.6M minute steps) on every recompute,
+// holding r.mu and spiking CPU. Day-of-month and month are validated
+// together because each is structurally valid in isolation.
+func validateDayMonthCombination(dom, month cronField) error {
+	daysInMonth := []int{31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31}
+	for m := range month.allowed {
+		if m < 1 || m > 12 {
+			continue
+		}
+		maxDay := daysInMonth[m-1]
+		for d := range dom.allowed {
+			if d <= maxDay {
+				return nil
+			}
+		}
+	}
+	return fmt.Errorf("no valid day-of-month / month combination (e.g. day=31 with months containing 30 or fewer days, day=30/31 with month=2)")
 }
 
 func parseCronField(raw string, min int, max int) (cronField, error) {
