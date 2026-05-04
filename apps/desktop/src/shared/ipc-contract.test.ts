@@ -128,6 +128,9 @@ test("Method names are stable canonical kebab/dot identifiers (no whitespace, no
     expect(method).toMatch(/^[a-z][a-zA-Z0-9.-]*$/);
   }
   for (const topic of DAEMON_SUBSCRIBE_TOPICS) {
-    expect(topic).toMatch(/^events\.[a-z]+$/);
+    // Topic names start with `events.` and may have additional dotted
+    // segments (e.g. `events.clone.dirty`). Each segment is lowercase
+    // alphanumeric.
+    expect(topic).toMatch(/^events\.[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)*$/);
   }
 });

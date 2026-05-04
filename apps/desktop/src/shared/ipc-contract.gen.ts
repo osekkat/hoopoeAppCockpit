@@ -61,6 +61,7 @@ export const DAEMON_SUBSCRIBE_TOPICS = [
   "events.approvals",
   "events.replay",
   "events.settings",
+  "events.clone.dirty",
 ] as const;
 
 export type DaemonSubscribeTopic = (typeof DAEMON_SUBSCRIBE_TOPICS)[number];
@@ -87,6 +88,8 @@ export const PRELOAD_IPC_CHANNELS = {
   filesOpenExternal: "hoopoe.files.open-external",
   filesRevealInFinder: "hoopoe.files.reveal-in-finder",
   filesRipgrep: "hoopoe.files.ripgrep",
+  sshListKeys: "hoopoe.ssh.listKeys",
+  sshGenerateKey: "hoopoe.ssh.generateKey",
 } as const satisfies Record<string, `hoopoe.${string}`>;
 
 export type PreloadIpcChannelKey = keyof typeof PRELOAD_IPC_CHANNELS;

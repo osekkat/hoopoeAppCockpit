@@ -100,6 +100,10 @@ export const DAEMON_SUBSCRIBE_TOPICS = [
   // tier deltas, which the renderer can't see anyway via the
   // SettingsBridge subscriber surface).
   "events.settings",
+  // hp-ndx5: Per-project local-clone dirty state (modified/untracked/
+  // ahead/behind counts) emitted by the desktop main-process clone
+  // watcher whenever a debounced fs event triggers a fresh probe.
+  "events.clone.dirty",
 ] as const;
 
 export type DaemonSubscribeTopic = (typeof DAEMON_SUBSCRIBE_TOPICS)[number];
@@ -133,6 +137,14 @@ export const PRELOAD_IPC_CHANNELS = {
   filesOpenExternal: "hoopoe.files.open-external",
   filesRevealInFinder: "hoopoe.files.reveal-in-finder",
   filesRipgrep: "hoopoe.files.ripgrep",
+  // hp-pl8h: SSH key wizard step. listKeys → reads ~/.ssh/ for *.pub
+  // entries; generateKey → shell-out to `ssh-keygen -t ed25519` with
+  // EXPLICIT argv (no shell, no user-controlled path). The renderer
+  // supplies a runId; main derives the key file path from it so a
+  // malicious renderer can never write outside ~/.ssh/ or inject
+  // ssh-keygen flags.
+  sshListKeys: "hoopoe.ssh.listKeys",
+  sshGenerateKey: "hoopoe.ssh.generateKey",
 } as const satisfies Record<string, `hoopoe.${string}`>;
 
 export type PreloadIpcChannelKey = keyof typeof PRELOAD_IPC_CHANNELS;

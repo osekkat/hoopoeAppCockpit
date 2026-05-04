@@ -369,6 +369,14 @@ daemonSubscribeTopics:
   events.settings:
     description: Settings tree change notifications (resolved tier only).
     bead: hp-n5za
+  events.clone.dirty:
+    description: |
+      Per-project local-clone dirty state changes (modified, untracked,
+      ahead/behind counts). Emitted by the desktop main process clone
+      watcher whenever a debounced filesystem event triggers a fresh
+      probeDirtyState call. Powers the "Local clone has unsaved changes"
+      banner in the stage header.
+    bead: hp-ndx5
 
 # ── 3. Preload IPC channels (preload ↔ main) ───────────────────────────────
 #
@@ -391,6 +399,15 @@ preloadChannels:
   filesOpenExternal: hoopoe.files.open-external
   filesRevealInFinder: hoopoe.files.reveal-in-finder
   filesRipgrep: hoopoe.files.ripgrep
+  # hp-pl8h: SSH key wizard step. listKeys reads ~/.ssh/ and returns
+  # `{name, path, algorithm, fingerprint}` for each `*.pub` it finds.
+  # generateKey shells out to `ssh-keygen -t ed25519 -f ~/.ssh/<derived>
+  # -N "" -C "<comment>"` with EXPLICIT argv (no shell). The renderer
+  # never supplies the file path or comment string verbatim — main
+  # derives both from the run-id (UUID) so a malicious renderer cannot
+  # write outside ~/.ssh/ or inject ssh-keygen flags.
+  sshListKeys: hoopoe.ssh.listKeys
+  sshGenerateKey: hoopoe.ssh.generateKey
 
 # ── 4. Internal IPC command prefixes (main-only) ───────────────────────────
 #
