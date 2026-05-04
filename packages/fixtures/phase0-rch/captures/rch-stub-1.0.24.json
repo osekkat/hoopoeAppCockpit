@@ -1,0 +1,68 @@
+{
+  "tool": "rch",
+  "toolVersion": "1.0.24-stub",
+  "fixturesVersion": "phase0-rch-stub-2026-05-04",
+  "source": "synthetic-stub; replace with real Phase 0 VPS capture when available",
+  "request": {
+    "projectId": "proj_01",
+    "worktreePath": "/data/projects/hoopoe",
+    "branch": "feature/hp-ngfc",
+    "commitSha": "1111111111111111111111111111111111111111",
+    "command": ["go", "test", "./..."],
+    "env": {
+      "RCH_PRIORITY": "high"
+    },
+    "runnerProfile": "rch",
+    "timeoutMs": 120000
+  },
+  "commands": {
+    "version": {
+      "dir": "",
+      "argv": ["rch", "--version"],
+      "exit": 0,
+      "stdoutText": "rch 1.0.24\n"
+    },
+    "run": {
+      "dir": "/data/projects/hoopoe",
+      "argv": ["rch", "exec", "--", "go", "test", "./..."],
+      "exit": 0,
+      "stdoutText": "ok ./internal/api\n",
+      "stderrText": "[RCH] remote worker-a (queue 120ms exec 2.4s)\n"
+    }
+  },
+  "expected": {
+    "run": {
+      "projectId": "proj_01",
+      "worktreePath": "/data/projects/hoopoe",
+      "branch": "feature/hp-ngfc",
+      "commitSha": "1111111111111111111111111111111111111111",
+      "command": ["go", "test", "./..."],
+      "normalizedArgv": ["rch", "exec", "--", "go", "test", "./..."],
+      "environmentDigest": "2d3871d4d7552a4856b4c7e31b0ceac4166f15599c51bfc834a084c019d63086",
+      "runnerProfile": "rch",
+      "workerTarget": "worker-a",
+      "startedAt": "2026-05-04T02:35:00Z",
+      "completedAt": "2026-05-04T02:35:00Z",
+      "durationMs": 0,
+      "exitCode": 0,
+      "stdout": "ok ./internal/api\n",
+      "stderr": "[RCH] remote worker-a (queue 120ms exec 2.4s)\n",
+      "outputTruncated": false,
+      "summary": {
+        "mode": "remote",
+        "worker": "worker-a",
+        "failureCode": "",
+        "queueWaitMs": 120,
+        "execTimeMs": 2400,
+        "rawLine": "[RCH] remote worker-a (queue 120ms exec 2.4s)"
+      },
+      "failureFingerprint": ""
+    },
+    "probe": {
+      "version": "1.0.24",
+      "capabilities": {
+        "rch.run": "ok"
+      }
+    }
+  }
+}
