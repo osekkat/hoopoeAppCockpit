@@ -66,97 +66,222 @@
     }
   },
   "capabilities": {
-    "agent_mail": {
-      "agent_mail.messages.read": {
-        "status": "ok"
+    "daemonApiVersion": "0.1.0",
+    "fixturesVersion": "phase0-2026-05-02",
+    "schemaVersion": 1,
+    "snapshotAt": "2026-05-02T23:33:12Z",
+    "tools": {
+      "agent_mail": {
+        "capabilities": {
+          "agent_mail.messages.read": {
+            "status": "ok"
+          },
+          "agent_mail.messages.send": {
+            "status": "ok"
+          },
+          "agent_mail.reservations.list": {
+            "status": "ok"
+          }
+        },
+        "fixturesVersion": "phase0-2026-05-02",
+        "lastCheckedAt": "2026-05-02T23:33:12Z",
+        "source": "fixture",
+        "tool": "agent_mail",
+        "version": ""
       },
-      "agent_mail.messages.send": {
-        "status": "ok"
+      "br": {
+        "capabilities": {
+          "br.dep.add": {
+            "status": "ok"
+          },
+          "br.issues.read": {
+            "status": "ok"
+          },
+          "br.issues.update": {
+            "status": "ok"
+          },
+          "br.sync.flush_only": {
+            "status": "ok"
+          }
+        },
+        "fixturesVersion": "phase0-2026-05-02",
+        "lastCheckedAt": "2026-05-02T23:33:12Z",
+        "source": "fixture",
+        "tool": "br",
+        "version": ""
       },
-      "agent_mail.reservations.list": {
-        "status": "ok"
+      "bv": {
+        "capabilities": {
+          "bv.robot.diff": {
+            "status": "ok"
+          },
+          "bv.robot.insights": {
+            "status": "ok"
+          },
+          "bv.robot.plan": {
+            "status": "ok"
+          },
+          "bv.robot.triage": {
+            "status": "ok"
+          },
+          "bv.tui": {
+            "notes": "Guardrail 1: bare bv launches TUI; never invoked",
+            "status": "blocked-by-policy"
+          }
+        },
+        "fixturesVersion": "phase0-2026-05-02",
+        "lastCheckedAt": "2026-05-02T23:33:12Z",
+        "source": "fixture",
+        "tool": "bv",
+        "version": ""
+      },
+      "caam": {
+        "capabilities": {},
+        "fixturesVersion": "phase0-2026-05-02",
+        "lastCheckedAt": "2026-05-02T23:33:12Z",
+        "source": "fixture",
+        "tool": "caam",
+        "version": ""
+      },
+      "casr": {
+        "capabilities": {},
+        "fixturesVersion": "phase0-2026-05-02",
+        "lastCheckedAt": "2026-05-02T23:33:12Z",
+        "source": "fixture",
+        "tool": "casr",
+        "version": ""
+      },
+      "caut": {
+        "capabilities": {},
+        "fixturesVersion": "phase0-2026-05-02",
+        "lastCheckedAt": "2026-05-02T23:33:12Z",
+        "source": "fixture",
+        "tool": "caut",
+        "version": ""
+      },
+      "dcg": {
+        "capabilities": {},
+        "fixturesVersion": "phase0-2026-05-02",
+        "lastCheckedAt": "2026-05-02T23:33:12Z",
+        "source": "fixture",
+        "tool": "dcg",
+        "version": ""
+      },
+      "git": {
+        "capabilities": {
+          "git.diff.read": {
+            "status": "ok"
+          },
+          "git.push": {
+            "notes": "snapshot script never pushes",
+            "status": "blocked-by-policy"
+          },
+          "git.status.read": {
+            "status": "ok"
+          },
+          "git.unpushed.list": {
+            "status": "ok"
+          }
+        },
+        "fixturesVersion": "phase0-2026-05-02",
+        "lastCheckedAt": "2026-05-02T23:33:12Z",
+        "source": "fixture",
+        "tool": "git",
+        "version": ""
+      },
+      "health_generic": {
+        "capabilities": {
+          "health.complexity": {
+            "status": "untested"
+          },
+          "health.coverage": {
+            "status": "untested"
+          }
+        },
+        "fixturesVersion": "phase0-2026-05-02",
+        "lastCheckedAt": "2026-05-02T23:33:12Z",
+        "source": "fixture",
+        "tool": "health_generic",
+        "version": ""
+      },
+      "jfp": {
+        "capabilities": {},
+        "fixturesVersion": "phase0-2026-05-02",
+        "lastCheckedAt": "2026-05-02T23:33:12Z",
+        "source": "fixture",
+        "tool": "jfp",
+        "version": ""
+      },
+      "jsm": {
+        "capabilities": {},
+        "fixturesVersion": "phase0-2026-05-02",
+        "lastCheckedAt": "2026-05-02T23:33:12Z",
+        "source": "fixture",
+        "tool": "jsm",
+        "version": ""
+      },
+      "ntm": {
+        "capabilities": {
+          "ntm.robot.snapshot": {
+            "notes": "missing binary on PATH: ntm",
+            "status": "missing"
+          },
+          "ntm.robot.status": {
+            "notes": "missing binary on PATH: ntm",
+            "status": "missing"
+          },
+          "ntm.robot.tail": {
+            "notes": "missing binary on PATH: ntm",
+            "status": "missing"
+          }
+        },
+        "fixturesVersion": "phase0-2026-05-02",
+        "lastCheckedAt": "2026-05-02T23:33:12Z",
+        "source": "fixture",
+        "tool": "ntm",
+        "version": ""
+      },
+      "oracle": {
+        "capabilities": {},
+        "fixturesVersion": "phase0-2026-05-02",
+        "lastCheckedAt": "2026-05-02T23:33:12Z",
+        "source": "fixture",
+        "tool": "oracle",
+        "version": ""
+      },
+      "pt": {
+        "capabilities": {},
+        "fixturesVersion": "phase0-2026-05-02",
+        "lastCheckedAt": "2026-05-02T23:33:12Z",
+        "source": "fixture",
+        "tool": "pt",
+        "version": ""
+      },
+      "sbh": {
+        "capabilities": {},
+        "fixturesVersion": "phase0-2026-05-02",
+        "lastCheckedAt": "2026-05-02T23:33:12Z",
+        "source": "fixture",
+        "tool": "sbh",
+        "version": ""
+      },
+      "srp": {
+        "capabilities": {},
+        "fixturesVersion": "phase0-2026-05-02",
+        "lastCheckedAt": "2026-05-02T23:33:12Z",
+        "source": "fixture",
+        "tool": "srp",
+        "version": ""
+      },
+      "ubs": {
+        "capabilities": {},
+        "fixturesVersion": "phase0-2026-05-02",
+        "lastCheckedAt": "2026-05-02T23:33:12Z",
+        "source": "fixture",
+        "tool": "ubs",
+        "version": ""
       }
-    },
-    "br": {
-      "br.dep.add": {
-        "status": "ok"
-      },
-      "br.issues.read": {
-        "status": "ok"
-      },
-      "br.issues.update": {
-        "status": "ok"
-      },
-      "br.sync.flush_only": {
-        "status": "ok"
-      }
-    },
-    "bv": {
-      "bv.robot.diff": {
-        "status": "ok"
-      },
-      "bv.robot.insights": {
-        "status": "ok"
-      },
-      "bv.robot.plan": {
-        "status": "ok"
-      },
-      "bv.robot.triage": {
-        "status": "ok"
-      },
-      "bv.tui": {
-        "notes": "Guardrail 1: bare bv launches TUI; never invoked",
-        "status": "blocked-by-policy"
-      }
-    },
-    "caam": {},
-    "casr": {},
-    "caut": {},
-    "dcg": {},
-    "git": {
-      "git.diff.read": {
-        "status": "ok"
-      },
-      "git.push": {
-        "notes": "snapshot script never pushes",
-        "status": "blocked-by-policy"
-      },
-      "git.status.read": {
-        "status": "ok"
-      },
-      "git.unpushed.list": {
-        "status": "ok"
-      }
-    },
-    "health": {
-      "health.complexity": {
-        "status": "untested"
-      },
-      "health.coverage": {
-        "status": "untested"
-      }
-    },
-    "jfp": {},
-    "jsm": {},
-    "ntm": {
-      "ntm.robot.snapshot": {
-        "notes": "missing binary on PATH: ntm",
-        "status": "missing"
-      },
-      "ntm.robot.status": {
-        "notes": "missing binary on PATH: ntm",
-        "status": "missing"
-      },
-      "ntm.robot.tail": {
-        "notes": "missing binary on PATH: ntm",
-        "status": "missing"
-      }
-    },
-    "oracle": {},
-    "pt": {},
-    "sbh": {},
-    "srp": {},
-    "ubs": {}
+    }
   },
   "events": [
     {

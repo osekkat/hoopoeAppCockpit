@@ -4099,146 +4099,278 @@
     ]
   },
   "capabilities": {
-    "agent_mail": {
-      "agent_mail.messages.read": {
-        "status": "ok"
+    "daemonApiVersion": "0.1.0",
+    "fixturesVersion": "phase0-2026-05-02",
+    "schemaVersion": 1,
+    "snapshotAt": "2026-05-02T23:29:34Z",
+    "tools": {
+      "agent_mail": {
+        "capabilities": {
+          "agent_mail.messages.read": {
+            "status": "ok"
+          },
+          "agent_mail.messages.send": {
+            "status": "ok"
+          },
+          "agent_mail.reservations.list": {
+            "status": "ok"
+          }
+        },
+        "fixturesVersion": "phase0-2026-05-02",
+        "lastCheckedAt": "2026-05-02T23:29:34Z",
+        "source": "fixture",
+        "tool": "agent_mail",
+        "version": ""
       },
-      "agent_mail.messages.send": {
-        "status": "ok"
+      "br": {
+        "capabilities": {
+          "br.dep.add": {
+            "status": "ok"
+          },
+          "br.issues.read": {
+            "status": "ok"
+          },
+          "br.issues.update": {
+            "status": "ok"
+          },
+          "br.sync.flush_only": {
+            "notes": "br sync --flush-only is non-invasive (never runs git)",
+            "status": "ok"
+          }
+        },
+        "fixturesVersion": "phase0-2026-05-02",
+        "lastCheckedAt": "2026-05-02T23:29:34Z",
+        "source": "fixture",
+        "tool": "br",
+        "version": ""
       },
-      "agent_mail.reservations.list": {
-        "status": "ok"
-      }
-    },
-    "br": {
-      "br.dep.add": {
-        "status": "ok"
+      "bv": {
+        "capabilities": {
+          "bv.robot.diff": {
+            "status": "ok"
+          },
+          "bv.robot.insights": {
+            "status": "ok"
+          },
+          "bv.robot.plan": {
+            "status": "ok"
+          },
+          "bv.robot.triage": {
+            "status": "ok"
+          },
+          "bv.tui": {
+            "notes": "Guardrail 1: bare bv launches TUI; never invoked",
+            "status": "blocked-by-policy"
+          }
+        },
+        "fixturesVersion": "phase0-2026-05-02",
+        "lastCheckedAt": "2026-05-02T23:29:34Z",
+        "source": "fixture",
+        "tool": "bv",
+        "version": ""
       },
-      "br.issues.read": {
-        "status": "ok"
+      "caam": {
+        "capabilities": {
+          "caam.account.switch": {
+            "notes": "only one account configured; no alternative to switch to",
+            "status": "degraded"
+          },
+          "caam.accounts.list": {
+            "status": "ok"
+          }
+        },
+        "fixturesVersion": "phase0-2026-05-02",
+        "lastCheckedAt": "2026-05-02T23:29:34Z",
+        "source": "fixture",
+        "tool": "caam",
+        "version": ""
       },
-      "br.issues.update": {
-        "status": "ok"
+      "casr": {
+        "capabilities": {},
+        "fixturesVersion": "phase0-2026-05-02",
+        "lastCheckedAt": "2026-05-02T23:29:34Z",
+        "source": "fixture",
+        "tool": "casr",
+        "version": ""
       },
-      "br.sync.flush_only": {
-        "notes": "br sync --flush-only is non-invasive (never runs git)",
-        "status": "ok"
-      }
-    },
-    "bv": {
-      "bv.robot.diff": {
-        "status": "ok"
+      "caut": {
+        "capabilities": {},
+        "fixturesVersion": "phase0-2026-05-02",
+        "lastCheckedAt": "2026-05-02T23:29:34Z",
+        "source": "fixture",
+        "tool": "caut",
+        "version": ""
       },
-      "bv.robot.insights": {
-        "status": "ok"
+      "dcg": {
+        "capabilities": {
+          "dcg.verdicts.subscribe": {
+            "notes": "verdict format pinned via --help; runtime stream from hook",
+            "status": "untested"
+          }
+        },
+        "fixturesVersion": "phase0-2026-05-02",
+        "lastCheckedAt": "2026-05-02T23:29:34Z",
+        "source": "fixture",
+        "tool": "dcg",
+        "version": ""
       },
-      "bv.robot.plan": {
-        "status": "ok"
+      "git": {
+        "capabilities": {
+          "git.diff.read": {
+            "status": "ok"
+          },
+          "git.push": {
+            "notes": "snapshot script never pushes",
+            "status": "blocked-by-policy"
+          },
+          "git.status.read": {
+            "status": "ok"
+          },
+          "git.unpushed.list": {
+            "fallback": "rev-list --left-right",
+            "status": "ok"
+          }
+        },
+        "fixturesVersion": "phase0-2026-05-02",
+        "lastCheckedAt": "2026-05-02T23:29:34Z",
+        "source": "fixture",
+        "tool": "git",
+        "version": ""
       },
-      "bv.robot.triage": {
-        "status": "ok"
+      "health_generic": {
+        "capabilities": {
+          "health.complexity": {
+            "status": "untested"
+          },
+          "health.coverage": {
+            "notes": "language-specific runners attempted best-effort",
+            "status": "untested"
+          }
+        },
+        "fixturesVersion": "phase0-2026-05-02",
+        "lastCheckedAt": "2026-05-02T23:29:34Z",
+        "source": "fixture",
+        "tool": "health_generic",
+        "version": ""
       },
-      "bv.tui": {
-        "notes": "Guardrail 1: bare bv launches TUI; never invoked",
-        "status": "blocked-by-policy"
-      }
-    },
-    "caam": {
-      "caam.account.switch": {
-        "notes": "only one account configured; no alternative to switch to",
-        "status": "degraded"
+      "jfp": {
+        "capabilities": {},
+        "fixturesVersion": "phase0-2026-05-02",
+        "lastCheckedAt": "2026-05-02T23:29:34Z",
+        "source": "fixture",
+        "tool": "jfp",
+        "version": ""
       },
-      "caam.accounts.list": {
-        "status": "ok"
-      }
-    },
-    "casr": {},
-    "caut": {},
-    "dcg": {
-      "dcg.verdicts.subscribe": {
-        "notes": "verdict format pinned via --help; runtime stream from hook",
-        "status": "untested"
-      }
-    },
-    "git": {
-      "git.diff.read": {
-        "status": "ok"
+      "jsm": {
+        "capabilities": {
+          "jsm.skill.install": {
+            "status": "ok"
+          },
+          "jsm.skill.list": {
+            "status": "ok"
+          },
+          "jsm.skill.verify": {
+            "notes": "SHA-256 deterministic",
+            "status": "ok"
+          }
+        },
+        "fixturesVersion": "phase0-2026-05-02",
+        "lastCheckedAt": "2026-05-02T23:29:34Z",
+        "source": "fixture",
+        "tool": "jsm",
+        "version": ""
       },
-      "git.push": {
-        "notes": "snapshot script never pushes",
-        "status": "blocked-by-policy"
+      "ntm": {
+        "capabilities": {
+          "ntm.robot.snapshot": {
+            "status": "ok"
+          },
+          "ntm.robot.status": {
+            "status": "ok"
+          },
+          "ntm.robot.tail": {
+            "status": "ok"
+          },
+          "ntm.serve.rest": {
+            "notes": "endpoint discovery only",
+            "status": "untested",
+            "transport": "http"
+          }
+        },
+        "fixturesVersion": "phase0-2026-05-02",
+        "lastCheckedAt": "2026-05-02T23:29:34Z",
+        "source": "fixture",
+        "tool": "ntm",
+        "version": ""
       },
-      "git.status.read": {
-        "status": "ok"
+      "oracle": {
+        "capabilities": {},
+        "fixturesVersion": "phase0-2026-05-02",
+        "lastCheckedAt": "2026-05-02T23:29:34Z",
+        "source": "fixture",
+        "tool": "oracle",
+        "version": ""
       },
-      "git.unpushed.list": {
-        "fallback": "rev-list --left-right",
-        "status": "ok"
-      }
-    },
-    "health": {
-      "health.complexity": {
-        "status": "untested"
+      "pt": {
+        "capabilities": {},
+        "fixturesVersion": "phase0-2026-05-02",
+        "lastCheckedAt": "2026-05-02T23:29:34Z",
+        "source": "fixture",
+        "tool": "pt",
+        "version": ""
       },
-      "health.coverage": {
-        "notes": "language-specific runners attempted best-effort",
-        "status": "untested"
-      }
-    },
-    "jfp": {},
-    "jsm": {
-      "jsm.skill.install": {
-        "status": "ok"
+      "ru": {
+        "capabilities": {
+          "ru.list.paths": {
+            "status": "ok"
+          },
+          "ru.prune.dry_run": {
+            "status": "ok"
+          },
+          "ru.schema": {
+            "status": "ok"
+          },
+          "ru.status.read": {
+            "status": "ok"
+          },
+          "ru.sync.dry_run": {
+            "notes": "--dry-run --non-interactive",
+            "status": "ok"
+          }
+        },
+        "fixturesVersion": "phase0-2026-05-02",
+        "lastCheckedAt": "2026-05-02T23:29:34Z",
+        "source": "fixture",
+        "tool": "ru",
+        "version": ""
       },
-      "jsm.skill.list": {
-        "status": "ok"
+      "sbh": {
+        "capabilities": {},
+        "fixturesVersion": "phase0-2026-05-02",
+        "lastCheckedAt": "2026-05-02T23:29:34Z",
+        "source": "fixture",
+        "tool": "sbh",
+        "version": ""
       },
-      "jsm.skill.verify": {
-        "notes": "SHA-256 deterministic",
-        "status": "ok"
-      }
-    },
-    "ntm": {
-      "ntm.robot.snapshot": {
-        "status": "ok"
+      "srp": {
+        "capabilities": {},
+        "fixturesVersion": "phase0-2026-05-02",
+        "lastCheckedAt": "2026-05-02T23:29:34Z",
+        "source": "fixture",
+        "tool": "srp",
+        "version": ""
       },
-      "ntm.robot.status": {
-        "status": "ok"
-      },
-      "ntm.robot.tail": {
-        "status": "ok"
-      },
-      "ntm.serve.rest": {
-        "notes": "endpoint discovery only",
-        "status": "untested",
-        "transport": "http"
-      }
-    },
-    "oracle": {},
-    "pt": {},
-    "ru": {
-      "ru.list.paths": {
-        "status": "ok"
-      },
-      "ru.prune.dry_run": {
-        "status": "ok"
-      },
-      "ru.schema": {
-        "status": "ok"
-      },
-      "ru.status.read": {
-        "status": "ok"
-      },
-      "ru.sync.dry_run": {
-        "notes": "--dry-run --non-interactive",
-        "status": "ok"
-      }
-    },
-    "sbh": {},
-    "srp": {},
-    "ubs": {
-      "ubs.scan": {
-        "status": "ok"
+      "ubs": {
+        "capabilities": {
+          "ubs.scan": {
+            "status": "ok"
+          }
+        },
+        "fixturesVersion": "phase0-2026-05-02",
+        "lastCheckedAt": "2026-05-02T23:29:34Z",
+        "source": "fixture",
+        "tool": "ubs",
+        "version": ""
       }
     }
   },

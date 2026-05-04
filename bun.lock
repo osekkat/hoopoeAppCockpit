@@ -83,6 +83,9 @@
     "packages/fixtures": {
       "name": "@hoopoe/fixtures",
       "version": "0.0.0",
+      "dependencies": {
+        "@hoopoe/schemas": "workspace:*",
+      },
       "devDependencies": {
         "@types/bun": "catalog:",
         "@types/node": "catalog:",

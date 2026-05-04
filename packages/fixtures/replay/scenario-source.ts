@@ -19,6 +19,13 @@ import {
   type Phase0ScenarioId,
 } from "../src/kinds.ts";
 import { fixturesRoot, phase0ScenarioPath, scenarioPath } from "../src/loader.ts";
+import type {
+  Capability,
+  CapabilityRegistry,
+  CapabilityStatus,
+  ToolId,
+  ToolReport,
+} from "@hoopoe/schemas";
 
 export class ScenarioLoadError extends Error {
   override readonly name = "ScenarioLoadError";
@@ -65,10 +72,57 @@ export interface LoadedScenario {
   events: ReplayEvent[];
   paneLogs: PaneLog[];
   buildLogs: BuildLog[];
-  capabilities: Record<string, unknown>;
+  capabilities: CapabilityRegistry;
   toolsDegraded: Record<string, unknown> | null;
   expectedOutcome: unknown;
 }
+
+const TOOL_ID_ALIASES: Record<string, ToolId> = {
+  health: "health_generic",
+};
+
+const TOOL_IDS = new Set<ToolId>([
+  "ntm",
+  "br",
+  "bv",
+  "agent_mail",
+  "git",
+  "ru",
+  "caam",
+  "caut",
+  "dcg",
+  "casr",
+  "pt",
+  "srp",
+  "sbh",
+  "ubs",
+  "jsm",
+  "jfp",
+  "oracle",
+  "rch",
+  "rano",
+  "health_ts",
+  "health_py",
+  "health_rs",
+  "health_go",
+  "health_generic",
+]);
+
+const CAPABILITY_STATUSES = new Set<CapabilityStatus>([
+  "ok",
+  "degraded",
+  "missing",
+  "blocked-by-policy",
+  "untested",
+]);
+
+const CAPABILITY_TRANSPORTS = new Set<NonNullable<Capability["transport"]>>([
+  "websocket",
+  "sse",
+  "http",
+  "stdio",
+  "fixture",
+]);
 
 function readJson<T = unknown>(scenarioId: string, path: string, optional: false): T;
 function readJson<T = unknown>(scenarioId: string, path: string, optional: true): T | null;
@@ -169,6 +223,176 @@ function readBuildLogs(scenarioId: string, dir: string): BuildLog[] {
   return logs.sort((a, b) => a.runId.localeCompare(b.runId));
 }
 
+function normalizeToolId(scenarioId: string, rawToolId: string): ToolId {
+  const toolId = TOOL_ID_ALIASES[rawToolId] ?? rawToolId;
+  if (TOOL_IDS.has(toolId as ToolId)) {
+    return toolId as ToolId;
+  }
+  throw new ScenarioLoadError(
+    scenarioId,
+    `capabilities.json contains unknown tool id '${rawToolId}'`,
+  );
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readStringField(value: Record<string, unknown>, key: string): string | undefined {
+  const field = value[key];
+  return typeof field === "string" ? field : undefined;
+}
+
+function normalizeCapability(
+  scenarioId: string,
+  toolId: ToolId,
+  capId: string,
+  raw: unknown,
+): Capability {
+  if (!isObject(raw)) {
+    throw new ScenarioLoadError(
+      scenarioId,
+      `capabilities.json ${toolId}.${capId} must be an object`,
+    );
+  }
+  const rawStatus = raw.status;
+  if (typeof rawStatus !== "string" || !CAPABILITY_STATUSES.has(rawStatus as CapabilityStatus)) {
+    throw new ScenarioLoadError(
+      scenarioId,
+      `capabilities.json ${toolId}.${capId}.status must be a CapabilityStatus`,
+    );
+  }
+
+  const capability: Capability = { status: rawStatus as CapabilityStatus };
+  const fallback = readStringField(raw, "fallback");
+  const transport = readStringField(raw, "transport");
+  const notes = readStringField(raw, "notes");
+  if (fallback !== undefined) capability.fallback = fallback;
+  if (transport !== undefined) {
+    if (!CAPABILITY_TRANSPORTS.has(transport as NonNullable<Capability["transport"]>)) {
+      throw new ScenarioLoadError(
+        scenarioId,
+        `capabilities.json ${toolId}.${capId}.transport must be a valid transport`,
+      );
+    }
+    capability.transport = transport as NonNullable<Capability["transport"]>;
+  }
+  if (notes !== undefined) capability.notes = notes;
+  return capability;
+}
+
+function isToolReport(raw: Record<string, unknown>): raw is ToolReport {
+  return (
+    typeof raw.tool === "string" &&
+    typeof raw.version === "string" &&
+    typeof raw.source === "string" &&
+    isObject(raw.capabilities) &&
+    typeof raw.lastCheckedAt === "string" &&
+    typeof raw.fixturesVersion === "string"
+  );
+}
+
+function normalizeToolReport(
+  scenarioId: string,
+  rawToolId: string,
+  raw: unknown,
+  meta: FixtureMeta,
+): ToolReport {
+  const toolId = normalizeToolId(scenarioId, rawToolId);
+  if (!isObject(raw)) {
+    throw new ScenarioLoadError(
+      scenarioId,
+      `capabilities.json entry for '${rawToolId}' must be an object`,
+    );
+  }
+
+  if (isToolReport(raw)) {
+    if (raw.tool !== toolId) {
+      throw new ScenarioLoadError(
+        scenarioId,
+        `capabilities.json report key '${rawToolId}' disagrees with tool '${raw.tool}'`,
+      );
+    }
+    return {
+      ...raw,
+      capabilities: normalizeCapabilitiesMap(scenarioId, toolId, raw.capabilities),
+    };
+  }
+
+  return {
+    tool: toolId,
+    version: "",
+    source: "fixture",
+    capabilities: normalizeCapabilitiesMap(scenarioId, toolId, raw),
+    lastCheckedAt: meta.capturedAt,
+    fixturesVersion: meta.fixturesVersion,
+  };
+}
+
+function normalizeCapabilitiesMap(
+  scenarioId: string,
+  toolId: ToolId,
+  rawCapabilities: Record<string, unknown>,
+): Record<string, Capability> {
+  const capabilities: Record<string, Capability> = {};
+  for (const [capId, rawCapability] of Object.entries(rawCapabilities)) {
+    capabilities[capId] = normalizeCapability(scenarioId, toolId, capId, rawCapability);
+  }
+  return capabilities;
+}
+
+function normalizeCapabilityRegistry(
+  scenarioId: string,
+  raw: unknown,
+  meta: FixtureMeta,
+): CapabilityRegistry {
+  if (!isObject(raw)) {
+    throw new ScenarioLoadError(scenarioId, "capabilities.json must be a JSON object");
+  }
+
+  if (
+    raw.schemaVersion === 1 &&
+    typeof raw.snapshotAt === "string" &&
+    typeof raw.daemonApiVersion === "string" &&
+    typeof raw.fixturesVersion === "string" &&
+    isObject(raw.tools)
+  ) {
+    const tools: Record<string, ToolReport> = {};
+    for (const [rawToolId, rawReport] of Object.entries(raw.tools)) {
+      tools[normalizeToolId(scenarioId, rawToolId)] = normalizeToolReport(
+        scenarioId,
+        rawToolId,
+        rawReport,
+        meta,
+      );
+    }
+    return {
+      schemaVersion: 1,
+      snapshotAt: raw.snapshotAt,
+      daemonApiVersion: raw.daemonApiVersion,
+      fixturesVersion: raw.fixturesVersion,
+      tools,
+    };
+  }
+
+  const tools: Record<string, ToolReport> = {};
+  for (const [rawToolId, rawReport] of Object.entries(raw)) {
+    tools[normalizeToolId(scenarioId, rawToolId)] = normalizeToolReport(
+      scenarioId,
+      rawToolId,
+      rawReport,
+      meta,
+    );
+  }
+  return {
+    schemaVersion: 1,
+    snapshotAt: meta.capturedAt,
+    daemonApiVersion: "0.1.0",
+    fixturesVersion: meta.fixturesVersion,
+    tools,
+  };
+}
+
 export interface LoadScenarioOptions {
   /** Override the corpus root. Defaults to `fixturesRoot()`. */
   corpusRoot?: string;
@@ -213,6 +437,7 @@ function loadScenarioFromPath(id: string, rootPath: string): LoadedScenario {
   }
 
   const meta = readJson<FixtureMeta>(id, join(rootPath, "meta.json"), false);
+  const rawCapabilities = readJson<unknown>(id, join(rootPath, "capabilities.json"), false);
   return {
     id,
     rootPath,
@@ -225,7 +450,7 @@ function loadScenarioFromPath(id: string, rootPath: string): LoadedScenario {
     events: readNdjson(id, join(rootPath, "events.jsonl")),
     paneLogs: readPaneLogs(id, join(rootPath, "pane-logs")),
     buildLogs: readBuildLogs(id, join(rootPath, "build-logs")),
-    capabilities: readJson<Record<string, unknown>>(id, join(rootPath, "capabilities.json"), false),
+    capabilities: normalizeCapabilityRegistry(id, rawCapabilities, meta),
     toolsDegraded: readJson<Record<string, unknown>>(id, join(rootPath, "tools-degraded.json"), true),
     expectedOutcome: readJson<unknown>(id, join(rootPath, "expected-outcome.json"), false),
   };

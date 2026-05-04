@@ -12,6 +12,9 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "bun test"
   },
+  "dependencies": {
+    "@hoopoe/schemas": "workspace:*"
+  },
   "devDependencies": {
     "@types/bun": "catalog:",
     "@types/node": "catalog:",

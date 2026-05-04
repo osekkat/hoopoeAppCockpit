@@ -7,10 +7,13 @@ import {
   deriveCursors,
   fixturesRoot,
   loadTendingScenario,
+  MOCK_BEARER_TOKEN,
+  MOCK_PAIRING_TOKEN,
   startReplay,
   type LoadedScenario,
   type ReplayEvent,
 } from "../src/index.ts";
+import type { CapabilityRegistry } from "@hoopoe/schemas";
 
 const SCENARIOS = [
   "healthy-hour",
@@ -34,6 +37,7 @@ describe("Mock Flywheel scenario golden artifacts", () => {
   for (const scenarioId of SCENARIOS) {
     test(`${scenarioId}: scenario source, event stream, and mock daemon responses match goldens`, async () => {
       const scenario = loadTendingScenario(scenarioId);
+      assertCapabilityRegistryShape(scenario.capabilities);
 
       assertGolden(
         goldenPath(scenarioId, "scenario-source.first-read.json"),
@@ -110,6 +114,8 @@ async function mockDaemonGolden(scenario: LoadedScenario): Promise<unknown> {
     subscribedEvents.push(event);
   });
   await subscribeSession.done;
+  const capabilities = client.capabilities();
+  assertCapabilityRegistryShape(capabilities);
 
   const firstBuildLog = scenario.buildLogs[0]?.runId ?? "missing-run";
   const firstPaneLog = scenario.paneLogs[0]?.agent ?? "missing-agent";
@@ -117,7 +123,7 @@ async function mockDaemonGolden(scenario: LoadedScenario): Promise<unknown> {
   return normalizeForGolden({
     "system.health": client.health(),
     "system.version": client.version(),
-    "system.capabilities": client.capabilities(),
+    "system.capabilities": capabilities,
     "projects.list": client.listProjects(),
     "br.list": client.getBeads(PROJECT_ID),
     "bv.triage": client.getTriage(PROJECT_ID),
@@ -129,10 +135,10 @@ async function mockDaemonGolden(scenario: LoadedScenario): Promise<unknown> {
     "pane_logs.first": client.getPaneLog(firstPaneLog),
     "pane_logs.missing": client.getPaneLog("missing-agent"),
     "auth.exchangePairingForBearer": client.exchangePairingForBearer({
-      pairingToken: "MOCKMOCKMOCK",
+      pairingToken: MOCK_PAIRING_TOKEN,
     }),
     "auth.issueWsToken": client.issueWsToken({
-      bearerToken: "hp-bearer-mock-do-not-trust",
+      bearerToken: MOCK_BEARER_TOKEN,
     }),
     "events.subscribe": {
       delivered: subscribedEvents,
@@ -140,6 +146,40 @@ async function mockDaemonGolden(scenario: LoadedScenario): Promise<unknown> {
     },
     "scenario.id": client.scenarioId(),
   });
+}
+
+function assertCapabilityRegistryShape(registry: CapabilityRegistry): void {
+  if (
+    registry.schemaVersion !== 1 ||
+    typeof registry.snapshotAt !== "string" ||
+    typeof registry.daemonApiVersion !== "string" ||
+    typeof registry.fixturesVersion !== "string" ||
+    typeof registry.tools !== "object" ||
+    registry.tools === null ||
+    Array.isArray(registry.tools)
+  ) {
+    throw new Error("Mock Flywheel capability fixture is not a CapabilityRegistry");
+  }
+
+  for (const [toolId, report] of Object.entries(registry.tools)) {
+    if (
+      report.tool !== toolId ||
+      typeof report.version !== "string" ||
+      typeof report.source !== "string" ||
+      typeof report.lastCheckedAt !== "string" ||
+      typeof report.fixturesVersion !== "string" ||
+      typeof report.capabilities !== "object" ||
+      report.capabilities === null ||
+      Array.isArray(report.capabilities)
+    ) {
+      throw new Error(`Mock Flywheel capability report is malformed for ${toolId}`);
+    }
+    for (const [capabilityId, capability] of Object.entries(report.capabilities)) {
+      if (typeof capability.status !== "string" || capability.status.length === 0) {
+        throw new Error(`Mock Flywheel capability ${toolId}.${capabilityId} is missing status`);
+      }
+    }
+  }
 }
 
 function assertGolden(path: string, actual: string): void {
