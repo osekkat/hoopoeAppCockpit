@@ -22,7 +22,7 @@ export function DiagnosticsStage({ projectId }: { readonly projectId: string }) 
         </span>
       </section>
 
-      <AuditLogExplorer projectId={projectId} />
+      <AuditLogExplorer />
     </div>
   );
 }

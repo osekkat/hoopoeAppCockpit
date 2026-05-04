@@ -14,7 +14,6 @@ import {
   auditOutcomes,
   auditSeverities,
   buildAuditExplorerModel,
-  createFixtureAuditEntries,
   defaultAuditFilters,
   updateAuditFilterSet,
   type AuditActorKind,
@@ -44,18 +43,15 @@ const groupByOptions: readonly { readonly value: AuditGroupBy; readonly label: s
   { value: "none", label: "None" },
 ];
 
+const emptyAuditEntries: readonly AuditLogEntry[] = [];
+
 export function AuditLogExplorer({
   entries,
-  projectId,
 }: {
   readonly entries?: readonly AuditLogEntry[];
-  readonly projectId: string;
 }) {
   const [filters, setFilters] = useState<AuditFilterState>(defaultAuditFilters);
-  const auditEntries = useMemo(
-    () => entries ?? createFixtureAuditEntries(projectId),
-    [entries, projectId],
-  );
+  const auditEntries = entries ?? emptyAuditEntries;
   const model = useMemo(
     () => buildAuditExplorerModel(auditEntries, filters),
     [auditEntries, filters],
