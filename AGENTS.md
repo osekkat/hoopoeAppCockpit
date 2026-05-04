@@ -74,7 +74,14 @@ Internalize these. They are load-bearing decisions and a failed grep on any of t
 8. **Do not let terminal output be the source of truth for bead/agent/mail state when structured APIs exist.** Read from `br`, `bv`, NTM, Agent Mail (§1.3).
 9. **Do not wake tending LLM jobs when deterministic pre-scripts find nothing actionable.** `wakeAgent: false` is the default for healthy ticks (§8.3).
 10. **Do not suppress audit entries just because a job returned `[SILENT]`.** Activity panel suppresses; audit log always records (§8.3, §10).
-11. **Do not call provider APIs directly.** No `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` config field anywhere; no `openai`, `@anthropic-ai/sdk`, `@google/generative-ai`, or equivalent SDK in `apps/daemon/` or `apps/desktop/`. Every model reach goes through Claude Code / Codex CLI / Gemini CLI (subscription-backed CLIs) or `oracle --engine browser` (ChatGPT Pro web). CI rule: importing a provider SDK in daemon or desktop code fails the build (§5.1, §7.1, §13).
+11. **Do not call provider APIs directly.** Every model reach goes through Claude Code / Codex CLI / Gemini CLI (subscription-backed CLIs) or `oracle --engine browser` (ChatGPT Pro web). Specifically forbidden in `apps/daemon/` and `apps/desktop/`:
+    - **(a) Env-var references**: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` (or any other provider API-key env var) in code, config-loading, or `.env*` files.
+    - **(b) SDK imports**: `import openai`, `from "openai"`, `from '@anthropic-ai/sdk'`, `from '@google/generative-ai'`, `require("openai")`, `import "github.com/sashabaranov/go-openai"`, or any equivalent that pulls a provider SDK into the runtime.
+    - **(c) Manifest entries**: those SDKs in `package.json` (deps/devDeps), `go.mod`, or any vendored copy.
+
+    **Allowed**: provider-name labels (`openai`, `anthropic`, `claude`, `gemini`) appearing in redaction fixtures (`apps/daemon/internal/redaction/`), test data, code comments, docs, and user-facing subscription-status UI strings — these are intentional matches that the redaction layer must detect, not direct API calls.
+
+    **CI gate**: a raw substring grep for `openai` is too broad and would fail on the benign label hits above. The canonical CI check uses anchored patterns (env-var names + import-context regexes + manifest entries) — see `scripts/providerlint/check-provider-sdks.ts` (§5.1, §7.1, §13).
 12. **Do not surface raw terminal panes in the default swarm UI.** PTY plumbing exists on the daemon side for tending and forensics; the user-visible Swarm dashboard shows bead state + agent state + Activity panel only. Terminal scrollback is reachable from Diagnostics behind an explicit, audited "Show raw pane" toggle, never from the default agent grid (§7.3).
 
 ### Plus the seven product principles (plan.md §1)
@@ -261,7 +268,7 @@ Layer 4: Skills (content)             — vibing-with-ntm, ntm; pinned via `jsm`
 
 ### Subscription-only model access (plan.md §7.1, §13, Guardrail 11)
 
-Every model reach goes through one of: Claude Code (Claude Max), Codex CLI (GPT Pro), Gemini CLI (Gemini Ultra), or `oracle --engine browser` (ChatGPT Pro web). **No BYOK. No direct provider APIs. No `OPENAI_API_KEY` config field anywhere.** A failed grep for those strings in the daemon or desktop must fail CI.
+Every model reach goes through one of: Claude Code (Claude Max), Codex CLI (GPT Pro), Gemini CLI (Gemini Ultra), or `oracle --engine browser` (ChatGPT Pro web). **No BYOK. No direct provider APIs. No `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` config field anywhere.** CI runs `scripts/providerlint/check-provider-sdks.ts` which scans `apps/daemon/` and `apps/desktop/` for the three categories above (env-var references in code/config, SDK imports in import-context, manifest entries in `package.json`/`go.mod`). Provider-name labels in redaction fixtures and user-facing subscription UI strings are explicitly allowed.
 
 ### Local code clone (plan.md §7.7)
 

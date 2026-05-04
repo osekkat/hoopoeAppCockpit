@@ -281,7 +281,7 @@ The orchestrator the user chats with in the Activity panel is the literal `orche
 8. Do not let terminal output be the source of truth for bead/agent/mail state when structured APIs exist.
 9. Do not wake tending LLM jobs when deterministic pre-scripts find nothing actionable.
 10. Do not suppress audit entries just because a job returned `[SILENT]`.
-11. **Do not call provider APIs directly.** No `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` config field anywhere; no provider SDK in daemon or desktop. CI rule: importing one fails the build.
+11. **Do not call provider APIs directly.** No `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` env-var references, no SDK imports (`import openai`, `from "@anthropic-ai/sdk"`, `from "@google/generative-ai"`, etc.), and no provider-SDK entries in `package.json` / `go.mod` anywhere in `apps/daemon/` or `apps/desktop/`. Provider-name labels in redaction fixtures and user-facing subscription-status UI are allowed (they're what the redaction layer matches against). CI rule: `scripts/providerlint/check-provider-sdks.ts` enforces this with anchored patterns.
 12. **Do not surface raw terminal panes in the default swarm UI.** PTY plumbing exists on the daemon side for tending and forensics; the user-visible Swarm dashboard shows bead state + agent state + Activity panel only.
 
 A failed grep on any of these is a failed PR.
