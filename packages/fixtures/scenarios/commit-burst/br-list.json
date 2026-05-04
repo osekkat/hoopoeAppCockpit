@@ -1,0 +1,15 @@
+{
+  "issues": [
+    {
+      "id": "hp-uk4",
+      "title": "[test] missing tending fixture commit-burst",
+      "description": "Fixture scenario proving snapshot-health coalesces an agent's burst of 50 commits into one deterministic health run.",
+      "status": "in_progress",
+      "priority": 1,
+      "issue_type": "task",
+      "created_at": "2026-05-02T23:47:12Z",
+      "updated_at": "2026-05-02T23:47:12Z"
+    }
+  ],
+  "total": 1
+}

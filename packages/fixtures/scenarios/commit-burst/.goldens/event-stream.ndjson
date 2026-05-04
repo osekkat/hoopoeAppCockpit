@@ -1,0 +1,7 @@
+{"event":{"channel":"git","payload":{"agent":"GreenBear","branch":"main","commitCount":50,"firstCommit":"burst0001","lastCommit":"burst0050","windowSeconds":42},"seq":1,"ts":"2026-05-02T23:47:12Z","type":"git.commit_burst_detected"},"index":0,"kind":"event"}
+{"event":{"channel":"tending","payload":{"jobId":"snapshot-health","reason":"commit burst coalesced deterministically","wakeAgent":false},"seq":2,"ts":"2026-05-02T23:47:13Z","type":"tending.pre_script_decision"},"index":1,"kind":"event"}
+{"event":{"channel":"health","payload":{"coalescedCommits":50,"commitSha":"burst0050","snapshotId":"health-burst-001"},"seq":3,"ts":"2026-05-02T23:47:15Z","type":"health.snapshot_enqueued"},"index":2,"kind":"event"}
+{"event":{"channel":"audit","payload":{"enqueuedRuns":1,"inputCommits":50,"jobId":"snapshot-health"},"seq":4,"ts":"2026-05-02T23:47:16Z","type":"commit_burst.coalesced"},"index":3,"kind":"event"}
+{"event":{"channel":"activity","payload":{"activityBehavior":"audit_only","summary":"snapshot-health coalesced 50 commits into one health run"},"seq":5,"ts":"2026-05-02T23:47:17Z","type":"activity.audit_only"},"index":4,"kind":"event"}
+{"cursors":{"activity":5,"audit":4,"git":1,"health":3,"tending":2},"kind":"end-cursors"}
+{"cursors":{"activity":5,"audit":4,"git":1,"health":3,"tending":2},"kind":"derived-cursors"}

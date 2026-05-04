@@ -1,0 +1,9 @@
+{
+  "kind": "synthetic",
+  "scenario": "commit-burst",
+  "fixturesVersion": "phase0-2026-05-02",
+  "capturedAt": "2026-05-02T23:47:12Z",
+  "vpsId": "mock-flywheel",
+  "source": "hand-written hp-uk4 commit-burst tending fixture",
+  "notes": "One agent lands 50 commits in a 42s window. snapshot-health coalesces the burst into one deterministic health run and does not wake a tending LLM."
+}

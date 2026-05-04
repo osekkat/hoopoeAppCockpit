@@ -1,0 +1,302 @@
+{
+  "agentMailDump": {
+    "messages": [],
+    "threads": [],
+    "unread_total": 0
+  },
+  "brList": {
+    "issues": [
+      {
+        "created_at": "2026-05-02T23:47:12Z",
+        "description": "Fixture scenario proving snapshot-health coalesces an agent's burst of 50 commits into one deterministic health run.",
+        "id": "hp-uk4",
+        "issue_type": "task",
+        "priority": 1,
+        "status": "in_progress",
+        "title": "[test] missing tending fixture commit-burst",
+        "updated_at": "2026-05-02T23:47:12Z"
+      }
+    ],
+    "total": 1
+  },
+  "buildLogs": [
+    {
+      "runId": "run-006",
+      "text": "2026-05-02T23:47:12Z received vps_push_completed burst: 50 commits in 42s\n2026-05-02T23:47:13Z snapshot-health pre-script coalesced burst\n2026-05-02T23:47:15Z enqueued health snapshot health-burst-001 for burst0050\n2026-05-02T23:47:17Z wakeAgent=false; audit-only activity recorded\n"
+    }
+  ],
+  "bvTriage": {
+    "data_hash": "commit-burst-synthetic",
+    "generated_at": "2026-05-02T23:47:12Z",
+    "triage": {
+      "meta": {
+        "compute_time_ms": 1,
+        "generated_at": "2026-05-02T23:47:12Z",
+        "issue_count": 1,
+        "phase2_ready": false,
+        "version": "1.0.0"
+      },
+      "quick_ref": {
+        "actionable_count": 0,
+        "blocked_count": 0,
+        "in_progress_count": 1,
+        "open_count": 1,
+        "top_picks": []
+      },
+      "recommendations": []
+    }
+  },
+  "capabilities": {
+    "agent_mail": {
+      "agent_mail.messages.read": {
+        "status": "ok"
+      },
+      "agent_mail.messages.send": {
+        "status": "ok"
+      },
+      "agent_mail.reservations.list": {
+        "status": "ok"
+      }
+    },
+    "br": {
+      "br.dep.add": {
+        "status": "ok"
+      },
+      "br.issues.read": {
+        "status": "ok"
+      },
+      "br.issues.update": {
+        "status": "ok"
+      },
+      "br.sync.flush_only": {
+        "status": "ok"
+      }
+    },
+    "bv": {
+      "bv.robot.diff": {
+        "status": "ok"
+      },
+      "bv.robot.insights": {
+        "status": "ok"
+      },
+      "bv.robot.plan": {
+        "status": "ok"
+      },
+      "bv.robot.triage": {
+        "status": "ok"
+      },
+      "bv.tui": {
+        "notes": "Guardrail 1: bare bv launches TUI; never invoked",
+        "status": "blocked-by-policy"
+      }
+    },
+    "caam": {},
+    "casr": {},
+    "caut": {},
+    "dcg": {},
+    "git": {
+      "git.diff.read": {
+        "status": "ok"
+      },
+      "git.push": {
+        "notes": "fixture consumes vps_push_completed events; it never pushes",
+        "status": "blocked-by-policy"
+      },
+      "git.status.read": {
+        "status": "ok"
+      },
+      "git.unpushed.list": {
+        "status": "ok"
+      }
+    },
+    "health": {
+      "health.churn": {
+        "status": "ok"
+      },
+      "health.complexity": {
+        "status": "ok"
+      },
+      "health.coverage": {
+        "status": "ok"
+      }
+    },
+    "jfp": {},
+    "jsm": {},
+    "ntm": {
+      "ntm.robot.snapshot": {
+        "status": "ok"
+      },
+      "ntm.robot.status": {
+        "status": "ok"
+      },
+      "ntm.robot.tail": {
+        "status": "ok"
+      }
+    },
+    "oracle": {},
+    "pt": {},
+    "sbh": {},
+    "srp": {},
+    "ubs": {}
+  },
+  "events": [
+    {
+      "channel": "git",
+      "payload": {
+        "agent": "GreenBear",
+        "branch": "main",
+        "commitCount": 50,
+        "firstCommit": "burst0001",
+        "lastCommit": "burst0050",
+        "windowSeconds": 42
+      },
+      "seq": 1,
+      "ts": "2026-05-02T23:47:12Z",
+      "type": "git.commit_burst_detected"
+    },
+    {
+      "channel": "tending",
+      "payload": {
+        "jobId": "snapshot-health",
+        "reason": "commit burst coalesced deterministically",
+        "wakeAgent": false
+      },
+      "seq": 2,
+      "ts": "2026-05-02T23:47:13Z",
+      "type": "tending.pre_script_decision"
+    },
+    {
+      "channel": "health",
+      "payload": {
+        "coalescedCommits": 50,
+        "commitSha": "burst0050",
+        "snapshotId": "health-burst-001"
+      },
+      "seq": 3,
+      "ts": "2026-05-02T23:47:15Z",
+      "type": "health.snapshot_enqueued"
+    },
+    {
+      "channel": "audit",
+      "payload": {
+        "enqueuedRuns": 1,
+        "inputCommits": 50,
+        "jobId": "snapshot-health"
+      },
+      "seq": 4,
+      "ts": "2026-05-02T23:47:16Z",
+      "type": "commit_burst.coalesced"
+    },
+    {
+      "channel": "activity",
+      "payload": {
+        "activityBehavior": "audit_only",
+        "summary": "snapshot-health coalesced 50 commits into one health run"
+      },
+      "seq": 5,
+      "ts": "2026-05-02T23:47:17Z",
+      "type": "activity.audit_only"
+    }
+  ],
+  "expectedOutcome": {
+    "activityBehavior": "audit_only",
+    "approvalsRequested": [],
+    "detections": [
+      {
+        "kind": "git.commit_burst",
+        "payload": {
+          "agent": "GreenBear",
+          "branch": "main",
+          "commitCount": 50,
+          "windowSeconds": 42
+        }
+      },
+      {
+        "kind": "health.snapshot_coalesced",
+        "payload": {
+          "coalescedCommits": 50,
+          "jobId": "snapshot-health",
+          "snapshotId": "health-burst-001"
+        }
+      }
+    ],
+    "meta": {
+      "capturedAt": "<scrubbed-captured-at>",
+      "fixturesVersion": "phase0-2026-05-02",
+      "kind": "synthetic",
+      "notes": "The deterministic pre-script should coalesce commit bursts before health snapshotting and should not wake a tending LLM.",
+      "scenario": "commit-burst",
+      "source": "hand-written hp-uk4 commit-burst tending fixture",
+      "vpsId": "mock-flywheel"
+    },
+    "postconditions": [
+      {
+        "check": "snapshot_health.jobs_enqueued",
+        "expect": 1
+      },
+      {
+        "check": "llm_wake_count",
+        "expect": 0
+      },
+      {
+        "check": "commit_burst_audited",
+        "expect": true
+      }
+    ],
+    "wakeAgent": false
+  },
+  "id": "commit-burst",
+  "meta": {
+    "capturedAt": "<scrubbed-captured-at>",
+    "fixturesVersion": "phase0-2026-05-02",
+    "kind": "synthetic",
+    "notes": "One agent lands 50 commits in a 42s window. snapshot-health coalesces the burst into one deterministic health run and does not wake a tending LLM.",
+    "scenario": "commit-burst",
+    "source": "hand-written hp-uk4 commit-burst tending fixture",
+    "vpsId": "mock-flywheel"
+  },
+  "ntmSnapshot": {
+    "counters": {
+      "alive": 1,
+      "errored": 0,
+      "panes": 1,
+      "sessions": 1,
+      "wedged": 0
+    },
+    "sessions": [
+      {
+        "id": "hoopoe-implementation",
+        "panes": [
+          {
+            "agent": "GreenBear",
+            "bead": "hp-uk4",
+            "id": "%1",
+            "last_activity_ts": "2026-05-02T23:47:54Z",
+            "model": "gpt-5.5",
+            "program": "codex-cli",
+            "state": "IDLE"
+          }
+        ],
+        "windows": 1
+      }
+    ]
+  },
+  "paneLogs": [
+    {
+      "agent": "GreenBear",
+      "bytes": {
+        "encoding": "base64",
+        "data": "R3JlZW5CZWFyPiBsYW5kZWQgZml4dHVyZSBiYXRjaCB3aXRoIDUwIHN5bnRoZXRpYyBjb21taXRzIGluIDQyIHNlY29uZHMKZGFlbW9uPiBzbmFwc2hvdC1oZWFsdGggY29hbGVzY2VkIGJ1cnN0IHRvIG9uZSBydW4KZGFlbW9uPiBubyBMTE0gd2FrZSByZXF1ZXN0ZWQK"
+      }
+    }
+  ],
+  "reservations": {
+    "conflicts": [],
+    "reservations": []
+  },
+  "rootPath": "<fixtures-root>/scenarios/commit-burst",
+  "toolsDegraded": {
+    "degraded": [],
+    "missing": []
+  }
+}

@@ -1,0 +1,4 @@
+2026-05-02T23:47:12Z received vps_push_completed burst: 50 commits in 42s
+2026-05-02T23:47:13Z snapshot-health pre-script coalesced burst
+2026-05-02T23:47:15Z enqueued health snapshot health-burst-001 for burst0050
+2026-05-02T23:47:17Z wakeAgent=false; audit-only activity recorded

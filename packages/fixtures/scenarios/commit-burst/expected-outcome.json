@@ -1,0 +1,47 @@
+{
+  "meta": {
+    "kind": "synthetic",
+    "scenario": "commit-burst",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-02T23:47:12Z",
+    "vpsId": "mock-flywheel",
+    "source": "hand-written hp-uk4 commit-burst tending fixture",
+    "notes": "The deterministic pre-script should coalesce commit bursts before health snapshotting and should not wake a tending LLM."
+  },
+  "detections": [
+    {
+      "kind": "git.commit_burst",
+      "payload": {
+        "agent": "GreenBear",
+        "branch": "main",
+        "commitCount": 50,
+        "windowSeconds": 42
+      }
+    },
+    {
+      "kind": "health.snapshot_coalesced",
+      "payload": {
+        "jobId": "snapshot-health",
+        "coalescedCommits": 50,
+        "snapshotId": "health-burst-001"
+      }
+    }
+  ],
+  "wakeAgent": false,
+  "approvalsRequested": [],
+  "postconditions": [
+    {
+      "check": "snapshot_health.jobs_enqueued",
+      "expect": 1
+    },
+    {
+      "check": "llm_wake_count",
+      "expect": 0
+    },
+    {
+      "check": "commit_burst_audited",
+      "expect": true
+    }
+  ],
+  "activityBehavior": "audit_only"
+}

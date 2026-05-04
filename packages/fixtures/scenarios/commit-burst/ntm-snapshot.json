@@ -1,0 +1,26 @@
+{
+  "sessions": [
+    {
+      "id": "hoopoe-implementation",
+      "windows": 1,
+      "panes": [
+        {
+          "id": "%1",
+          "agent": "GreenBear",
+          "program": "codex-cli",
+          "model": "gpt-5.5",
+          "state": "IDLE",
+          "last_activity_ts": "2026-05-02T23:47:54Z",
+          "bead": "hp-uk4"
+        }
+      ]
+    }
+  ],
+  "counters": {
+    "sessions": 1,
+    "panes": 1,
+    "alive": 1,
+    "wedged": 0,
+    "errored": 0
+  }
+}

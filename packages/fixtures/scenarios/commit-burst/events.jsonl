@@ -1,0 +1,5 @@
+{"channel":"git","seq":1,"ts":"2026-05-02T23:47:12Z","type":"git.commit_burst_detected","payload":{"agent":"GreenBear","branch":"main","commitCount":50,"windowSeconds":42,"firstCommit":"burst0001","lastCommit":"burst0050"}}
+{"channel":"tending","seq":2,"ts":"2026-05-02T23:47:13Z","type":"tending.pre_script_decision","payload":{"jobId":"snapshot-health","wakeAgent":false,"reason":"commit burst coalesced deterministically"}}
+{"channel":"health","seq":3,"ts":"2026-05-02T23:47:15Z","type":"health.snapshot_enqueued","payload":{"snapshotId":"health-burst-001","coalescedCommits":50,"commitSha":"burst0050"}}
+{"channel":"audit","seq":4,"ts":"2026-05-02T23:47:16Z","type":"commit_burst.coalesced","payload":{"jobId":"snapshot-health","inputCommits":50,"enqueuedRuns":1}}
+{"channel":"activity","seq":5,"ts":"2026-05-02T23:47:17Z","type":"activity.audit_only","payload":{"summary":"snapshot-health coalesced 50 commits into one health run","activityBehavior":"audit_only"}}
