@@ -62,6 +62,18 @@ const BANNED_IMPORTS: ReadonlyArray<{
     pattern: /from\s+["']electron(?:\/.*)?["']/,
     message: "Renderer must not import electron; use window.hoopoe (preload bridge).",
   },
+  {
+    pattern: /from\s+["']react-markdown["']/,
+    message: "Renderer markdown previews must go through apps/desktop/electron/markdown-sanitize.",
+  },
+  {
+    pattern: /from\s+["']rehype-(?:raw|sanitize)["']/,
+    message: "Renderer markdown sanitization policy must be centralized in apps/desktop/electron/markdown-sanitize.",
+  },
+  {
+    pattern: /from\s+["'](?:marked|markdown-it)["']/,
+    message: "Renderer markdown previews must go through apps/desktop/electron/markdown-sanitize.",
+  },
 ];
 
 const BANNED_PATTERNS: ReadonlyArray<{
@@ -98,6 +110,11 @@ const BANNED_PATTERNS: ReadonlyArray<{
     pattern: /<webview\b/i,
     rule: "no-webview",
     message: "<webview> is forbidden; v1 has no allowlisted embeds.",
+  },
+  {
+    pattern: /\bdangerouslySetInnerHTML\s*=/,
+    rule: "no-dangerously-set-inner-html",
+    message: "Renderer HTML injection is forbidden; use the sanitized markdown wrapper.",
   },
 ];
 

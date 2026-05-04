@@ -14,6 +14,11 @@ const BANNED_IMPORT_LINES = [
   `import { request } from "https";`,
   `import { contextBridge } from "electron";`,
   `import { something } from "electron/main";`,
+  `import ReactMarkdown from "react-markdown";`,
+  `import rehypeRaw from "rehype-raw";`,
+  `import rehypeSanitize from "rehype-sanitize";`,
+  `import { marked } from "marked";`,
+  `import MarkdownIt from "markdown-it";`,
 ];
 
 const BANNED_INLINE_LINES = [
@@ -23,6 +28,7 @@ const BANNED_INLINE_LINES = [
   `console.log(window.process.env);`,
   `console.log(globalThis.process.env);`,
   `<webview src="x" />`,
+  `<div dangerouslySetInnerHTML={{ __html: markdown }} />`,
 ];
 
 const ALLOWED_LINES = [
@@ -38,6 +44,9 @@ const BANNED_IMPORTS = [
   /from\s+["'](?:node:)?child_process["']/,
   /from\s+["'](?:node:)?https?["']/,
   /from\s+["']electron(?:\/.*)?["']/,
+  /from\s+["']react-markdown["']/,
+  /from\s+["']rehype-(?:raw|sanitize)["']/,
+  /from\s+["'](?:marked|markdown-it)["']/,
 ];
 
 const BANNED_PATTERNS = [
@@ -47,6 +56,7 @@ const BANNED_PATTERNS = [
   /\bwindow\.process\b/,
   /\bglobalThis\.process\b/,
   /<webview\b/i,
+  /\bdangerouslySetInnerHTML\s*=/,
 ];
 
 function lineMatchesAny(text: string, patterns: ReadonlyArray<RegExp>): boolean {

@@ -155,6 +155,30 @@ sink-throws-don't-block-the-registry-throw safety property.
 | Codex-shape provider SDK leak | `scripts/providerlint/` + `scripts/codex-shape-scrub/` (CI gates) |
 | Provider API key in config | Static lint refuses `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` (Guardrail #11) |
 
+## Local Clone Untrust Posture
+
+The desktop local clone is a sync-driven mirror of origin, not a trusted
+workspace. Any repository file content can be attacker controlled, including
+Markdown, filenames, symlinks, and code snippets.
+
+Markdown preview rendering must go through
+`apps/desktop/electron/markdown-sanitize`. The wrapper escapes raw HTML by
+default, filters links to `http:`, `https:`, `mailto:`, and relative URLs, and
+keeps unsafe raw HTML behind an explicit per-project warning acknowledgement.
+Renderer code must not import `react-markdown`, `rehype-raw`,
+`rehype-sanitize`, `marked`, or `markdown-it` directly; the renderer-isolation
+lint rejects those imports and direct `dangerouslySetInnerHTML`.
+
+Code views use tokenized editor rendering with escaped text. Code payloads from
+the clone are never treated as HTML, even when they contain long lines, nested
+brackets, Unicode-confusable identifiers, or strings that look like tags.
+
+Open-in-editor and ripgrep helpers must validate requested paths through
+`apps/daemon/internal/clone/sandbox` before launching anything. The sandbox
+resolves symlinks, rejects traversal outside the clone root, renders command
+previews from quoted argv, and builds subprocess calls as explicit argv arrays.
+It never creates a shell command from repository content or user search text.
+
 ## Daemon Bind Safety
 
 The daemon defaults to `127.0.0.1` and is expected to be reached through the
