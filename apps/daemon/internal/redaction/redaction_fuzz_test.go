@@ -38,6 +38,67 @@ func FuzzRedactPatterns(f *testing.F) {
 	})
 }
 
+// FuzzRedactValueNested exercises the recursive RedactValue path, which
+// FuzzRedactPatterns does not — RedactText only walks a single string,
+// but real audit/event payloads are nested maps and arrays. The wrapper
+// also covers RedactAdapterOutput transitively (it is RedactValue with
+// a "adapter:<name>" surface label).
+func FuzzRedactValueNested(f *testing.F) {
+	cases := redactionFuzzCases()
+	for _, testCase := range cases {
+		f.Add(testCase.id, "seed")
+	}
+
+	f.Fuzz(func(t *testing.T, patternID string, entropy string) {
+		testCase := fuzzCaseFor(patternID, cases)
+		payload, leaks := testCase.build(entropy)
+		nested := map[string]any{
+			"outer": map[string]any{
+				"inner": payload,
+				"arr":   []any{"safe", payload},
+			},
+		}
+		out, traces := NewDefault().RedactValue(SurfaceEvents, "event", nested)
+		if len(traces) == 0 {
+			t.Fatalf("%s: no redaction traces for nested payload", testCase.id)
+		}
+		if !traceContains(traces, testCase.id) {
+			t.Fatalf("%s: expected trace id missing from nested %#v", testCase.id, traces)
+		}
+		rendered := flattenForFuzz(out)
+		for _, leak := range leaks {
+			if leak != "" && strings.Contains(rendered, leak) {
+				t.Fatalf("%s: nested redacted output leaked %q in %q", testCase.id, leak, rendered)
+			}
+		}
+	})
+}
+
+func flattenForFuzz(value any) string {
+	switch v := value.(type) {
+	case string:
+		return v
+	case map[string]any:
+		var b strings.Builder
+		for key, child := range v {
+			b.WriteString(key)
+			b.WriteString("=")
+			b.WriteString(flattenForFuzz(child))
+			b.WriteString(";")
+		}
+		return b.String()
+	case []any:
+		var b strings.Builder
+		for _, child := range v {
+			b.WriteString(flattenForFuzz(child))
+			b.WriteString(";")
+		}
+		return b.String()
+	default:
+		return ""
+	}
+}
+
 func TestRedactionFuzzCasesCoverDefaultPatterns(t *testing.T) {
 	got := make([]string, 0, len(redactionFuzzCases()))
 	for _, testCase := range redactionFuzzCases() {
