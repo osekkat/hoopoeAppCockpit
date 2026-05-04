@@ -1,11 +1,13 @@
 // hp-sgy — React ErrorBoundary at the renderer root.
-//
-// Catches render-time throws so a single bad component cannot unmount
-// the entire renderer tree. The existing ErrorUxRoot / BlockingModal /
-// errorBus pipeline only handles errors that are *published* to the
-// bus; a thrown render error short-circuits React before any bus
-// subscriber runs, which is why a class boundary is required (it's
-// the only React API that can intercept descendant render errors).
+// hp-vau — Shares its dev/prod fallback UI with `RouterErrorComponent`
+//          via `renderErrorFallback`. The class boundary catches throws
+//          ABOVE the TanStack `RouterProvider` (e.g., inside
+//          QueryClientProvider, or in the Provider's own setup); throws
+//          INSIDE the route tree are caught by TanStack's internal
+//          `CatchBoundary` first and surfaced through
+//          `defaultErrorComponent` — that path goes through
+//          `RouterErrorComponent` and re-uses the same fallback +
+//          `errorBus.publish`.
 //
 // On dev (`import.meta.env.DEV`) the fallback shows error name + message
 // + stack with a "Try again" reset button so the developer can reload
@@ -19,12 +21,15 @@
 //
 // Cross-references:
 //   - apps/desktop/src/renderer/main.tsx (mount point)
+//   - apps/desktop/src/renderer/error-ux/RouterErrorComponent.tsx
+//   - apps/desktop/src/renderer/error-ux/renderErrorFallback.tsx
 //   - apps/desktop/src/renderer/error-ux/ErrorUxRoot.tsx (publishes-to-bus surface)
 //   - apps/desktop/src/renderer/error-ux/errorBus.ts
 
 import { Component, type ErrorInfo, type ReactNode } from "react";
-import type { ErrorBus, ProblemEnvelope } from "./types.ts";
+import type { ErrorBus } from "./types.ts";
 import { errorBus as defaultBus } from "./errorBus.ts";
+import { buildRendererCrashEnvelope, renderErrorFallback } from "./renderErrorFallback.tsx";
 
 interface ErrorBoundaryProps {
   readonly children: ReactNode;
@@ -39,21 +44,6 @@ interface ErrorBoundaryProps {
 interface ErrorBoundaryState {
   readonly error: Error | null;
   readonly componentStack: string | null;
-}
-
-const PROBLEM_TYPE_URI = "https://hoopoe.io/problems/renderer.crash";
-
-function buildEnvelope(error: Error): ProblemEnvelope {
-  return {
-    type: PROBLEM_TYPE_URI,
-    title: "Renderer crashed",
-    status: 500,
-    surface: "blocking_modal",
-    actionability: "reload",
-    user_message:
-      "The Hoopoe window hit an unexpected error. Reload to recover.",
-    detail: error.message,
-  };
 }
 
 export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
@@ -86,7 +76,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       bus.publish({
         source: "renderer.boundary",
         severity: "blocking",
-        envelope: buildEnvelope(error),
+        envelope: buildRendererCrashEnvelope(error),
       });
     } catch {
       // The boundary fallback already covers the user; a bus failure
@@ -111,55 +101,13 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   override render(): ReactNode {
     const { error, componentStack } = this.state;
     if (!error) return this.props.children;
-
     const dev = this.props.forceDev ?? Boolean(import.meta.env.DEV);
-
-    return (
-      <div
-        className="hh-error-boundary-root"
-        data-testid="error-boundary-root"
-        role="alert"
-        aria-live="assertive"
-      >
-        <div className="hh-error-boundary-card">
-          <h1 className="hh-error-boundary-title">Hoopoe hit an unexpected error</h1>
-          <p className="hh-error-boundary-message">
-            {dev
-              ? "The renderer caught a thrown render error. Fix the underlying bug, then reset the boundary."
-              : "Something went wrong inside the Hoopoe window. Reload to recover; your VPS work is unaffected."}
-          </p>
-          {dev ? (
-            <pre
-              className="hh-error-boundary-detail"
-              data-testid="error-boundary-detail"
-            >
-              <code>{error.name}: {error.message}</code>
-              {error.stack ? `\n\n${error.stack}` : ""}
-              {componentStack ? `\n\nComponent stack:${componentStack}` : ""}
-            </pre>
-          ) : null}
-          <div className="hh-error-boundary-actions">
-            {dev ? (
-              <button
-                type="button"
-                className="hh-error-boundary-secondary"
-                data-testid="error-boundary-reset"
-                onClick={this.handleReset}
-              >
-                Try again
-              </button>
-            ) : null}
-            <button
-              type="button"
-              className="hh-error-boundary-primary"
-              data-testid="error-boundary-reload"
-              onClick={this.handleReload}
-            >
-              Reload window
-            </button>
-          </div>
-        </div>
-      </div>
-    );
+    return renderErrorFallback({
+      error,
+      componentStack,
+      dev,
+      onReload: this.handleReload,
+      onReset: this.handleReset,
+    });
   }
 }

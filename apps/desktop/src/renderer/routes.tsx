@@ -11,6 +11,7 @@ import { ProjectPickerRoute, StageRoute } from "./shell/routes.tsx";
 import { useShellUiStore, resolveShellLaunchTarget } from "./store.ts";
 import { routeForStage } from "./topbar/project-switcher-model.ts";
 import { PersistentWizardShell } from "./wizard/index.ts";
+import { RouterErrorComponent } from "./error-ux/RouterErrorComponent.tsx";
 
 const rootRoute = createRootRoute({
   component: RootLayout,
@@ -122,9 +123,18 @@ const routeTree = rootRoute.addChildren([
   ]),
 ]);
 
+// hp-vau: TanStack Router wraps the rendered route subtree in its own
+// `CatchBoundary` (Matches.js:36 in @tanstack/react-router@1.169.1), so
+// route-component throws never bubble up to the React `ErrorBoundary` at
+// `main.tsx`. `defaultErrorComponent` ensures the same Hoopoe fallback +
+// errorBus publish pipeline runs regardless of where the throw
+// originates. The above-router `ErrorBoundary` still catches throws in
+// `<RouterProvider>`'s own setup or anything outside the matched
+// subtree.
 export const router = createRouter({
   routeTree,
   defaultPreload: "intent",
+  defaultErrorComponent: RouterErrorComponent,
 });
 
 declare module "@tanstack/react-router" {

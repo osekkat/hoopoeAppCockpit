@@ -23,6 +23,12 @@ export {
 } from "./telemetry.ts";
 export { ErrorUxRoot } from "./ErrorUxRoot.tsx";
 export { ErrorBoundary } from "./ErrorBoundary.tsx";
+export { RouterErrorComponent } from "./RouterErrorComponent.tsx";
+export {
+  buildRendererCrashEnvelope,
+  coerceToError,
+  renderErrorFallback,
+} from "./renderErrorFallback.tsx";
 export { ToastStack } from "./surfaces/Toast.tsx";
 export { BannerStack } from "./surfaces/Banner.tsx";
 export { InlinePill } from "./surfaces/InlinePill.tsx";
