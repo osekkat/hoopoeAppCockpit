@@ -134,7 +134,7 @@ function renderInline(line: string): string {
         continue;
       }
     }
-    out += escapeHtml(ch);
+    out += escapeHtml(ch ?? "");
     i += 1;
   }
   return out;

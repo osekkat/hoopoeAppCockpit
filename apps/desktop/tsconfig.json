@@ -6,6 +6,6 @@
     "types": ["bun", "node"],
     "lib": ["ESNext", "DOM", "esnext.disposable"]
   },
-  "include": ["src"],
+  "include": ["src", "electron"],
   "exclude": ["**/*.test.ts", "**/*.test.tsx"]
 }

@@ -11,7 +11,7 @@
 // monorepos we'll switch to `du` later. The path is symlink-safe — we
 // don't follow symlinks out of the clone tree.
 
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync, type Dirent } from "node:fs";
 import { join, resolve } from "node:path";
 import { CloneStateError } from "./state.ts";
 import { DEFAULT_CLONE_CAPS, type CloneCapConfig } from "./types.ts";
@@ -44,9 +44,12 @@ export function directorySizeBytes(root: string): number {
   const stack: string[] = [r];
   while (stack.length > 0) {
     const dir = stack.pop()!;
-    let entries: ReturnType<typeof readdirSync>;
+    let entries: Dirent[];
     try {
-      entries = readdirSync(dir, { withFileTypes: true });
+      // The string-overload of readdirSync({ withFileTypes: true })
+      // returns Dirent[] (not Dirent<NonSharedBuffer>[] which the
+      // overload-resolution-via-ReturnType incorrectly inferred).
+      entries = readdirSync(dir, { withFileTypes: true }) as Dirent[];
     } catch (err) {
       // Permission denied / ENOENT race: skip this directory rather than
       // crash the size walk. Future calls re-attempt.

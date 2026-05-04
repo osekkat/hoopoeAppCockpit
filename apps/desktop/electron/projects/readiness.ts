@@ -64,7 +64,7 @@ export function checkProjectImportedGate(
       id: "git.present",
       label: "Git repository initialized",
       satisfied: git.isGitRepo,
-      note: git.isGitRepo ? undefined : "no .git directory at project root",
+      ...(git.isGitRepo ? {} : { note: "no .git directory at project root" }),
     },
     {
       id: "git.origin",
@@ -92,9 +92,9 @@ export function checkProjectImportedGate(
       id: "hoopoe.dir",
       label: ".hoopoe/ initialized",
       satisfied: tools.hasHoopoeDir,
-      note: tools.hasHoopoeDir
-        ? undefined
-        : "run initializeHoopoeDir(rootPath) to create .hoopoe/project.json + plans/",
+      ...(tools.hasHoopoeDir
+        ? {}
+        : { note: "run initializeHoopoeDir(rootPath) to create .hoopoe/project.json + plans/" }),
     },
     {
       id: "tools.detected",
