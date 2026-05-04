@@ -5,8 +5,10 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/adapters/ubs"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/review"
 )
 
 func TestDefaultCatalogRegistersPhaseNinePointFiveAudits(t *testing.T) {
@@ -358,6 +360,172 @@ func TestBeadDraftsFromFindingsDedupeAndRespectMaxFindings(t *testing.T) {
 	}
 }
 
+func TestReviewArtifactFromFindingsCreatesSpecializedRoundArtifact(t *testing.T) {
+	t.Parallel()
+	spec, err := BuildRunnerSpec(DefaultCatalog(), RunnerRequest{
+		AuditID:   AuditDeadlock,
+		ProjectID: "hoopoe",
+	})
+	if err != nil {
+		t.Fatalf("BuildRunnerSpec: %v", err)
+	}
+	artifact, err := ReviewArtifactFromFindings(spec, review.RoundRunMetadata{
+		StartedAt:   fixedAuditTime(),
+		CompletedAt: fixedAuditTime().Add(time.Minute),
+		Actor:       review.Actor{Kind: review.ActorAgent, ID: "deadlock-auditor"},
+	}, []Finding{
+		{
+			ID:       "deadlock-1",
+			FilePath: "apps/daemon/internal/api/server.go",
+			Line:     42,
+			EndLine:  44,
+			RuleID:   "lock-order",
+			Severity: "critical",
+			Category: "concurrency",
+			Message:  "mutex order can deadlock",
+		},
+	})
+	if err != nil {
+		t.Fatalf("ReviewArtifactFromFindings: %v", err)
+	}
+	if artifact.ProjectID != "hoopoe" || artifact.RoundID != "round-8" || artifact.Kind != review.RoundSpecializedAudit {
+		t.Fatalf("artifact metadata = %+v", artifact)
+	}
+	if artifact.Mode != review.ModeDelegatedAgent || artifact.Tool != "skill:deadlock-finder-and-fixer" {
+		t.Fatalf("artifact execution = %+v", artifact)
+	}
+	if artifact.Metadata["auditId"] != string(AuditDeadlock) || artifact.Metadata["skillIds"] != "deadlock-finder-and-fixer" {
+		t.Fatalf("artifact audit metadata = %#v", artifact.Metadata)
+	}
+	if len(artifact.Findings) != 1 {
+		t.Fatalf("findings = %+v", artifact.Findings)
+	}
+	finding := artifact.Findings[0]
+	if finding.Source != "skill:deadlock-finder-and-fixer" || !contains(finding.Sources, "skill:deadlock-finder-and-fixer") {
+		t.Fatalf("finding source = %+v", finding)
+	}
+	if finding.Severity != review.SeverityCritical || finding.Status != review.FindingNew {
+		t.Fatalf("finding severity/status = %+v", finding)
+	}
+	if finding.Evidence[0].Kind != "specialized_audit" || finding.Evidence[0].ID != string(AuditDeadlock) {
+		t.Fatalf("evidence = %+v", finding.Evidence)
+	}
+	if finding.Metadata["auditFindingId"] != "deadlock-1" || finding.Metadata["auditId"] != string(AuditDeadlock) {
+		t.Fatalf("finding metadata = %#v", finding.Metadata)
+	}
+}
+
+func TestReviewArtifactFromFindingsDedupesWithExistingReviewLedger(t *testing.T) {
+	t.Parallel()
+	ledger, err := review.NewLedger("hoopoe", fixedAuditTime())
+	if err != nil {
+		t.Fatalf("NewLedger: %v", err)
+	}
+	ubsRound, ok := review.RoundByIndex(0)
+	if !ok {
+		t.Fatal("round 0 not found")
+	}
+	ubsArtifact, err := review.NewRoundArtifact(ubsRound, review.RoundRunMetadata{
+		ProjectID:   "hoopoe",
+		Mode:        review.ModeDeterministicTool,
+		Tool:        ubs.SourceUBS,
+		StartedAt:   fixedAuditTime(),
+		CompletedAt: fixedAuditTime().Add(time.Minute),
+		Actor:       review.Actor{Kind: review.ActorTool, ID: "ubs"},
+	}, []review.Finding{
+		{
+			Source:    ubs.SourceUBS,
+			Severity:  review.SeverityHigh,
+			Message:   "mutex order can deadlock",
+			FilePath:  "apps/daemon/internal/api/server.go",
+			StartLine: 42,
+			EndLine:   42,
+			RuleID:    "lock-order",
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewRoundArtifact: %v", err)
+	}
+	ledger, _, err = ledger.IngestRound(ubsArtifact)
+	if err != nil {
+		t.Fatalf("ingest UBS: %v", err)
+	}
+	spec, err := BuildRunnerSpec(DefaultCatalog(), RunnerRequest{
+		AuditID:   AuditDeadlock,
+		ProjectID: "hoopoe",
+	})
+	if err != nil {
+		t.Fatalf("BuildRunnerSpec: %v", err)
+	}
+	auditArtifact, err := ReviewArtifactFromFindings(spec, review.RoundRunMetadata{
+		StartedAt:   fixedAuditTime().Add(2 * time.Minute),
+		CompletedAt: fixedAuditTime().Add(3 * time.Minute),
+		Actor:       review.Actor{Kind: review.ActorAgent, ID: "deadlock-auditor"},
+	}, []Finding{
+		{
+			ID:       "deadlock-duplicate",
+			FilePath: "apps/daemon/internal/api/server.go",
+			Line:     42,
+			EndLine:  42,
+			RuleID:   "lock-order",
+			Severity: "critical",
+			Category: "concurrency",
+			Message:  "mutex order can deadlock",
+		},
+	})
+	if err != nil {
+		t.Fatalf("ReviewArtifactFromFindings: %v", err)
+	}
+	ledger, summary, err := ledger.IngestRound(auditArtifact)
+	if err != nil {
+		t.Fatalf("ingest audit: %v", err)
+	}
+	if summary.DedupedFindings != 1 || summary.StoredFindings != 0 || len(ledger.Findings) != 1 {
+		t.Fatalf("summary=%+v findings=%+v", summary, ledger.Findings)
+	}
+	if got := ledger.Rounds[1].Findings[0].DuplicateOf; got != ledger.Findings[0].ID {
+		t.Fatalf("duplicateOf = %q, want %q", got, ledger.Findings[0].ID)
+	}
+	for _, source := range []string{ubs.SourceUBS, "skill:deadlock-finder-and-fixer"} {
+		if !contains(ledger.Findings[0].Sources, source) {
+			t.Fatalf("merged sources = %#v, missing %q", ledger.Findings[0].Sources, source)
+		}
+	}
+}
+
+func TestReviewArtifactFromFindingsMapsUBSAdapterToDeterministicRound(t *testing.T) {
+	t.Parallel()
+	spec, err := BuildRunnerSpec(DefaultCatalog(), RunnerRequest{
+		AuditID:   AuditUBSStrict,
+		ProjectID: "hoopoe",
+	})
+	if err != nil {
+		t.Fatalf("BuildRunnerSpec: %v", err)
+	}
+	artifact, err := ReviewArtifactFromFindings(spec, review.RoundRunMetadata{
+		StartedAt:   fixedAuditTime(),
+		CompletedAt: fixedAuditTime(),
+		Actor:       review.Actor{Kind: review.ActorTool, ID: "ubs"},
+	}, []Finding{{
+		FilePath: "apps/daemon/internal/audits/catalog.go",
+		Line:     12,
+		RuleID:   "go.errcheck",
+		Message:  "error is ignored",
+	}})
+	if err != nil {
+		t.Fatalf("ReviewArtifactFromFindings: %v", err)
+	}
+	if artifact.Kind != review.RoundSpecializedAudit || artifact.Mode != review.ModeDeterministicTool || artifact.Tool != ubs.SourceUBS {
+		t.Fatalf("artifact = %+v", artifact)
+	}
+	if artifact.Metadata["requiredCapabilities"] != ubs.CapabilityScan {
+		t.Fatalf("metadata = %#v", artifact.Metadata)
+	}
+	if artifact.Findings[0].Source != ubs.SourceUBS || artifact.Findings[0].Mode != review.ModeDeterministicTool {
+		t.Fatalf("finding = %+v", artifact.Findings[0])
+	}
+}
+
 func TestBeadDraftsFromFindingsRejectsFreeFloatingPolicy(t *testing.T) {
 	t.Parallel()
 	spec, err := BuildRunnerSpec(DefaultCatalog(), RunnerRequest{AuditID: AuditMockCode})
@@ -379,6 +547,10 @@ func TestValidateCatalogRejectsBadDelegatedSource(t *testing.T) {
 	if !errors.Is(err, ErrInvalidCatalog) {
 		t.Fatalf("err = %v, want ErrInvalidCatalog", err)
 	}
+}
+
+func fixedAuditTime() time.Time {
+	return time.Date(2026, 5, 4, 12, 0, 0, 0, time.UTC)
 }
 
 func assertEnabled(t *testing.T, options []PickerOption, id AuditID, want bool, reason string) {

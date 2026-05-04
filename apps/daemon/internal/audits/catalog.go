@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/adapters/ubs"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/review"
 )
 
 const (
@@ -456,6 +457,94 @@ func FromUBSFindings(findings []ubs.Finding) []Finding {
 }
 
 func BeadDraftsFromFindings(spec RunnerSpec, findings []Finding) ([]BeadDraft, error) {
+	merged, err := normalizedFindingsForSpec(spec, findings)
+	if err != nil {
+		return nil, err
+	}
+	drafts := make([]BeadDraft, 0, len(merged))
+	for _, finding := range merged {
+		drafts = append(drafts, beadDraftFromFinding(spec, finding))
+	}
+	return drafts, nil
+}
+
+func ReviewFindingsFromAudit(spec RunnerSpec, findings []Finding) ([]review.Finding, error) {
+	merged, err := normalizedFindingsForSpec(spec, findings)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]review.Finding, 0, len(merged))
+	for _, finding := range merged {
+		metadata := map[string]string{
+			"auditId":   string(spec.AuditID),
+			"dedupeKey": finding.DedupeKey,
+		}
+		if finding.ID != "" {
+			metadata["auditFindingId"] = strings.TrimSpace(finding.ID)
+		}
+		out = append(out, review.Finding{
+			ID:        strings.TrimSpace(finding.ID),
+			Source:    finding.Source,
+			Sources:   normalizeSources(finding.Sources...),
+			Severity:  reviewSeverity(finding.Severity),
+			Category:  strings.TrimSpace(finding.Category),
+			RuleID:    strings.TrimSpace(finding.RuleID),
+			Message:   strings.TrimSpace(finding.Message),
+			FilePath:  strings.TrimSpace(finding.FilePath),
+			StartLine: finding.Line,
+			EndLine:   finding.EndLine,
+			Evidence: []review.EvidenceRef{{
+				Kind: "specialized_audit",
+				ID:   string(spec.AuditID),
+				URI:  finding.Source,
+			}},
+			Metadata: metadata,
+		})
+	}
+	return out, nil
+}
+
+func ReviewArtifactFromFindings(spec RunnerSpec, metadata review.RoundRunMetadata, findings []Finding) (review.RoundArtifact, error) {
+	reviewFindings, err := ReviewFindingsFromAudit(spec, findings)
+	if err != nil {
+		return review.RoundArtifact{}, err
+	}
+	roundSpec, mode, err := reviewRoundSpecForAudit(spec)
+	if err != nil {
+		return review.RoundArtifact{}, err
+	}
+	if strings.TrimSpace(metadata.ProjectID) == "" {
+		metadata.ProjectID = spec.ProjectID
+	}
+	if strings.TrimSpace(metadata.RoundID) == "" {
+		metadata.RoundID = roundSpec.RoundID
+	}
+	if metadata.Mode == "" {
+		metadata.Mode = mode
+	}
+	if strings.TrimSpace(metadata.Tool) == "" {
+		metadata.Tool = spec.Source
+	}
+	artifact, err := review.NewRoundArtifact(roundSpec, metadata, reviewFindings)
+	if err != nil {
+		return review.RoundArtifact{}, err
+	}
+	artifact.Metadata = map[string]string{
+		"auditId":              string(spec.AuditID),
+		"auditSource":          spec.Source,
+		"auditExecutionMode":   string(spec.ExecutionMode),
+		"catalogSchemaVersion": strconv.Itoa(CatalogSchemaVersion),
+	}
+	if len(spec.SkillIDs) > 0 {
+		artifact.Metadata["skillIds"] = strings.Join(spec.SkillIDs, ",")
+	}
+	if len(spec.RequiredCapabilities) > 0 {
+		artifact.Metadata["requiredCapabilities"] = strings.Join(spec.RequiredCapabilities, ",")
+	}
+	return artifact, nil
+}
+
+func normalizedFindingsForSpec(spec RunnerSpec, findings []Finding) ([]Finding, error) {
 	if !spec.FindingPolicy.CreateBeads || spec.FindingPolicy.FreeFloatingAllowed {
 		return nil, fmt.Errorf("%w: audit findings must create beads", ErrInvalidRequest)
 	}
@@ -474,18 +563,16 @@ func BeadDraftsFromFindings(spec RunnerSpec, findings []Finding) ([]BeadDraft, e
 	if spec.MaxFindings > 0 && len(merged) > spec.MaxFindings {
 		merged = merged[:spec.MaxFindings]
 	}
-	drafts := make([]BeadDraft, 0, len(merged))
-	for _, finding := range merged {
-		finding.Message = strings.TrimSpace(finding.Message)
-		if finding.Message == "" {
+	for i := range merged {
+		merged[i].Message = strings.TrimSpace(merged[i].Message)
+		if merged[i].Message == "" {
 			return nil, fmt.Errorf("%w: finding message is required", ErrInvalidRequest)
 		}
-		if spec.FindingPolicy.StampRequired && !contains(finding.Sources, source) {
-			return nil, fmt.Errorf("%w: finding %q missing source stamp %q", ErrInvalidRequest, finding.ID, source)
+		if spec.FindingPolicy.StampRequired && !contains(merged[i].Sources, source) {
+			return nil, fmt.Errorf("%w: finding %q missing source stamp %q", ErrInvalidRequest, merged[i].ID, source)
 		}
-		drafts = append(drafts, beadDraftFromFinding(spec, finding))
 	}
-	return drafts, nil
+	return merged, nil
 }
 
 func ubsDefinition(id AuditID, title string, summary string, scopes []ScopeKind) Definition {
@@ -694,6 +781,59 @@ func priorityForSeverity(severity string) int {
 	default:
 		return 3
 	}
+}
+
+func reviewRoundSpecForAudit(spec RunnerSpec) (review.RoundSpec, review.ExecutionMode, error) {
+	roundSpec, ok := review.RoundByID("round-8")
+	if !ok {
+		return review.RoundSpec{}, "", fmt.Errorf("%w: review round-8", ErrInvalidRequest)
+	}
+	mode, err := reviewModeForAudit(spec.ExecutionMode)
+	if err != nil {
+		return review.RoundSpec{}, "", err
+	}
+	roundSpec.DefaultMode = mode
+	if !containsReviewMode(roundSpec.AllowedModes, mode) {
+		roundSpec.AllowedModes = append(roundSpec.AllowedModes, mode)
+	}
+	roundSpec.Skills = uniqueSorted(append(roundSpec.Skills, spec.SkillIDs...))
+	roundSpec.Capabilities = uniqueSorted(append(roundSpec.Capabilities, spec.RequiredCapabilities...))
+	return roundSpec, mode, nil
+}
+
+func reviewModeForAudit(mode ExecutionMode) (review.ExecutionMode, error) {
+	switch mode {
+	case ModeDelegatedAgent:
+		return review.ModeDelegatedAgent, nil
+	case ModeUBSAdapter:
+		return review.ModeDeterministicTool, nil
+	default:
+		return "", fmt.Errorf("%w: unsupported review execution mode %q", ErrInvalidRequest, mode)
+	}
+}
+
+func reviewSeverity(severity string) review.Severity {
+	switch strings.ToLower(strings.TrimSpace(severity)) {
+	case "critical":
+		return review.SeverityCritical
+	case "high":
+		return review.SeverityHigh
+	case "low":
+		return review.SeverityLow
+	case "info", "informational":
+		return review.SeverityInfo
+	default:
+		return review.SeverityMedium
+	}
+}
+
+func containsReviewMode(values []review.ExecutionMode, want review.ExecutionMode) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func findingLocation(finding Finding) string {
