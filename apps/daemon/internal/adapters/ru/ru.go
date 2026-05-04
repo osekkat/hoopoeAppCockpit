@@ -889,12 +889,3 @@ func isExecNotFoundErr(err error) bool {
 	return strings.Contains(s, "executable file not found") ||
 		strings.Contains(s, "no such file or directory")
 }
-
-// TODO(hp-yqs/future-port): port ru's global backoff coordination into the
-// scheduler package rather than invoking ru's state store.
-// TODO(hp-yqs/future-port): port ru's blocking-prompt risk classifier into the
-// daemon safety layer alongside DCG/SLB.
-// TODO(hp-yqs/future-port): port ru's project-type quality gate detection into
-// health adapters instead of calling ru review/agent-sweep.
-// TODO(hp-yqs/future-port): port ru's GraphQL alias batching and digest cache
-// into future GitHub integration surfaces where they fit Hoopoe's bead model.

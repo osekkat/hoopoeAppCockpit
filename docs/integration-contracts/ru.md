@@ -73,7 +73,18 @@ See [`../research-spike/gotchas.md`](../research-spike/gotchas.md) (`hp-d54`).
 - **State store at `~/.local/state/ru/`** — touching this from Hoopoe creates a parallel source of truth (violates `§1.1`). Read-only via `ru status` only.
 - `ru sync --json` emits **NDJSON** (one JSON object per repo), not a single JSON array. Parsers must handle line-delimited.
 - The richer subcommands (`review`, `agent-sweep`, `ai-sync`, `dep-update`) are intentionally `blocked-by-policy` in Hoopoe — they have their own session-state model that doesn't compose with beads + Activity panel.
-- `ru` predates Hoopoe but its `~17,700 lines of worked Bash` (per `plan.md` §17) are the *reference implementation* for several Go adapters: backoff, NTM-state mapping, blocking-prompt risk classification, secret-scan patterns, GraphQL alias batching. Read those code paths during the corresponding phases.
+- `ru` predates Hoopoe but its `~17,700 lines of worked Bash` (per `plan.md` §17) are the *reference implementation* for several Go adapters: backoff, NTM-state mapping, blocking-prompt risk classification, secret-scan patterns, GraphQL alias batching. The porting decisions below make those follow-ups explicit; do not leave open-ended TODOs in the runtime adapter.
+
+## Reference-port decisions
+
+These are implementation-bead outlines, not behavior hidden in the `ru` adapter. When one becomes active work, file a Beads issue using the title below and keep the implementation in the listed Hoopoe-owned package.
+
+| Bead title | Destination | Design decision / acceptance |
+| ---------- | ----------- | ---------------------------- |
+| `[ru-port][MEDIUM] Scheduler global backoff coordination` | `apps/daemon/internal/scheduler/` | Port the shared `pause_until` + exponential backoff + jitter + cap behavior into scheduler retry policy. Acceptance: multiple scheduler jobs coordinate retry windows without reading or writing `~/.local/state/ru/**`. |
+| `[ru-port][MEDIUM] Blocking-prompt risk classifier` | `apps/daemon/internal/approvals/` with DCG/SLB ingestion | Port ru's prompt-risk vocabulary into Hoopoe's approval/risk model so password/passphrase/OTP and host-key prompts are classified before execution. Acceptance: deterministic tests map high/medium/low prompt classes to approval decisions without invoking `ru review` or `ru agent-sweep`. |
+| `[ru-port][LOW] Project-type quality gate detection` | `apps/daemon/internal/health/` | Port project-type detection for npm, cargo, Go, pytest, and shellcheck into health-adapter planning. Acceptance: health snapshots select candidate checks from repo contents while still running in isolated health worktrees. |
+| `[ru-port][LOW] GitHub GraphQL batching and digest cache` | Future GitHub integration adapter | Reuse the batching shape and digest-cache invalidation rules only for Hoopoe's GitHub surfaces. Acceptance: query batching is covered by fixture-backed tests and cached digests never become canonical bead, Git, or review state. |
 
 ## Test fixtures
 
@@ -85,7 +96,7 @@ See [`../research-spike/gotchas.md`](../research-spike/gotchas.md) (`hp-d54`).
 
 ## Adapter notes (Hoopoe Go side)
 
-- Lives at `apps/daemon/internal/adapters/git/ru/` (Phase 4, bead `hp-w8m`).
+- Lives at `apps/daemon/internal/adapters/ru/` (Phase 4, bead `hp-yqs`).
 - Argv builder enforces `--non-interactive` and `--json` for every sync/status invocation; rejects argv missing them at compile time (Go test).
 - The blocked-by-policy capabilities (`ru.review`, etc.) are stored in the registry but the adapter has **no execution path** for them — the registry surfaces "feature exists in tool but Hoopoe routes through bead/Activity flow instead."
-- Patterns to **port**, not invoke: backoff (`apps/daemon/internal/scheduler/backoff.go`), risk-classification (`apps/daemon/internal/safety/risk.go`), secret-scan (`apps/daemon/internal/redaction/secrets.go`).
+- Reference-port decisions are tracked above. The adapter remains limited to sync/status/list/prune/schema/robot-docs surfaces; future behavior ports must land in Hoopoe-owned packages, not by calling ru's richer workflows or state stores.
