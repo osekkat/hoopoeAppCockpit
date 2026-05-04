@@ -48,8 +48,25 @@ func TestMockDaemonSmoke(t *testing.T) {
 	if registry.Tools[capabilities.ToolGit].Source != "fixture" {
 		t.Fatalf("git source = %q, want fixture", registry.Tools[capabilities.ToolGit].Source)
 	}
-	if registry.Tools[capabilities.ToolBR].Capabilities["__probe__"].Status != capabilities.StatusMissing {
-		t.Fatalf("br missing capability not reported: %+v", registry.Tools[capabilities.ToolBR])
+	brReport := registry.Tools[capabilities.ToolBR]
+	if brReport == nil {
+		t.Fatal("br fixture should produce a capability report")
+	}
+	if brReport.Capabilities["br.list.read"].Status != capabilities.StatusOK {
+		t.Fatalf("br.list.read status = %q, want ok", brReport.Capabilities["br.list.read"].Status)
+	}
+	if brReport.Capabilities["br.sync.write"].Status != capabilities.StatusOK {
+		t.Fatalf("br.sync.write status = %q, want ok", brReport.Capabilities["br.sync.write"].Status)
+	}
+	if _, ok := brReport.Capabilities["__probe__"]; ok {
+		t.Fatalf("br __probe__ should be absent when real fixture capabilities are present: %+v", brReport)
+	}
+	bvReport := registry.Tools[capabilities.ToolBV]
+	if bvReport == nil {
+		t.Fatal("bv fixture should produce a capability report")
+	}
+	if bvReport.Capabilities["__probe__"].Status != capabilities.StatusMissing {
+		t.Fatalf("bv missing capability not reported: %+v", bvReport)
 	}
 
 	var jobsResponse struct {

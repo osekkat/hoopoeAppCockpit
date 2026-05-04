@@ -52,8 +52,25 @@ func TestPhase0CapabilityReportsUseFixtureSource(t *testing.T) {
 	if byTool[capabilities.ToolGit].Source != "fixture" {
 		t.Fatalf("git source = %q, want fixture", byTool[capabilities.ToolGit].Source)
 	}
-	if byTool[capabilities.ToolBR].Capabilities["__probe__"].Status != capabilities.StatusMissing {
-		t.Fatalf("br __probe__ status = %q, want missing", byTool[capabilities.ToolBR].Capabilities["__probe__"].Status)
+	brReport := byTool[capabilities.ToolBR]
+	if brReport == nil {
+		t.Fatal("br fixture should produce a capability report")
+	}
+	if brReport.Capabilities["br.list.read"].Status != capabilities.StatusOK {
+		t.Fatalf("br.list.read status = %q, want ok", brReport.Capabilities["br.list.read"].Status)
+	}
+	if brReport.Capabilities["br.sync.write"].Status != capabilities.StatusOK {
+		t.Fatalf("br.sync.write status = %q, want ok", brReport.Capabilities["br.sync.write"].Status)
+	}
+	if _, ok := brReport.Capabilities["__probe__"]; ok {
+		t.Fatalf("br __probe__ should be absent when real fixture capabilities are present: %+v", brReport)
+	}
+	bvReport := byTool[capabilities.ToolBV]
+	if bvReport == nil {
+		t.Fatal("bv fixture should produce a capability report")
+	}
+	if bvReport.Capabilities["__probe__"].Status != capabilities.StatusMissing {
+		t.Fatalf("bv __probe__ status = %q, want missing", bvReport.Capabilities["__probe__"].Status)
 	}
 	if byTool["health_generic"] == nil {
 		t.Fatal("health fixture should map to health_generic")
