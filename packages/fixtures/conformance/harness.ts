@@ -261,6 +261,79 @@ function parseRchStatus(stdoutText: string): Record<string, unknown> {
   };
 }
 
+// hp-b6r2: br conformance previously passed raw `br --json` output through
+// untouched, validating snake_case fields (issues / has_more / issue_type)
+// against a local schema that didn't reflect the OpenAPI BeadListResponse
+// contract. The daemon's br adapter must surface camelCase Bead objects
+// with a SchemaVersion (per packages/schemas/openapi.yaml BeadListResponse
+// + Bead). This mapper bridges raw br stdout into that daemon-facing shape
+// so the conformance harness validates what the API actually emits, not
+// what br emits to its CLI consumers.
+//
+// The raw envelope still lives in golden-outputs/br/normal.json — it is
+// the *input* fixture; this function produces the *output* the harness
+// then schema-checks.
+export const BR_BEAD_SCHEMA_VERSION = 1;
+
+interface BeadListResponseShape {
+  items: BeadShape[];
+  page: { hasMore: boolean; total?: number };
+}
+
+interface BeadShape {
+  schemaVersion: number;
+  id: string;
+  title: string;
+  status: string;
+  priority: number;
+  issueType: string;
+  description?: string;
+  sourceRepo?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  createdBy?: string;
+}
+
+export function mapBrToBeadListResponse(raw: Record<string, unknown>): Record<string, unknown> {
+  const issuesRaw = Array.isArray(raw.issues) ? raw.issues : [];
+  const items: BeadShape[] = [];
+  for (const entry of issuesRaw) {
+    if (!isObject(entry)) continue;
+    const bead = mapBrIssueToBead(entry);
+    if (bead !== null) items.push(bead);
+  }
+  const page: BeadListResponseShape["page"] = {
+    hasMore: typeof raw.has_more === "boolean" ? raw.has_more : false,
+  };
+  if (typeof raw.total === "number" && Number.isInteger(raw.total) && raw.total >= 0) {
+    page.total = raw.total;
+  }
+  const response: BeadListResponseShape = { items, page };
+  return response as unknown as Record<string, unknown>;
+}
+
+function mapBrIssueToBead(raw: Record<string, unknown>): BeadShape | null {
+  if (typeof raw.id !== "string" || raw.id.length === 0) return null;
+  if (typeof raw.title !== "string" || raw.title.length === 0) return null;
+  if (typeof raw.status !== "string") return null;
+  if (typeof raw.priority !== "number" || !Number.isInteger(raw.priority)) return null;
+  if (typeof raw.issue_type !== "string") return null;
+  const bead: BeadShape = {
+    schemaVersion: BR_BEAD_SCHEMA_VERSION,
+    id: raw.id,
+    title: raw.title,
+    status: raw.status,
+    priority: raw.priority,
+    issueType: raw.issue_type,
+  };
+  if (typeof raw.description === "string") bead.description = raw.description;
+  if (typeof raw.source_repo === "string") bead.sourceRepo = raw.source_repo;
+  if (typeof raw.created_at === "string") bead.createdAt = raw.created_at;
+  if (typeof raw.updated_at === "string") bead.updatedAt = raw.updated_at;
+  if (typeof raw.created_by === "string") bead.createdBy = raw.created_by;
+  return bead;
+}
+
 function normalizeOutput(
   tool: ConformanceTool,
   envelope: GoldenEnvelope,
@@ -280,7 +353,7 @@ function normalizeOutput(
   let payload: Record<string, unknown>;
   switch (tool) {
     case "br":
-      payload = requireStdoutObject(tool, envelope);
+      payload = mapBrToBeadListResponse(requireStdoutObject(tool, envelope));
       break;
     case "bv": {
       const raw = requireStdoutObject(tool, envelope);
@@ -536,12 +609,14 @@ function capabilityFindings(
   const capOk = (cap: string): boolean => caps[cap]?.status === "ok";
 
   if (tool === "br" && capOk("br.issues.read")) {
-    if (!Array.isArray(normalized.payload.issues) || typeof normalized.payload.total !== "number") {
+    const items = (normalized.payload as { items?: unknown }).items;
+    const page = (normalized.payload as { page?: unknown }).page;
+    if (!Array.isArray(items) || !isObject(page)) {
       findings.push(
         finding(
           tool,
           "br.capability.unsatisfied.br.issues.read",
-          "br.issues.read requires issues[] and total",
+          "br.issues.read requires items[] and page (BeadListResponse shape)",
           "br.md",
         ),
       );

@@ -1,7 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://hoopoe.local/conformance/br.schema.json",
-  "title": "br normalized adapter output",
+  "title": "br normalized adapter output (daemon-facing BeadListResponse shape)",
+  "description": "hp-b6r2: validates the conformance harness output as the OpenAPI BeadListResponse contract (packages/schemas/openapi.yaml). Raw `br --json` envelopes live in golden-outputs/br/ as input fixtures; this schema validates the harness mapper's daemon-facing output, so adapter conformance fails when the mapper stops emitting Hoopoe-canonical Bead objects.",
   "type": "object",
   "required": ["tool", "source", "state", "exit", "argv", "capabilities", "payload"],
   "properties": {
@@ -13,13 +14,47 @@
     "capabilities": { "type": "object" },
     "payload": {
       "type": "object",
-      "required": ["issues", "total", "limit", "offset", "has_more"],
+      "required": ["items", "page"],
       "properties": {
-        "issues": { "type": "array" },
-        "total": { "type": "integer", "minimum": 0 },
-        "limit": { "type": "integer", "minimum": 0 },
-        "offset": { "type": "integer", "minimum": 0 },
-        "has_more": { "type": "boolean" }
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "schemaVersion",
+              "id",
+              "title",
+              "status",
+              "priority",
+              "issueType"
+            ],
+            "properties": {
+              "schemaVersion": { "type": "integer", "minimum": 1 },
+              "id": { "type": "string", "minLength": 1 },
+              "title": { "type": "string", "minLength": 1 },
+              "status": {
+                "enum": ["open", "in_progress", "blocked", "closed", "deleted"]
+              },
+              "priority": { "type": "integer", "minimum": 0, "maximum": 4 },
+              "issueType": {
+                "enum": ["task", "bug", "feature", "epic", "question", "docs"]
+              },
+              "description": { "type": "string" },
+              "sourceRepo": { "type": "string" },
+              "createdAt": { "type": "string" },
+              "updatedAt": { "type": "string" },
+              "createdBy": { "type": "string" }
+            }
+          }
+        },
+        "page": {
+          "type": "object",
+          "required": ["hasMore"],
+          "properties": {
+            "hasMore": { "type": "boolean" },
+            "total": { "type": "integer", "minimum": 0 }
+          }
+        }
       }
     }
   }

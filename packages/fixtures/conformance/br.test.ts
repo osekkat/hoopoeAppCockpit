@@ -2,7 +2,11 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { assertToolConformance } from "./harness.ts";
+import {
+  BR_BEAD_SCHEMA_VERSION,
+  assertToolConformance,
+  mapBrToBeadListResponse,
+} from "./harness.ts";
 
 type Phase0Scenario = "fresh" | "active" | "failure";
 
@@ -107,6 +111,115 @@ function expectSchemaCapture(adapter: Phase0BrAdapter): void {
 describe("br adapter contract conformance", () => {
   test("normal, round-trip, negative, and capability cases match the contract", () => {
     assertToolConformance("br");
+  });
+
+  test("mapBrToBeadListResponse rewrites raw br --json into BeadListResponse shape", () => {
+    // hp-b6r2: the conformance harness now validates the *daemon-facing*
+    // BeadListResponse contract; the mapper is what bridges raw br stdout
+    // into that shape. This test pins the contract: snake_case fields like
+    // issue_type / created_at / has_more must come out camelCase, every
+    // bead must carry schemaVersion, and the response must be `{items, page}`
+    // — not `{issues, total, has_more}`.
+    const raw = {
+      issues: [
+        {
+          id: "hp-r3i",
+          title: "Plumb the schema package",
+          description: "Generate TS + Go from one OpenAPI source.",
+          status: "open",
+          priority: 1,
+          issue_type: "task",
+          created_at: "2026-05-02T22:42:34.352955Z",
+          updated_at: "2026-05-04T10:11:12.000000Z",
+          created_by: "ubuntu",
+          source_repo: ".",
+          compaction_level: 0,
+          original_size: 0,
+          dependency_count: 2,
+          dependent_count: 5,
+        },
+      ],
+      total: 1,
+      limit: 250,
+      offset: 0,
+      has_more: false,
+    };
+
+    const mapped = mapBrToBeadListResponse(raw) as {
+      items: Array<Record<string, unknown>>;
+      page: { hasMore: boolean; total?: number };
+    };
+
+    // Top-level shape: {items, page} — never raw {issues, total, has_more}.
+    expect(Object.keys(mapped).sort()).toEqual(["items", "page"]);
+    expect(mapped).not.toHaveProperty("issues");
+    expect(mapped).not.toHaveProperty("has_more");
+    expect(mapped.page.hasMore).toBe(false);
+    expect(mapped.page.total).toBe(1);
+    expect(mapped.items).toHaveLength(1);
+
+    const bead = mapped.items[0]!;
+
+    // schemaVersion is non-negotiable per OpenAPI Bead.required.
+    expect(bead.schemaVersion).toBe(BR_BEAD_SCHEMA_VERSION);
+
+    // camelCase boundary: every snake_case field rewritten or dropped.
+    expect(bead.issueType).toBe("task");
+    expect(bead.createdAt).toBe("2026-05-02T22:42:34.352955Z");
+    expect(bead.updatedAt).toBe("2026-05-04T10:11:12.000000Z");
+    expect(bead.createdBy).toBe("ubuntu");
+    expect(bead.sourceRepo).toBe(".");
+    expect(bead).not.toHaveProperty("issue_type");
+    expect(bead).not.toHaveProperty("created_at");
+    expect(bead).not.toHaveProperty("updated_at");
+    expect(bead).not.toHaveProperty("created_by");
+    expect(bead).not.toHaveProperty("source_repo");
+
+    // br-only fields that don't appear on the OpenAPI Bead must be dropped.
+    expect(bead).not.toHaveProperty("compaction_level");
+    expect(bead).not.toHaveProperty("original_size");
+    expect(bead).not.toHaveProperty("dependency_count");
+    expect(bead).not.toHaveProperty("dependent_count");
+
+    // Required core fields preserved verbatim.
+    expect(bead.id).toBe("hp-r3i");
+    expect(bead.title).toBe("Plumb the schema package");
+    expect(bead.status).toBe("open");
+    expect(bead.priority).toBe(1);
+    expect(bead.description).toBe("Generate TS + Go from one OpenAPI source.");
+  });
+
+  test("mapBrToBeadListResponse handles empty br ready/list output", () => {
+    // br --json on an empty project emits {issues: [], total: 0, has_more: false};
+    // the mapper must produce {items: [], page: {hasMore: false, total: 0}}.
+    const mapped = mapBrToBeadListResponse({
+      issues: [],
+      total: 0,
+      limit: 250,
+      offset: 0,
+      has_more: false,
+    }) as { items: unknown[]; page: { hasMore: boolean; total?: number } };
+    expect(mapped.items).toEqual([]);
+    expect(mapped.page.hasMore).toBe(false);
+    expect(mapped.page.total).toBe(0);
+  });
+
+  test("mapBrToBeadListResponse drops issues missing required fields", () => {
+    // The mapper enforces required Bead fields; malformed entries are
+    // dropped rather than emitted as half-Beads. This keeps schema
+    // validation honest and surfaces fixture corruption as "items
+    // dropped," not "schema passes with garbage."
+    const mapped = mapBrToBeadListResponse({
+      issues: [
+        { id: "hp-ok", title: "valid", status: "open", priority: 0, issue_type: "task" },
+        { id: "hp-no-title", status: "open", priority: 0, issue_type: "task" },
+        { id: "hp-no-priority", title: "no prio", status: "open", issue_type: "task" },
+        { id: "hp-bad-priority", title: "bad", status: "open", priority: "high", issue_type: "task" },
+      ],
+      total: 4,
+      has_more: false,
+    }) as { items: Array<{ id: string }> };
+    expect(mapped.items.map((bead) => bead.id)).toEqual(["hp-ok"]);
   });
 
   test("phase0 real-VPS fixture matrix advertises br for every scenario", () => {
