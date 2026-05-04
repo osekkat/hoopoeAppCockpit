@@ -49,3 +49,15 @@ export {
   type DispatchContext,
   type DispatchResult,
 } from "./fsm.ts";
+
+export {
+  TunnelOrchestrator,
+  type AuthDriver,
+  type HeartbeatDriver,
+  type HeartbeatStatus,
+  type OpenTunnel,
+  type ScheduledHandle,
+  type Scheduler,
+  type TunnelDriver,
+  type TunnelOrchestratorOptions,
+} from "./orchestrator.ts";
