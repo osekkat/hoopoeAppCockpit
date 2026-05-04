@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/approvals"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/audit"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/redaction"
 	schemas "github.com/hoopoe-cockpit/hoopoe/packages/schemas/go"
 )
 
@@ -311,3 +313,71 @@ type nopSyncWriter struct{}
 
 func (nopSyncWriter) Write(p []byte) (int, error) { return len(p), nil }
 func (nopSyncWriter) Sync() error                 { return nil }
+
+// failingAuditWriter satisfies AuditLog + auditAppender, returning the
+// configured error from Append. Used to simulate disk full / lock
+// contention on /v1/audit/export so we can assert the request fails when
+// audit.export_completed cannot be persisted (hp-gysl item 5).
+type failingAuditWriter struct {
+	appendErr error
+	queryErr  error
+	appended  []audit.Entry
+}
+
+func (*failingAuditWriter) Query(audit.Query) ([]audit.Entry, error) { return nil, nil }
+
+func (w *failingAuditWriter) Append(entry audit.Entry) (audit.Entry, []redaction.TraceEvent, error) {
+	w.appended = append(w.appended, entry)
+	return entry, nil, w.appendErr
+}
+
+func TestAuditExportFailsWhenCompletedAuditAppendFails(t *testing.T) {
+	// hp-gysl item 5: if audit.export_completed cannot be persisted, the
+	// request must fail. Otherwise the export was generated but no
+	// forensics record exists — silent data egress, which is exactly the
+	// failure mode the audit log is supposed to prevent.
+	now := time.Date(2026, 5, 4, 8, 0, 0, 0, time.UTC)
+	writer := &failingAuditWriter{appendErr: errors.New("disk full")}
+	router := NewRouter(Config{
+		Audit: writer,
+		Now:   func() time.Time { return now },
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/audit/export", strings.NewReader(`{"projectId":"proj_a","correlationId":"corr_lookup"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusInternalServerError, rec.Body.String())
+	}
+	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "application/problem+json") {
+		t.Fatalf("content-type = %q, want problem+json", got)
+	}
+	var problem schemas.Problem
+	if err := json.Unmarshal(rec.Body.Bytes(), &problem); err != nil {
+		t.Fatalf("decode problem: %v", err)
+	}
+	if problem.Code != "audit.export_audit_append_failed" {
+		t.Fatalf("problem.Code = %q, want audit.export_audit_append_failed", problem.Code)
+	}
+	// Both started + completed should have been attempted; failed is
+	// only attempted when the underlying query errors, so it stays at 0
+	// here. Asserts we tried to write a completion record (it just
+	// failed) — the gate is not "skip the append entirely."
+	gotActions := make([]string, 0, len(writer.appended))
+	for _, entry := range writer.appended {
+		gotActions = append(gotActions, entry.Action)
+	}
+	wantContains := []string{"audit.export_started", "audit.export_completed"}
+	for _, want := range wantContains {
+		found := false
+		for _, got := range gotActions {
+			if got == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("appended actions = %v, missing %q", gotActions, want)
+		}
+	}
+}

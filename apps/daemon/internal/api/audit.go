@@ -172,13 +172,25 @@ func (s *server) handleAuditExport(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	_ = s.appendAudit("audit.export_started", audit.ResultSuccess, request.ProjectID, approvalRef, map[string]any{
+	if err := s.appendAudit("audit.export_started", audit.ResultSuccess, request.ProjectID, approvalRef, map[string]any{
 		"correlationId": request.CorrelationID,
 		"actorKind":     request.ActorKind,
-	})
+	}); err != nil {
+		s.logger.Error(r.Context(), "audit_export_append_failed", map[string]any{
+			"action": "audit.export_started",
+			"error":  err.Error(),
+		})
+		// best-effort: the started marker is informational; completion is
+		// the gate that enforces persistent audit trail.
+	}
 	entries, err := s.queryAudit(query)
 	if err != nil {
-		_ = s.appendAudit("audit.export_failed", audit.ResultFailure, request.ProjectID, approvalRef, map[string]any{"error": err.Error()})
+		if appendErr := s.appendAudit("audit.export_failed", audit.ResultFailure, request.ProjectID, approvalRef, map[string]any{"error": err.Error()}); appendErr != nil {
+			s.logger.Error(r.Context(), "audit_export_append_failed", map[string]any{
+				"action": "audit.export_failed",
+				"error":  appendErr.Error(),
+			})
+		}
 		s.writeProblemCode(w, auditHTTPStatusInternalServerError, "audit.export_failed", "audit export failed", err.Error())
 		return
 	}
@@ -191,11 +203,21 @@ func (s *server) handleAuditExport(w http.ResponseWriter, r *http.Request) {
 	}
 	sum := sha256.Sum256(body)
 	fileName := fmt.Sprintf("audit-slice-%s.json", exportedAt.Format("20060102T150405Z"))
-	_ = s.appendAudit("audit.export_completed", audit.ResultSuccess, request.ProjectID, approvalRef, map[string]any{
+	if err := s.appendAudit("audit.export_completed", audit.ResultSuccess, request.ProjectID, approvalRef, map[string]any{
 		"fileName":     fileName,
 		"sha256":       hex.EncodeToString(sum[:]),
 		"totalEntries": len(items),
-	})
+	}); err != nil {
+		// hp-gysl item 5: the export was generated but the audit trail
+		// cannot be persisted. Refusing to return the slice prevents
+		// silent data egress without a forensics record.
+		s.logger.Error(r.Context(), "audit_export_append_failed", map[string]any{
+			"action": "audit.export_completed",
+			"error":  err.Error(),
+		})
+		s.writeProblemCode(w, auditHTTPStatusInternalServerError, "audit.export_audit_append_failed", "audit export audit append failed", "the export was generated but the audit trail could not be persisted; refusing to return the slice without a record")
+		return
+	}
 	var approval *string
 	if approvalRef != "" {
 		approval = &approvalRef
