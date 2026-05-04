@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -1382,6 +1383,68 @@ func TestEventSequencesArePerChannel(t *testing.T) {
 	}
 	if secondProject.Sequence != 2 {
 		t.Fatalf("second project sequence = %d, want 2", secondProject.Sequence)
+	}
+}
+
+// TestReplayEndpointRejectsCursorAboveLastSequence guards hp-0vkn:
+// the daemon's per-channel sequences are strictly monotonic via
+// nextSequenceLocked, so a sinceSequence above the channel's last
+// produced sequence is forward-time-travel — a stale fixture, a
+// fabricated request, or a clock-skew bug. Without this guard, the
+// replay endpoint silently returned an empty window and the client
+// would believe its cursor was valid.
+func TestReplayEndpointRejectsCursorAboveLastSequence(t *testing.T) {
+	now := time.Unix(100, 0).UTC()
+	hub := NewEventHub(EventHubConfig{
+		ReplayCapacity: 16,
+		Now:            func() time.Time { return now },
+	})
+	hub.Publish(PublishInput{Channel: "project:test", Type: "project.ready", Data: map[string]any{"n": 1}})
+	hub.Publish(PublishInput{Channel: "project:test", Type: "bead.changed", Data: map[string]any{"n": 2}})
+
+	router := NewRouter(Config{Events: hub})
+	// Cursor=99 against a channel whose LastSequence is 2 must reject.
+	req := httptest.NewRequest(http.MethodGet, "/v1/events/replay?channel=project:test&sinceSequence=99", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d (cursor exceeds LastSequence)", rec.Code, http.StatusBadRequest)
+	}
+	if !strings.Contains(rec.Body.String(), "non-monotonic") {
+		t.Fatalf("response = %s, want 'non-monotonic' problem detail", rec.Body.String())
+	}
+
+	// Cursor=2 (== LastSequence) is valid — replay returns no events.
+	req = httptest.NewRequest(http.MethodGet, "/v1/events/replay?channel=project:test&sinceSequence=2", nil)
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("cursor==LastSequence status = %d, want 200", rec.Code)
+	}
+}
+
+// TestSSEHandshakeRejectsCursorMapAboveLastSequence guards hp-0vkn
+// for the cursors map path used by SSE/WS subscribers.
+func TestSSEHandshakeRejectsCursorMapAboveLastSequence(t *testing.T) {
+	now := time.Unix(100, 0).UTC()
+	hub := NewEventHub(EventHubConfig{
+		ReplayCapacity: 16,
+		Now:            func() time.Time { return now },
+	})
+	hub.Publish(PublishInput{Channel: "project:test", Type: "project.ready", Data: map[string]any{"n": 1}})
+
+	router := NewRouter(Config{Events: hub})
+	cursors := `{"project:test":99}`
+	req := httptest.NewRequest(http.MethodGet, "/v1/events/sse?channels=project:test&cursors="+url.QueryEscape(cursors), nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d (cursor map exceeds LastSequence)", rec.Code, http.StatusBadRequest)
+	}
+	if !strings.Contains(rec.Body.String(), "non-monotonic") {
+		t.Fatalf("response = %s, want 'non-monotonic' problem detail", rec.Body.String())
 	}
 }
 

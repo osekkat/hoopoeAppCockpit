@@ -374,6 +374,17 @@ func (s *server) handleEventReplay(w http.ResponseWriter, r *http.Request) {
 		s.writeProblem(w, http.StatusBadRequest, "invalid sinceSequence", err.Error())
 		return
 	}
+	// hp-0vkn: reject cursors that claim to have seen events the daemon
+	// never produced. Per-channel sequences are strictly monotonic via
+	// nextSequenceLocked; a sinceSequence above LastSequence is either
+	// a stale fixture, a fabricated request, or a client/server clock-
+	// skew bug. Without this guard, replay would silently return zero
+	// events and the subscriber would believe their cursor is valid.
+	if last := s.events.LastSequence(channel); since > last {
+		s.writeProblem(w, http.StatusBadRequest, "non-monotonic sinceSequence",
+			fmt.Sprintf("sinceSequence %d exceeds channel %q last sequence %d", since, channel, last))
+		return
+	}
 	start := time.Now()
 	window := s.events.replayWindow(channel, since)
 	_ = s.metrics.IncCounter(daemonmetrics.MetricEventsReplayedTotal, daemonmetrics.Labels{"channel": channel}, float64(len(window.Events)))
@@ -391,6 +402,11 @@ func (s *server) handleEventSSE(w http.ResponseWriter, r *http.Request) {
 	cursors, err := parseCursorMap(r.URL.Query().Get("cursors"))
 	if err != nil {
 		s.writeProblem(w, http.StatusBadRequest, "invalid cursors", err.Error())
+		return
+	}
+	// hp-0vkn: reject cursors that exceed the channel's last sequence.
+	if err := validateCursorMap(s.events, cursors); err != nil {
+		s.writeProblem(w, http.StatusBadRequest, "non-monotonic cursors", err.Error())
 		return
 	}
 	clientSchemaVersion, err := parseSchemaVersion(r.URL.Query().Get("schemaVersion"))
@@ -532,6 +548,11 @@ func (s *server) webSocketSubscribeRequest(ctx context.Context, r *http.Request,
 		if err != nil {
 			return subscribeRequest{}, err
 		}
+		// hp-0vkn: WS handshake must reject cursors that exceed the
+		// channel's last sequence, mirroring the SSE + replay paths.
+		if err := validateCursorMap(s.events, cursors); err != nil {
+			return subscribeRequest{}, err
+		}
 		clientSchemaVersion, err := parseSchemaVersion(schemaVersionRaw)
 		if err != nil {
 			return subscribeRequest{}, err
@@ -641,6 +662,24 @@ func parseCursorMap(raw string) (map[string]uint64, error) {
 		return map[string]uint64{}, nil
 	}
 	return cursors, nil
+}
+
+// validateCursorMap enforces the per-channel monotonic invariant
+// (hp-0vkn): a cursor must not exceed the daemon's last produced
+// sequence for that channel. The check covers stale fixture replays,
+// fabricated requests, and clock-skew-driven cursor drift. Channels
+// not in the cursors map are skipped — clients are allowed to start
+// fresh at sequence 0.
+func validateCursorMap(events *EventHub, cursors map[string]uint64) error {
+	if events == nil {
+		return nil
+	}
+	for channel, cursor := range cursors {
+		if last := events.LastSequence(channel); cursor > last {
+			return fmt.Errorf("cursor for channel %q is %d but daemon last sequence is %d", channel, cursor, last)
+		}
+	}
+	return nil
 }
 
 func parseSchemaVersion(raw string) (*int, error) {

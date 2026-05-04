@@ -239,6 +239,17 @@ func isStructLike(rt reflect.Type) bool {
 	return false
 }
 
+// LastSequence returns the highest sequence number ever assigned for a
+// channel. Used by the replay/SSE/WS handlers to reject cursors that
+// claim to have seen sequences the daemon never produced — a
+// forward-time-travel state that violates the per-channel monotonic
+// invariant (hp-0vkn).
+func (h *EventHub) LastSequence(channel string) uint64 {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.sequences[channel]
+}
+
 func (h *EventHub) Replay(channel string, since uint64) ([]Event, bool) {
 	window := h.replayWindow(channel, since)
 	return window.Events, window.Gap
