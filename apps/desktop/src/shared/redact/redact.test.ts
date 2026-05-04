@@ -5,10 +5,8 @@ import type { TraceEvent } from "./index.ts";
 const F = (now = "2026-05-04T00:00:00Z") => new Redactor(() => new Date(now));
 
 describe("Redactor.redactText", () => {
-  // DSA isn't in the regex's prefix alternation list (RSA|OPENSSH|EC|PGP)
-  // — the canonical Go patterns.go has the same gap. PGP must use the
-  // BLOCK suffix (separate test below).
-  test.each(["RSA", "OPENSSH", "EC"])("private key block (%s)", (kind) => {
+  // PGP must use the BLOCK suffix (separate test below).
+  test.each(["RSA", "DSA", "OPENSSH", "EC"])("private key block (%s)", (kind) => {
     const r = F();
     const input = `loading: -----BEGIN ${kind} PRIVATE KEY-----\nbody\n-----END ${kind} PRIVATE KEY-----\nok`;
     const { redacted, events } = r.redactText(SurfaceLogger, "test", input);
@@ -92,11 +90,35 @@ describe("Redactor.redactText", () => {
     expect(redacted).not.toContain("abc.def.ghi");
   });
 
+  test("next-auth CSRF cookie (__Host- prefix, URL-encoded value)", () => {
+    const r = F();
+    const { redacted, events } = r.redactText(
+      SurfaceLogger,
+      "h",
+      "__Host-next-auth.csrf-token=abc%2Bdef.ghi",
+    );
+    expect(redacted).not.toContain("abc%2Bdef.ghi");
+    expect(redacted).toContain("[redacted]");
+    expect(events.find((e) => e.patternId === "browser-cookie-next-auth-csrf")).toBeDefined();
+  });
+
   test("Claude session cookie", () => {
     const r = F();
     const { redacted } = r.redactText(SurfaceLogger, "h", "claude_session=abc123");
     expect(redacted).not.toContain("abc123");
     expect(redacted).toContain("claude-session=[redacted]");
+  });
+
+  test("Claude sessionKey cookie (short sk-ant- value)", () => {
+    const r = F();
+    // Suffix is too short for provider-key-anthropic (16+ chars) and the
+    // cookie name lacks the "claude"/"anthropic" word that
+    // browser-cookie-claude requires, so the dedicated sessionKey pattern
+    // is the only path to redaction.
+    const { redacted, events } = r.redactText(SurfaceLogger, "h", "sessionKey=sk-ant-api03-abc");
+    expect(redacted).not.toContain("api03-abc");
+    expect(redacted).toContain("[redacted]");
+    expect(events.find((e) => e.patternId === "browser-cookie-claude-sessionkey")).toBeDefined();
   });
 
   test("OAI session cookie", () => {
@@ -230,7 +252,9 @@ EOF`;
       "pairing-token",
       "ssh-passphrase",
       "browser-cookie-chatgpt",
+      "browser-cookie-next-auth-csrf",
       "browser-cookie-claude",
+      "browser-cookie-claude-sessionkey",
       "browser-cookie-oai",
       "telegram-bot-token",
       "email-address",

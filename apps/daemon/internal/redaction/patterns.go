@@ -32,7 +32,7 @@ func defaultPatterns() []pattern {
 		},
 		{
 			id:    "private-key-block",
-			regex: regexp.MustCompile(`(?s)-----BEGIN (?:RSA |OPENSSH |EC |PGP )?PRIVATE KEY(?: BLOCK)?-----.*?-----END (?:RSA |OPENSSH |EC |PGP )?PRIVATE KEY(?: BLOCK)?-----`),
+			regex: regexp.MustCompile(`(?s)-----BEGIN (?:RSA |DSA |OPENSSH |EC |PGP )?PRIVATE KEY(?: BLOCK)?-----.*?-----END (?:RSA |DSA |OPENSSH |EC |PGP )?PRIVATE KEY(?: BLOCK)?-----`),
 			replace: func(string) string {
 				return "[private-key-redacted]"
 			},
@@ -99,10 +99,24 @@ func defaultPatterns() []pattern {
 			},
 		},
 		{
+			id:    "browser-cookie-next-auth-csrf",
+			regex: regexp.MustCompile(`(?i)\b__Host-next-auth\.csrf-token\s*=\s*[A-Za-z0-9._%\-]+`),
+			replace: func(string) string {
+				return "__Host-next-auth.csrf-token=[redacted]"
+			},
+		},
+		{
 			id:    "browser-cookie-claude",
 			regex: regexp.MustCompile(`(?i)\b(?:claude|anthropic)[\w.\-]*session[\w.\-]*\s*=\s*[A-Za-z0-9._\-]+`),
 			replace: func(string) string {
 				return "claude-session=[redacted]"
+			},
+		},
+		{
+			id:    "browser-cookie-claude-sessionkey",
+			regex: regexp.MustCompile(`(?i)\bsessionKey\s*=\s*sk-ant-[A-Za-z0-9._\-]+`),
+			replace: func(string) string {
+				return "sessionKey=[redacted]"
 			},
 		},
 		{

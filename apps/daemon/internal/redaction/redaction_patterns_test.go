@@ -13,9 +13,8 @@ import (
 
 func TestRedactPrivateKeyBlock(t *testing.T) {
 	r := NewDefault()
-	// Canonical regex covers RSA / OPENSSH / EC / PGP and bare PRIVATE KEY.
-	// DSA-prefixed blocks are not yet covered — see follow-up bead.
-	for _, kind := range []string{"RSA", "OPENSSH", "EC", "PGP"} {
+	// Canonical regex covers RSA / DSA / OPENSSH / EC / PGP and bare PRIVATE KEY.
+	for _, kind := range []string{"RSA", "DSA", "OPENSSH", "EC", "PGP"} {
 		input := "loading: -----BEGIN " + kind + " PRIVATE KEY-----\nbody\n-----END " + kind + " PRIVATE KEY-----\nok"
 		if kind == "PGP" {
 			input = "loading: -----BEGIN " + kind + " PRIVATE KEY BLOCK-----\nbody\n-----END " + kind + " PRIVATE KEY BLOCK-----\nok"
@@ -140,9 +139,6 @@ func TestRedactSSHPassphrase(t *testing.T) {
 }
 
 func TestRedactBrowserCookieChatGPT(t *testing.T) {
-	// Two further cookie shapes from the duplicate package
-	// (`sessionKey=sk-ant-...` and `__Host-next-auth.csrf-token=...`)
-	// are NOT covered by the canonical regexes today — see follow-up bead.
 	r := NewDefault()
 	out, traces := r.RedactText(SurfaceAudit, "test", "__Secure-next-auth.session-token=abc.def.ghi")
 	if strings.Contains(out, "abc.def.ghi") {
@@ -150,6 +146,51 @@ func TestRedactBrowserCookieChatGPT(t *testing.T) {
 	}
 	if len(traces) == 0 {
 		t.Error("no traces fired")
+	}
+}
+
+func TestRedactBrowserCookieNextAuthCsrf(t *testing.T) {
+	r := NewDefault()
+	// auth.js / next-auth CSRF cookie. URL-encoded `+` (%2B) appears in
+	// real values — the character class must accept `%`.
+	out, traces := r.RedactText(SurfaceAudit, "test", "__Host-next-auth.csrf-token=abc%2Bdef.ghi")
+	if strings.Contains(out, "abc%2Bdef.ghi") {
+		t.Errorf("csrf cookie leaked: %s", out)
+	}
+	if !strings.Contains(out, "[redacted]") {
+		t.Errorf("expected placeholder: %s", out)
+	}
+	hit := false
+	for _, ev := range traces {
+		if ev.PatternID == "browser-cookie-next-auth-csrf" {
+			hit = true
+		}
+	}
+	if !hit {
+		t.Errorf("expected browser-cookie-next-auth-csrf trace, got %+v", traces)
+	}
+}
+
+func TestRedactBrowserCookieClaudeSessionKey(t *testing.T) {
+	r := NewDefault()
+	// Claude.ai session cookie. Suffix is too short for provider-key-anthropic
+	// (needs 16+ chars) and too unstructured for browser-cookie-claude (which
+	// requires "claude" or "anthropic" in the cookie name itself).
+	out, traces := r.RedactText(SurfaceAudit, "test", "sessionKey=sk-ant-api03-abc")
+	if strings.Contains(out, "api03-abc") {
+		t.Errorf("sessionKey leaked: %s", out)
+	}
+	if !strings.Contains(out, "[redacted]") {
+		t.Errorf("expected placeholder: %s", out)
+	}
+	hit := false
+	for _, ev := range traces {
+		if ev.PatternID == "browser-cookie-claude-sessionkey" {
+			hit = true
+		}
+	}
+	if !hit {
+		t.Errorf("expected browser-cookie-claude-sessionkey trace, got %+v", traces)
 	}
 }
 

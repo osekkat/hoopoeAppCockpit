@@ -90,7 +90,7 @@ function defaultPatterns(): RedactionPattern[] {
     },
     {
       id: "private-key-block",
-      regex: /-----BEGIN (?:RSA |OPENSSH |EC |PGP )?PRIVATE KEY(?: BLOCK)?-----[\s\S]*?-----END (?:RSA |OPENSSH |EC |PGP )?PRIVATE KEY(?: BLOCK)?-----/g,
+      regex: /-----BEGIN (?:RSA |DSA |OPENSSH |EC |PGP )?PRIVATE KEY(?: BLOCK)?-----[\s\S]*?-----END (?:RSA |DSA |OPENSSH |EC |PGP )?PRIVATE KEY(?: BLOCK)?-----/g,
       replace: () => "[private-key-redacted]",
     },
     {
@@ -149,9 +149,19 @@ function defaultPatterns(): RedactionPattern[] {
       replace: () => "__Secure-next-auth.session-token=[redacted]",
     },
     {
+      id: "browser-cookie-next-auth-csrf",
+      regex: /\b__Host-next-auth\.csrf-token\s*=\s*[A-Za-z0-9._%\-]+/gi,
+      replace: () => "__Host-next-auth.csrf-token=[redacted]",
+    },
+    {
       id: "browser-cookie-claude",
       regex: /\b(?:claude|anthropic)[\w.\-]*session[\w.\-]*\s*=\s*[A-Za-z0-9._\-]+/gi,
       replace: () => "claude-session=[redacted]",
+    },
+    {
+      id: "browser-cookie-claude-sessionkey",
+      regex: /\bsessionKey\s*=\s*sk-ant-[A-Za-z0-9._\-]+/gi,
+      replace: () => "sessionKey=[redacted]",
     },
     {
       id: "browser-cookie-oai",
