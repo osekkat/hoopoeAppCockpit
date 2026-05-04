@@ -113,6 +113,25 @@ func TestAuditCorrelationFilterAndExportEndpoint(t *testing.T) {
 		t.Fatalf("export response = %+v", export)
 	}
 
+	for _, test := range []struct {
+		name string
+		body string
+	}{
+		{name: "empty", body: `{}`},
+		{name: "from_only", body: `{"from":"2026-04-01T00:00:00Z"}`},
+		{name: "to_only", body: `{"to":"2026-05-04T00:00:00Z"}`},
+	} {
+		t.Run("requires approval for "+test.name+" export window", func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/v1/audit/export", strings.NewReader(test.body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+			if rec.Code != http.StatusUnprocessableEntity {
+				t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+			}
+		})
+	}
+
 	wideReq := httptest.NewRequest(http.MethodPost, "/v1/audit/export", strings.NewReader(`{"from":"2026-04-01T00:00:00Z","to":"2026-05-04T00:00:00Z"}`))
 	wideRec := httptest.NewRecorder()
 	router.ServeHTTP(wideRec, wideReq)

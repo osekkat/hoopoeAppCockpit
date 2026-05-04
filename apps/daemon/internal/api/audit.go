@@ -344,10 +344,17 @@ func isAuditLookupRune(r rune) bool {
 }
 
 func requiresAuditExportApproval(query audit.Query) bool {
-	if query.From.IsZero() || query.To.IsZero() {
+	if isNarrowAuditExportLookup(query) {
 		return false
 	}
+	if query.From.IsZero() || query.To.IsZero() {
+		return true
+	}
 	return query.To.Sub(query.From) > 7*24*time.Hour
+}
+
+func isNarrowAuditExportLookup(query audit.Query) bool {
+	return strings.TrimSpace(query.CorrelationID) != "" || strings.TrimSpace(query.CausationID) != ""
 }
 
 func auditEntryResponses(entries []audit.Entry) []auditEntryResponse {
