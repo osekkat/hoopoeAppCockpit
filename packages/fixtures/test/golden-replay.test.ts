@@ -19,8 +19,10 @@ const SCENARIOS = [
   "rate-limited-no-caam",
   "rate-limited-with-caam",
   "stale-reservation",
+  "commit-burst",
   "missing-tool",
   "budget-breach",
+  "action-arbitration",
 ] as const;
 
 const PROJECT_ID = "mock-flywheel-project";

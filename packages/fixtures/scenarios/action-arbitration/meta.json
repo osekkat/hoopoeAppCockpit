@@ -1,0 +1,9 @@
+{
+  "kind": "synthetic",
+  "scenario": "action-arbitration",
+  "fixturesVersion": "phase0-2026-05-02",
+  "capturedAt": "2026-05-04T17:08:00Z",
+  "vpsId": "mock-flywheel",
+  "source": "hand-written hp-n7u action-arbitration tending fixture",
+  "notes": "Two agents (HoopoeCC1, HoopoeCC2) submit conflicting ActionPlans for the same bead (hp-n7u-target) and same file (apps/desktop/src/wizard/StepDeploy.tsx) within the daemon's arbitration window. Per plan.md §8.3.1, the daemon — not the model — is the executor: it accepts the first ActionPlan that satisfies the policy + idempotency + approvals + postcondition gates and rejects the conflicting one with outcome=CONFLICT. The first-arrived plan wins; the second receives a problem envelope referencing the winning plan_id."
+}

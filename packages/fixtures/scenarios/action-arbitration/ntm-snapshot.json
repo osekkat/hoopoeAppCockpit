@@ -1,0 +1,39 @@
+{
+  "sessions": [
+    {
+      "name": "hoopoeAppCockpit",
+      "attached": true,
+      "agents": [
+        {
+          "pane": "0.1",
+          "type": "claude",
+          "type_confidence": 0.95,
+          "type_method": "process",
+          "state": "active",
+          "last_output_age_sec": 4,
+          "current_bead": "hp-n7u-target",
+          "agent_id": "HoopoeCC1",
+          "pending_mail": 0
+        },
+        {
+          "pane": "0.2",
+          "type": "claude",
+          "type_confidence": 0.95,
+          "type_method": "process",
+          "state": "active",
+          "last_output_age_sec": 6,
+          "current_bead": "hp-n7u-target",
+          "agent_id": "HoopoeCC2",
+          "pending_mail": 0
+        }
+      ]
+    }
+  ],
+  "counters": {
+    "sessions": 1,
+    "panes": 2,
+    "alive": 2,
+    "wedged": 0,
+    "errored": 0
+  }
+}

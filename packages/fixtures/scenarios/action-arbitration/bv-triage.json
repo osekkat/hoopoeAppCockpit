@@ -1,0 +1,27 @@
+{
+  "generated_at": "2026-05-04T17:08:00Z",
+  "data_hash": "action-arbitration-synthetic",
+  "triage": {
+    "meta": {
+      "version": "1.0.0",
+      "generated_at": "2026-05-04T17:08:00Z",
+      "phase2_ready": true,
+      "issue_count": 1,
+      "compute_time_ms": 1
+    },
+    "quick_ref": {
+      "open_count": 0,
+      "actionable_count": 0,
+      "blocked_count": 0,
+      "in_progress_count": 1,
+      "top_picks": [
+        {
+          "id": "hp-n7u-target",
+          "score": 0.5,
+          "rationale": "Two agents are already working on this bead; arbitration in progress."
+        }
+      ]
+    },
+    "recommendations": []
+  }
+}

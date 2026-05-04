@@ -1,0 +1,58 @@
+{
+  "meta": {
+    "kind": "synthetic",
+    "scenario": "action-arbitration",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-04T17:08:00Z",
+    "vpsId": "mock-flywheel",
+    "source": "hand-written hp-n7u action-arbitration tending fixture",
+    "notes": "Two ActionPlans target the same bead and same file path. Arbitration accepts the first-arrived plan that holds the exclusive reservation and rejects the conflicting plan with outcome=conflict. The losing agent receives a problem envelope referencing the winning plan_id."
+  },
+  "detections": [
+    {
+      "kind": "actionplan.conflict",
+      "payload": {
+        "beadId": "hp-n7u-target",
+        "targetPaths": ["apps/desktop/src/wizard/StepDeploy.tsx"],
+        "winnerPlanId": "plan-cc1-001",
+        "winnerAgent": "HoopoeCC1",
+        "loserPlanId": "plan-cc2-001",
+        "loserAgent": "HoopoeCC2"
+      }
+    },
+    {
+      "kind": "reservation.conflict",
+      "payload": {
+        "winnerReservationId": "res-001",
+        "winnerAgent": "HoopoeCC1",
+        "loserAgent": "HoopoeCC2",
+        "paths": ["apps/desktop/src/wizard/StepDeploy.tsx"]
+      }
+    }
+  ],
+  "wakeAgent": false,
+  "approvalsRequested": [],
+  "postconditions": [
+    {
+      "check": "actionplan.plan-cc1-001.status == accepted",
+      "expect": true
+    },
+    {
+      "check": "actionplan.plan-cc2-001.status == rejected",
+      "expect": true
+    },
+    {
+      "check": "actionplan.plan-cc2-001.problem.code == 'actionplan.conflict'",
+      "expect": true
+    },
+    {
+      "check": "audit.actionplan_arbitrated.emitted",
+      "expect": true
+    },
+    {
+      "check": "activity.warning_emitted",
+      "expect": true
+    }
+  ],
+  "activityBehavior": "surface"
+}

@@ -1,0 +1,414 @@
+{
+  "agent_mail.fetch_inbox": {
+    "messages": [
+      {
+        "ack_required": false,
+        "body_md": "Claiming hp-n7u-target. Reserving apps/desktop/src/wizard/StepDeploy.tsx.",
+        "from": "HoopoeCC1",
+        "id": "msg-action-arbitration-001",
+        "sent_at": "2026-05-04T17:08:00Z",
+        "subject": "[hp-n7u-target] Start: wizard deploy copy fix",
+        "thread_id": "hp-n7u-target",
+        "to": [
+          "orchestrator",
+          "HoopoeCC2"
+        ]
+      },
+      {
+        "ack_required": true,
+        "body_md": "Did not see HoopoeCC1's reservation in time; my plan modifies the same file with a different copy approach.",
+        "from": "HoopoeCC2",
+        "id": "msg-action-arbitration-002",
+        "sent_at": "2026-05-04T17:08:01Z",
+        "subject": "[hp-n7u-target] Also picking this — already started locally",
+        "thread_id": "hp-n7u-target",
+        "to": [
+          "orchestrator",
+          "HoopoeCC1"
+        ]
+      }
+    ],
+    "threads": [
+      {
+        "id": "hp-n7u-target",
+        "message_count": 2,
+        "subject": "[hp-n7u-target] Start: wizard deploy copy fix"
+      }
+    ],
+    "unread_total": 1
+  },
+  "agent_mail.reservations": {
+    "conflicts": [
+      {
+        "detected_at": "2026-05-04T17:08:01Z",
+        "id": "conflict-001",
+        "loser_agent": "HoopoeCC2",
+        "paths": [
+          "apps/desktop/src/wizard/StepDeploy.tsx"
+        ],
+        "reason": "exclusive reservation already held",
+        "winner_reservation_id": "res-001"
+      }
+    ],
+    "reservations": [
+      {
+        "acquired_at": "2026-05-04T17:08:00Z",
+        "agent": "HoopoeCC1",
+        "exclusive": true,
+        "expires_at": "2026-05-04T18:08:00Z",
+        "id": "res-001",
+        "paths": [
+          "apps/desktop/src/wizard/StepDeploy.tsx"
+        ],
+        "reason": "hp-n7u-target"
+      }
+    ]
+  },
+  "auth.exchangePairingForBearer": {
+    "bearerToken": "hp-bearer-mock-do-not-trust"
+  },
+  "auth.issueWsToken": {
+    "wsToken": "hp-ws-mock-do-not-trust"
+  },
+  "br.list": {
+    "issues": [
+      {
+        "created_at": "2026-05-04T17:08:00Z",
+        "description": "Synthetic bead used by the action-arbitration tending fixture. Two agents claim this bead within the same arbitration window and submit conflicting ActionPlans for the same file.",
+        "id": "hp-n7u-target",
+        "issue_type": "task",
+        "priority": 2,
+        "status": "in_progress",
+        "title": "[fixture] Wizard deploy step copy fix (target of conflicting ActionPlans)",
+        "updated_at": "2026-05-04T17:08:00Z"
+      }
+    ],
+    "total": 1
+  },
+  "build_logs.first": {
+    "runId": "run-007",
+    "text": "2026-05-04T17:08:00Z tend-swarm pre-script start\nplan-cc1-001 submitted by HoopoeCC1; reservation res-001 acquired\nplan-cc2-001 submitted by HoopoeCC2 over the same path: arbitration triggered\nplan-cc2-001 rejected with outcome=conflict; winner=plan-cc1-001\naudit.actionplan_arbitrated emitted\n"
+  },
+  "build_logs.missing": null,
+  "bv.triage": {
+    "data_hash": "action-arbitration-synthetic",
+    "generated_at": "2026-05-04T17:08:00Z",
+    "triage": {
+      "meta": {
+        "compute_time_ms": 1,
+        "generated_at": "2026-05-04T17:08:00Z",
+        "issue_count": 1,
+        "phase2_ready": true,
+        "version": "1.0.0"
+      },
+      "quick_ref": {
+        "actionable_count": 0,
+        "blocked_count": 0,
+        "in_progress_count": 1,
+        "open_count": 0,
+        "top_picks": [
+          {
+            "id": "hp-n7u-target",
+            "rationale": "Two agents are already working on this bead; arbitration in progress.",
+            "score": 0.5
+          }
+        ]
+      },
+      "recommendations": []
+    }
+  },
+  "events.subscribe": {
+    "cursors": {
+      "activity": 7,
+      "audit": 8,
+      "reservations": 1,
+      "tending": 6
+    },
+    "delivered": [
+      {
+        "channel": "reservations",
+        "payload": {
+          "agent": "HoopoeCC1",
+          "exclusive": true,
+          "paths": [
+            "apps/desktop/src/wizard/StepDeploy.tsx"
+          ],
+          "reason": "hp-n7u-target",
+          "reservationId": "res-001"
+        },
+        "seq": 1,
+        "ts": "2026-05-04T17:08:00Z",
+        "type": "reservation.acquired"
+      },
+      {
+        "channel": "tending",
+        "payload": {
+          "agent": "HoopoeCC1",
+          "beadId": "hp-n7u-target",
+          "planId": "plan-cc1-001",
+          "riskClass": "low",
+          "summary": "Replace deploy step prose to match the §5.4 wizard copy lock",
+          "targetPaths": [
+            "apps/desktop/src/wizard/StepDeploy.tsx"
+          ]
+        },
+        "seq": 2,
+        "ts": "2026-05-04T17:08:00Z",
+        "type": "actionplan.submitted"
+      },
+      {
+        "channel": "tending",
+        "payload": {
+          "agent": "HoopoeCC2",
+          "beadId": "hp-n7u-target",
+          "planId": "plan-cc2-001",
+          "riskClass": "low",
+          "summary": "Rewrite deploy step to add a SLB approval prompt",
+          "targetPaths": [
+            "apps/desktop/src/wizard/StepDeploy.tsx"
+          ]
+        },
+        "seq": 3,
+        "ts": "2026-05-04T17:08:01Z",
+        "type": "actionplan.submitted"
+      },
+      {
+        "channel": "tending",
+        "payload": {
+          "conflictingPaths": [
+            "apps/desktop/src/wizard/StepDeploy.tsx"
+          ],
+          "loserAgent": "HoopoeCC2",
+          "outcome": "conflict",
+          "planId": "plan-cc2-001",
+          "reason": "target paths overlap an exclusive reservation already held by the winning plan",
+          "winnerAgent": "HoopoeCC1",
+          "winnerPlanId": "plan-cc1-001"
+        },
+        "seq": 4,
+        "ts": "2026-05-04T17:08:01Z",
+        "type": "actionplan.arbitration"
+      },
+      {
+        "channel": "tending",
+        "payload": {
+          "agent": "HoopoeCC1",
+          "beadId": "hp-n7u-target",
+          "executor": "daemon",
+          "planId": "plan-cc1-001"
+        },
+        "seq": 5,
+        "ts": "2026-05-04T17:08:01Z",
+        "type": "actionplan.accepted"
+      },
+      {
+        "channel": "tending",
+        "payload": {
+          "agent": "HoopoeCC2",
+          "beadId": "hp-n7u-target",
+          "outcome": "conflict",
+          "planId": "plan-cc2-001",
+          "problem": {
+            "code": "actionplan.conflict",
+            "detail": "plan-cc1-001 holds exclusive reservation res-001 over the target paths",
+            "status": 409,
+            "title": "action plan rejected: conflicting reservation",
+            "type": "urn:hoopoe:problem:actionplan-conflict"
+          },
+          "winnerPlanId": "plan-cc1-001"
+        },
+        "seq": 6,
+        "ts": "2026-05-04T17:08:01Z",
+        "type": "actionplan.rejected"
+      },
+      {
+        "channel": "activity",
+        "payload": {
+          "beadId": "hp-n7u-target",
+          "severity": "warning",
+          "summary": "HoopoeCC2's plan-cc2-001 rejected: conflicts with HoopoeCC1's plan-cc1-001 on hp-n7u-target"
+        },
+        "seq": 7,
+        "ts": "2026-05-04T17:08:02Z",
+        "type": "activity.warning"
+      },
+      {
+        "channel": "audit",
+        "payload": {
+          "arbitrationReason": "first-arrived-with-exclusive-reservation",
+          "beadId": "hp-n7u-target",
+          "loserAgent": "HoopoeCC2",
+          "loserPlanId": "plan-cc2-001",
+          "winnerAgent": "HoopoeCC1",
+          "winnerPlanId": "plan-cc1-001"
+        },
+        "seq": 8,
+        "ts": "2026-05-04T17:08:02Z",
+        "type": "audit.actionplan_arbitrated"
+      }
+    ]
+  },
+  "ntm.snapshot": {
+    "counters": {
+      "alive": 2,
+      "errored": 0,
+      "panes": 2,
+      "sessions": 1,
+      "wedged": 0
+    },
+    "sessions": [
+      {
+        "agents": [
+          {
+            "agent_id": "HoopoeCC1",
+            "current_bead": "hp-n7u-target",
+            "last_output_age_sec": 4,
+            "pane": "0.1",
+            "pending_mail": 0,
+            "state": "active",
+            "type": "claude",
+            "type_confidence": 0.95,
+            "type_method": "process"
+          },
+          {
+            "agent_id": "HoopoeCC2",
+            "current_bead": "hp-n7u-target",
+            "last_output_age_sec": 6,
+            "pane": "0.2",
+            "pending_mail": 0,
+            "state": "active",
+            "type": "claude",
+            "type_confidence": 0.95,
+            "type_method": "process"
+          }
+        ],
+        "attached": true,
+        "name": "hoopoeAppCockpit"
+      }
+    ]
+  },
+  "pane_logs.first": {
+    "agent": "HoopoeCC1",
+    "bytes": {
+      "encoding": "base64",
+      "data": "W2hwLW43dS10YXJnZXRdIHJlc2VydmF0aW9uIHJlcy0wMDEgYWNxdWlyZWQ7IHBsYW4tY2MxLTAwMSBhY2NlcHRlZCBieSBkYWVtb24K"
+    }
+  },
+  "pane_logs.missing": null,
+  "projects.list": [
+    {
+      "id": "mock-flywheel-project",
+      "meta": {
+        "capturedAt": "<scrubbed-captured-at>",
+        "fixturesVersion": "phase0-2026-05-02",
+        "kind": "synthetic",
+        "notes": "Two agents (HoopoeCC1, HoopoeCC2) submit conflicting ActionPlans for the same bead (hp-n7u-target) and same file (apps/desktop/src/wizard/StepDeploy.tsx) within the daemon's arbitration window. Per plan.md §8.3.1, the daemon — not the model — is the executor: it accepts the first ActionPlan that satisfies the policy + idempotency + approvals + postcondition gates and rejects the conflicting one with outcome=CONFLICT. The first-arrived plan wins; the second receives a problem envelope referencing the winning plan_id.",
+        "scenario": "action-arbitration",
+        "source": "hand-written hp-n7u action-arbitration tending fixture",
+        "vpsId": "mock-flywheel"
+      },
+      "name": "action-arbitration",
+      "rootPath": "<fixtures-root>/scenarios/action-arbitration"
+    }
+  ],
+  "scenario.id": "action-arbitration",
+  "system.capabilities": {
+    "agent_mail": {
+      "agent_mail.messages.read": {
+        "status": "ok"
+      },
+      "agent_mail.messages.send": {
+        "status": "ok"
+      },
+      "agent_mail.reservations.list": {
+        "status": "ok"
+      }
+    },
+    "br": {
+      "br.dep.add": {
+        "status": "ok"
+      },
+      "br.issues.read": {
+        "status": "ok"
+      },
+      "br.issues.update": {
+        "status": "ok"
+      },
+      "br.sync.flush_only": {
+        "status": "ok"
+      }
+    },
+    "bv": {
+      "bv.robot.diff": {
+        "status": "ok"
+      },
+      "bv.robot.insights": {
+        "status": "ok"
+      },
+      "bv.robot.plan": {
+        "status": "ok"
+      },
+      "bv.robot.triage": {
+        "status": "ok"
+      },
+      "bv.tui": {
+        "notes": "Guardrail 1: bare bv launches TUI; never invoked",
+        "status": "blocked-by-policy"
+      }
+    },
+    "caam": {},
+    "casr": {},
+    "caut": {},
+    "dcg": {},
+    "git": {
+      "git.diff.read": {
+        "status": "ok"
+      },
+      "git.push": {
+        "notes": "snapshot script never pushes",
+        "status": "blocked-by-policy"
+      },
+      "git.status.read": {
+        "status": "ok"
+      },
+      "git.unpushed.list": {
+        "status": "ok"
+      }
+    },
+    "health": {
+      "health.complexity": {
+        "status": "untested"
+      },
+      "health.coverage": {
+        "status": "untested"
+      }
+    },
+    "jfp": {},
+    "jsm": {},
+    "ntm": {
+      "ntm.robot.snapshot": {
+        "status": "ok"
+      },
+      "ntm.robot.status": {
+        "status": "ok"
+      },
+      "ntm.robot.tail": {
+        "status": "ok"
+      }
+    },
+    "oracle": {},
+    "pt": {},
+    "sbh": {},
+    "srp": {},
+    "ubs": {}
+  },
+  "system.health": {
+    "environment": "mock-flywheel",
+    "status": "ok",
+    "time": "<scrubbed-runtime-time>"
+  },
+  "system.version": {
+    "api": "v1.0.0-mock",
+    "daemon": "mock-flywheel"
+  }
+}

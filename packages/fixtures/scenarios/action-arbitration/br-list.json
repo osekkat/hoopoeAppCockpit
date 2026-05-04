@@ -1,0 +1,15 @@
+{
+  "issues": [
+    {
+      "id": "hp-n7u-target",
+      "title": "[fixture] Wizard deploy step copy fix (target of conflicting ActionPlans)",
+      "description": "Synthetic bead used by the action-arbitration tending fixture. Two agents claim this bead within the same arbitration window and submit conflicting ActionPlans for the same file.",
+      "status": "in_progress",
+      "priority": 2,
+      "issue_type": "task",
+      "created_at": "2026-05-04T17:08:00Z",
+      "updated_at": "2026-05-04T17:08:00Z"
+    }
+  ],
+  "total": 1
+}

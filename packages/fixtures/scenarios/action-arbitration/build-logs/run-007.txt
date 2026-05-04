@@ -1,0 +1,5 @@
+2026-05-04T17:08:00Z tend-swarm pre-script start
+plan-cc1-001 submitted by HoopoeCC1; reservation res-001 acquired
+plan-cc2-001 submitted by HoopoeCC2 over the same path: arbitration triggered
+plan-cc2-001 rejected with outcome=conflict; winner=plan-cc1-001
+audit.actionplan_arbitrated emitted
