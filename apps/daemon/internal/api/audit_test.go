@@ -140,6 +140,51 @@ func TestAuditCorrelationFilterAndExportEndpoint(t *testing.T) {
 	}
 }
 
+func TestAuditQueryRejectsOverlongSearch(t *testing.T) {
+	now := time.Date(2026, 5, 4, 8, 0, 0, 0, time.UTC)
+	writer, err := audit.NewWriter(audit.Config{Writer: nopSyncWriter{}, Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatalf("new audit writer: %v", err)
+	}
+	router := NewRouter(Config{Audit: writer})
+
+	overlong := strings.Repeat("a", maxAuditSearchQueryLen+1)
+	req := httptest.NewRequest(http.MethodGet, "/v1/audit/query?q="+overlong, nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("query status = %d, want %d; body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "audit.invalid_search") {
+		t.Fatalf("expected audit.invalid_search problem code, got %s", rec.Body.String())
+	}
+
+	exportBody := `{"q":"` + overlong + `"}`
+	exportReq := httptest.NewRequest(http.MethodPost, "/v1/audit/export", strings.NewReader(exportBody))
+	exportReq.Header.Set("Content-Type", "application/json")
+	exportRec := httptest.NewRecorder()
+	router.ServeHTTP(exportRec, exportReq)
+	if exportRec.Code != http.StatusBadRequest {
+		t.Fatalf("export status = %d, want %d; body=%s", exportRec.Code, http.StatusBadRequest, exportRec.Body.String())
+	}
+}
+
+func TestAuditQueryAcceptsBoundedSearch(t *testing.T) {
+	now := time.Date(2026, 5, 4, 8, 0, 0, 0, time.UTC)
+	writer, err := audit.NewWriter(audit.Config{Writer: nopSyncWriter{}, Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatalf("new audit writer: %v", err)
+	}
+	router := NewRouter(Config{Audit: writer})
+	atMax := strings.Repeat("a", maxAuditSearchQueryLen)
+	req := httptest.NewRequest(http.MethodGet, "/v1/audit/query?q="+atMax, nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("at-max query status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func appendAuditEntry(t *testing.T, writer *audit.Writer, entry audit.Entry) audit.Entry {
 	t.Helper()
 	written, _, err := writer.Append(entry)

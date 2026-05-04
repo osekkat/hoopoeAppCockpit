@@ -19,6 +19,7 @@ import (
 
 const (
 	maxAuditQueryLimit                 = 1000
+	maxAuditSearchQueryLen             = 256
 	auditHTTPStatusOK                  = 200
 	auditHTTPStatusBadRequest          = 400
 	auditHTTPStatusUnprocessableEntity = 422
@@ -211,6 +212,11 @@ func (s *server) auditQueryFromRequest(w http.ResponseWriter, r *http.Request) (
 		s.writeProblemCode(w, auditHTTPStatusBadRequest, "audit.invalid_to", "invalid to timestamp", err.Error())
 		return audit.Query{}, false
 	}
+	search, err := parseAuditSearch(values.Get("q"))
+	if err != nil {
+		s.writeProblemCode(w, auditHTTPStatusBadRequest, "audit.invalid_search", "invalid audit search query", err.Error())
+		return audit.Query{}, false
+	}
 	return audit.Query{
 		ProjectID:     strings.TrimSpace(values.Get("projectId")),
 		ActorKind:     audit.ActorKind(strings.TrimSpace(values.Get("actorKind"))),
@@ -219,7 +225,7 @@ func (s *server) auditQueryFromRequest(w http.ResponseWriter, r *http.Request) (
 		Result:        audit.Result(strings.TrimSpace(values.Get("outcome"))),
 		CorrelationID: correlationID,
 		CausationID:   causationID,
-		Search:        strings.TrimSpace(values.Get("q")),
+		Search:        search,
 		From:          from,
 		To:            to,
 		Limit:         limit,
@@ -244,6 +250,10 @@ func auditQueryFromExportRequest(request auditExportRequest) (audit.Query, error
 	if err != nil {
 		return audit.Query{}, err
 	}
+	search, err := parseAuditSearch(request.Query)
+	if err != nil {
+		return audit.Query{}, err
+	}
 	return audit.Query{
 		ProjectID:     strings.TrimSpace(request.ProjectID),
 		ActorKind:     audit.ActorKind(strings.TrimSpace(request.ActorKind)),
@@ -252,7 +262,7 @@ func auditQueryFromExportRequest(request auditExportRequest) (audit.Query, error
 		Result:        audit.Result(strings.TrimSpace(request.Outcome)),
 		CorrelationID: correlationID,
 		CausationID:   causationID,
-		Search:        strings.TrimSpace(request.Query),
+		Search:        search,
 		From:          from,
 		To:            to,
 		Limit:         maxAuditQueryLimit,
@@ -328,6 +338,22 @@ func parseAuditLookupToken(value string, field string) (string, error) {
 			continue
 		}
 		return "", fmt.Errorf("%s contains unsupported character %q", field, r)
+	}
+	return value, nil
+}
+
+// parseAuditSearch validates the free-form `q` search string. Unlike
+// correlationId/causationId, q is user-typed and may contain arbitrary
+// printable characters, so charset is not restricted — only length is
+// bounded to keep entryMatchesSearch's substring scan O(small) per
+// candidate field.
+func parseAuditSearch(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", nil
+	}
+	if len(value) > maxAuditSearchQueryLen {
+		return "", fmt.Errorf("q is too long (max %d bytes)", maxAuditSearchQueryLen)
 	}
 	return value, nil
 }
