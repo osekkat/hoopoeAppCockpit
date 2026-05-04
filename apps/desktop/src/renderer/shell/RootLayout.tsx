@@ -2,6 +2,7 @@ import { Link, Outlet, useParams, useRouterState } from "@tanstack/react-router"
 import { Activity, Command, PanelRightClose, PanelRightOpen } from "lucide-react";
 import { useCallback, useEffect, useRef } from "react";
 import { ActivityDrawer, useActivityStore } from "../activity/index.ts";
+import { DirtyBanner, DirtyBannerSubscription } from "../clone/index.ts";
 import { ErrorUxRoot } from "../error-ux/index.ts";
 import "../error-ux/error-ux.css";
 import {
@@ -178,6 +179,10 @@ export function RootLayout() {
             }
           }}
         >
+          <DirtyBanner
+            projectId={topbarProjectId ?? null}
+            {...(activeProject?.rootPath ? { cloneRepoPath: activeProject.rootPath } : {})}
+          />
           <Outlet />
         </main>
       </section>
@@ -196,6 +201,7 @@ export function RootLayout() {
       />
 
       <ErrorUxRoot />
+      <DirtyBannerSubscription />
     </div>
   );
 }

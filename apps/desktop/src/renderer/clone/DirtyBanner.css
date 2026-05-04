@@ -1,0 +1,155 @@
+/* hp-70yz — local-clone dirty banner styles. */
+
+.hh-dirty-banner {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  margin: 0 18px 14px;
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(229, 196, 100, 0.45);
+  background: rgba(229, 196, 100, 0.10);
+  color: var(--text-primary);
+}
+
+.hh-dirty-banner > svg {
+  margin-top: 1px;
+  color: var(--warning, #e5c464);
+}
+
+.hh-dirty-banner-body {
+  min-width: 0;
+}
+
+.hh-dirty-banner-body strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 13px;
+  font-weight: 720;
+}
+
+.hh-dirty-banner-body p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.hh-dirty-banner-counts {
+  margin-left: 6px;
+  color: var(--text-secondary);
+  font-weight: 650;
+}
+
+.hh-dirty-banner-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.hh-dirty-banner-discard,
+.hh-dirty-banner-reveal {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 4px 12px;
+  border: 1px solid var(--surface-border-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface-panel);
+  color: var(--text-primary);
+  font-weight: 650;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.hh-dirty-banner-discard {
+  border-color: rgba(255, 142, 142, 0.45);
+  color: var(--danger, #ff8e8e);
+}
+
+.hh-dirty-banner-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.hh-dirty-banner-dialog-card {
+  width: min(440px, 90vw);
+  padding: 24px;
+  border-radius: var(--radius-lg);
+  background: var(--surface-panel);
+  border: 1px solid var(--surface-border-soft);
+}
+
+.hh-dirty-banner-dialog-card h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 760;
+  color: var(--text-primary);
+}
+
+.hh-dirty-banner-dialog-card p {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.hh-dirty-banner-dialog-card code {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--surface-panel-alt);
+  color: var(--text-secondary);
+  font-size: 11.5px;
+}
+
+.hh-dirty-banner-dialog-card ul {
+  margin: 8px 0 12px 18px;
+  padding: 0;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.hh-dirty-banner-warning {
+  color: var(--danger, #ff8e8e);
+  font-weight: 700;
+}
+
+.hh-dirty-banner-error {
+  color: var(--danger, #ff8e8e);
+  font-size: 12px;
+  margin-top: 8px;
+}
+
+.hh-dirty-banner-dialog-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.hh-dirty-banner-dialog-cancel,
+.hh-dirty-banner-dialog-confirm {
+  height: 32px;
+  padding: 6px 16px;
+  border-radius: var(--radius-md);
+  font-weight: 650;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.hh-dirty-banner-dialog-cancel {
+  border: 1px solid var(--surface-border-soft);
+  background: var(--surface-panel-alt);
+  color: var(--text-primary);
+}
+
+.hh-dirty-banner-dialog-confirm {
+  border: 1px solid rgba(255, 142, 142, 0.55);
+  background: rgba(255, 142, 142, 0.18);
+  color: var(--danger, #ff8e8e);
+}
