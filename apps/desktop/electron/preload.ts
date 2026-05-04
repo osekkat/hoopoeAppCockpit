@@ -34,6 +34,7 @@ import {
   type PowerAssertionSnapshot,
 } from "../src/shared/ipc-contract.ts";
 import type { BootstrapStepBridge } from "../src/shared/bootstrap-bridge.ts";
+import { createPowerBridge } from "../src/shared/power-bridge.ts";
 
 // ── Channel names ──────────────────────────────────────────────────────────
 //
@@ -213,11 +214,7 @@ export const hoopoeBridge: HoopoeBridge = {
     openInTerminal: (input) => invokeVoid(CHANNELS.cloneOpenInTerminal, input),
     setCapOverride: (input) => invoke(CHANNELS.cloneSetCapOverride, input),
   },
-  power: {
-    acquire: (input) => invoke<PowerAssertionSnapshot>(CHANNELS.powerAcquire, input),
-    release: (input) => invoke<PowerAssertionSnapshot>(CHANNELS.powerRelease, input),
-    snapshot: () => invoke<PowerAssertionSnapshot>(CHANNELS.powerSnapshot, {}),
-  },
+  power: createPowerBridge(invoke),
 };
 
 // ── Channel-name export for IpcRegistry handler registration ──────────────
