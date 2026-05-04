@@ -145,6 +145,13 @@ export const PRELOAD_IPC_CHANNELS = {
   // ssh-keygen flags.
   sshListKeys: "hoopoe.ssh.listKeys",
   sshGenerateKey: "hoopoe.ssh.generateKey",
+  // hp-58wp: Local-clone destructive action. Runs `git reset --hard @{u}`
+  // followed by `git clean -fd` against the project's local clone in the
+  // main process. The renderer NEVER supplies the clone path or argv —
+  // main resolves the path from the project registry and invokes git
+  // with explicit, non-interpolated argv (Guardrail 2). Audit fires on
+  // every invocation regardless of outcome (Guardrail 10).
+  cloneDiscardLocalChanges: "hoopoe.clone.discard-local-changes",
 } as const satisfies Record<string, `hoopoe.${string}`>;
 
 export type PreloadIpcChannelKey = keyof typeof PRELOAD_IPC_CHANNELS;

@@ -11,11 +11,10 @@
 // the file counts so the user knows what they're throwing away.
 //
 // Reveal-in-Finder uses the existing `window.hoopoe.files.revealInFinder`
-// preload channel. Discard requires a new preload channel + safe shell
-// boundary (filed as a follow-up bead at hp-70yz close); for this commit
-// the Discard button opens the confirmation dialog and reports a
-// "Coming soon — pending discardLocalClone preload channel" notice
-// rather than running an unsafe shell.
+// preload channel. Discard goes through the typed
+// `window.hoopoe.clone.discardLocalChanges` channel (hp-58wp): the
+// renderer carries only the projectId, main resolves the clone path
+// from the project registry and runs git with explicit safe argv.
 
 import { useEffect, useState } from "react";
 import { AlertTriangle, FolderOpen, Trash2 } from "lucide-react";
@@ -33,9 +32,8 @@ export interface DirtyBannerProps {
   /** Override the file-reveal action (tests). Default uses
    *  `window.hoopoe.files.revealInFinder`. */
   readonly revealInFinder?: (path: string) => Promise<void> | void;
-  /** Override the discard action (tests). Defaults to a stub that opens
-   *  a "coming soon" notice (pending the discardLocalClone preload
-   *  channel — see hp-70yz follow-up). */
+  /** Override the discard action (tests). Defaults to invoking
+   *  `window.hoopoe.clone.discardLocalChanges` (hp-58wp). */
   readonly discardLocalChanges?: (input: { projectId: string }) => Promise<void> | void;
   /** Path to the local clone (for the Reveal action). Optional; when
    *  omitted, the Reveal button is hidden. */
@@ -250,8 +248,13 @@ interface FilesBridge {
   readonly revealInFinder?: (path: string) => Promise<void>;
 }
 
+interface CloneBridge {
+  readonly discardLocalChanges?: (input: { projectId: string }) => Promise<unknown>;
+}
+
 interface BridgeShape {
   readonly files?: FilesBridge;
+  readonly clone?: CloneBridge;
 }
 
 function defaultRevealInFinder(path: string): Promise<void> | void {
@@ -261,10 +264,20 @@ function defaultRevealInFinder(path: string): Promise<void> | void {
   if (typeof reveal === "function") return reveal(path);
 }
 
-function defaultDiscardLocalChanges(_input: { projectId: string }): Promise<void> {
-  return Promise.reject(
-    new Error(
-      "Discard not yet wired — pending the hoopoe.clone.discardLocalChanges preload channel (follow-up bead).",
-    ),
-  );
+function defaultDiscardLocalChanges(input: { projectId: string }): Promise<void> {
+  if (typeof window === "undefined") {
+    return Promise.reject(
+      new Error("Discard requires the Electron main process — not available outside the renderer."),
+    );
+  }
+  const bridge = (window as Window & { readonly hoopoe?: BridgeShape }).hoopoe;
+  const discard = bridge?.clone?.discardLocalChanges;
+  if (typeof discard !== "function") {
+    return Promise.reject(
+      new Error(
+        "Discard preload channel is not exposed — verify the main process registered hoopoe.clone.discard-local-changes.",
+      ),
+    );
+  }
+  return discard(input).then(() => undefined);
 }

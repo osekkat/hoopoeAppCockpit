@@ -60,3 +60,9 @@ export {
   probeDirtyState,
   type ProbeDirtyStateInput,
 } from "./dirty.ts";
+
+export {
+  discardLocalChanges,
+  type DiscardLocalChangesInput,
+  type DiscardLocalChangesResult,
+} from "./discard.ts";

@@ -90,6 +90,7 @@ export const PRELOAD_IPC_CHANNELS = {
   filesRipgrep: "hoopoe.files.ripgrep",
   sshListKeys: "hoopoe.ssh.listKeys",
   sshGenerateKey: "hoopoe.ssh.generateKey",
+  cloneDiscardLocalChanges: "hoopoe.clone.discard-local-changes",
 } as const satisfies Record<string, `hoopoe.${string}`>;
 
 export type PreloadIpcChannelKey = keyof typeof PRELOAD_IPC_CHANNELS;

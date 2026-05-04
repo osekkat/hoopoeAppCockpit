@@ -99,6 +99,13 @@ export interface HoopoeBridge {
     readonly listKeys: <O>() => Promise<O>;
     readonly generateKey: <I, O>(input: I) => Promise<O>;
   };
+  readonly clone: {
+    /** hp-58wp: Discard local changes against a project's local clone.
+     *  Runs `git reset --hard @{u}` + `git clean -fd` in main with safe
+     *  argv. The renderer never supplies a path; only the projectId is
+     *  carried across the IPC boundary. */
+    readonly discardLocalChanges: <O>(input: { projectId: string }) => Promise<O>;
+  };
 }
 
 export const hoopoeBridge: HoopoeBridge = {
@@ -155,6 +162,9 @@ export const hoopoeBridge: HoopoeBridge = {
   ssh: {
     listKeys: () => invoke(CHANNELS.sshListKeys, {}),
     generateKey: (input) => invoke(CHANNELS.sshGenerateKey, input),
+  },
+  clone: {
+    discardLocalChanges: (input) => invoke(CHANNELS.cloneDiscardLocalChanges, input),
   },
 };
 
