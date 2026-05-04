@@ -61,3 +61,15 @@ export {
   type TunnelDriver,
   type TunnelOrchestratorOptions,
 } from "./orchestrator.ts";
+
+export {
+  installSleepWakeMonitor,
+  type PowerMonitorEvent,
+  type PowerMonitorLike,
+  type SleepWakeAuditEvent,
+  type SleepWakeAuditEventKind,
+  type SleepWakeAuditSink,
+  type SleepWakeMonitorHandle,
+  type SleepWakeMonitorOptions,
+  type SleepWakeOrchestrator,
+} from "./sleepWakeMonitor.ts";
