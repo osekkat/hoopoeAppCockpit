@@ -4,11 +4,13 @@ import {
   createRoute,
   createRouter,
   redirect,
+  useNavigate,
 } from "@tanstack/react-router";
 import { RootLayout } from "./shell/RootLayout.tsx";
 import { ProjectPickerRoute, StageRoute } from "./shell/routes.tsx";
 import { useShellUiStore, resolveShellLaunchTarget } from "./store.ts";
 import { routeForStage } from "./topbar/project-switcher-model.ts";
+import { WizardShell } from "./wizard/index.ts";
 
 const rootRoute = createRootRoute({
   component: RootLayout,
@@ -27,6 +29,23 @@ const indexRoute = createRoute({
   },
   component: ProjectPickerRoute,
 });
+
+const firstRunRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "first-run",
+  component: FirstRunRoute,
+});
+
+function FirstRunRoute() {
+  const navigate = useNavigate();
+  return (
+    <WizardShell
+      onComplete={() => {
+        void navigate({ to: "/" });
+      }}
+    />
+  );
+}
 
 const projectRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -77,6 +96,7 @@ const diagnosticsRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
+  firstRunRoute,
   projectRoute.addChildren([
     projectIndexRoute,
     planningRoute,
