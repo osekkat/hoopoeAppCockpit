@@ -388,7 +388,9 @@ func runLongRunningSchedulerJob(ctx context.Context, env Environment, rec *Recor
 		return err
 	}
 	close(releaseSlow)
-	sched.Wait()
+	if err := sched.WaitContext(ctx); err != nil {
+		return err
+	}
 	rec.Observe("scheduler.unrelated_dispatch", "completed")
 	return nil
 }

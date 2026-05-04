@@ -305,7 +305,7 @@ func runTendingRun(ctx context.Context, args []string, io *tendingIO) error {
 	if err != nil {
 		return err
 	}
-	sched, err := newTendingScheduler(io, registry)
+	sched, err := newTendingScheduler(ctx, io, registry)
 	if err != nil {
 		return err
 	}
@@ -313,7 +313,9 @@ func runTendingRun(ctx context.Context, args []string, io *tendingIO) error {
 	if err != nil {
 		return err
 	}
-	sched.Wait()
+	if err := sched.WaitContext(ctx); err != nil {
+		return err
+	}
 	if err := appendTendingAudit(io, "tending.job.run_now", map[string]any{"jobId": jobID, "outcome": decision.Outcome}); err != nil {
 		fmt.Fprintf(io.Stderr, "warn: audit write failed: %v\n", err)
 	}
@@ -413,7 +415,7 @@ func runTendingTick(ctx context.Context, args []string, io *tendingIO) error {
 	if err != nil {
 		return err
 	}
-	sched, err := newTendingScheduler(io, registry)
+	sched, err := newTendingScheduler(ctx, io, registry)
 	if err != nil {
 		return err
 	}
@@ -421,7 +423,9 @@ func runTendingTick(ctx context.Context, args []string, io *tendingIO) error {
 	if err != nil {
 		return err
 	}
-	sched.Wait()
+	if err := sched.WaitContext(ctx); err != nil {
+		return err
+	}
 	if err := appendTendingAudit(io, "tending.scheduler.tick", map[string]any{"decisions": len(decisions)}); err != nil {
 		fmt.Fprintf(io.Stderr, "warn: audit write failed: %v\n", err)
 	}
@@ -450,7 +454,7 @@ func openTendingRegistry(ctx context.Context, io *tendingIO) (*scheduler.Registr
 	})
 }
 
-func newTendingScheduler(io *tendingIO, registry *scheduler.Registry) (*scheduler.Scheduler, error) {
+func newTendingScheduler(ctx context.Context, io *tendingIO, registry *scheduler.Registry) (*scheduler.Scheduler, error) {
 	runner, err := newTendingPrescriptRunner(io, registry)
 	if err != nil {
 		return nil, err
@@ -458,6 +462,7 @@ func newTendingScheduler(io *tendingIO, registry *scheduler.Registry) (*schedule
 	return scheduler.New(scheduler.Config{
 		Registry: registry,
 		Runner:   runner,
+		Context:  ctx,
 	})
 }
 

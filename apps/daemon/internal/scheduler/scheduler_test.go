@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -355,6 +356,145 @@ func TestSchedulerWorkersAllowUnrelatedRunsToComplete(t *testing.T) {
 	scheduler.Wait()
 }
 
+func TestSchedulerWorkerAcquireHonorsCallerCancellation(t *testing.T) {
+	ctx := context.Background()
+	clock := newTestClock(time.Date(2026, 5, 4, 14, 15, 0, 0, time.UTC))
+	registry := newTestRegistry(t, clock)
+	for _, id := range []string{"slow", "queued"} {
+		if _, err := registry.ImportDefinition(ctx, testDefinition(id, Schedule{Type: ScheduleOnDemand})); err != nil {
+			t.Fatal(err)
+		}
+	}
+	slowStarted := make(chan struct{})
+	releaseSlow := make(chan struct{})
+	queuedRan := make(chan struct{})
+	scheduler, err := New(Config{
+		Registry: registry,
+		Runner: RunnerFunc(func(ctx context.Context, run Run) (RunResult, error) {
+			switch run.JobID {
+			case "slow":
+				close(slowStarted)
+				select {
+				case <-releaseSlow:
+					return RunResult{WakeAgent: false}, nil
+				case <-ctx.Done():
+					return RunResult{}, ctx.Err()
+				}
+			case "queued":
+				close(queuedRan)
+				return RunResult{WakeAgent: false}, nil
+			default:
+				t.Fatalf("unexpected job %q", run.JobID)
+			}
+			return RunResult{}, nil
+		}),
+		MaxWorkers: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := scheduler.RunNow(ctx, "slow"); err != nil {
+		t.Fatal(err)
+	}
+	waitForSignal(t, slowStarted, "slow run to occupy the worker")
+
+	queuedCtx, cancelQueued := context.WithCancel(ctx)
+	decision, err := scheduler.RunNow(queuedCtx, "queued")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancelQueued()
+	run := waitForRunStatus(t, registry, decision.RunID, RunStatusFailed)
+	if !strings.Contains(run.Error, context.Canceled.Error()) {
+		t.Fatalf("queued run error = %q, want context canceled", run.Error)
+	}
+	select {
+	case <-queuedRan:
+		t.Fatal("queued runner executed after caller cancellation")
+	default:
+	}
+
+	close(releaseSlow)
+	scheduler.Wait()
+}
+
+func TestSchedulerStopCancelsRunningRunner(t *testing.T) {
+	ctx := context.Background()
+	clock := newTestClock(time.Date(2026, 5, 4, 14, 30, 0, 0, time.UTC))
+	registry := newTestRegistry(t, clock)
+	if _, err := registry.ImportDefinition(ctx, testDefinition("root-cancel", Schedule{Type: ScheduleOnDemand})); err != nil {
+		t.Fatal(err)
+	}
+	started := make(chan struct{})
+	scheduler, err := New(Config{
+		Registry: registry,
+		Runner: RunnerFunc(func(ctx context.Context, run Run) (RunResult, error) {
+			if run.JobID != "root-cancel" {
+				t.Fatalf("unexpected job %q", run.JobID)
+			}
+			close(started)
+			<-ctx.Done()
+			return RunResult{}, ctx.Err()
+		}),
+		MaxWorkers: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	decision, err := scheduler.RunNow(ctx, "root-cancel")
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForSignal(t, started, "running job")
+	scheduler.Stop()
+	waitCtx, cancelWait := context.WithTimeout(ctx, 2*time.Second)
+	defer cancelWait()
+	if err := scheduler.WaitContext(waitCtx); err != nil {
+		t.Fatalf("scheduler wait after stop: %v", err)
+	}
+	run := waitForRunStatus(t, registry, decision.RunID, RunStatusFailed)
+	if !strings.Contains(run.Error, context.Canceled.Error()) {
+		t.Fatalf("stopped run error = %q, want context canceled", run.Error)
+	}
+}
+
+func TestSchedulerWaitContextHonorsCallerCancellation(t *testing.T) {
+	ctx := context.Background()
+	clock := newTestClock(time.Date(2026, 5, 4, 14, 45, 0, 0, time.UTC))
+	registry := newTestRegistry(t, clock)
+	if _, err := registry.ImportDefinition(ctx, testDefinition("blocked", Schedule{Type: ScheduleOnDemand})); err != nil {
+		t.Fatal(err)
+	}
+	started := make(chan struct{})
+	release := make(chan struct{})
+	scheduler, err := New(Config{
+		Registry: registry,
+		Runner: RunnerFunc(func(context.Context, Run) (RunResult, error) {
+			close(started)
+			<-release
+			return RunResult{WakeAgent: false}, nil
+		}),
+		MaxWorkers: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := scheduler.RunNow(ctx, "blocked"); err != nil {
+		t.Fatal(err)
+	}
+	waitForSignal(t, started, "blocked run")
+
+	waitCtx, cancelWait := context.WithTimeout(ctx, time.Nanosecond)
+	defer cancelWait()
+	if err := scheduler.WaitContext(waitCtx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("WaitContext error = %v, want deadline exceeded", err)
+	}
+	close(release)
+	scheduler.Wait()
+}
+
 func TestDefinitionFilesRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -470,4 +610,25 @@ func waitForSignal(t *testing.T, signal <-chan struct{}, label string) {
 	case <-time.After(2 * time.Second):
 		t.Fatalf("timed out waiting for %s", label)
 	}
+}
+
+func waitForRunStatus(t *testing.T, registry *Registry, runID string, want RunStatus) Run {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		run, err := registry.GetRun(context.Background(), runID)
+		if err != nil {
+			t.Fatalf("get run %s: %v", runID, err)
+		}
+		if run.Status == want {
+			return run
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	run, err := registry.GetRun(context.Background(), runID)
+	if err != nil {
+		t.Fatalf("get run %s: %v", runID, err)
+	}
+	t.Fatalf("run %s status = %s, want %s", runID, run.Status, want)
+	return Run{}
 }
