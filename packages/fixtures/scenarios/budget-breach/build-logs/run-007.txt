@@ -1,5 +1,6 @@
-2026-05-04T17:09:54Z tend-swarm pre-script start
+2026-05-04T17:09:54Z watch-safety-thresholds pre-script start
 caut snapshot: day cap 500.00 / spent 500.42 USD (100%)
-caam alternatives: 0 (all accounts exhausted today)
-agent.pause GreenBear reason=budget-breach
-approval.request scope=budget.overshoot
+hard threshold crossed: emit swarm.halt immediately (wakeAgent=false)
+swarm.halt hoopoeAppCockpit reason=budget-breach latency_ms=100
+ntm postcondition passed: swarm state HALTED; agents paused; build queue paused
+audit.swarm_halt recorded actor=pre_script:watch-safety-thresholds

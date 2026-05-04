@@ -3,11 +3,11 @@
     "messages": [
       {
         "ack_required": true,
-        "body_md": "Today's provider spend across all CAAM accounts has crossed the configured daily cap (USD 500). GreenBear is paused. Approve to continue (overshoot is logged) or hold to shut down.",
+        "body_md": "Today's provider spend across all CAAM accounts crossed the configured daily cap (USD 500). watch-safety-thresholds emitted swarm.halt immediately without waking an LLM; NTM reports the swarm halted and GreenBear paused.",
         "from": "orchestrator",
         "id": "msg-budget-breach-001",
         "sent_at": "2026-05-04T17:09:56Z",
-        "subject": "[hp-q6d] Daily provider budget exhausted — approval required",
+        "subject": "[hp-q6d] Daily provider budget exhausted - swarm halted",
         "thread_id": "hp-q6d",
         "to": [
           "operator"
@@ -18,7 +18,7 @@
       {
         "id": "hp-q6d",
         "message_count": 1,
-        "subject": "[hp-q6d] Daily provider budget exhausted — approval required"
+        "subject": "[hp-q6d] Daily provider budget exhausted - swarm halted"
       }
     ],
     "unread_total": 1
@@ -41,7 +41,7 @@
   "buildLogs": [
     {
       "runId": "run-007",
-      "text": "2026-05-04T17:09:54Z tend-swarm pre-script start\ncaut snapshot: day cap 500.00 / spent 500.42 USD (100%)\ncaam alternatives: 0 (all accounts exhausted today)\nagent.pause GreenBear reason=budget-breach\napproval.request scope=budget.overshoot\n"
+      "text": "2026-05-04T17:09:54Z watch-safety-thresholds pre-script start\ncaut snapshot: day cap 500.00 / spent 500.42 USD (100%)\nhard threshold crossed: emit swarm.halt immediately (wakeAgent=false)\nswarm.halt hoopoeAppCockpit reason=budget-breach latency_ms=100\nntm postcondition passed: swarm state HALTED; agents paused; build queue paused\naudit.swarm_halt recorded actor=pre_script:watch-safety-thresholds\n"
     }
   ],
   "bvTriage": {
@@ -153,6 +153,10 @@
       },
       "ntm.robot.tail": {
         "status": "ok"
+      },
+      "ntm.swarm.halt": {
+        "notes": "watch-safety-thresholds uses this capability for immediate budget-breach halt",
+        "status": "ok"
       }
     },
     "oracle": {},
@@ -175,6 +179,42 @@
       "type": "caut.budget_threshold"
     },
     {
+      "channel": "swarm",
+      "payload": {
+        "actionPlanId": "ap-budget-breach-001",
+        "actor": "pre_script:watch-safety-thresholds",
+        "idempotencyKey": "watch-safety-thresholds:hoopoeAppCockpit:budget-breach:2026-05-04",
+        "jobId": "watch-safety-thresholds",
+        "latencyMs": 100,
+        "reason": "budget-breach: daily provider cap exceeded",
+        "swarmId": "hoopoeAppCockpit",
+        "wakeAgent": false
+      },
+      "seq": 2,
+      "ts": "2026-05-04T17:09:54.1Z",
+      "type": "swarm.halt"
+    },
+    {
+      "channel": "ntm",
+      "payload": {
+        "agents": [
+          {
+            "agent": "GreenBear",
+            "reason": "swarm halted by budget breach",
+            "state": "PAUSED"
+          }
+        ],
+        "buildQueue": "PAUSED",
+        "haltedAt": "2026-05-04T17:09:54.4Z",
+        "postconditionOf": "ap-budget-breach-001",
+        "state": "HALTED",
+        "swarmId": "hoopoeAppCockpit"
+      },
+      "seq": 3,
+      "ts": "2026-05-04T17:09:54.4Z",
+      "type": "ntm.swarm_state"
+    },
+    {
       "channel": "caam",
       "payload": {
         "active_account": "primary",
@@ -182,40 +222,38 @@
         "alternatives": [],
         "available_accounts": 3
       },
-      "seq": 2,
+      "seq": 4,
       "ts": "2026-05-04T17:09:55Z",
       "type": "caam.account_status"
     },
     {
-      "channel": "agent_state",
+      "channel": "audit",
       "payload": {
-        "agent": "GreenBear",
-        "reason": "budget-breach"
+        "actionPlanId": "ap-budget-breach-001",
+        "actor": "pre_script:watch-safety-thresholds",
+        "jobId": "watch-safety-thresholds",
+        "latencyMs": 400,
+        "postcondition": "ntm.swarm.state == HALTED",
+        "postconditionPassed": true,
+        "reason": "budget-breach",
+        "silent": false
       },
-      "seq": 3,
-      "ts": "2026-05-04T17:09:55Z",
-      "type": "agent.paused"
-    },
-    {
-      "channel": "approvals",
-      "payload": {
-        "approvalId": "appr-budget-breach-001",
-        "scope": "budget.overshoot",
-        "summary": "Daily provider budget exhausted; approve overshoot or hold."
-      },
-      "seq": 4,
-      "ts": "2026-05-04T17:09:56Z",
-      "type": "approval.requested"
+      "seq": 5,
+      "ts": "2026-05-04T17:09:55.2Z",
+      "type": "audit.swarm_halt"
     },
     {
       "channel": "activity",
       "payload": {
-        "severity": "warning",
-        "summary": "Daily provider budget hit; GreenBear paused awaiting approval."
+        "actionPlanId": "ap-budget-breach-001",
+        "category": "swarm.halted",
+        "severity": "critical",
+        "summary": "Daily provider budget hit; watch-safety-thresholds halted the swarm immediately.",
+        "swarmId": "hoopoeAppCockpit"
       },
-      "seq": 5,
+      "seq": 6,
       "ts": "2026-05-04T17:09:56Z",
-      "type": "activity.warning"
+      "type": "activity.urgent"
     }
   ],
   "expectedOutcome": {
@@ -223,27 +261,28 @@
       "actions": [
         {
           "args": {
-            "agent": "GreenBear",
-            "reason": "budget-breach"
+            "reason": "budget-breach: daily provider cap exceeded"
           },
-          "type": "agent.pause"
-        },
-        {
-          "args": {
-            "scope": "budget.overshoot",
-            "summary": "Daily provider budget exhausted; approve overshoot or hold."
+          "idempotencyKey": "watch-safety-thresholds:hoopoeAppCockpit:budget-breach:2026-05-04",
+          "postconditions": [
+            "swarm.session reports state=halted",
+            "every agent in the swarm is paused or terminated per policy",
+            "build queue is paused for the swarm",
+            "audit log records the halt event with reason + actor"
+          ],
+          "target": {
+            "swarmId": "hoopoeAppCockpit"
           },
-          "type": "approval.request"
+          "type": "swarm.halt"
         }
-      ]
+      ],
+      "actor": "pre_script:watch-safety-thresholds",
+      "jobId": "watch-safety-thresholds",
+      "requiresApproval": false,
+      "riskClass": "high"
     },
     "activityBehavior": "surface",
-    "approvalsRequested": [
-      {
-        "reason": "daily cap hit; operator must approve overshoot or shut down",
-        "scope": "budget.overshoot"
-      }
-    ],
+    "approvalsRequested": [],
     "detections": [
       {
         "kind": "caut.budget_breach",
@@ -265,22 +304,38 @@
       "capturedAt": "<scrubbed-captured-at>",
       "fixturesVersion": "phase0-2026-05-02",
       "kind": "synthetic",
-      "notes": "Daily provider-spend cap hit across all CAAM accounts. Pre-script detects the budget breach deterministically; the agent is paused and an approval request is surfaced. wakeAgent=false because no LLM judgement is required.",
+      "notes": "Daily provider-spend cap hit across all CAAM accounts. watch-safety-thresholds detects the budget breach deterministically and emits a typed swarm.halt intent immediately without waking an LLM. The executor verifies NTM reports the swarm halted and emits an urgent Activity event.",
       "scenario": "budget-breach",
-      "source": "hand-written hp-q6d budget-breach tending fixture",
+      "source": "hand-written hp-q6d budget-breach tending fixture, corrected by hp-1m9",
       "vpsId": "mock-flywheel"
     },
     "postconditions": [
+      {
+        "check": "event.seq2.type == swarm.halt",
+        "expect": true
+      },
+      {
+        "check": "swarm.halt.actor == pre_script:watch-safety-thresholds",
+        "expect": true
+      },
+      {
+        "check": "swarm.halt.latency_ms <= 500",
+        "expect": true
+      },
+      {
+        "check": "ntm.swarm.hoopoeAppCockpit.state == HALTED",
+        "expect": true
+      },
       {
         "check": "GreenBear.state == PAUSED",
         "expect": true
       },
       {
-        "check": "approvals.has_open_scope('budget.overshoot')",
+        "check": "approvals.none_requested_before_halt",
         "expect": true
       },
       {
-        "check": "activity.warning_emitted",
+        "check": "activity.urgent_emitted",
         "expect": true
       }
     ],
@@ -291,32 +346,36 @@
     "capturedAt": "<scrubbed-captured-at>",
     "fixturesVersion": "phase0-2026-05-02",
     "kind": "synthetic",
-    "notes": "Daily provider-spend cap hit across all CAAM accounts. tend-swarm pauses the agent and surfaces an approval request — operator must confirm overshoot or shut down. wakeAgent=false because the pre-script's deterministic detection is enough; the LLM decision is replaced by a typed ActionPlan awaiting human input.",
+    "notes": "Daily provider-spend cap hit across all CAAM accounts. watch-safety-thresholds emits a typed swarm.halt intent immediately after the hard threshold crossing, without waking an LLM or waiting for an overshoot approval. The executor verifies NTM reports the swarm halted, pauses the build queue, records audit, and surfaces an urgent Activity event.",
     "scenario": "budget-breach",
-    "source": "hand-written hp-q6d budget-breach tending fixture",
+    "source": "hand-written hp-q6d budget-breach tending fixture, corrected by hp-1m9",
     "vpsId": "mock-flywheel"
   },
   "ntmSnapshot": {
     "counters": {
-      "alive": 1,
+      "alive": 0,
       "errored": 0,
+      "halted": 1,
       "panes": 1,
       "sessions": 1,
       "wedged": 0
     },
     "sessions": [
       {
+        "haltReason": "budget-breach: daily provider cap exceeded",
+        "haltedAt": "2026-05-04T17:09:54.4Z",
         "id": "hoopoeAppCockpit",
         "panes": [
           {
             "agent": "claude-code",
             "id": "GreenBear",
-            "lastActivityAt": "2026-05-04T17:09:55Z",
-            "lastReason": "budget-breach: awaiting operator approval",
+            "lastActivityAt": "2026-05-04T17:09:54.4Z",
+            "lastReason": "swarm halted by watch-safety-thresholds budget breach",
             "model": "claude-opus-4-7",
             "state": "PAUSED"
           }
-        ]
+        ],
+        "state": "HALTED"
       }
     ]
   },

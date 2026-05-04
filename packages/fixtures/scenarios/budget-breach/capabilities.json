@@ -51,6 +51,10 @@
     },
     "ntm.robot.tail": {
       "status": "ok"
+    },
+    "ntm.swarm.halt": {
+      "status": "ok",
+      "notes": "watch-safety-thresholds uses this capability for immediate budget-breach halt"
     }
   },
   "agent_mail": {

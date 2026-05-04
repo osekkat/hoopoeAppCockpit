@@ -2,14 +2,17 @@
   "sessions": [
     {
       "id": "hoopoeAppCockpit",
+      "state": "HALTED",
+      "haltedAt": "2026-05-04T17:09:54.4Z",
+      "haltReason": "budget-breach: daily provider cap exceeded",
       "panes": [
         {
           "id": "GreenBear",
           "agent": "claude-code",
           "model": "claude-opus-4-7",
           "state": "PAUSED",
-          "lastActivityAt": "2026-05-04T17:09:55Z",
-          "lastReason": "budget-breach: awaiting operator approval"
+          "lastActivityAt": "2026-05-04T17:09:54.4Z",
+          "lastReason": "swarm halted by watch-safety-thresholds budget breach"
         }
       ]
     }
@@ -17,7 +20,8 @@
   "counters": {
     "sessions": 1,
     "panes": 1,
-    "alive": 1,
+    "alive": 0,
+    "halted": 1,
     "wedged": 0,
     "errored": 0
   }

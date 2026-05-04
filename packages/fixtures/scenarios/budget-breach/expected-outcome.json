@@ -5,8 +5,8 @@
     "fixturesVersion": "phase0-2026-05-02",
     "capturedAt": "2026-05-04T17:10:00Z",
     "vpsId": "mock-flywheel",
-    "source": "hand-written hp-q6d budget-breach tending fixture",
-    "notes": "Daily provider-spend cap hit across all CAAM accounts. Pre-script detects the budget breach deterministically; the agent is paused and an approval request is surfaced. wakeAgent=false because no LLM judgement is required."
+    "source": "hand-written hp-q6d budget-breach tending fixture, corrected by hp-1m9",
+    "notes": "Daily provider-spend cap hit across all CAAM accounts. watch-safety-thresholds detects the budget breach deterministically and emits a typed swarm.halt intent immediately without waking an LLM. The executor verifies NTM reports the swarm halted and emits an urgent Activity event."
   },
   "detections": [
     {
@@ -27,40 +27,57 @@
   ],
   "wakeAgent": false,
   "actionPlan": {
+    "jobId": "watch-safety-thresholds",
+    "actor": "pre_script:watch-safety-thresholds",
+    "riskClass": "high",
+    "requiresApproval": false,
     "actions": [
       {
-        "type": "agent.pause",
+        "type": "swarm.halt",
+        "idempotencyKey": "watch-safety-thresholds:hoopoeAppCockpit:budget-breach:2026-05-04",
+        "target": {
+          "swarmId": "hoopoeAppCockpit"
+        },
         "args": {
-          "agent": "GreenBear",
-          "reason": "budget-breach"
-        }
-      },
-      {
-        "type": "approval.request",
-        "args": {
-          "scope": "budget.overshoot",
-          "summary": "Daily provider budget exhausted; approve overshoot or hold."
-        }
+          "reason": "budget-breach: daily provider cap exceeded"
+        },
+        "postconditions": [
+          "swarm.session reports state=halted",
+          "every agent in the swarm is paused or terminated per policy",
+          "build queue is paused for the swarm",
+          "audit log records the halt event with reason + actor"
+        ]
       }
     ]
   },
-  "approvalsRequested": [
-    {
-      "scope": "budget.overshoot",
-      "reason": "daily cap hit; operator must approve overshoot or shut down"
-    }
-  ],
+  "approvalsRequested": [],
   "postconditions": [
+    {
+      "check": "event.seq2.type == swarm.halt",
+      "expect": true
+    },
+    {
+      "check": "swarm.halt.actor == pre_script:watch-safety-thresholds",
+      "expect": true
+    },
+    {
+      "check": "swarm.halt.latency_ms <= 500",
+      "expect": true
+    },
+    {
+      "check": "ntm.swarm.hoopoeAppCockpit.state == HALTED",
+      "expect": true
+    },
     {
       "check": "GreenBear.state == PAUSED",
       "expect": true
     },
     {
-      "check": "approvals.has_open_scope('budget.overshoot')",
+      "check": "approvals.none_requested_before_halt",
       "expect": true
     },
     {
-      "check": "activity.warning_emitted",
+      "check": "activity.urgent_emitted",
       "expect": true
     }
   ],
