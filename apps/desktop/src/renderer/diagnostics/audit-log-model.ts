@@ -90,7 +90,7 @@ export interface AuditGroup {
 
 export interface AuditExportPreview {
   readonly fileName: string;
-  readonly sha256: string;
+  readonly fingerprint: string;
   readonly totalEntries: number;
   readonly redacted: true;
 }
@@ -474,7 +474,7 @@ function buildAuditExportPreview(entries: readonly AuditLogEntry[], now: Date): 
   const body = JSON.stringify(entries.map((entry) => entry.id));
   return {
     fileName: `audit-slice-${isoSlug(now)}.json`,
-    sha256: pseudoSha256(body),
+    fingerprint: auditPreviewFingerprint(body),
     totalEntries: entries.length,
     redacted: true,
   };
@@ -510,12 +510,11 @@ function isoSlug(date: Date): string {
   return date.toISOString().replaceAll("-", "").replaceAll(":", "").replace(/\.\d{3}Z$/, "Z");
 }
 
-function pseudoSha256(value: string): string {
+function auditPreviewFingerprint(value: string): string {
   let hash = 0x811c9dc5;
   for (let index = 0; index < value.length; index += 1) {
     hash ^= value.charCodeAt(index);
     hash = Math.imul(hash, 0x01000193);
   }
-  const chunk = (hash >>> 0).toString(16).padStart(8, "0");
-  return chunk.repeat(8);
+  return `fnv32:${(hash >>> 0).toString(16).padStart(8, "0")}`;
 }

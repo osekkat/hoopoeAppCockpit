@@ -56,7 +56,8 @@ test("audit explorer export preview tracks filtered entry count", () => {
   expect(all.exportPreview.totalEntries).toBe(10);
   expect(approvals.exportPreview.totalEntries).toBe(2);
   expect(approvals.exportPreview.fileName).toBe("audit-slice-20260504T080000Z.json");
-  expect(approvals.exportPreview.sha256).toHaveLength(64);
+  expect(approvals.exportPreview.fingerprint).toMatch(/^fnv32:[0-9a-f]{8}$/);
+  expect(approvals.exportPreview).not.toHaveProperty("sha256");
 });
 
 test("audit explorer model default clock follows the current wall clock", () => {

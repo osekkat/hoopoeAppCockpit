@@ -23,6 +23,8 @@ test("AuditLogExplorer renders filters, timeline, detail, and redaction markers"
   expect(markup).toContain("Redacted");
   expect(markup).toContain("[REDACTED:bearer-token]");
   expect(markup).toContain("audit-slice-20260504T080000Z.json");
+  expect(markup).toContain("fingerprint fnv32:");
+  expect(markup).not.toContain("sha256");
 });
 
 test("AuditLogExplorer without entries renders a real empty state, not fixture audit history", () => {

@@ -78,7 +78,7 @@ export function AuditLogExplorer({
             <div>
               <strong>{model.exportPreview.fileName}</strong>
               <span>
-                {model.exportPreview.totalEntries} entries - sha256 {model.exportPreview.sha256.slice(0, 12)}
+                {model.exportPreview.totalEntries} entries - fingerprint {model.exportPreview.fingerprint}
               </span>
             </div>
           </div>
