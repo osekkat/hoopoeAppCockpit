@@ -61,10 +61,18 @@ test("window-policy: hardening response headers cover XCTO, XFO, Referrer-Policy
 
 // ── Navigation guards ─────────────────────────────────────────────────────
 
-test("window-policy: isAllowedNavigationUrl approves exact loopback origins", () => {
-  expect(isAllowedNavigationUrl("http://127.0.0.1:3779/")).toBe(true);
-  expect(isAllowedNavigationUrl("http://localhost:3779/index.html")).toBe(true);
-  expect(isAllowedNavigationUrl("https://localhost/")).toBe(true);
+test("window-policy: isAllowedNavigationUrl approves only the initial loopback origin", () => {
+  const localhostPolicy = navigationPolicyForInitialUrl("http://localhost:3779/index.html");
+  const ipv4Policy = navigationPolicyForInitialUrl("http://127.0.0.1:3779/index.html");
+
+  expect(isAllowedNavigationUrl("http://localhost:3779/index.html", localhostPolicy)).toBe(true);
+  expect(isAllowedNavigationUrl("http://localhost:3779/assets/index.js", localhostPolicy)).toBe(true);
+  expect(isAllowedNavigationUrl("http://localhost:3780/index.html", localhostPolicy)).toBe(false);
+  expect(isAllowedNavigationUrl("http://127.0.0.1:3779/index.html", localhostPolicy)).toBe(false);
+  expect(isAllowedNavigationUrl("http://localhost:3779/index.html", ipv4Policy)).toBe(false);
+  expect(isAllowedNavigationUrl("http://127.0.0.1:3779/index.html", ipv4Policy)).toBe(true);
+  expect(isAllowedNavigationUrl("http://127.0.0.1:3780/index.html", ipv4Policy)).toBe(false);
+  expect(isAllowedNavigationUrl("http://127.0.0.1:3779/")).toBe(false);
   expect(isAllowedNavigationUrl("http://localhost.evil.example/")).toBe(false);
   expect(isAllowedNavigationUrl("http://127.0.0.1.evil.example/")).toBe(false);
   expect(isAllowedNavigationUrl("https://127.0.0.1.evil.example/")).toBe(false);

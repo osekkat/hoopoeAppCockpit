@@ -69,11 +69,14 @@ export const ALLOWED_NAVIGATION_ORIGINS = [
 
 export interface NavigationPolicy {
   readonly appFileRootPath?: string;
+  readonly loopbackOrigin?: string;
 }
 
 export function navigationPolicyForInitialUrl(initialUrl: string): NavigationPolicy {
   const parsed = parseUrl(initialUrl);
-  if (!parsed || parsed.protocol !== "file:") return {};
+  if (!parsed) return {};
+  if (isAllowedLoopbackUrl(parsed)) return { loopbackOrigin: parsed.origin };
+  if (parsed.protocol !== "file:") return {};
   const initialFilePath = filePathFromUrl(parsed);
   if (!initialFilePath) return {};
   return { appFileRootPath: canonicalPath(Path.dirname(initialFilePath)) };
@@ -82,7 +85,7 @@ export function navigationPolicyForInitialUrl(initialUrl: string): NavigationPol
 export function isAllowedNavigationUrl(url: string, policy: NavigationPolicy = {}): boolean {
   const parsed = parseUrl(url);
   if (!parsed) return false;
-  if (isAllowedLoopbackUrl(parsed)) return true;
+  if (isAllowedLoopbackUrl(parsed)) return parsed.origin === policy.loopbackOrigin;
   if (parsed.protocol !== "file:") return false;
 
   const appRoot = policy.appFileRootPath;
