@@ -114,17 +114,37 @@ func (r *Registry) RegisterFeature(req *FeatureCapabilityRequirement) error {
 // table. Probes that error are recorded as a single capability `__probe__`
 // with status=missing so the failure surfaces in /v1/capabilities rather
 // than disappearing.
+//
+// hp-10kh: probes invoke external CLIs (br doctor, bv --robot-help,
+// ntm --robot-snapshot, git --version, …) and can take 100ms–1s each;
+// holding the registry write lock across the full sweep blocks every
+// reader (Snapshot, LookupCapabilityStatus, HandleCapabilities, every
+// daemon-API gate check) for the sum of probe durations. Phase 1: take a
+// read-lock to snapshot the probe map and the clock; run probes outside
+// the lock; phase 2: take the write-lock only to merge the new reports
+// in. Readers see the previous snapshot during the sweep instead of
+// stalling.
 func (r *Registry) Probe() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	now := r.now().UTC().Format(time.RFC3339)
+	// Snapshot the probe set + clock under RLock so we can release the
+	// lock before the slow CLI calls run.
+	r.mu.RLock()
+	probes := make(map[ToolID]ProbeFunc, len(r.probes))
 	for tool, probe := range r.probes {
+		probes[tool] = probe
+	}
+	now := r.now().UTC().Format(time.RFC3339)
+	r.mu.RUnlock()
+
+	// Run every probe with no registry lock held. Concurrent Snapshots and
+	// LookupCapabilityStatus calls keep returning the previous reports
+	// instead of waiting for the sweep.
+	fresh := make(map[ToolID]*ToolReport, len(probes))
+	for tool, probe := range probes {
 		report, err := probe()
-		if err != nil {
-			r.reports[tool] = &ToolReport{
+		switch {
+		case err != nil:
+			fresh[tool] = &ToolReport{
 				Tool:          tool,
-				Version:       "",
 				Source:        "probe-error",
 				LastCheckedAt: now,
 				Capabilities: map[string]Capability{
@@ -134,12 +154,9 @@ func (r *Registry) Probe() {
 					},
 				},
 			}
-			continue
-		}
-		if report == nil {
-			r.reports[tool] = &ToolReport{
+		case report == nil:
+			fresh[tool] = &ToolReport{
 				Tool:          tool,
-				Version:       "",
 				Source:        "probe-nil",
 				LastCheckedAt: now,
 				Capabilities: map[string]Capability{
@@ -149,17 +166,27 @@ func (r *Registry) Probe() {
 					},
 				},
 			}
-			continue
+		default:
+			// If the adapter forgot to stamp lastCheckedAt, fill it.
+			if report.LastCheckedAt == "" {
+				report.LastCheckedAt = now
+			}
+			// Normalize the tool field — adapters could otherwise mismatch their
+			// registered key. Registry key wins.
+			report.Tool = tool
+			fresh[tool] = report
 		}
-		// If the adapter forgot to stamp lastCheckedAt, fill it.
-		if report.LastCheckedAt == "" {
-			report.LastCheckedAt = now
-		}
-		// Normalize the tool field — adapters could otherwise mismatch their
-		// registered key. Registry key wins.
-		report.Tool = tool
+	}
+
+	// Merge into the live reports under the write lock. We don't replace
+	// the whole map because a tool registered between the snapshot and
+	// the merge would otherwise be silently dropped (RegisterProbe is
+	// allowed concurrently with Probe).
+	r.mu.Lock()
+	for tool, report := range fresh {
 		r.reports[tool] = report
 	}
+	r.mu.Unlock()
 }
 
 // Snapshot returns a deep-enough copy of the current registry state for

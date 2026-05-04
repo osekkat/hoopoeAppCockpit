@@ -316,6 +316,141 @@ func capabilityIDForBead(i int) string {
 	return "bv.bead." + itoa(i)
 }
 
+func TestProbeDoesNotBlockSnapshotWhileProbeFuncIsSlow(t *testing.T) {
+	// hp-10kh: Probe used to hold the registry write lock for the full
+	// duration of every CLI probe (Snapshot, LookupCapabilityStatus,
+	// HandleCapabilities all blocked). The fix snapshots the probe set
+	// under RLock, runs the probes outside the lock, and merges results
+	// under the write lock briefly. Snapshot must therefore return
+	// promptly even while a slow probe is in flight.
+	r := newTestRegistry(t, "2026-05-02T23:29:34Z")
+
+	// Pre-populate so Snapshot has a previous result to return during
+	// the sweep.
+	if err := r.SetReport(&ToolReport{
+		Tool:   ToolNTM,
+		Source: "test",
+		Capabilities: map[string]Capability{
+			"ntm.sessions.list": {Status: StatusOK},
+		},
+		LastCheckedAt: "2026-05-02T23:29:34Z",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	probeStarted := make(chan struct{})
+	releaseProbe := make(chan struct{})
+	if err := r.RegisterProbe(ToolBV, func() (*ToolReport, error) {
+		close(probeStarted)
+		<-releaseProbe
+		return &ToolReport{
+			Tool:          ToolBV,
+			Version:       "1.0.0",
+			Capabilities:  map[string]Capability{"bv.list.read": {Status: StatusOK}},
+			LastCheckedAt: "2026-05-02T23:29:34Z",
+		}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Start Probe in a goroutine; it will block inside the probe func.
+	probeDone := make(chan struct{})
+	go func() {
+		r.Probe()
+		close(probeDone)
+	}()
+
+	// Wait for the probe to be in flight.
+	select {
+	case <-probeStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("probe never started")
+	}
+
+	// Snapshot + LookupCapabilityStatus must complete promptly while
+	// the probe is still blocked. 250ms is generous; before the fix
+	// these calls would block for the full probe duration.
+	deadline := time.After(250 * time.Millisecond)
+	snapDone := make(chan struct{})
+	go func() {
+		snap := r.Snapshot()
+		if snap == nil {
+			t.Error("nil snapshot")
+		}
+		// Pre-populated NTM report must still be visible while BV is
+		// being probed.
+		if snap.Tools[ToolNTM] == nil {
+			t.Error("ntm missing from snapshot during in-flight probe")
+		}
+		_, _ = r.LookupCapabilityStatus("ntm.sessions.list")
+		close(snapDone)
+	}()
+	select {
+	case <-snapDone:
+	case <-deadline:
+		t.Fatal("Snapshot/LookupCapabilityStatus blocked while probe held the registry lock (regression of hp-10kh)")
+	}
+
+	close(releaseProbe)
+	<-probeDone
+
+	// After the sweep finishes, the new BV report is merged in.
+	got := r.Snapshot().Tools[ToolBV]
+	if got == nil || got.Capabilities["bv.list.read"].Status != StatusOK {
+		t.Fatalf("bv report not merged after probe finished: %+v", got)
+	}
+}
+
+func TestProbeMergesInsteadOfReplacingPreservesConcurrentlyRegisteredTool(t *testing.T) {
+	// hp-10kh: the new Probe snapshots the probe set, drops the lock,
+	// runs probes, then merges. A tool registered between snapshot and
+	// merge must NOT be dropped by the merge. (Regression guard for the
+	// "replace map" mistake — we explicitly merge instead.)
+	r := newTestRegistry(t, "2026-05-02T23:29:34Z")
+	probeStarted := make(chan struct{})
+	releaseProbe := make(chan struct{})
+	if err := r.RegisterProbe(ToolBV, func() (*ToolReport, error) {
+		close(probeStarted)
+		<-releaseProbe
+		return &ToolReport{
+			Tool:          ToolBV,
+			Capabilities:  map[string]Capability{"bv.list.read": {Status: StatusOK}},
+			LastCheckedAt: "2026-05-02T23:29:34Z",
+		}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	probeDone := make(chan struct{})
+	go func() {
+		r.Probe()
+		close(probeDone)
+	}()
+	<-probeStarted
+
+	// Inject a second tool's report while the first probe is mid-flight.
+	if err := r.SetReport(&ToolReport{
+		Tool:          ToolNTM,
+		Source:        "test",
+		Capabilities:  map[string]Capability{"ntm.sessions.list": {Status: StatusOK}},
+		LastCheckedAt: "2026-05-02T23:29:34Z",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	close(releaseProbe)
+	<-probeDone
+
+	// Both tools must survive the merge.
+	snap := r.Snapshot()
+	if snap.Tools[ToolBV] == nil {
+		t.Fatal("bv dropped after merge")
+	}
+	if snap.Tools[ToolNTM] == nil {
+		t.Fatal("ntm dropped — Probe replaced reports map instead of merging")
+	}
+}
+
 func itoa(i int) string {
 	const digits = "0123456789"
 	if i == 0 {
