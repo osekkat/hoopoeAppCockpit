@@ -3,14 +3,9 @@ import healthyHourMailDump from "../../../../../packages/fixtures/scenarios/heal
 import healthyHourBrList from "../../../../../packages/fixtures/scenarios/healthy-hour/br-list.json" with { type: "json" };
 import healthyHourMeta from "../../../../../packages/fixtures/scenarios/healthy-hour/meta.json" with { type: "json" };
 import healthyHourNtmSnapshot from "../../../../../packages/fixtures/scenarios/healthy-hour/ntm-snapshot.json" with { type: "json" };
+import { MOCK_FLYWHEEL_COMMANDS } from "../../shared/ipc-contract.ts";
 
 const MOCK_STAGE_PROJECT_IDS = new Set(["local-demo", "mock-flywheel-project"]);
-
-const MOCK_FLYWHEEL_COMMANDS = {
-  getBeads: "mock-flywheel.beads.get",
-  getSwarmSnapshot: "mock-flywheel.swarm.snapshot",
-  getMailDump: "mock-flywheel.mail.dump",
-} as const;
 
 export interface StageFixtureSource {
   readonly scenarioId: string;

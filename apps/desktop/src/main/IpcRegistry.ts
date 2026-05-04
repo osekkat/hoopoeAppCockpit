@@ -8,8 +8,7 @@
 // IDs are refused (defense-in-depth in case the preload boundary is ever
 // bypassed). The allowlist permits:
 //   - every value in `PRELOAD_IPC_CHANNELS` (the renderer-facing surface),
-//   - every command id whose prefix is in `INTERNAL_IPC_COMMAND_PREFIXES`
-//     (currently `mock-flywheel.` and `internal.`).
+//   - every command id in the explicit internal IPC manifest.
 // Adding a new command is a deliberate edit of the contract file.
 //
 // hp-ifq hardening: renderer-facing preload channels must register runtime
@@ -165,9 +164,9 @@ export class IpcRegistry {
     registration: IpcCommandRegistration<Input, Output>,
   ): { readonly unregister: () => void } {
     // hp-n5za: refuse registrations outside the contract allowlist.
-    // The allowlist is the renderer-facing channel set + named internal
-    // prefixes (mock-flywheel.*, internal.*). Adding a new command is a
-    // deliberate edit of `src/shared/ipc-contract.ts`.
+    // The allowlist is the renderer-facing channel set + explicit internal
+    // command manifest. Adding a new command is a deliberate edit of
+    // `src/shared/ipc-contract.ts`.
     if (!isAllowedRegistryCommandId(registration.id)) {
       this.emitSecurityEvent({
         kind: "channel-not-allowlisted",

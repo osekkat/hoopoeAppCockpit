@@ -16,6 +16,7 @@ import { IpcRegistry } from "../src/main/IpcRegistry.ts";
 import {
   DAEMON_REQUEST_METHODS,
   DAEMON_SUBSCRIBE_TOPICS,
+  INTERNAL_IPC_COMMANDS,
   IpcContractError,
   PRELOAD_IPC_CHANNELS,
   isAllowedRegistryCommandId,
@@ -93,9 +94,9 @@ test("preload contract: arbitrary attacker-controlled method/topic is refused", 
 
 test("preload contract: dispatching an unknown command id (even if mock-registered) is refused at dispatch", async () => {
   const registry = new IpcRegistry();
-  // Allowed registration (under internal. prefix) ...
+  // Allowed registration (explicit main-only manifest entry) ...
   registry.register({
-    id: "internal.shadow",
+    id: INTERNAL_IPC_COMMANDS.testShadow,
     handler: { handle: () => "ok" },
   });
   // ... but we reach into the registrations Map and rebind under a
@@ -119,6 +120,8 @@ test("preload contract: source-of-truth parity — registry allowlist matches is
   for (const evil of [
     "hoopoe.audit.read",
     "hoopoe.daemon.kill",
+    "internal.shadow",
+    "mock-flywheel.shadow",
     "swarm.terminate",
     "settings.delete",
   ]) {

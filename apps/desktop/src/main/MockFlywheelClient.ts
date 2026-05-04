@@ -15,6 +15,10 @@
 // is unchanged. (Per the bead: "the renderer cannot tell the difference".)
 
 import type { IpcCommandRegistration, IpcRegistry } from "./IpcRegistry.ts";
+import {
+  MOCK_FLYWHEEL_COMMANDS,
+  type MockFlywheelCommandId,
+} from "../shared/ipc-contract.ts";
 import type {
   MockDaemonClient,
   ReplayEvent,
@@ -29,28 +33,7 @@ import type {
 export const WHEN_MOCK_FLYWHEEL = "mockFlywheel";
 export const WHEN_NOT_MOCK_FLYWHEEL = "notMockFlywheel";
 
-/** Stable command IDs. The renderer imports these via `@hoopoe/schemas` in
- *  Phase 2.5 (hp-r3i); for hp-o74 they live here as a const map. */
-export const MOCK_FLYWHEEL_COMMANDS = {
-  health: "mock-flywheel.health",
-  version: "mock-flywheel.version",
-  capabilities: "mock-flywheel.capabilities",
-  listProjects: "mock-flywheel.projects.list",
-  getBeads: "mock-flywheel.beads.get",
-  getTriage: "mock-flywheel.triage.get",
-  getSwarmSnapshot: "mock-flywheel.swarm.snapshot",
-  getMailDump: "mock-flywheel.mail.dump",
-  getReservations: "mock-flywheel.reservations.list",
-  getBuildLog: "mock-flywheel.build-log.get",
-  getPaneLog: "mock-flywheel.pane-log.get",
-  exchangePairingForBearer: "mock-flywheel.auth.exchangePairing",
-  issueWsToken: "mock-flywheel.auth.issueWsToken",
-  scenarioInfo: "mock-flywheel.scenario.info",
-  swapScenario: "mock-flywheel.scenario.swap",
-  setReplaySpeed: "mock-flywheel.replay.setSpeed",
-} as const;
-
-export type MockFlywheelCommandId = (typeof MOCK_FLYWHEEL_COMMANDS)[keyof typeof MOCK_FLYWHEEL_COMMANDS];
+export { MOCK_FLYWHEEL_COMMANDS, type MockFlywheelCommandId };
 
 export interface RegisterMockFlywheelClientOptions {
   ipcRegistry: IpcRegistry;

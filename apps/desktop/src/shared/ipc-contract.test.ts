@@ -8,12 +8,14 @@ import { expect, test } from "bun:test";
 import {
   DAEMON_REQUEST_METHODS,
   DAEMON_SUBSCRIBE_TOPICS,
-  INTERNAL_IPC_COMMAND_PREFIXES,
+  INTERNAL_IPC_COMMANDS,
   IpcContractError,
+  MOCK_FLYWHEEL_COMMANDS,
   PRELOAD_IPC_CHANNELS,
   isAllowedRegistryCommandId,
   isDaemonRequestMethod,
   isDaemonSubscribeTopic,
+  isInternalIpcCommand,
   isPreloadIpcChannel,
 } from "./ipc-contract.ts";
 
@@ -93,11 +95,16 @@ test("isAllowedRegistryCommandId: preload channels are always allowed", () => {
   }
 });
 
-test("isAllowedRegistryCommandId: every listed prefix gates a namespace", () => {
-  for (const prefix of INTERNAL_IPC_COMMAND_PREFIXES) {
-    expect(isAllowedRegistryCommandId(`${prefix}example`)).toBe(true);
-    expect(isAllowedRegistryCommandId(`${prefix}deeply.nested.id`)).toBe(true);
+test("isInternalIpcCommand: accepts only explicit internal manifest commands", () => {
+  for (const command of [
+    ...Object.values(INTERNAL_IPC_COMMANDS),
+    ...Object.values(MOCK_FLYWHEEL_COMMANDS),
+  ]) {
+    expect(isInternalIpcCommand(command)).toBe(true);
+    expect(isAllowedRegistryCommandId(command)).toBe(true);
   }
+  expect(isInternalIpcCommand("internal.anything")).toBe(false);
+  expect(isInternalIpcCommand("mock-flywheel.anything")).toBe(false);
 });
 
 test("isAllowedRegistryCommandId: rejects ids outside the allowlist", () => {
@@ -106,6 +113,10 @@ test("isAllowedRegistryCommandId: rejects ids outside the allowlist", () => {
     "swarm.kick",
     "hoopoe.daemon.evil", // looks like a channel but isn't enumerated
     "internalNoPrefix", // missing trailing dot
+    "internal.anything", // prefix alone is not enough
+    "mock-flywheel.anything", // prefix alone is not enough
+    "mock-flywheel.", // empty suffix and not in the manifest
+    "internal.../../etc/passwd",
     "",
   ];
   for (const id of reject) {

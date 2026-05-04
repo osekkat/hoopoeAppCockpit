@@ -30,7 +30,8 @@ interface PreloadApi {
   daemonRequestMethods: Record<string, { description: string; bead: string }>;
   daemonSubscribeTopics: Record<string, { description: string; bead: string }>;
   preloadChannels: Record<string, string>;
-  internalCommandPrefixes: string[];
+  mockFlywheelCommands: Record<string, string>;
+  internalCommands: Record<string, string>;
 }
 
 function parseYaml(text: string): PreloadApi {
@@ -43,7 +44,8 @@ function parseYaml(text: string): PreloadApi {
     daemonRequestMethods: {},
     daemonSubscribeTopics: {},
     preloadChannels: {},
-    internalCommandPrefixes: [],
+    mockFlywheelCommands: {},
+    internalCommands: {},
   };
 
   type Section =
@@ -51,7 +53,8 @@ function parseYaml(text: string): PreloadApi {
     | "daemonRequestMethods"
     | "daemonSubscribeTopics"
     | "preloadChannels"
-    | "internalCommandPrefixes";
+    | "mockFlywheelCommands"
+    | "internalCommands";
   let section: Section = "none";
   let currentKey: string | null = null;
   let currentBead = "";
@@ -103,9 +106,14 @@ function parseYaml(text: string): PreloadApi {
       section = "preloadChannels";
       continue;
     }
-    if (/^internalCommandPrefixes:\s*$/.test(line)) {
+    if (/^mockFlywheelCommands:\s*$/.test(line)) {
       flushPending();
-      section = "internalCommandPrefixes";
+      section = "mockFlywheelCommands";
+      continue;
+    }
+    if (/^internalCommands:\s*$/.test(line)) {
+      flushPending();
+      section = "internalCommands";
       continue;
     }
     if (/^[a-zA-Z]/.test(line)) {
@@ -115,9 +123,11 @@ function parseYaml(text: string): PreloadApi {
       continue;
     }
 
-    if (section === "internalCommandPrefixes") {
-      const m = /^\s*-\s+(\S+)\s*$/.exec(line);
-      if (m && m[1] !== undefined) result.internalCommandPrefixes.push(m[1]);
+    if (section === "mockFlywheelCommands" || section === "internalCommands") {
+      const m = /^\s+([a-zA-Z]\w*):\s+(\S+)\s*$/.exec(line);
+      if (m && m[1] !== undefined && m[2] !== undefined) {
+        result[section][m[1]] = m[2];
+      }
       continue;
     }
 
@@ -159,10 +169,14 @@ function generateTs(api: PreloadApi): string {
   const requestMethodNames = Object.keys(api.daemonRequestMethods);
   const subscribeTopicNames = Object.keys(api.daemonSubscribeTopics);
   const channelEntries = Object.entries(api.preloadChannels);
-  const prefixes = api.internalCommandPrefixes;
+  const mockCommandEntries = Object.entries(api.mockFlywheelCommands);
+  const internalCommandEntries = Object.entries(api.internalCommands);
 
   const fmtList = (xs: readonly string[]): string =>
     xs.map((x) => `  ${JSON.stringify(x)},`).join("\n");
+
+  const fmtObject = (entries: readonly (readonly [string, string])[]): string =>
+    entries.map(([key, value]) => `  ${key}: ${JSON.stringify(value)},`).join("\n");
 
   const channelLines = channelEntries
     .map(([key, value]) => `  ${key}: ${JSON.stringify(value)},`)
@@ -227,11 +241,29 @@ export function isPreloadIpcChannel(value: unknown): value is PreloadIpcChannelV
   return typeof value === "string" && PRELOAD_IPC_CHANNEL_VALUES.has(value);
 }
 
-export const INTERNAL_IPC_COMMAND_PREFIXES = [
-${fmtList(prefixes)}
-] as const;
+export const MOCK_FLYWHEEL_COMMANDS = {
+${fmtObject(mockCommandEntries)}
+} as const satisfies Record<string, \`mock-flywheel.\${string}\`>;
 
-export type InternalIpcCommandPrefix = (typeof INTERNAL_IPC_COMMAND_PREFIXES)[number];
+export type MockFlywheelCommandId =
+  (typeof MOCK_FLYWHEEL_COMMANDS)[keyof typeof MOCK_FLYWHEEL_COMMANDS];
+
+export const INTERNAL_IPC_COMMANDS = {
+${fmtObject(internalCommandEntries)}
+} as const satisfies Record<string, \`internal.\${string}\`>;
+
+export type InternalIpcCommandId =
+  | (typeof INTERNAL_IPC_COMMANDS)[keyof typeof INTERNAL_IPC_COMMANDS]
+  | MockFlywheelCommandId;
+
+const INTERNAL_IPC_COMMAND_VALUES: ReadonlySet<string> = new Set([
+  ...Object.values(INTERNAL_IPC_COMMANDS),
+  ...Object.values(MOCK_FLYWHEEL_COMMANDS),
+]);
+
+export function isInternalIpcCommand(value: unknown): value is InternalIpcCommandId {
+  return typeof value === "string" && INTERNAL_IPC_COMMAND_VALUES.has(value);
+}
 `;
 }
 
@@ -241,5 +273,5 @@ const ts = generateTs(api);
 writeFileSync(outPath, ts);
 
 process.stdout.write(
-  `[gen-preload-contract] OK — wrote ${outPath} (${Object.keys(api.daemonRequestMethods).length} methods, ${Object.keys(api.daemonSubscribeTopics).length} topics, ${Object.keys(api.preloadChannels).length} channels, ${api.internalCommandPrefixes.length} prefixes)\n`,
+  `[gen-preload-contract] OK — wrote ${outPath} (${Object.keys(api.daemonRequestMethods).length} methods, ${Object.keys(api.daemonSubscribeTopics).length} topics, ${Object.keys(api.preloadChannels).length} channels, ${Object.keys(api.mockFlywheelCommands).length + Object.keys(api.internalCommands).length} internal commands)\n`,
 );

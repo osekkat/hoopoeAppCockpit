@@ -17,6 +17,7 @@ import {
   type IpcSecurityEvent,
   type IpcSecurityEventSink,
 } from "./IpcRegistry.ts";
+import { INTERNAL_IPC_COMMANDS } from "../shared/ipc-contract.ts";
 
 interface SpySink {
   readonly sink: IpcSecurityEventSink;
@@ -67,24 +68,23 @@ test("registering a command outside the allowlist emits channel-not-allowlisted 
 test("dispatch of an allowlisted but unregistered command emits command-not-registered", async () => {
   const s = spy();
   const registry = new IpcRegistry({ onSecurityEvent: s.sink });
-  // `internal.test` matches the allowlist prefix but isn't registered.
-  await expect(registry.dispatch("internal.test", {})).rejects.toThrow();
+  await expect(registry.dispatch(INTERNAL_IPC_COMMANDS.testUnregistered, {})).rejects.toThrow();
   const events = s.events();
   expect(events.length).toBe(1);
   expect(events[0].kind).toBe("command-not-registered");
-  expect(events[0].commandId).toBe("internal.test");
+  expect(events[0].commandId).toBe(INTERNAL_IPC_COMMANDS.testUnregistered);
 });
 
 test("dispatch with missing when-clause context emits command-not-eligible with the missing keys", async () => {
   const s = spy();
   const registry = new IpcRegistry({ onSecurityEvent: s.sink });
   registry.register({
-    id: "internal.gated",
+    id: INTERNAL_IPC_COMMANDS.testGated,
     handler: { handle: async () => "ok" },
     whenContextKeys: ["mockFlywheel"],
   });
   await expect(
-    registry.dispatch("internal.gated", {}, { mockFlywheel: false }),
+    registry.dispatch(INTERNAL_IPC_COMMANDS.testGated, {}, { mockFlywheel: false }),
   ).rejects.toThrow();
   const events = s.events();
   expect(events.length).toBe(1);
@@ -96,10 +96,10 @@ test("happy-path dispatch does not emit any security event", async () => {
   const s = spy();
   const registry = new IpcRegistry({ onSecurityEvent: s.sink });
   registry.register({
-    id: "internal.healthy",
+    id: INTERNAL_IPC_COMMANDS.testHealthy,
     handler: { handle: async () => "ok" },
   });
-  const result = await registry.dispatch("internal.healthy", {});
+  const result = await registry.dispatch(INTERNAL_IPC_COMMANDS.testHealthy, {});
   expect(result).toBe("ok");
   expect(s.events().length).toBe(0);
 });

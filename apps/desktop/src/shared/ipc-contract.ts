@@ -210,41 +210,66 @@ export class IpcContractError extends Error {
   }
 }
 
-// ── 5. Internal command-id namespaces (main-process IpcRegistry) ──────────
+// ── 5. Internal command-id manifest (main-process IpcRegistry) ────────────
 //
-// IpcRegistry hosts more than just the renderer-facing channels — it also
-// hosts internal command IDs (e.g. "mock-flywheel.health", which is wired
-// in MockFlywheelClient.ts). The allowlist enforced on `register()` is
-// the union of the channel values above PLUS these internal namespaces.
-// Each namespace is a string PREFIX; everything under it is allowed.
+// IpcRegistry hosts more than just the renderer-facing channels. Every
+// main-only command ID must be listed here so adding a new privileged
+// internal surface is a deliberate contract edit instead of a prefix match.
 //
-// Keep this list short. Each prefix is a security review burden.
+// Keep this list short. Each entry is a security review burden.
 
-export const INTERNAL_IPC_COMMAND_PREFIXES = [
-  "mock-flywheel.",
-  "internal.",
-] as const;
+export const MOCK_FLYWHEEL_COMMANDS = {
+  health: "mock-flywheel.health",
+  version: "mock-flywheel.version",
+  capabilities: "mock-flywheel.capabilities",
+  listProjects: "mock-flywheel.projects.list",
+  getBeads: "mock-flywheel.beads.get",
+  getTriage: "mock-flywheel.triage.get",
+  getSwarmSnapshot: "mock-flywheel.swarm.snapshot",
+  getMailDump: "mock-flywheel.mail.dump",
+  getReservations: "mock-flywheel.reservations.list",
+  getBuildLog: "mock-flywheel.build-log.get",
+  getPaneLog: "mock-flywheel.pane-log.get",
+  exchangePairingForBearer: "mock-flywheel.auth.exchangePairing",
+  issueWsToken: "mock-flywheel.auth.issueWsToken",
+  scenarioInfo: "mock-flywheel.scenario.info",
+  swapScenario: "mock-flywheel.scenario.swap",
+  setReplaySpeed: "mock-flywheel.replay.setSpeed",
+} as const satisfies Record<string, `mock-flywheel.${string}`>;
 
-export type InternalIpcCommandPrefix = (typeof INTERNAL_IPC_COMMAND_PREFIXES)[number];
+export type MockFlywheelCommandId =
+  (typeof MOCK_FLYWHEEL_COMMANDS)[keyof typeof MOCK_FLYWHEEL_COMMANDS];
 
-/** Sane shape for the suffix after `mock-flywheel.` / `internal.`. Refuses
- *  empty suffix, control chars, whitespace, path-traversal segments, and
- *  unicode that isn't lowercase ASCII / digits / dots / hyphens. The fuzz
- *  harness (preload.fuzz.test.ts P5) found pre-fix `startsWith` was happy
- *  with `"mock-flywheel.\nfoo"`, `"internal.../../etc/passwd"`, and
- *  `"mock-flywheel."` (just the prefix) — all defense-in-depth holes
- *  closed here. */
-const ALLOWED_INTERNAL_SUFFIX = /^[a-z][a-zA-Z0-9.-]*$/;
+export const INTERNAL_IPC_COMMANDS = {
+  schemasSmokeProject: "internal.schemas-smoke.project",
+  schemasSmokeCompatibility: "internal.schemas-smoke.compatibility",
+  swarmSendMarchingOrders: "internal.swarm-send-marching-orders",
+  approvalConfirm: "internal.approval-confirm",
+  testAlways: "internal.test.always",
+  testNeedsAuth: "internal.test.needs-auth",
+  testDuplicate: "internal.test.duplicate",
+  testGated: "internal.test.gated",
+  testHealthy: "internal.test.healthy",
+  testShadow: "internal.test.shadow",
+  testUnregistered: "internal.test.unregistered",
+  fuzzEcho: "internal.fuzz-echo",
+} as const satisfies Record<string, `internal.${string}`>;
+
+export type InternalIpcCommandId =
+  | (typeof INTERNAL_IPC_COMMANDS)[keyof typeof INTERNAL_IPC_COMMANDS]
+  | MockFlywheelCommandId;
+
+const INTERNAL_IPC_COMMAND_VALUES: ReadonlySet<string> = new Set([
+  ...Object.values(INTERNAL_IPC_COMMANDS),
+  ...Object.values(MOCK_FLYWHEEL_COMMANDS),
+]);
+
+export function isInternalIpcCommand(value: unknown): value is InternalIpcCommandId {
+  return typeof value === "string" && INTERNAL_IPC_COMMAND_VALUES.has(value);
+}
 
 export function isAllowedRegistryCommandId(commandId: string): boolean {
   if (typeof commandId !== "string" || commandId.length === 0) return false;
   if (PRELOAD_IPC_CHANNEL_VALUES.has(commandId)) return true;
-  for (const prefix of INTERNAL_IPC_COMMAND_PREFIXES) {
-    if (!commandId.startsWith(prefix)) continue;
-    const suffix = commandId.slice(prefix.length);
-    if (suffix.length === 0) return false;
-    if (suffix.includes("..")) return false; // path-traversal guard
-    return ALLOWED_INTERNAL_SUFFIX.test(suffix);
-  }
-  return false;
+  return INTERNAL_IPC_COMMAND_VALUES.has(commandId);
 }

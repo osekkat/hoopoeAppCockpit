@@ -110,9 +110,52 @@ export function isPreloadIpcChannel(value: unknown): value is PreloadIpcChannelV
   return typeof value === "string" && PRELOAD_IPC_CHANNEL_VALUES.has(value);
 }
 
-export const INTERNAL_IPC_COMMAND_PREFIXES = [
-  "mock-flywheel.",
-  "internal.",
-] as const;
+export const MOCK_FLYWHEEL_COMMANDS = {
+  health: "mock-flywheel.health",
+  version: "mock-flywheel.version",
+  capabilities: "mock-flywheel.capabilities",
+  listProjects: "mock-flywheel.projects.list",
+  getBeads: "mock-flywheel.beads.get",
+  getTriage: "mock-flywheel.triage.get",
+  getSwarmSnapshot: "mock-flywheel.swarm.snapshot",
+  getMailDump: "mock-flywheel.mail.dump",
+  getReservations: "mock-flywheel.reservations.list",
+  getBuildLog: "mock-flywheel.build-log.get",
+  getPaneLog: "mock-flywheel.pane-log.get",
+  exchangePairingForBearer: "mock-flywheel.auth.exchangePairing",
+  issueWsToken: "mock-flywheel.auth.issueWsToken",
+  scenarioInfo: "mock-flywheel.scenario.info",
+  swapScenario: "mock-flywheel.scenario.swap",
+  setReplaySpeed: "mock-flywheel.replay.setSpeed",
+} as const satisfies Record<string, `mock-flywheel.${string}`>;
 
-export type InternalIpcCommandPrefix = (typeof INTERNAL_IPC_COMMAND_PREFIXES)[number];
+export type MockFlywheelCommandId =
+  (typeof MOCK_FLYWHEEL_COMMANDS)[keyof typeof MOCK_FLYWHEEL_COMMANDS];
+
+export const INTERNAL_IPC_COMMANDS = {
+  schemasSmokeProject: "internal.schemas-smoke.project",
+  schemasSmokeCompatibility: "internal.schemas-smoke.compatibility",
+  swarmSendMarchingOrders: "internal.swarm-send-marching-orders",
+  approvalConfirm: "internal.approval-confirm",
+  testAlways: "internal.test.always",
+  testNeedsAuth: "internal.test.needs-auth",
+  testDuplicate: "internal.test.duplicate",
+  testGated: "internal.test.gated",
+  testHealthy: "internal.test.healthy",
+  testShadow: "internal.test.shadow",
+  testUnregistered: "internal.test.unregistered",
+  fuzzEcho: "internal.fuzz-echo",
+} as const satisfies Record<string, `internal.${string}`>;
+
+export type InternalIpcCommandId =
+  | (typeof INTERNAL_IPC_COMMANDS)[keyof typeof INTERNAL_IPC_COMMANDS]
+  | MockFlywheelCommandId;
+
+const INTERNAL_IPC_COMMAND_VALUES: ReadonlySet<string> = new Set([
+  ...Object.values(INTERNAL_IPC_COMMANDS),
+  ...Object.values(MOCK_FLYWHEEL_COMMANDS),
+]);
+
+export function isInternalIpcCommand(value: unknown): value is InternalIpcCommandId {
+  return typeof value === "string" && INTERNAL_IPC_COMMAND_VALUES.has(value);
+}

@@ -456,16 +456,42 @@ preloadChannels:
   cloneOpenInTerminal: hoopoe.clone.open-in-terminal
   cloneSetCapOverride: hoopoe.clone.set-cap-override
 
-# ── 4. Internal IPC command prefixes (main-only) ───────────────────────────
+# ── 4. Internal IPC command manifests (main-only) ──────────────────────────
 #
 # IpcRegistry hosts more than the renderer-facing channels — it also
 # hosts internal command IDs (e.g., "mock-flywheel.health" wired in
 # MockFlywheelClient.ts). The allowlist enforced on `register()` is
-# the union of `preloadChannels` values + commands matching one of these
-# prefixes. Each entry is a string PREFIX; everything matching it is
-# allowed (subject to the suffix sanity check in the generated TS).
+# the union of `preloadChannels` values + these exact command IDs.
 #
-# Keep this list short. Each prefix is a security review burden.
-internalCommandPrefixes:
-  - mock-flywheel.
-  - internal.
+# Keep these lists short. Each entry is a security review burden.
+mockFlywheelCommands:
+  health: mock-flywheel.health
+  version: mock-flywheel.version
+  capabilities: mock-flywheel.capabilities
+  listProjects: mock-flywheel.projects.list
+  getBeads: mock-flywheel.beads.get
+  getTriage: mock-flywheel.triage.get
+  getSwarmSnapshot: mock-flywheel.swarm.snapshot
+  getMailDump: mock-flywheel.mail.dump
+  getReservations: mock-flywheel.reservations.list
+  getBuildLog: mock-flywheel.build-log.get
+  getPaneLog: mock-flywheel.pane-log.get
+  exchangePairingForBearer: mock-flywheel.auth.exchangePairing
+  issueWsToken: mock-flywheel.auth.issueWsToken
+  scenarioInfo: mock-flywheel.scenario.info
+  swapScenario: mock-flywheel.scenario.swap
+  setReplaySpeed: mock-flywheel.replay.setSpeed
+
+internalCommands:
+  schemasSmokeProject: internal.schemas-smoke.project
+  schemasSmokeCompatibility: internal.schemas-smoke.compatibility
+  swarmSendMarchingOrders: internal.swarm-send-marching-orders
+  approvalConfirm: internal.approval-confirm
+  testAlways: internal.test.always
+  testNeedsAuth: internal.test.needs-auth
+  testDuplicate: internal.test.duplicate
+  testGated: internal.test.gated
+  testHealthy: internal.test.healthy
+  testShadow: internal.test.shadow
+  testUnregistered: internal.test.unregistered
+  fuzzEcho: internal.fuzz-echo

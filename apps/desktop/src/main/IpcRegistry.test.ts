@@ -7,17 +7,18 @@ import {
   UnknownIpcCommandError,
   type IpcValueValidator,
 } from "./IpcRegistry.ts";
-import { PRELOAD_IPC_CHANNELS } from "../shared/ipc-contract.ts";
+import {
+  INTERNAL_IPC_COMMANDS,
+  PRELOAD_IPC_CHANNELS,
+} from "../shared/ipc-contract.ts";
 
-// hp-n5za: test fixtures use the `internal.` prefix from the IPC contract
-// allowlist (apps/desktop/src/shared/ipc-contract.ts) so they exercise the
-// same registration path as production code, including the allowlist
-// enforcement.
+// Test fixtures use explicit main-only command IDs from the IPC contract
+// manifest so they exercise the same registration path as production code.
 
 test("IpcRegistry: register + dispatch returns the handler's result", async () => {
   const registry = new IpcRegistry();
   registry.register({
-    id: "internal.swarm-send-marching-orders",
+    id: INTERNAL_IPC_COMMANDS.swarmSendMarchingOrders,
     handler: {
       handle: (input: { readonly orderText: string }) =>
         Promise.resolve({ accepted: true, length: input.orderText.length }),
@@ -26,7 +27,7 @@ test("IpcRegistry: register + dispatch returns the handler's result", async () =
   const result = await registry.dispatch<
     { readonly orderText: string },
     { readonly accepted: boolean; readonly length: number }
-  >("internal.swarm-send-marching-orders", { orderText: "stand down" });
+  >(INTERNAL_IPC_COMMANDS.swarmSendMarchingOrders, { orderText: "stand down" });
   expect(result.accepted).toBe(true);
   expect(result.length).toBe(10);
 });
@@ -34,24 +35,24 @@ test("IpcRegistry: register + dispatch returns the handler's result", async () =
 test("IpcRegistry: dispatching unknown command throws UnknownIpcCommandError", async () => {
   const registry = new IpcRegistry();
   await expect(
-    registry.dispatch("internal.nope", {}),
+    registry.dispatch(INTERNAL_IPC_COMMANDS.testUnregistered, {}),
   ).rejects.toBeInstanceOf(UnknownIpcCommandError);
 });
 
 test("IpcRegistry: when-clause context keys must all be true", async () => {
   const registry = new IpcRegistry();
   registry.register({
-    id: "internal.approval-confirm",
+    id: INTERNAL_IPC_COMMANDS.approvalConfirm,
     whenContextKeys: ["activeApproval", "userIsOwner"],
     handler: { handle: () => "approved" },
   });
 
   await expect(
-    registry.dispatch("internal.approval-confirm", {}, { activeApproval: true }),
+    registry.dispatch(INTERNAL_IPC_COMMANDS.approvalConfirm, {}, { activeApproval: true }),
   ).rejects.toBeInstanceOf(IpcCommandUnavailableError);
 
   const ok = await registry.dispatch<unknown, string>(
-    "internal.approval-confirm",
+    INTERNAL_IPC_COMMANDS.approvalConfirm,
     {},
     { activeApproval: true, userIsOwner: true },
   );
@@ -61,27 +62,27 @@ test("IpcRegistry: when-clause context keys must all be true", async () => {
 test("IpcRegistry: enabledCommands honors when-clause filtering", () => {
   const registry = new IpcRegistry();
   registry.register({
-    id: "internal.always",
+    id: INTERNAL_IPC_COMMANDS.testAlways,
     handler: { handle: () => 1 },
   });
   registry.register({
-    id: "internal.needs-auth",
+    id: INTERNAL_IPC_COMMANDS.testNeedsAuth,
     whenContextKeys: ["authenticated"],
     handler: { handle: () => 2 },
   });
 
-  expect(registry.enabledCommands({})).toEqual(["internal.always"]);
+  expect(registry.enabledCommands({})).toEqual([INTERNAL_IPC_COMMANDS.testAlways]);
   expect(registry.enabledCommands({ authenticated: true })).toEqual([
-    "internal.always",
-    "internal.needs-auth",
+    INTERNAL_IPC_COMMANDS.testAlways,
+    INTERNAL_IPC_COMMANDS.testNeedsAuth,
   ]);
 });
 
 test("IpcRegistry: registering same id twice fails fast", () => {
   const registry = new IpcRegistry();
-  registry.register({ id: "internal.x", handler: { handle: () => null } });
+  registry.register({ id: INTERNAL_IPC_COMMANDS.testDuplicate, handler: { handle: () => null } });
   expect(() =>
-    registry.register({ id: "internal.x", handler: { handle: () => null } }),
+    registry.register({ id: INTERNAL_IPC_COMMANDS.testDuplicate, handler: { handle: () => null } }),
   ).toThrow();
 });
 

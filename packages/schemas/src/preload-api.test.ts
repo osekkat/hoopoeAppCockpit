@@ -38,15 +38,17 @@ test("preload-api.yaml schemaVersion is 1", () => {
   expect(yamlText).toMatch(/^schemaVersion:\s*1\s*$/m);
 });
 
-test("preload-api.yaml declares all four sections in canonical order", () => {
+test("preload-api.yaml declares all sections in canonical order", () => {
   const idxMethods = yamlText.indexOf("\ndaemonRequestMethods:");
   const idxTopics = yamlText.indexOf("\ndaemonSubscribeTopics:");
   const idxChannels = yamlText.indexOf("\npreloadChannels:");
-  const idxPrefixes = yamlText.indexOf("\ninternalCommandPrefixes:");
+  const idxMockCommands = yamlText.indexOf("\nmockFlywheelCommands:");
+  const idxInternalCommands = yamlText.indexOf("\ninternalCommands:");
   expect(idxMethods).toBeGreaterThan(0);
   expect(idxTopics).toBeGreaterThan(idxMethods);
   expect(idxChannels).toBeGreaterThan(idxTopics);
-  expect(idxPrefixes).toBeGreaterThan(idxChannels);
+  expect(idxMockCommands).toBeGreaterThan(idxChannels);
+  expect(idxInternalCommands).toBeGreaterThan(idxMockCommands);
 });
 
 test("generated TS contains all method names from YAML (no silent loss)", () => {
@@ -85,9 +87,13 @@ test("generated TS preserves PRELOAD_IPC_CHANNELS satisfies constraint", () => {
   expect(generatedText).toContain("hoopoe.daemon.unsubscribe");
 });
 
-test("generated TS preserves the two internal-command prefixes", () => {
-  expect(generatedText).toContain('"mock-flywheel."');
-  expect(generatedText).toContain('"internal."');
+test("generated TS preserves explicit internal command manifests", () => {
+  expect(generatedText).toContain("MOCK_FLYWHEEL_COMMANDS");
+  expect(generatedText).toContain("INTERNAL_IPC_COMMANDS");
+  expect(generatedText).toContain('"mock-flywheel.health"');
+  expect(generatedText).toContain('"mock-flywheel.beads.get"');
+  expect(generatedText).toContain('"internal.schemas-smoke.project"');
+  expect(generatedText).not.toContain("INTERNAL_IPC_COMMAND_PREFIXES");
 });
 
 test("generated TS carries the DO-NOT-EDIT marker", () => {

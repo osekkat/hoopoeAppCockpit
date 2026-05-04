@@ -26,6 +26,7 @@ import {
   PROBLEM_JSON_CONTENT_TYPE,
 } from "@hoopoe/schemas";
 import { IpcRegistry } from "./IpcRegistry.ts";
+import { INTERNAL_IPC_COMMANDS } from "../shared/ipc-contract.ts";
 
 test("@hoopoe/schemas resolves from apps/desktop", () => {
   expect(HOOPOE_OPENAPI_VERSION).toBe("0.1.0");
@@ -33,11 +34,9 @@ test("@hoopoe/schemas resolves from apps/desktop", () => {
 });
 
 test("Project shape can type an IpcCommandHandler Output", async () => {
-  // hp-n5za: register() refuses non-allowlisted IDs. The `internal.` prefix
-  // is allowed for non-renderer-facing test handlers.
   const registry = new IpcRegistry();
   registry.register<{ projectId: string }, Project>({
-    id: "internal.schemas-smoke.project",
+    id: INTERNAL_IPC_COMMANDS.schemasSmokeProject,
     handler: {
       handle: ({ projectId }) => ({
         schemaVersion: 1,
@@ -52,7 +51,7 @@ test("Project shape can type an IpcCommandHandler Output", async () => {
   });
 
   const project = await registry.dispatch<{ projectId: string }, Project>(
-    "internal.schemas-smoke.project",
+    INTERNAL_IPC_COMMANDS.schemasSmokeProject,
     { projectId: "proj_01" },
   );
   expect(project.id).toBe("proj_01");
@@ -63,7 +62,7 @@ test("Project shape can type an IpcCommandHandler Output", async () => {
 test("CompatibilityReport shape can type an IpcCommandHandler Output", async () => {
   const registry = new IpcRegistry();
   registry.register<void, CompatibilityReport>({
-    id: "internal.schemas-smoke.compatibility",
+    id: INTERNAL_IPC_COMMANDS.schemasSmokeCompatibility,
     handler: {
       handle: () => ({
         schemaVersion: 1,
@@ -83,7 +82,7 @@ test("CompatibilityReport shape can type an IpcCommandHandler Output", async () 
   });
 
   const compat = await registry.dispatch<void, CompatibilityReport>(
-    "internal.schemas-smoke.compatibility",
+    INTERNAL_IPC_COMMANDS.schemasSmokeCompatibility,
     undefined as unknown as void,
   );
   expect(compat.daemonApiVersion).toBe("0.1.0");
