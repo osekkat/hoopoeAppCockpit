@@ -733,7 +733,7 @@ export interface components {
          *     prefix-match for forward-compat input validation.
          * @enum {string}
          */
-        ToolId: "ntm" | "br" | "bv" | "agent_mail" | "git" | "ru" | "caam" | "caut" | "dcg" | "casr" | "pt" | "srp" | "sbh" | "ubs" | "jsm" | "jfp" | "oracle" | "rch" | "health_ts" | "health_py" | "health_rs" | "health_go" | "health_generic";
+        ToolId: "ntm" | "br" | "bv" | "agent_mail" | "git" | "ru" | "caam" | "caut" | "dcg" | "casr" | "pt" | "srp" | "sbh" | "ubs" | "jsm" | "jfp" | "oracle" | "rch" | "rano" | "health_ts" | "health_py" | "health_rs" | "health_go" | "health_generic";
         /**
          * @description - `ok` — capability satisfied a contract test.
          *     - `degraded` — works via fallback transport / partial output.

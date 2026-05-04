@@ -691,6 +691,7 @@ const (
 	Ntm           ToolId = "ntm"
 	Oracle        ToolId = "oracle"
 	Pt            ToolId = "pt"
+	Rano          ToolId = "rano"
 	Rch           ToolId = "rch"
 	Ru            ToolId = "ru"
 	Sbh           ToolId = "sbh"
@@ -736,6 +737,8 @@ func (e ToolId) Valid() bool {
 	case Oracle:
 		return true
 	case Pt:
+		return true
+	case Rano:
 		return true
 	case Rch:
 		return true

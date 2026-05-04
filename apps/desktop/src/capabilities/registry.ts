@@ -37,6 +37,8 @@ const KNOWN_CLOSED_TOOLS: readonly ToolId[] = [
   "jsm",
   "jfp",
   "oracle",
+  "rch",
+  "rano",
   "health_ts",
   "health_py",
   "health_rs",

@@ -69,6 +69,7 @@ const (
 	ToolJFP       ToolID = "jfp"
 	ToolOracle    ToolID = "oracle"
 	ToolRCH       ToolID = "rch"
+	ToolRano      ToolID = "rano"
 )
 
 // KnownClosedTools lists the ToolID values that are not health-prefixed. Used
@@ -77,7 +78,7 @@ var KnownClosedTools = []ToolID{
 	ToolNTM, ToolBR, ToolBV, ToolAgentMail, ToolGit, ToolRU,
 	ToolCAAM, ToolCAUT, ToolDCG, ToolCASR,
 	ToolPT, ToolSRP, ToolSBH,
-	ToolUBS, ToolJSM, ToolJFP, ToolOracle, ToolRCH,
+	ToolUBS, ToolJSM, ToolJFP, ToolOracle, ToolRCH, ToolRano,
 }
 
 // IsHealthTool reports whether id matches the open-ended health_<lang> shape.

@@ -544,4 +544,5 @@ var knownTools = map[capabilities.ToolID]toolMeta{
 	capabilities.ToolJFP:       {name: "jfp", repo: "github.com/Dicklesworthstone/jfp"},
 	capabilities.ToolOracle:    {name: "Oracle", repo: "github.com/Dicklesworthstone/oracle"},
 	capabilities.ToolRCH:       {name: "rch", repo: "github.com/Dicklesworthstone/rch"},
+	capabilities.ToolRano:      {name: "rano", repo: "github.com/Dicklesworthstone/rano"},
 }

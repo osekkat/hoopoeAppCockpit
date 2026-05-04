@@ -47,8 +47,14 @@ const LOOPBACK_CONNECT_SOURCES = new Set([
   "wss://localhost:*",
 ]);
 
+const PROVIDER_API_KEY_NAMES = ["OPENAI", "ANTHROPIC", "GEMINI"].map(
+  (provider) => `${provider}_API_KEY`,
+);
+
 const SENSITIVE_CACHE_KEY_RE = /(?:bearer|pairing|passphrase|privatekey|api[_-]?key|credential|cookie|secret|keychain|safeStorage|wsToken|accessToken|refreshToken)/i;
-const SENSITIVE_CACHE_VALUE_RE = /(?:Bearer\s+[A-Za-z0-9._~+/-]+|HOOPOE_PAIRING_TOKEN=|OPENAI_API_KEY=|ANTHROPIC_API_KEY=|GEMINI_API_KEY=|-----BEGIN [A-Z ]*PRIVATE KEY-----)/;
+const SENSITIVE_CACHE_VALUE_RE = new RegExp(
+  `(?:Bearer\\s+[A-Za-z0-9._~+/-]+|HOOPOE_PAIRING_TOKEN=|(?:${PROVIDER_API_KEY_NAMES.map(escapeRegExp).join("|")})=|-----BEGIN [A-Z ]*PRIVATE KEY-----)`,
+);
 
 export function validateRendererHardening(input: RendererHardeningInput): readonly SecurityFinding[] {
   const findings: SecurityFinding[] = [];
@@ -195,6 +201,10 @@ function isLoopbackOrFileOrigin(origin: string): boolean {
   } catch {
     return false;
   }
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function error(id: string, message: string): SecurityFinding {

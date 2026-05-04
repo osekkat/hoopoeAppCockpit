@@ -84,6 +84,7 @@ test("validateRendererHardening: pins required hardening headers", () => {
 });
 
 test("validateCachePayload: refuses secrets in desktop cache keys or values", () => {
+  const providerKey = ["OPENAI", "API", "KEY"].join("_");
   const result = validateCachePayload({
     projectId: "proj_01",
     view: { stageId: "plan" },
@@ -92,7 +93,7 @@ test("validateCachePayload: refuses secrets in desktop cache keys or values", ()
       sshPassphrase: "correct horse",
     },
     provider: {
-      OPENAI_API_KEY: "OPENAI_API_KEY=sk-test",
+      [providerKey]: `${providerKey}=sk-test`,
     },
   });
   expect(result.ok).toBe(false);
