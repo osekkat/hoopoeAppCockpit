@@ -317,7 +317,7 @@
       "agent": "GreenBear",
       "bytes": {
         "encoding": "base64",
-        "data": "R3JlZW5CZWFyIHBhdXNlZC4gdmliaW5nLXdpdGgtbnRtIHNraWxsIGRyaWZ0ZWQgZnJvbSBwaW47IGF3YWl0aW5nIHJlcGluIGFwcHJvdmFsLgo="
+        "data": "W2hwLTQ5Zl0gcGF1c2VkOiBqc20gdmVyaWZ5IHJlcG9ydHMgdmliaW5nLXdpdGgtbnRtIFNIQSBtaXNtYXRjaDsgYXdhaXRpbmcganNtLnJlcGluIGFwcHJvdmFsCg=="
       }
     }
   ],
