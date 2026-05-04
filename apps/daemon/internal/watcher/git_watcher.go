@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	gitadapter "github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/adapters/git"
@@ -137,6 +138,13 @@ type GitWatcher struct {
 	Actor      map[string]any
 	Now        func() time.Time
 
+	// mu guards lastLocalHead, lastRemote, and seen. PollLocal,
+	// PollOrigin, and RecordPushCompleted can race in production:
+	// PollLocal/PollOrigin run on a polling timer, RecordPushCompleted
+	// is HTTP-driven from the post-receive hook. The lock is never held
+	// across external calls (Git, RemoteRefs, Publisher) so a synchronous
+	// publisher cannot self-deadlock by re-entering the watcher.
+	mu            sync.Mutex
 	lastLocalHead string
 	lastRemote    map[string]string
 	seen          map[string]bool
@@ -172,14 +180,20 @@ func (w *GitWatcher) Seed(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	w.lastLocalHead = commit.SHA
+	var seededRemote map[string]string
 	if w.RemoteRefs != nil {
 		refs, err := w.RemoteRefs.ListRemoteRefs(ctx, w.remote())
 		if err != nil {
 			return err
 		}
-		w.lastRemote = refMap(refs)
+		seededRemote = refMap(refs)
 	}
+	w.mu.Lock()
+	w.lastLocalHead = commit.SHA
+	if w.RemoteRefs != nil {
+		w.lastRemote = seededRemote
+	}
+	w.mu.Unlock()
 	return nil
 }
 
@@ -194,19 +208,26 @@ func (w *GitWatcher) PollLocal(ctx context.Context) ([]Event, error) {
 	if head.SHA == "" {
 		return nil, nil
 	}
+	w.mu.Lock()
 	if w.lastLocalHead == "" {
 		w.lastLocalHead = head.SHA
+		w.mu.Unlock()
 		return nil, nil
 	}
 	if head.SHA == w.lastLocalHead {
+		w.mu.Unlock()
 		return nil, nil
 	}
+	w.mu.Unlock()
+
 	commits, err := w.newUnpushedCommits(ctx, branch, head)
 	if err != nil {
 		return nil, err
 	}
 	if len(commits) == 0 {
+		w.mu.Lock()
 		w.lastLocalHead = head.SHA
+		w.mu.Unlock()
 		return nil, nil
 	}
 
@@ -242,7 +263,9 @@ func (w *GitWatcher) PollLocal(ctx context.Context) ([]Event, error) {
 		w.markSeenEvent(key)
 		out = append(out, event)
 	}
+	w.mu.Lock()
 	w.lastLocalHead = head.SHA
+	w.mu.Unlock()
 	return out, nil
 }
 
@@ -311,15 +334,21 @@ func (w *GitWatcher) PollOrigin(ctx context.Context) ([]Event, error) {
 		return nil, err
 	}
 	next := refMap(current)
+
+	w.mu.Lock()
 	if w.lastRemote == nil {
 		w.lastRemote = next
+		w.mu.Unlock()
 		return nil, nil
 	}
 	updates := changedRefs(w.lastRemote, next)
 	if len(updates) == 0 {
 		w.lastRemote = next
+		w.mu.Unlock()
 		return nil, nil
 	}
+	w.mu.Unlock()
+
 	payload := gitevents.OriginUpdatedPayload{
 		ProjectID: w.ProjectID,
 		Refs:      updates,
@@ -328,7 +357,9 @@ func (w *GitWatcher) PollOrigin(ctx context.Context) ([]Event, error) {
 	}
 	key := originUpdateKey(payload)
 	if w.hasSeenEvent(key) {
+		w.mu.Lock()
 		w.lastRemote = next
+		w.mu.Unlock()
 		return nil, nil
 	}
 	event := w.gitEvent(gitevents.EventOriginUpdated, payload)
@@ -336,7 +367,9 @@ func (w *GitWatcher) PollOrigin(ctx context.Context) ([]Event, error) {
 		return nil, err
 	}
 	w.markSeenEvent(key)
+	w.mu.Lock()
 	w.lastRemote = next
+	w.mu.Unlock()
 	return []Event{event}, nil
 }
 
@@ -350,12 +383,9 @@ func (w *GitWatcher) validate(requirePublisher bool) error {
 	if requirePublisher && w.Publisher == nil {
 		return fmt.Errorf("%w: publisher required", ErrInvalidWatcherConfig)
 	}
-	if w.Now == nil {
-		w.Now = time.Now
-	}
-	if w.seen == nil {
-		w.seen = map[string]bool{}
-	}
+	// w.Now and w.seen are lazy-init'd under the mutex (now() guards
+	// nil; hasSeenEvent/markSeenEvent acquire mu before reading the map)
+	// so concurrent validate calls are race-free.
 	return nil
 }
 
@@ -497,6 +527,8 @@ func eventKey(parts ...string) string {
 }
 
 func (w *GitWatcher) hasSeenEvent(key string) bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	if w.seen == nil {
 		w.seen = map[string]bool{}
 	}
@@ -504,6 +536,8 @@ func (w *GitWatcher) hasSeenEvent(key string) bool {
 }
 
 func (w *GitWatcher) markSeenEvent(key string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	if w.seen == nil {
 		w.seen = map[string]bool{}
 	}
@@ -519,6 +553,8 @@ func originUpdateKey(payload gitevents.OriginUpdatedPayload) string {
 }
 
 func (w *GitWatcher) mergeRemoteRefs(refs []gitevents.RefUpdate) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	if w.lastRemote == nil {
 		w.lastRemote = map[string]string{}
 	}

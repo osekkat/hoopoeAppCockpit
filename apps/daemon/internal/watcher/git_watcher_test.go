@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -420,6 +422,138 @@ func TestGitWatcherEventHubRedactsCommitMessageSecret(t *testing.T) {
 		t.Fatalf("replay buffer holds raw commit-message secret: %s", body)
 	}
 }
+
+// TestGitWatcherConcurrentMethodsRaceFree guards hp-zuvg: in production,
+// PollLocal/PollOrigin run on a polling timer while RecordPushCompleted
+// is HTTP-driven from the post-receive hook. Without internal
+// synchronization, all three race on lastLocalHead/lastRemote/seen. This
+// test fans out concurrent calls so that `go test -race` will flag any
+// regression.
+func TestGitWatcherConcurrentMethodsRaceFree(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	client := &concurrentFakeGitClient{}
+	client.installHead("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "main")
+	refs := &concurrentFakeRemoteRefs{}
+	refs.set([]gitevents.RefState{{Name: "refs/heads/main", SHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}})
+
+	w := NewGitWatcher("proj_01", client, &nopPublisher{})
+	w.Now = fixedWatcherNow
+	w.RemoteRefs = refs
+	if err := w.Seed(ctx); err != nil {
+		t.Fatalf("Seed: %v", err)
+	}
+
+	const iterations = 64
+	var wg sync.WaitGroup
+	worker := func(fn func()) {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			fn()
+		}
+	}
+
+	wg.Add(3)
+	go worker(func() {
+		client.advanceLocal()
+		_, _ = w.PollLocal(ctx)
+	})
+	go worker(func() {
+		refs.advance()
+		_, _ = w.PollOrigin(ctx)
+	})
+	go worker(func() {
+		_, _ = w.RecordPushCompleted(ctx, PushCompleted{
+			Branch:        "main",
+			Remote:        "origin",
+			CommitsPushed: []string{client.headSHA()},
+			Refs: []gitevents.RefUpdate{{
+				Name:   "refs/heads/main",
+				NewSHA: client.headSHA(),
+			}},
+			OK: true,
+		})
+	})
+	wg.Wait()
+}
+
+type concurrentFakeGitClient struct {
+	mu     sync.Mutex
+	head   gitadapter.Commit
+	branch string
+	tick   atomic.Uint64
+}
+
+func (c *concurrentFakeGitClient) installHead(sha, branch string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.head = gitadapter.Commit{SHA: sha, Subject: "head"}
+	c.branch = branch
+}
+
+func (c *concurrentFakeGitClient) advanceLocal() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	n := c.tick.Add(1)
+	c.head = gitadapter.Commit{SHA: fmt.Sprintf("%040d", n), Subject: fmt.Sprintf("commit-%d", n)}
+}
+
+func (c *concurrentFakeGitClient) headSHA() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.head.SHA
+}
+
+func (c *concurrentFakeGitClient) Status(context.Context) (*gitadapter.Status, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return &gitadapter.Status{Branch: c.branch}, nil
+}
+
+func (c *concurrentFakeGitClient) Log(context.Context, gitadapter.LogOpts) ([]gitadapter.Commit, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.head.SHA == "" {
+		return nil, nil
+	}
+	return []gitadapter.Commit{c.head}, nil
+}
+
+func (c *concurrentFakeGitClient) UnpushedCommits(context.Context, string) (*gitadapter.CommitDelta, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return &gitadapter.CommitDelta{From: "origin/main", To: "main", Commits: []gitadapter.Commit{c.head}}, nil
+}
+
+type concurrentFakeRemoteRefs struct {
+	mu   sync.Mutex
+	refs []gitevents.RefState
+	tick atomic.Uint64
+}
+
+func (f *concurrentFakeRemoteRefs) set(refs []gitevents.RefState) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.refs = append([]gitevents.RefState(nil), refs...)
+}
+
+func (f *concurrentFakeRemoteRefs) advance() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n := f.tick.Add(1)
+	f.refs = []gitevents.RefState{{Name: "refs/heads/main", SHA: fmt.Sprintf("%040d", n)}}
+}
+
+func (f *concurrentFakeRemoteRefs) ListRemoteRefs(context.Context, string) ([]gitevents.RefState, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]gitevents.RefState(nil), f.refs...), nil
+}
+
+type nopPublisher struct{}
+
+func (nopPublisher) Publish(context.Context, Event) error { return nil }
 
 func TestTrackingBranchRefSourceFetchesAndResolvesRemoteBranches(t *testing.T) {
 	t.Parallel()
