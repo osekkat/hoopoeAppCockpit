@@ -121,6 +121,14 @@ func (s *Scheduler) WaitContext(ctx context.Context) error {
 	}
 	done := make(chan struct{})
 	go func() {
+		// sync.WaitGroup.Wait panics on a negative counter (e.g., a future
+		// caller refactor that double-Done()s before Add). Recover so the
+		// daemon process survives; the outer select still observes ctx.Done()
+		// correctly because a panicking Wait would have prevented close(done)
+		// either way.
+		defer func() {
+			_ = recover()
+		}()
 		s.wg.Wait()
 		close(done)
 	}()
@@ -147,6 +155,16 @@ func (s *Scheduler) dispatch(ctx context.Context, run Run) {
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
+		// Goroutine-boundary recover guards every call site in the dispatch
+		// path — runTimeout (registry lock + cloneJob), completeRun (Store.Save
+		// can panic on a buggy Store impl), dispatchContext, and any future
+		// code added inside the goroutine. invokeRunner has its own recover
+		// for finer-grained error reporting (the run is marked failed with
+		// the runner's panic value); this boundary recover is the last line
+		// of defense for everything else and falls back to a best-effort
+		// completeRun under its own inner recover so a Store panic during
+		// recovery cannot re-panic out of the goroutine.
+		defer s.recoverDispatch(run.ID)
 
 		dispatchCtx, cancel := s.dispatchContext(ctx)
 		defer cancel()
@@ -170,6 +188,24 @@ func (s *Scheduler) dispatch(ctx context.Context, run Run) {
 		}
 		s.completeRun(run.ID, result, err)
 	}()
+}
+
+// recoverDispatch is the dispatch goroutine's last-resort panic guard. If
+// any call inside the goroutine panics — runTimeout, completeRun, or any
+// future code path — the recovered value is converted into a synthetic
+// error and a best-effort registry write marks the run failed. That
+// best-effort write is itself wrapped in a recover so a buggy Store.Save
+// (or a registry that panics under load) cannot re-panic out of the
+// goroutine and crash the daemon.
+func (s *Scheduler) recoverDispatch(runID string) {
+	r := recover()
+	if r == nil {
+		return
+	}
+	defer func() {
+		_ = recover()
+	}()
+	s.completeRun(runID, RunResult{}, fmt.Errorf("scheduler: dispatch panic recovered: %v", r))
 }
 
 // invokeRunner calls the configured Runner under a recover guard so that a
