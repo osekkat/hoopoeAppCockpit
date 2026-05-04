@@ -19,8 +19,14 @@ const fixedTime = "2026-05-04T00:00:00Z"
 func newTestSessionService(t *testing.T) (*SessionCredentialService, *fakeClock, *ServerSecretStore) {
 	t.Helper()
 	clock := newFakeClock(fixedTime)
+	svc, store := newTestSessionServiceInDir(t, t.TempDir(), clock)
+	return svc, clock, store
+}
+
+func newTestSessionServiceInDir(t *testing.T, dir string, clock *fakeClock) (*SessionCredentialService, *ServerSecretStore) {
+	t.Helper()
 	store, err := NewServerSecretStore(ServerSecretStoreConfig{
-		Path: filepath.Join(t.TempDir(), "secret.json"),
+		Path: filepath.Join(dir, "server-secret.json"),
 		Now:  clock.now,
 	})
 	if err != nil {
@@ -36,7 +42,7 @@ func newTestSessionService(t *testing.T) (*SessionCredentialService, *fakeClock,
 	if err != nil {
 		t.Fatal(err)
 	}
-	return svc, clock, store
+	return svc, store
 }
 
 type fakeClock struct {
@@ -286,6 +292,70 @@ func TestRevokeSessionDropsSubsequentVerifies(t *testing.T) {
 	}
 	if _, err := svc.VerifyWSToken(ws.Token); !errors.Is(err, ErrSessionRevoked) {
 		t.Errorf("ws post-revoke: %v", err)
+	}
+}
+
+func TestSessionRecordsSurviveRestartAndPersistRevocation(t *testing.T) {
+	clock := newFakeClock(fixedTime)
+	dir := t.TempDir()
+	svc, _ := newTestSessionServiceInDir(t, dir, clock)
+	bearer, err := svc.IssueBearer(PairingRoleOwner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := len(svc.ListSessions()); got != 1 {
+		t.Fatalf("sessions before restart = %d, want 1", got)
+	}
+
+	restarted, _ := newTestSessionServiceInDir(t, dir, clock)
+	sessions := restarted.ListSessions()
+	if len(sessions) != 1 {
+		t.Fatalf("sessions after restart = %d, want 1", len(sessions))
+	}
+	if sessions[0].SID != bearer.SID {
+		t.Fatalf("reloaded sid = %s, want %s", sessions[0].SID, bearer.SID)
+	}
+	if _, err := restarted.VerifyBearer(bearer.Token); err != nil {
+		t.Fatalf("bearer after restart: %v", err)
+	}
+
+	revoked, err := restarted.RevokeSession(bearer.SID, "owner-cli")
+	if err != nil {
+		t.Fatalf("revoke after restart: %v", err)
+	}
+	if !revoked {
+		t.Fatal("first revoke after restart should report active=true")
+	}
+
+	restartedAgain, _ := newTestSessionServiceInDir(t, dir, clock)
+	if _, err := restartedAgain.VerifyBearer(bearer.Token); !errors.Is(err, ErrSessionRevoked) {
+		t.Fatalf("bearer after revoke + restart = %v, want ErrSessionRevoked", err)
+	}
+	sessions = restartedAgain.ListSessions()
+	if len(sessions) != 1 || sessions[0].RevokedAt == nil || sessions[0].RevokedBy != "owner-cli" {
+		t.Fatalf("revoked session did not persist: %+v", sessions)
+	}
+}
+
+func TestVerifyBearerRejectsUnknownPersistedSID(t *testing.T) {
+	clock := newFakeClock(fixedTime)
+	dir := t.TempDir()
+	svc, store := newTestSessionServiceInDir(t, dir, clock)
+	bearer, err := svc.IssueBearer(PairingRoleOwner)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	emptyLedgerSvc, err := NewSessionCredentialService(SessionCredentialConfig{
+		Secrets:      store,
+		SessionsPath: filepath.Join(dir, "empty-ledger", "sessions.jsonl"),
+		Now:          clock.now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := emptyLedgerSvc.VerifyBearer(bearer.Token); !errors.Is(err, ErrSessionNotFound) {
+		t.Fatalf("verify with missing sid = %v, want ErrSessionNotFound", err)
 	}
 }
 

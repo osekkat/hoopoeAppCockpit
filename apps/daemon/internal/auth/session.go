@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"bufio"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -11,8 +12,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -63,12 +68,12 @@ const (
 // same struct; the `Kind` field disambiguates. The JSON shape is internal
 // to the daemon — desktop never decodes it (tokens are opaque).
 type Claims struct {
-	SchemaVersion int       `json:"schemaVersion"`
-	SID           string    `json:"sid"`
+	SchemaVersion int         `json:"schemaVersion"`
+	SID           string      `json:"sid"`
 	Role          SessionRole `json:"role"`
-	Kind          TokenKind `json:"kind"`
-	IssuedAt      time.Time `json:"issuedAt"`
-	ExpiresAt     time.Time `json:"expiresAt"`
+	Kind          TokenKind   `json:"kind"`
+	IssuedAt      time.Time   `json:"issuedAt"`
+	ExpiresAt     time.Time   `json:"expiresAt"`
 	// Generation is the SecretSnapshot.Generation that signed this token.
 	// Verifier compares it to current generation; mismatch = invalidated
 	// by rotation.
@@ -77,11 +82,11 @@ type Claims struct {
 
 // IssuedBearer is what the bearer endpoint returns.
 type IssuedBearer struct {
-	Token     string    `json:"token"`
-	SID       string    `json:"sid"`
+	Token     string      `json:"token"`
+	SID       string      `json:"sid"`
 	Role      SessionRole `json:"role"`
-	IssuedAt  time.Time `json:"issuedAt"`
-	ExpiresAt time.Time `json:"expiresAt"`
+	IssuedAt  time.Time   `json:"issuedAt"`
+	ExpiresAt time.Time   `json:"expiresAt"`
 }
 
 // IssuedWSToken is what the ws-token endpoint returns.
@@ -97,13 +102,14 @@ type IssuedWSToken struct {
 // survives daemon restart. Bearer + WS tokens are ephemeral; only the
 // per-sid revocation state lives here.
 type SessionRecord struct {
-	SID         string    `json:"sid"`
-	Role        SessionRole `json:"role"`
-	IssuedAt    time.Time `json:"issuedAt"`
-	ExpiresAt   time.Time `json:"expiresAt"`
-	RevokedAt   *time.Time `json:"revokedAt,omitempty"`
-	RevokedBy   string    `json:"revokedBy,omitempty"`
-	Generation  int       `json:"generation"`
+	SchemaVersion int         `json:"schemaVersion"`
+	SID           string      `json:"sid"`
+	Role          SessionRole `json:"role"`
+	IssuedAt      time.Time   `json:"issuedAt"`
+	ExpiresAt     time.Time   `json:"expiresAt"`
+	RevokedAt     *time.Time  `json:"revokedAt,omitempty"`
+	RevokedBy     string      `json:"revokedBy,omitempty"`
+	Generation    int         `json:"generation"`
 }
 
 // Active reports whether the session can issue WS tokens / authorize HTTP.
@@ -119,18 +125,20 @@ func (r SessionRecord) Active(now time.Time) bool {
 
 // SessionCredentialConfig wires the service.
 type SessionCredentialConfig struct {
-	Secrets *ServerSecretStore
-	Now     func() time.Time
-	Random  io.Reader
+	Secrets      *ServerSecretStore
+	SessionsPath string
+	Now          func() time.Time
+	Random       io.Reader
 }
 
 // SessionCredentialService is the daemon's bearer + WS-token authority.
 // Concurrent-safe; the mutex protects the in-memory session table only —
 // the underlying secret store has its own lock.
 type SessionCredentialService struct {
-	secrets  *ServerSecretStore
-	now      func() time.Time
-	random   io.Reader
+	secrets     *ServerSecretStore
+	now         func() time.Time
+	random      io.Reader
+	sessionPath string
 
 	mu       sync.Mutex
 	sessions map[string]SessionRecord // sid → record
@@ -148,11 +156,24 @@ func NewSessionCredentialService(cfg SessionCredentialConfig) (*SessionCredentia
 	if random == nil {
 		random = rand.Reader
 	}
+	sessionPath := cfg.SessionsPath
+	if sessionPath == "" {
+		sessionPath = filepath.Join(filepath.Dir(cfg.Secrets.path), "sessions.jsonl")
+	}
+	snap, err := cfg.Secrets.Current()
+	if err != nil {
+		return nil, err
+	}
+	sessions, err := loadSessionRecords(sessionPath, snap.Generation)
+	if err != nil {
+		return nil, err
+	}
 	return &SessionCredentialService{
-		secrets:  cfg.Secrets,
-		now:      now,
-		random:   random,
-		sessions: make(map[string]SessionRecord),
+		secrets:     cfg.Secrets,
+		now:         now,
+		random:      random,
+		sessionPath: sessionPath,
+		sessions:    sessions,
 	}, nil
 }
 
@@ -187,14 +208,20 @@ func (s *SessionCredentialService) IssueBearer(role SessionRole) (IssuedBearer, 
 		return IssuedBearer{}, err
 	}
 
-	s.mu.Lock()
-	s.sessions[sid] = SessionRecord{
-		SID:        sid,
-		Role:       role,
-		IssuedAt:   issuedAt,
-		ExpiresAt:  expiresAt,
-		Generation: snap.Generation,
+	record := SessionRecord{
+		SchemaVersion: SessionSchemaVersion,
+		SID:           sid,
+		Role:          role,
+		IssuedAt:      issuedAt,
+		ExpiresAt:     expiresAt,
+		Generation:    snap.Generation,
 	}
+	s.mu.Lock()
+	if err := appendSessionRecord(s.sessionPath, record); err != nil {
+		s.mu.Unlock()
+		return IssuedBearer{}, err
+	}
+	s.sessions[sid] = record
 	s.mu.Unlock()
 
 	return IssuedBearer{
@@ -243,7 +270,7 @@ func (s *SessionCredentialService) IssueWSToken(bearerToken string) (IssuedWSTok
 // VerifyBearer validates a bearer token. Returns the parsed claims if
 // valid; otherwise an error describing why (sentinel errors:
 // ErrInvalidToken, ErrTokenExpired, ErrTokenSignatureMismatch,
-// ErrTokenWrongKind, ErrSessionRevoked).
+// ErrTokenWrongKind, ErrSessionNotFound, ErrSessionRevoked).
 func (s *SessionCredentialService) VerifyBearer(token string) (Claims, error) {
 	return s.verify(token, TokenKindBearer)
 }
@@ -308,19 +335,13 @@ func (s *SessionCredentialService) verify(token string, expectedKind TokenKind) 
 	s.mu.Lock()
 	record, ok := s.sessions[claims.SID]
 	s.mu.Unlock()
-	if expectedKind == TokenKindBearer {
-		// For bearers, a missing sid means we don't know about this session
-		// (e.g., daemon restarted and didn't reload sessions). We accept
-		// signature-validated bearers from before the restart as the v1
-		// behavior; persistent sid tracking lands when the daemon's SQLite
-		// lifecycle bead does (hp-9xtt's migration runner could host it).
-	} else if !ok {
-		// WS tokens REQUIRE a known sid — they're issued from a verified
-		// bearer that just registered its sid. A missing sid means the
-		// bearer was never seen by this daemon process.
+	if !ok {
+		// Bearers and WS tokens both require a known persisted SID. Accepting
+		// signature-valid unknown bearers would make targeted revocation
+		// memory-only across daemon restarts.
 		return Claims{}, ErrSessionNotFound
 	}
-	if ok && record.RevokedAt != nil {
+	if record.RevokedAt != nil {
 		return Claims{}, ErrSessionRevoked
 	}
 
@@ -346,6 +367,9 @@ func (s *SessionCredentialService) RevokeSession(sid string, actor string) (bool
 	now := s.now().UTC()
 	record.RevokedAt = &now
 	record.RevokedBy = actor
+	if err := appendSessionRecord(s.sessionPath, record); err != nil {
+		return false, err
+	}
 	s.sessions[sid] = record
 	return true, nil
 }
@@ -375,7 +399,138 @@ func (s *SessionCredentialService) ListSessions() []SessionRecord {
 	for _, r := range s.sessions {
 		out = append(out, r)
 	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].IssuedAt.Equal(out[j].IssuedAt) {
+			return out[i].SID < out[j].SID
+		}
+		return out[i].IssuedAt.Before(out[j].IssuedAt)
+	})
 	return out
+}
+
+func loadSessionRecords(path string, currentGeneration int) (map[string]SessionRecord, error) {
+	records := make(map[string]SessionRecord)
+	if path == "" {
+		return records, nil
+	}
+	var loadErr error
+	err := withSessionFileLock(path, func() error {
+		file, err := os.Open(path)
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			loadErr = fmt.Errorf("auth: read sessions %s: %w", path, err)
+			return nil
+		}
+		defer file.Close()
+
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			var record SessionRecord
+			if err := json.Unmarshal(scanner.Bytes(), &record); err != nil {
+				loadErr = fmt.Errorf("auth: decode sessions %s: %w", path, err)
+				return nil
+			}
+			if record.SchemaVersion == 0 {
+				record.SchemaVersion = SessionSchemaVersion
+			}
+			if err := validateSessionRecord(record); err != nil {
+				loadErr = fmt.Errorf("auth: invalid sessions %s: %w", path, err)
+				return nil
+			}
+			if record.Generation != currentGeneration {
+				continue
+			}
+			records[record.SID] = record
+		}
+		if err := scanner.Err(); err != nil {
+			loadErr = fmt.Errorf("auth: scan sessions %s: %w", path, err)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if loadErr != nil {
+		return nil, loadErr
+	}
+	return records, nil
+}
+
+func appendSessionRecord(path string, record SessionRecord) error {
+	if path == "" {
+		return nil
+	}
+	if record.SchemaVersion == 0 {
+		record.SchemaVersion = SessionSchemaVersion
+	}
+	if err := validateSessionRecord(record); err != nil {
+		return err
+	}
+	return withSessionFileLock(path, func() error {
+		file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+		if err != nil {
+			return fmt.Errorf("auth: open sessions %s: %w", path, err)
+		}
+		bytes, err := json.Marshal(record)
+		if err != nil {
+			_ = file.Close()
+			return fmt.Errorf("auth: encode session: %w", err)
+		}
+		bytes = append(bytes, '\n')
+		if _, err := file.Write(bytes); err != nil {
+			_ = file.Close()
+			return fmt.Errorf("auth: append session %s: %w", path, err)
+		}
+		if err := file.Sync(); err != nil {
+			_ = file.Close()
+			return fmt.Errorf("auth: fsync sessions %s: %w", path, err)
+		}
+		if err := file.Close(); err != nil {
+			return fmt.Errorf("auth: close sessions %s: %w", path, err)
+		}
+		return nil
+	})
+}
+
+func withSessionFileLock(path string, fn func() error) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return fmt.Errorf("auth: mkdir sessions dir %s: %w", filepath.Dir(path), err)
+	}
+	lockPath := path + ".lock"
+	lockFile, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return fmt.Errorf("auth: open sessions lock %s: %w", lockPath, err)
+	}
+	defer lockFile.Close()
+	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX); err != nil {
+		return fmt.Errorf("auth: lock sessions %s: %w", lockPath, err)
+	}
+	defer syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN)
+	return fn()
+}
+
+func validateSessionRecord(record SessionRecord) error {
+	if record.SchemaVersion != SessionSchemaVersion {
+		return fmt.Errorf("%w: unsupported session schemaVersion %d", ErrInvalidToken, record.SchemaVersion)
+	}
+	if record.SID == "" {
+		return fmt.Errorf("%w: empty sid", ErrInvalidToken)
+	}
+	if !record.Role.valid() {
+		return fmt.Errorf("%w: invalid role %q", ErrInvalidToken, record.Role)
+	}
+	if record.IssuedAt.IsZero() {
+		return fmt.Errorf("%w: empty issuedAt", ErrInvalidToken)
+	}
+	if record.ExpiresAt.IsZero() {
+		return fmt.Errorf("%w: empty expiresAt", ErrInvalidToken)
+	}
+	if record.Generation < 1 {
+		return fmt.Errorf("%w: invalid generation %d", ErrInvalidToken, record.Generation)
+	}
+	return nil
 }
 
 // ─── token helpers ────────────────────────────────────────────────────────
