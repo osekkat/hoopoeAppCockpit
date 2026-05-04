@@ -621,3 +621,124 @@
   padding: 28px;
   color: var(--hh-text-muted);
 }
+
+/* hp-pmw — plan-job usage sidebar */
+
+.hh-plan-job-usage {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--surface-border-soft);
+  border-radius: var(--radius-lg);
+  background: var(--surface-panel);
+}
+
+.hh-plan-job-usage-header {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.hh-plan-job-usage-header h3 {
+  margin: 0 0 2px;
+  color: var(--text-primary);
+  font-size: 13.5px;
+  font-weight: 720;
+}
+
+.hh-plan-job-usage-header p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+.hh-plan-job-usage-active {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--surface-panel-alt);
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.hh-plan-job-usage-active small {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.hh-plan-job-usage-empty {
+  margin: 0;
+  padding: 12px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.hh-plan-job-usage-providers {
+  display: grid;
+  gap: 8px;
+}
+
+.hh-plan-job-usage-provider {
+  display: grid;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  background: var(--surface-panel-alt);
+  font-size: 12px;
+}
+
+.hh-plan-job-usage-provider[data-active="true"] {
+  outline: 1px solid rgba(229, 130, 83, 0.5);
+}
+
+.hh-plan-job-usage-provider-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.hh-plan-job-usage-provider-pct {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+}
+
+.hh-plan-job-usage-provider-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.hh-plan-job-usage-provider-unmeasured {
+  font-style: italic;
+}
+
+.hh-plan-job-usage-bar {
+  position: relative;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.hh-plan-job-usage-bar-fill {
+  position: absolute;
+  inset: 0;
+  background: rgba(123, 198, 138, 0.7);
+  border-radius: inherit;
+}
+
+.hh-plan-job-usage-bar[data-severity="warning"] .hh-plan-job-usage-bar-fill {
+  background: rgba(229, 196, 100, 0.85);
+}
+
+.hh-plan-job-usage-bar[data-severity="danger"] .hh-plan-job-usage-bar-fill {
+  background: rgba(255, 142, 142, 0.95);
+}
