@@ -14,6 +14,7 @@ import (
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/fixtures"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/inventory"
 	daemonmetrics "github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/metrics"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/redaction"
 )
 
 type Config struct {
@@ -72,7 +73,10 @@ func NewDaemon(cfg Config) (*Daemon, error) {
 		}
 	}
 
-	events := api.NewEventHub(api.EventHubConfig{Now: now})
+	events := api.NewEventHub(api.EventHubConfig{
+		Now:      now,
+		Redactor: redaction.New(redaction.Config{Now: now}),
+	})
 	auditWriter, err := audit.NewWriter(audit.Config{
 		Writer: io.Discard,
 		Now:    now,

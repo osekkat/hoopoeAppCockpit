@@ -37,8 +37,10 @@ type EventHubConfig struct {
 	// replay buffer or delivered to subscribers. Mirrors audit/writer.go's
 	// pre-write redaction so secret-shaped strings in commit messages,
 	// agent-mail bodies, or any future producer cannot reach WS/SSE
-	// subscribers raw. nil means no redaction (used by tests + chaos/mock
-	// fixtures where inputs are trusted).
+	// subscribers raw. nil triggers a default redactor in NewEventHub —
+	// EventHub is safe-by-default; opt-out requires the explicit
+	// NewEventHubWithoutRedactor escape hatch used by load/chaos fixtures
+	// asserting raw delivery semantics.
 	Redactor *redaction.Redactor
 }
 
@@ -102,6 +104,26 @@ func NewEventHub(cfg EventHubConfig) *EventHub {
 	if now == nil {
 		now = time.Now
 	}
+	redactor := cfg.Redactor
+	if redactor == nil {
+		redactor = redaction.New(redaction.Config{Now: now})
+	}
+	return newEventHub(cfg, now, redactor)
+}
+
+// NewEventHubWithoutRedactor constructs an EventHub that delivers Publish.Data
+// verbatim. Reserved for load/chaos test fixtures asserting raw delivery
+// semantics where the inputs are known-clean. Production wiring must use
+// NewEventHub.
+func NewEventHubWithoutRedactor(cfg EventHubConfig) *EventHub {
+	now := cfg.Now
+	if now == nil {
+		now = time.Now
+	}
+	return newEventHub(cfg, now, nil)
+}
+
+func newEventHub(cfg EventHubConfig, now func() time.Time, redactor *redaction.Redactor) *EventHub {
 	replayCapacity := cfg.ReplayCapacity
 	if replayCapacity <= 0 {
 		replayCapacity = defaultReplayCapacity
@@ -117,7 +139,7 @@ func NewEventHub(cfg EventHubConfig) *EventHub {
 		sequences:          make(map[string]uint64),
 		events:             make([]Event, 0, replayCapacity),
 		subscribers:        make(map[uint64]*subscriber),
-		redactor:           cfg.Redactor,
+		redactor:           redactor,
 	}
 }
 

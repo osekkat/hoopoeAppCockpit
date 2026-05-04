@@ -883,11 +883,34 @@ func TestEventHubRedactsPublishDataBeforeDeliveryAndReplay(t *testing.T) {
 	}
 }
 
-func TestEventHubWithoutRedactorDeliversDataVerbatim(t *testing.T) {
-	// Backwards-compat: when EventHubConfig.Redactor is nil, Publish must
-	// not panic and must deliver Data unchanged. Tests + chaos/mock
-	// fixtures rely on this.
+func TestEventHubNilRedactorAutoDefaultsAndStillRedacts(t *testing.T) {
+	// hp-cy4: NewEventHub is safe-by-default. A nil EventHubConfig.Redactor
+	// no longer means raw delivery — the constructor auto-creates a default
+	// redaction.Redactor so production wiring that forgets to pass one (and
+	// every test that omits one) still scrubs secrets. The opt-out is
+	// NewEventHubWithoutRedactor for load/chaos fixtures.
 	hub := NewEventHub(EventHubConfig{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sub := hub.Subscribe(ctx, []string{"project:default"})
+	defer sub.Close()
+
+	hub.Publish(PublishInput{Channel: "project:default", Type: "raw", Data: map[string]any{"message": "literal-secret-shaped sk-abcdef0123456789ABCDEF0123456789"}})
+	select {
+	case ev := <-sub.Events():
+		body, _ := json.Marshal(ev.Data)
+		if strings.Contains(string(body), "sk-abcdef0123456789") {
+			t.Fatalf("auto-default redactor failed to scrub secret: %s", body)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for event")
+	}
+}
+
+func TestEventHubWithoutRedactorEscapeHatchDeliversVerbatim(t *testing.T) {
+	// Load/chaos fixtures assert raw delivery semantics — keep the explicit
+	// opt-out path covered so future refactors do not silently re-redact.
+	hub := NewEventHubWithoutRedactor(EventHubConfig{})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	sub := hub.Subscribe(ctx, []string{"project:nofilter"})
@@ -898,10 +921,38 @@ func TestEventHubWithoutRedactorDeliversDataVerbatim(t *testing.T) {
 	case ev := <-sub.Events():
 		body, _ := json.Marshal(ev.Data)
 		if !strings.Contains(string(body), "sk-abcdef0123456789") {
-			t.Fatalf("nil redactor mutated Data: %s", body)
+			t.Fatalf("escape hatch unexpectedly redacted Data: %s", body)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for event")
+	}
+}
+
+func TestNormalizeConfigFallbackEventHubGetsRedactor(t *testing.T) {
+	// hp-cy4: when api.Config.Events is nil (the production wiring path —
+	// transport/server.go does not set it), normalizeConfig must construct
+	// the EventHub with a Redactor. Asserts the fallback wiring is safe.
+	srv := normalizeConfig(Config{})
+	if srv.events == nil {
+		t.Fatal("fallback EventHub not constructed")
+	}
+	if srv.events.redactor == nil {
+		t.Fatal("fallback EventHub has nil redactor — production secrets would leak")
+	}
+	hub := srv.events
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sub := hub.Subscribe(ctx, []string{"project:fallback"})
+	defer sub.Close()
+	hub.Publish(PublishInput{Channel: "project:fallback", Type: "test", Data: map[string]any{"k": "sk-abcdef0123456789ABCDEF0123456789"}})
+	select {
+	case ev := <-sub.Events():
+		body, _ := json.Marshal(ev.Data)
+		if strings.Contains(string(body), "sk-abcdef0123456789") {
+			t.Fatalf("fallback EventHub leaked secret: %s", body)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for fallback event")
 	}
 }
 

@@ -22,6 +22,7 @@ import (
 	daemonmetrics "github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/metrics"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/onboarding/checkpoints"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/projects"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/redaction"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/telemetry"
 	schemas "github.com/hoopoe-cockpit/hoopoe/packages/schemas/go"
 	"nhooyr.io/websocket"
@@ -206,7 +207,10 @@ func normalizeConfig(cfg Config) *server {
 	}
 	events := cfg.Events
 	if events == nil {
-		events = NewEventHub(EventHubConfig{Now: now})
+		events = NewEventHub(EventHubConfig{
+			Now:      now,
+			Redactor: redaction.New(redaction.Config{Now: now}),
+		})
 	}
 	build := cfg.Build
 	if build.Version == "" {

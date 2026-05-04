@@ -16,6 +16,7 @@ import (
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/api"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/auth"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/jobs"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/redaction"
 )
 
 const (
@@ -308,7 +309,11 @@ func (r *smokeRunner) disconnectReconnectReplay(ctx context.Context) (stepEviden
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	hub := api.NewEventHub(api.EventHubConfig{ReplayCapacity: 16, Now: r.cfg.Now})
+	hub := api.NewEventHub(api.EventHubConfig{
+		ReplayCapacity: 16,
+		Now:            r.cfg.Now,
+		Redactor:       redaction.New(redaction.Config{Now: r.cfg.Now}),
+	})
 	r.state.events = hub
 	const channel = "project:phase2-smoke"
 	before := hub.Publish(api.PublishInput{Channel: channel, Type: "daemon.ready", Data: map[string]any{"phase": "before_disconnect"}})
