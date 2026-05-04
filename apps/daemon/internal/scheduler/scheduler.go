@@ -164,12 +164,26 @@ func (s *Scheduler) dispatch(ctx context.Context, run Run) {
 			runCtx, timeoutCancel = context.WithTimeout(runCtx, timeout)
 			defer timeoutCancel()
 		}
-		result, err := s.runner.Run(runCtx, run)
+		result, err := s.invokeRunner(runCtx, run)
 		if err == nil && runCtx.Err() != nil {
 			err = runCtx.Err()
 		}
 		s.completeRun(run.ID, result, err)
 	}()
+}
+
+// invokeRunner calls the configured Runner under a recover guard so that a
+// panicking implementation cannot take the daemon down. The recovered value
+// is converted into an error so the run is marked failed and the registry
+// stays consistent.
+func (s *Scheduler) invokeRunner(ctx context.Context, run Run) (result RunResult, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			result = RunResult{}
+			err = fmt.Errorf("scheduler: runner panic recovered: %v", r)
+		}
+	}()
+	return s.runner.Run(ctx, run)
 }
 
 func (s *Scheduler) dispatchContext(ctx context.Context) (context.Context, context.CancelFunc) {

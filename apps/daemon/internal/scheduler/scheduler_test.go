@@ -495,6 +495,56 @@ func TestSchedulerWaitContextHonorsCallerCancellation(t *testing.T) {
 	scheduler.Wait()
 }
 
+func TestSchedulerRecoversRunnerPanic(t *testing.T) {
+	ctx := context.Background()
+	clock := newTestClock(time.Date(2026, 5, 4, 15, 0, 0, 0, time.UTC))
+	registry := newTestRegistry(t, clock)
+	if _, err := registry.ImportDefinition(ctx, testDefinition("panicker", Schedule{Type: ScheduleOnDemand})); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := registry.ImportDefinition(ctx, testDefinition("survivor", Schedule{Type: ScheduleOnDemand})); err != nil {
+		t.Fatal(err)
+	}
+	survivorDone := make(chan struct{})
+	scheduler, err := New(Config{
+		Registry: registry,
+		Runner: RunnerFunc(func(_ context.Context, run Run) (RunResult, error) {
+			switch run.JobID {
+			case "panicker":
+				panic("synthetic runner failure")
+			case "survivor":
+				close(survivorDone)
+				return RunResult{WakeAgent: false}, nil
+			default:
+				t.Fatalf("unexpected job %q", run.JobID)
+			}
+			return RunResult{}, nil
+		}),
+		MaxWorkers: 2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	panicDecision, err := scheduler.RunNow(ctx, "panicker")
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := waitForRunStatus(t, registry, panicDecision.RunID, RunStatusFailed)
+	if !strings.Contains(run.Error, "panic recovered") {
+		t.Fatalf("panicker run error = %q, want substring %q", run.Error, "panic recovered")
+	}
+	if !strings.Contains(run.Error, "synthetic runner failure") {
+		t.Fatalf("panicker run error = %q, want recovered value in message", run.Error)
+	}
+
+	if _, err := scheduler.RunNow(ctx, "survivor"); err != nil {
+		t.Fatalf("scheduler did not survive prior runner panic: %v", err)
+	}
+	waitForSignal(t, survivorDone, "survivor run after recovered panic")
+	scheduler.Wait()
+}
+
 func TestDefinitionFilesRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
