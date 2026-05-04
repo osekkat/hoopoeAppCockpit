@@ -80,6 +80,15 @@
         "typescript": "catalog:",
       },
     },
+    "packages/problem-types": {
+      "name": "@hoopoe/problem-types",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "@types/node": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/schemas": {
       "name": "@hoopoe/schemas",
       "version": "0.0.0",
@@ -187,6 +196,8 @@
     "@hoopoe/fixture-replay": ["@hoopoe/fixture-replay@workspace:packages/fixture-replay"],
 
     "@hoopoe/fixtures": ["@hoopoe/fixtures@workspace:packages/fixtures"],
+
+    "@hoopoe/problem-types": ["@hoopoe/problem-types@workspace:packages/problem-types"],
 
     "@hoopoe/schemas": ["@hoopoe/schemas@workspace:packages/schemas"],
 

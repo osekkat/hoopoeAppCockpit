@@ -1,0 +1,324 @@
+# RFC 7807 problem-type registry (hp-g6sp).
+#
+# Single source of truth for the daemon's error responses: every error
+# the daemon emits must reference an `id` in this file. Renderers
+# (hp-8dym), Diagnostics catalog (hp-6d7), and per-endpoint contract
+# tests all read this file — no hand-written error JSON anywhere.
+#
+# Schema (per RFC 7807 + Hoopoe extensions):
+#   id              stable internal id (referenced from Go ProblemError + tests)
+#   type_uri        canonical URL — RFC 7807 'type' field
+#   title           short, human-readable summary
+#   status          HTTP status code
+#   surface         renderer hint: toast | banner | inline_pill | blocking_modal
+#   actionability   suggested user action: reload | re-pair | edit-deps |
+#                   switch-account | open-docs | manual
+#   user_message    text shown to the user; supports {{var}} templating
+#                   from ProblemExtensions
+#   detail_template optional template for RFC 7807 'detail' field; same
+#                   templating; redacted via the daemon redaction layer
+#                   before serialization
+#
+# Adding a new problem type = add an entry here AND wrap the Go error
+# with `ProblemTypeID() string` returning the id. The drift checker
+# will fail CI if a Go ProblemError points at an id that doesn't exist
+# here.
+
+schemaVersion: 1
+
+problems:
+  # ──────────────────────────────────────────────────────────────────
+  # Auth (§2.6 /v1/auth/*)
+  # ──────────────────────────────────────────────────────────────────
+  - id: auth.pairing.token-expired
+    type_uri: https://hoopoe.io/problems/auth/pairing-token-expired
+    title: Pairing token has expired
+    status: 401
+    surface: blocking_modal
+    actionability: re-pair
+    user_message: The pairing token expired. Re-pair to continue.
+    detail_template: Pairing token issued at {{issuedAt}} expired at {{expiredAt}}.
+
+  - id: auth.pairing.token-invalid
+    type_uri: https://hoopoe.io/problems/auth/pairing-token-invalid
+    title: Pairing token is invalid
+    status: 401
+    surface: blocking_modal
+    actionability: re-pair
+    user_message: The pairing token did not match. Re-pair to continue.
+
+  - id: auth.bearer.invalid
+    type_uri: https://hoopoe.io/problems/auth/bearer-invalid
+    title: Bearer token is invalid
+    status: 401
+    surface: blocking_modal
+    actionability: re-pair
+    user_message: Your session is no longer valid. Re-pair to continue.
+
+  - id: auth.bearer.expired
+    type_uri: https://hoopoe.io/problems/auth/bearer-expired
+    title: Bearer token has expired
+    status: 401
+    surface: blocking_modal
+    actionability: re-pair
+    user_message: Your session expired. Re-pair to continue.
+
+  - id: auth.ws-token.invalid
+    type_uri: https://hoopoe.io/problems/auth/ws-token-invalid
+    title: WebSocket token is invalid
+    status: 401
+    surface: banner
+    actionability: reload
+    user_message: WebSocket connection refused. Reload to retry.
+
+  # ──────────────────────────────────────────────────────────────────
+  # Projects (§2.6 /v1/projects/*)
+  # ──────────────────────────────────────────────────────────────────
+  - id: project.not-found
+    type_uri: https://hoopoe.io/problems/project/not-found
+    title: Project not found
+    status: 404
+    surface: banner
+    actionability: open-docs
+    user_message: 'Project {{projectId}} was not found on this VPS.'
+
+  - id: project.already-exists
+    type_uri: https://hoopoe.io/problems/project/already-exists
+    title: Project already exists
+    status: 409
+    surface: inline_pill
+    actionability: manual
+    user_message: 'A project with name {{name}} already exists at {{path}}.'
+
+  - id: project.invalid-name
+    type_uri: https://hoopoe.io/problems/project/invalid-name
+    title: Invalid project name
+    status: 422
+    surface: inline_pill
+    actionability: manual
+    user_message: Project name must match {{pattern}}.
+
+  # ──────────────────────────────────────────────────────────────────
+  # Plans (§2.6 /v1/projects/{id}/plans/*)
+  # ──────────────────────────────────────────────────────────────────
+  - id: plan.not-found
+    type_uri: https://hoopoe.io/problems/plan/not-found
+    title: Plan not found
+    status: 404
+    surface: banner
+    actionability: open-docs
+    user_message: 'Plan {{planId}} was not found in this project.'
+
+  - id: plan.locked
+    type_uri: https://hoopoe.io/problems/plan/locked
+    title: Plan is locked
+    status: 409
+    surface: banner
+    actionability: manual
+    user_message: 'This plan is locked (locked at {{lockedAt}}). Unlock it before making changes.'
+
+  # ──────────────────────────────────────────────────────────────────
+  # Beads (§2.6 /v1/projects/{id}/beads/*)
+  # ──────────────────────────────────────────────────────────────────
+  - id: bead.not-found
+    type_uri: https://hoopoe.io/problems/bead/not-found
+    title: Bead not found
+    status: 404
+    surface: banner
+    actionability: open-docs
+    user_message: 'Bead {{beadId}} was not found in this project.'
+
+  - id: bead.cycle-detected
+    type_uri: https://hoopoe.io/problems/bead/cycle-detected
+    title: Dependency cycle detected
+    status: 422
+    surface: banner
+    actionability: edit-deps
+    user_message: 'Adding this dependency would create a cycle: {{cyclePath}}'
+
+  - id: bead.conversion-failed
+    type_uri: https://hoopoe.io/problems/bead/conversion-failed
+    title: Bead conversion failed
+    status: 422
+    surface: banner
+    actionability: open-docs
+    user_message: 'Could not convert plan to beads: {{reason}}'
+
+  # ──────────────────────────────────────────────────────────────────
+  # Swarm (§2.6 /v1/projects/{id}/swarms/*)
+  # ──────────────────────────────────────────────────────────────────
+  - id: swarm.not-found
+    type_uri: https://hoopoe.io/problems/swarm/not-found
+    title: Swarm not found
+    status: 404
+    surface: banner
+    actionability: open-docs
+    user_message: 'Swarm {{swarmId}} was not found.'
+
+  - id: swarm.already-running
+    type_uri: https://hoopoe.io/problems/swarm/already-running
+    title: Swarm already running
+    status: 409
+    surface: banner
+    actionability: manual
+    user_message: 'A swarm is already running for this project (since {{startedAt}}).'
+
+  - id: swarm.budget-exceeded
+    type_uri: https://hoopoe.io/problems/swarm/budget-exceeded
+    title: Swarm budget exceeded
+    status: 422
+    surface: blocking_modal
+    actionability: switch-account
+    user_message: 'Daily budget for {{provider}} exceeded ({{used}} / {{limit}}). Switch accounts or wait until {{resetAt}}.'
+
+  # ──────────────────────────────────────────────────────────────────
+  # Mail (§2.6 /v1/projects/{id}/mail/*)
+  # ──────────────────────────────────────────────────────────────────
+  - id: mail.thread-not-found
+    type_uri: https://hoopoe.io/problems/mail/thread-not-found
+    title: Mail thread not found
+    status: 404
+    surface: inline_pill
+    actionability: open-docs
+    user_message: 'Mail thread {{threadId}} was not found.'
+
+  # ──────────────────────────────────────────────────────────────────
+  # Reservations (§2.6 /v1/projects/{id}/reservations/*)
+  # ──────────────────────────────────────────────────────────────────
+  - id: reservation.conflict
+    type_uri: https://hoopoe.io/problems/reservation/conflict
+    title: File reservation conflict
+    status: 409
+    surface: inline_pill
+    actionability: manual
+    user_message: 'Path pattern {{pattern}} is already reserved by {{holder}} until {{expiresAt}}.'
+
+  - id: reservation.not-found
+    type_uri: https://hoopoe.io/problems/reservation/not-found
+    title: Reservation not found
+    status: 404
+    surface: inline_pill
+    actionability: manual
+    user_message: 'Reservation {{reservationId}} was not found.'
+
+  # ──────────────────────────────────────────────────────────────────
+  # Health (§2.6 /v1/projects/{id}/health/*)
+  # ──────────────────────────────────────────────────────────────────
+  - id: health.snapshot-failed
+    type_uri: https://hoopoe.io/problems/health/snapshot-failed
+    title: Health snapshot failed
+    status: 500
+    surface: banner
+    actionability: open-docs
+    user_message: 'Could not capture health snapshot: {{reason}}'
+
+  # ──────────────────────────────────────────────────────────────────
+  # Reviews (§2.6 /v1/projects/{id}/reviews/*)
+  # ──────────────────────────────────────────────────────────────────
+  - id: review.round-already-active
+    type_uri: https://hoopoe.io/problems/review/round-already-active
+    title: Review round already active
+    status: 409
+    surface: banner
+    actionability: manual
+    user_message: 'Review round {{round}} is already running for this project.'
+
+  # ──────────────────────────────────────────────────────────────────
+  # Tending / ActionPlan (§2.6 /v1/tending/*)
+  # ──────────────────────────────────────────────────────────────────
+  - id: action-plan.unknown-kind
+    type_uri: https://hoopoe.io/problems/action-plan/unknown-kind
+    title: Unknown action kind
+    status: 422
+    surface: toast
+    actionability: open-docs
+    user_message: 'Action kind {{kind}} is not in tending-actions.yaml.'
+
+  - id: action-plan.precondition-failed
+    type_uri: https://hoopoe.io/problems/action-plan/precondition-failed
+    title: Action precondition failed
+    status: 412
+    surface: banner
+    actionability: open-docs
+    user_message: 'Precondition for {{kind}} did not hold: {{precondition}}'
+
+  - id: action-plan.postcondition-failed
+    type_uri: https://hoopoe.io/problems/action-plan/postcondition-failed
+    title: Action postcondition failed
+    status: 500
+    surface: banner
+    actionability: open-docs
+    user_message: 'Action {{kind}} executed but postcondition failed: {{postcondition}}'
+
+  # ──────────────────────────────────────────────────────────────────
+  # Approvals (§2.6 /v1/approvals/*)
+  # ──────────────────────────────────────────────────────────────────
+  - id: approval.required
+    type_uri: https://hoopoe.io/problems/approval/required
+    title: Approval required
+    status: 403
+    surface: blocking_modal
+    actionability: manual
+    user_message: 'This action requires approval (riskClass: {{riskClass}}). Submit for approval to proceed.'
+
+  - id: approval.denied
+    type_uri: https://hoopoe.io/problems/approval/denied
+    title: Approval denied
+    status: 403
+    surface: blocking_modal
+    actionability: manual
+    user_message: 'Approval was denied: {{reason}}'
+
+  # ──────────────────────────────────────────────────────────────────
+  # Idempotency (hp-ngq cross-reference)
+  # ──────────────────────────────────────────────────────────────────
+  - id: idempotency.key-required
+    type_uri: https://hoopoe.io/problems/idempotency/key-required
+    title: Idempotency key required
+    status: 400
+    surface: toast
+    actionability: reload
+    user_message: This write endpoint requires an Idempotency-Key header.
+
+  - id: idempotency.key-conflict
+    type_uri: https://hoopoe.io/problems/idempotency/key-conflict
+    title: Idempotency key already used with different body
+    status: 409
+    surface: toast
+    actionability: manual
+    user_message: 'Idempotency key {{key}} was previously used with a different request body.'
+
+  # ──────────────────────────────────────────────────────────────────
+  # Defaults / fallbacks
+  # ──────────────────────────────────────────────────────────────────
+  - id: not-found
+    type_uri: https://hoopoe.io/problems/not-found
+    title: Not Found
+    status: 404
+    surface: banner
+    actionability: open-docs
+    user_message: The requested resource was not found.
+
+  - id: method-not-allowed
+    type_uri: https://hoopoe.io/problems/method-not-allowed
+    title: Method Not Allowed
+    status: 405
+    surface: toast
+    actionability: open-docs
+    user_message: This method is not allowed on this endpoint.
+
+  - id: bad-request
+    type_uri: https://hoopoe.io/problems/bad-request
+    title: Bad Request
+    status: 400
+    surface: toast
+    actionability: open-docs
+    user_message: 'The request was malformed: {{reason}}'
+
+  - id: internal-error
+    type_uri: https://hoopoe.io/problems/internal-error
+    title: Internal Server Error
+    status: 500
+    surface: blocking_modal
+    actionability: reload
+    user_message: 'An internal error occurred (correlation id: {{correlationId}}). Please retry; if the issue persists, contact support.'

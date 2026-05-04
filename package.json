@@ -12,7 +12,8 @@
       "packages/fixture-replay",
       "packages/test-evidence",
       "packages/slo",
-      "packages/tending-actions"
+      "packages/tending-actions",
+      "packages/problem-types"
     ],
     "catalog": {
       "@types/bun": "^1.3.13",
