@@ -55,17 +55,34 @@ const STEP_TITLES: Record<WizardStepId, string> = {
   success: "Ready",
 };
 
-const STEP_FOLLOWUPS: Record<WizardStepId, string | null> = {
+// hp-sgzb: maps each WizardStepId to the follow-up bead that owns the
+// real implementation. The placeholder ids filed at hp-o6q close
+// (hp-o6q-ssh, hp-o6q-vps, ...) were resolved into real beads when the
+// step work was scoped — this map points at those.
+//
+// Multiple steps can share a follow-up bead when one bead covers a
+// streaming sub-flow (e.g. hp-9z45 owns preflight + acfs_install +
+// verify_key as a single streaming UI; hp-zsp1 owns reconnect + status
+// + extensions + checkpoint persistence + auto-redirect).
+//
+// `null` means the step has no follow-up bead — either it is fully
+// inert (`path` / `success`) or it is a read-only docs-cards step
+// surfaced from agent-flywheel.com (`rent_vps`).
+//
+// Tests below assert (a) every non-null value matches the canonical
+// `hp-<3-5 chars>` shape (no placeholder names slip through) and
+// (b) when `br` is on PATH, every value resolves via `br show <id>`.
+export const STEP_FOLLOWUPS: Record<WizardStepId, string | null> = {
   path: null,
-  ssh_key: "hp-o6q-ssh", // filed at hp-o6q close
-  rent_vps: "hp-o6q-docs",
-  vps_connect: "hp-o6q-vps",
-  preflight: "hp-o6q-pre",
-  acfs_install: "hp-o6q-acfs",
-  reconnect: "hp-o6q-rec",
-  verify_key: "hp-o6q-vk",
-  status_check: "hp-o6q-stat",
-  extensions: "hp-o6q-ext",
+  ssh_key: "hp-pl8h", // SSH key gen / import + preload channel
+  rent_vps: null, // agent-flywheel.com docs cards; no separate Hoopoe bead
+  vps_connect: "hp-o7rn", // host/port/user form + tunnel TOFU
+  preflight: "hp-9z45", // streaming preflight (shared with acfs_install + verify_key)
+  acfs_install: "hp-9z45", // streaming ACFS install (same bead)
+  reconnect: "hp-zsp1", // automatic redirect (covered by checkpoint + auto-redirect)
+  verify_key: "hp-9z45", // acfs doctor JSON render (same bead)
+  status_check: "hp-zsp1", // tool inventory + CAAM verification
+  extensions: "hp-zsp1", // Hoopoe-specific extensions step
   success: null,
 };
 

@@ -1,5 +1,7 @@
 // hp-o6q — wizard shell + step component render tests.
+// hp-sgzb — STEP_FOLLOWUPS now maps to real bead ids.
 
+import { spawnSync } from "node:child_process";
 import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
@@ -12,6 +14,7 @@ import {
   recordPath,
   startRun,
 } from "./index.ts";
+import { STEP_FOLLOWUPS } from "./WizardShell.tsx";
 
 test("WizardShell: starts on the path picker by default", () => {
   const sink = new WizardReplaySink();
@@ -155,6 +158,72 @@ test("StepStub: surfaces an optional Skip button", () => {
     />,
   );
   expect(withSkip).toContain("data-testid=\"wizard-step-preflight-skip\"");
+});
+
+// hp-sgzb: STEP_FOLLOWUPS must point at real beads (not the placeholder
+// `hp-o6q-...` shape that was filed at hp-o6q close). The shape regex
+// pins the canonical id form (`hp-` + 3-5 lowercase alphanumeric chars).
+test("STEP_FOLLOWUPS: every non-null value matches the canonical bead-id shape", () => {
+  const beadIdRe = /^hp-[a-z0-9]{3,5}$/;
+  for (const [stepId, followup] of Object.entries(STEP_FOLLOWUPS)) {
+    if (followup === null) continue;
+    if (!beadIdRe.test(followup)) {
+      throw new Error(
+        `${stepId} → ${followup}: not a canonical bead id (expected /^hp-[a-z0-9]{3,5}$/). ` +
+          `Update STEP_FOLLOWUPS in WizardShell.tsx to the real follow-up bead.`,
+      );
+    }
+  }
+});
+
+test("STEP_FOLLOWUPS: leaves only docs-only / inert steps without a follow-up", () => {
+  // path / success are inert (no work to bead); rent_vps is read-only
+  // agent-flywheel.com docs cards. Every other step MUST point at a real
+  // follow-up bead so the stepper renders the bead reference correctly.
+  const allowedNullSteps = new Set(["path", "rent_vps", "success"]);
+  for (const [stepId, followup] of Object.entries(STEP_FOLLOWUPS)) {
+    if (followup === null && !allowedNullSteps.has(stepId)) {
+      throw new Error(
+        `${stepId} has no follow-up bead but is not in the allowed-null set ` +
+          `(${[...allowedNullSteps].join(", ")}). Either point at a real bead ` +
+          `or add ${stepId} to the allowed-null set with a justification.`,
+      );
+    }
+  }
+});
+
+test("STEP_FOLLOWUPS: every non-null value resolves via `br show` when br is on PATH", () => {
+  // CI gate per hp-sgzb DOD: every follow-up bead actually exists in the
+  // beads graph. Skips when br isn't installed (developer machine without
+  // the toolchain) so the test pack still runs against a fresh checkout.
+  const probe = spawnSync("br", ["--version"], { stdio: "ignore" });
+  if (probe.status !== 0) {
+    return;
+  }
+  const seen = new Set<string>();
+  for (const followup of Object.values(STEP_FOLLOWUPS)) {
+    if (followup === null) continue;
+    if (seen.has(followup)) continue;
+    seen.add(followup);
+    const result = spawnSync("br", ["show", followup, "--json"], {
+      encoding: "utf8",
+      env: { ...process.env, CI: "1" },
+    });
+    if (result.status !== 0) {
+      throw new Error(
+        `br show ${followup} failed (exit ${result.status}): ${result.stderr.trim()}`,
+      );
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(result.stdout);
+    } catch (err) {
+      throw new Error(`br show ${followup} returned non-JSON: ${(err as Error).message}`);
+    }
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      throw new Error(`br show ${followup} returned empty result — bead not in graph`);
+    }
+  }
 });
 
 // State-machine integration sanity test (no React) — confirms WizardShell's
