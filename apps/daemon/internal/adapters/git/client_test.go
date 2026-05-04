@@ -1,8 +1,8 @@
 // client_test.go — exercises the git adapter against:
-//   1. a fake executor for error classification + force-push gating;
-//   2. real temp git repos for status/log/diff/show round-trips
-//      (via the OSExecutor — requires `git` on PATH, which the daemon
-//      already requires for production).
+//  1. a fake executor for error classification + force-push gating;
+//  2. real temp git repos for status/log/diff/show round-trips
+//     (via the OSExecutor — requires `git` on PATH, which the daemon
+//     already requires for production).
 package git
 
 import (
@@ -41,6 +41,41 @@ func (f *fakeExecutor) Run(_ context.Context, _ string, args []string) ([]byte, 
 		return nil, f.Stderrs[key], f.Exits[key], err
 	}
 	return f.Stdouts[key], f.Stderrs[key], f.Exits[key], nil
+}
+
+func TestOSExecutorDefaultEnvUsesParentPathWithoutLeakingSecrets(t *testing.T) {
+	envBinary, err := exec.LookPath("env")
+	if err != nil {
+		t.Skip("env binary not on PATH")
+	}
+	t.Setenv("PATH", "/tmp/hoopoe-parent-bin")
+	t.Setenv("HOOPOE_TEST_PROVIDER_TOKEN", "do-not-leak")
+
+	stdout, stderr, exit, err := (&OSExecutor{Binary: envBinary}).Run(context.Background(), "", nil)
+	if err != nil {
+		t.Fatalf("Run env: %v (stderr: %s)", err, stderr)
+	}
+	if exit != 0 {
+		t.Fatalf("Run env exit = %d (stderr: %s)", exit, stderr)
+	}
+	env := string(stdout)
+	if !strings.Contains(env, "PATH=/tmp/hoopoe-parent-bin\n") {
+		t.Fatalf("expected parent PATH in child env, got %q", env)
+	}
+	for _, required := range []string{
+		"LC_ALL=C\n",
+		"LANG=C\n",
+		"GIT_TERMINAL_PROMPT=0\n",
+		"GIT_PAGER=cat\n",
+		"GIT_OPTIONAL_LOCKS=0\n",
+	} {
+		if !strings.Contains(env, required) {
+			t.Fatalf("expected %s in child env, got %q", strings.TrimSpace(required), env)
+		}
+	}
+	if strings.Contains(env, "HOOPOE_TEST_PROVIDER_TOKEN") {
+		t.Fatalf("child env leaked provider token: %q", env)
+	}
 }
 
 // initTempRepo creates a fresh git repo in a temp directory with an

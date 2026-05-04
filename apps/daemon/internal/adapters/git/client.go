@@ -16,6 +16,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -61,9 +62,9 @@ type OSExecutor struct {
 	Binary string
 	// Timeout caps the per-call duration. Empty → DefaultTimeout.
 	Timeout time.Duration
-	// Env is the environment passed to child processes; nil → inherit
-	// the parent's env plus locale + paging overrides (set so output
-	// is parseable across operator locales + git config files).
+	// Env is the environment passed to child processes; nil forwards
+	// PATH only plus locale + paging overrides so output is parseable
+	// across operator locales + git config files.
 	Env []string
 }
 
@@ -95,9 +96,9 @@ func (o *OSExecutor) Run(ctx context.Context, repoPath string, args []string) ([
 			"PATH=" + osPath(),
 			"LC_ALL=C",
 			"LANG=C",
-			"GIT_TERMINAL_PROMPT=0",      // never block on auth prompt
+			"GIT_TERMINAL_PROMPT=0", // never block on auth prompt
 			"GIT_PAGER=cat",
-			"GIT_OPTIONAL_LOCKS=0",         // skip optimistic locks (parallel safety)
+			"GIT_OPTIONAL_LOCKS=0", // skip optimistic locks (parallel safety)
 		}
 	}
 
@@ -122,10 +123,7 @@ func (o *OSExecutor) Run(ctx context.Context, repoPath string, args []string) ([
 // osPath returns the parent process's PATH. Stubbed via a function so
 // tests can replace without touching package state.
 var osPath = func() string {
-	// Don't import "os" at package init — keep the executor self-contained.
-	return "" // empty PATH falls back to the kernel's default lookup paths
-	          // for some shells; production callers can supply Env explicitly
-	          // if they need a non-default PATH.
+	return os.Getenv("PATH")
 }
 
 func isExecNotFoundErr(err error) bool {

@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -71,8 +72,8 @@ func (o *OSExecutor) Run(ctx context.Context, args []string) ([]byte, []byte, in
 	if o.Env != nil {
 		cmd.Env = o.Env
 	} else {
-		// Default env: inherit + force C locale for stable formatting.
-		cmd.Env = append([]string(nil), "PATH=" + osPath(), "LC_ALL=C", "LANG=C", "NO_COLOR=1")
+		// Default env: forward PATH only, plus stable formatting knobs.
+		cmd.Env = append([]string(nil), "PATH="+osPath(), "LC_ALL=C", "LANG=C", "NO_COLOR=1")
 	}
 
 	var stdout, stderr strings.Builder
@@ -93,7 +94,7 @@ func (o *OSExecutor) Run(ctx context.Context, args []string) ([]byte, []byte, in
 	return []byte(stdout.String()), []byte(stderr.String()), exit, err
 }
 
-var osPath = func() string { return "" }
+var osPath = func() string { return os.Getenv("PATH") }
 
 func isExecNotFoundErr(err error) bool {
 	if err == nil {

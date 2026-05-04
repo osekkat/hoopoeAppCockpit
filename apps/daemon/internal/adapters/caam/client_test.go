@@ -40,6 +40,35 @@ func (f *fakeExecutor) Run(_ context.Context, args []string) ([]byte, []byte, in
 	return f.Stdouts[key], f.Stderrs[key], f.Exits[key], nil
 }
 
+func TestOSExecutorDefaultEnvUsesParentPathWithoutLeakingSecrets(t *testing.T) {
+	envBinary, err := exec.LookPath("env")
+	if err != nil {
+		t.Skip("env binary not on PATH")
+	}
+	t.Setenv("PATH", "/tmp/hoopoe-parent-bin")
+	t.Setenv("HOOPOE_TEST_PROVIDER_TOKEN", "do-not-leak")
+
+	stdout, stderr, exit, err := (&OSExecutor{Binary: envBinary}).Run(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("Run env: %v (stderr: %s)", err, stderr)
+	}
+	if exit != 0 {
+		t.Fatalf("Run env exit = %d (stderr: %s)", exit, stderr)
+	}
+	env := string(stdout)
+	if !strings.Contains(env, "PATH=/tmp/hoopoe-parent-bin\n") {
+		t.Fatalf("expected parent PATH in child env, got %q", env)
+	}
+	for _, required := range []string{"LC_ALL=C\n", "LANG=C\n", "NO_COLOR=1\n"} {
+		if !strings.Contains(env, required) {
+			t.Fatalf("expected %s in child env, got %q", strings.TrimSpace(required), env)
+		}
+	}
+	if strings.Contains(env, "HOOPOE_TEST_PROVIDER_TOKEN") {
+		t.Fatalf("child env leaked provider token: %q", env)
+	}
+}
+
 func TestListEmpty(t *testing.T) {
 	t.Parallel()
 	fake := newFakeExecutor()
