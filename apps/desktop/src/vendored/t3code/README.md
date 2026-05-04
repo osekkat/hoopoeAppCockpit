@@ -1,8 +1,10 @@
 # Vendored from t3code (MIT)
 
-Files in this directory are lifted verbatim from
+Most implementation files in this directory are copied or adapted from
 [`github.com/pingdotgg/t3code`](https://github.com/pingdotgg/t3code) under
-the MIT License, Copyright (c) 2026 T3 Tools Inc.
+the MIT License, Copyright (c) 2026 T3 Tools Inc. A small set of
+Hoopoe-owned support files also lives here when it exists only to compile,
+export, document, or test those lifted helpers.
 
 The pinned upstream SHA is recorded in `docs/source-provenance.md` at the
 project root. The verbatim MIT license text lives next to this README at
@@ -10,9 +12,11 @@ project root. The verbatim MIT license text lives next to this README at
 
 ## Editing rules (Appendix B of `plan.md`)
 
-1. **Do not edit files in this directory in place** beyond mechanical mass
-   renames (e.g., `T3CODE_*` env keys → `HOOPOE_*`, branding strings).
-2. Every lifted file must carry the t3code MIT notice at the top:
+1. **Do not edit copied/adapted upstream files in this directory in place**
+   beyond mechanical mass renames (e.g., `T3CODE_*` env keys → `HOOPOE_*`,
+   branding strings).
+2. Every copied/adapted t3code implementation file must carry the t3code MIT
+   notice at the top:
 
    ```text
    // Originally from github.com/pingdotgg/t3code (MIT License)
@@ -30,6 +34,19 @@ project root. The verbatim MIT license text lives next to this README at
    `apps/marketing/`, `packages/effect-acp/`,
    `packages/effect-codex-app-server/`, `packages/contracts/`, the Effect
    framework wholesale.
+
+## Hoopoe-owned exceptions
+
+These files are not upstream t3code source and therefore do not carry the
+t3code source notice. They must stay clearly marked as Hoopoe-owned:
+
+| File pattern                  | Purpose |
+| ----------------------------- | ------- |
+| `_shims.ts`                   | Plain-TypeScript shim layer for lifted modules |
+| `settings/index.ts`           | Barrel re-export for lifted settings helpers |
+| `*.test.ts`                   | Hoopoe-authored regression tests for lifted helpers |
+| `keybindings/*.test.ts`       | Hoopoe-authored keybinding parser/evaluator tests |
+| `README.md`                   | Hoopoe-authored provenance and editing guide |
 
 ## What lands here, when
 

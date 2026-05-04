@@ -22,16 +22,30 @@ the new pinned SHA is recorded here.
 | Pinned commit msg  | Refactor provider settings to declarative metadata (#2452)      |
 | Lift date          | 2026-05-02                                                      |
 | License file path  | `apps/desktop/src/vendored/t3code/LICENSE`                      |
-| Verbatim notice    | Top of every file under `apps/desktop/src/vendored/t3code/**`   |
+| Verbatim notice    | Top of every copied/adapted t3code implementation file          |
 | Attribution rules  | See `plan.md` Appendix B "License attribution" + project NOTICE |
 
 ### Vendored layout
 
-Lifted files land under `apps/desktop/src/vendored/t3code/` verbatim, with
-the MIT notice preserved at the top of each file. Adaptations (rebranding,
-rewiring, schema swaps) happen in Hoopoe's own files that import from
-`vendored/`. Vendored files are not edited in place beyond mechanical mass
-renames (e.g., `T3CODE_*` env keys → `HOOPOE_*`, branding strings).
+Copied or adapted t3code implementation files land under
+`apps/desktop/src/vendored/t3code/` with the MIT notice preserved at the top
+of each copied/adapted file. Adaptations (rebranding, rewiring, schema swaps)
+happen in Hoopoe's own files that import from `vendored/`. Vendored
+implementation files are not edited in place beyond mechanical mass renames
+(e.g., `T3CODE_*` env keys → `HOOPOE_*`, branding strings).
+
+The same directory also contains a small set of Hoopoe-authored support files
+that exist only to compile, export, document, or test the lifted helpers. These
+files are not upstream t3code source, do not carry the upstream MIT source
+notice, and must be clearly marked as Hoopoe-owned:
+
+| Hoopoe-owned file pattern                                      | Purpose |
+| -------------------------------------------------------------- | ------- |
+| `apps/desktop/src/vendored/t3code/_shims.ts`                   | Plain-TypeScript shim layer for lifted modules |
+| `apps/desktop/src/vendored/t3code/settings/index.ts`           | Barrel re-export for the lifted settings helpers |
+| `apps/desktop/src/vendored/t3code/*.test.ts`                   | Hoopoe-authored regression tests for lifted helpers |
+| `apps/desktop/src/vendored/t3code/keybindings/*.test.ts`       | Hoopoe-authored keybinding parser/evaluator tests |
+| `apps/desktop/src/vendored/t3code/README.md`                   | Hoopoe-authored provenance and editing guide |
 
 ### File inventory
 
