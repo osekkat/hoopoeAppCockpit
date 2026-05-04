@@ -44,8 +44,10 @@ rules. It exists because `plan.md` Appendix A moved the data-layout detail here.
   Resetting, cleaning, checking out branches, or deleting mirror contents is
   also forbidden from Hoopoe. The retired "Discard local changes" channel
   validates project state, emits audit, and refuses with a read-only error;
-  users may inspect the mirror in Finder, but Hoopoe repair/write flows target
-  the VPS clone or origin-derived sync state only.
+  users may inspect the mirror in Finder, but Hoopoe never performs write-repair
+  inside the desktop mirror. If the mirror is corrupt or dirty, recovery is to
+  abandon/recreate the mirror and fetch fresh bytes from origin, or to surface
+  the problem for manual operator action outside Hoopoe.
 - Health and coverage jobs do not run in the active agent working tree by
   default. They use dedicated worktrees under `~/.hoopoe/work/...`.
 - Terminal output is observability, not truth. Prefer structured robot/API
