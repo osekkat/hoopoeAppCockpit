@@ -230,6 +230,66 @@ describe("hp-e7k :: ConnectionManager FSM", () => {
     expect(manager.transitionHistory().map((entry) => entry.trigger)).toContain("version.mismatch");
   });
 
+  test("diagnosticsSnapshot exposes current state and reasoned transitions", async () => {
+    const keyPath = join(workDir, "id_ed25519");
+    await writeFile(keyPath, "PRIVATE\n");
+    const driver = new FakeTunnelDriver();
+    const manager = new ConnectionManager({
+      driver,
+      now: () => new Date("2026-05-04T05:00:00.000Z"),
+      jitter: () => 0.5,
+    });
+    await manager.connect(fixtureProfile(keyPath));
+
+    driver.health = false;
+    await manager.checkHealth();
+
+    const diagnostics = manager.diagnosticsSnapshot();
+
+    expect(diagnostics.capturedAt).toBe("2026-05-04T05:00:00.000Z");
+    expect(diagnostics.current).toMatchObject({
+      state: "reconnecting",
+      activeProfileId: "vps-main",
+      localPort: null,
+      reconnectAttempts: 1,
+    });
+    expect(diagnostics.recentTransitions.map((entry) => entry.trigger)).toEqual([
+      "connect.requested",
+      "ssh.probe.ok",
+      "tunnel.opened",
+      "auth.ok",
+      "daemon.health.failed",
+    ]);
+    expect(diagnostics.recentTransitions.at(-1)).toMatchObject({
+      to: "reconnecting",
+      reason: "Daemon health check failed.",
+      fault: { code: "daemon.health.failed" },
+    });
+  });
+
+  test("diagnosticsSnapshot defaults to the last 20 transitions", async () => {
+    const keyPath = join(workDir, "id_ed25519");
+    await writeFile(keyPath, "PRIVATE\n");
+    const driver = new FakeTunnelDriver();
+    const manager = new ConnectionManager({
+      driver,
+      now: () => new Date("2026-05-04T06:00:00.000Z"),
+      jitter: () => 0,
+    });
+    await manager.connect(fixtureProfile(keyPath));
+
+    for (let i = 0; i < 25; i += 1) {
+      manager.handleNetworkChange();
+    }
+
+    const diagnostics = manager.diagnosticsSnapshot();
+    expect(diagnostics.recentTransitions).toHaveLength(20);
+    expect(diagnostics.recentTransitions.every((entry) => entry.trigger === "network.changed")).toBe(true);
+    expect(diagnostics.recentTransitions.every((entry) => entry.reason === "Network changed; SSH tunnel may be stale.")).toBe(true);
+    expect(manager.diagnosticsSnapshot(1).recentTransitions).toHaveLength(1);
+    expect(manager.diagnosticsSnapshot(0).recentTransitions).toHaveLength(20);
+  });
+
   test("missing private keys fail before opening a tunnel", async () => {
     const driver = new FakeTunnelDriver();
     const manager = new ConnectionManager({ driver });

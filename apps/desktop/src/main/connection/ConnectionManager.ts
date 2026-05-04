@@ -86,6 +86,16 @@ export interface TunnelTransition {
   readonly reconnectAttempts: number;
 }
 
+export interface ConnectionDiagnosticTransition extends TunnelTransition {
+  readonly reason: string;
+}
+
+export interface ConnectionDiagnosticsSnapshot {
+  readonly capturedAt: string;
+  readonly current: TunnelSnapshot;
+  readonly recentTransitions: readonly ConnectionDiagnosticTransition[];
+}
+
 export class ConnectionManagerError extends Error {
   override readonly name = "ConnectionManagerError";
   readonly code: string;
@@ -491,6 +501,21 @@ export class ConnectionManager {
     return this.transitions.slice();
   }
 
+  diagnosticsSnapshot(limit = 20): ConnectionDiagnosticsSnapshot {
+    const safeLimit = Number.isInteger(limit) && limit > 0 ? limit : 20;
+    const recentTransitions = this.transitions
+      .slice(-safeLimit)
+      .map((entry): ConnectionDiagnosticTransition => ({
+        ...entry,
+        reason: entry.fault?.message ?? diagnosticReasonForTrigger(entry.trigger),
+      }));
+    return {
+      capturedAt: this.now().toISOString(),
+      current: this.snapshot(),
+      recentTransitions,
+    };
+  }
+
   async connect(profile: SshProfile): Promise<TunnelSnapshot> {
     if (this.handle !== null) {
       await this.handle.close();
@@ -632,6 +657,37 @@ export function retryDelayMs(attempt: number, jitterUnit: number): number {
   const boundedJitter = Math.min(1, Math.max(0, jitterUnit));
   const jitterMultiplier = 0.75 + boundedJitter * 0.5;
   return Math.min(30_000, Math.round(base * jitterMultiplier));
+}
+
+function diagnosticReasonForTrigger(trigger: TunnelTrigger): string {
+  switch (trigger) {
+    case "profile.saved":
+      return "SSH profile was saved.";
+    case "connect.requested":
+      return "User or wizard requested a connection.";
+    case "ssh.probe.ok":
+      return "SSH profile passed local preflight checks.";
+    case "tunnel.opened":
+      return "SSH tunnel opened a local daemon port.";
+    case "auth.ok":
+      return "Daemon bearer and websocket token were accepted.";
+    case "daemon.health.failed":
+      return "Daemon health check failed.";
+    case "tunnel.closed":
+      return "SSH tunnel closed.";
+    case "macos.wake":
+      return "macOS woke from sleep; tunnel must be revalidated.";
+    case "network.changed":
+      return "Network changed; tunnel may be stale.";
+    case "bearer.expired":
+      return "Bearer expired and must be refreshed.";
+    case "version.mismatch":
+      return "Daemon API version is incompatible.";
+    case "disconnect.requested":
+      return "User requested disconnect.";
+    case "reconnect.retry":
+      return "Backoff elapsed and reconnect retry started.";
+  }
 }
 
 function isErrnoCode(err: unknown, code: string): boolean {
