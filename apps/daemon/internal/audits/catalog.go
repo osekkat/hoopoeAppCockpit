@@ -162,6 +162,21 @@ type Finding struct {
 	DedupeKey string   `json:"dedupeKey,omitempty"`
 }
 
+type BeadDraft struct {
+	SchemaVersion      int      `json:"schemaVersion"`
+	AuditID            AuditID  `json:"auditId"`
+	FindingID          string   `json:"findingId,omitempty"`
+	Source             string   `json:"source"`
+	Sources            []string `json:"sources,omitempty"`
+	DedupeKey          string   `json:"dedupeKey"`
+	IssueType          string   `json:"issueType"`
+	Title              string   `json:"title"`
+	Description        string   `json:"description"`
+	Priority           int      `json:"priority"`
+	Labels             []string `json:"labels,omitempty"`
+	AcceptanceCriteria []string `json:"acceptanceCriteria"`
+}
+
 func DefaultCatalog() []Definition {
 	return []Definition{
 		ubsDefinition(
@@ -440,6 +455,39 @@ func FromUBSFindings(findings []ubs.Finding) []Finding {
 	return out
 }
 
+func BeadDraftsFromFindings(spec RunnerSpec, findings []Finding) ([]BeadDraft, error) {
+	if !spec.FindingPolicy.CreateBeads || spec.FindingPolicy.FreeFloatingAllowed {
+		return nil, fmt.Errorf("%w: audit findings must create beads", ErrInvalidRequest)
+	}
+	source := strings.TrimSpace(spec.FindingPolicy.Source)
+	if spec.FindingPolicy.StampRequired && source == "" {
+		return nil, fmt.Errorf("%w: finding source stamp is required", ErrInvalidRequest)
+	}
+	stamped := StampFindings(source, findings)
+	merged := MergeFindings(nil, stamped)
+	sort.Slice(merged, func(i, j int) bool {
+		if merged[i].DedupeKey != merged[j].DedupeKey {
+			return merged[i].DedupeKey < merged[j].DedupeKey
+		}
+		return merged[i].Message < merged[j].Message
+	})
+	if spec.MaxFindings > 0 && len(merged) > spec.MaxFindings {
+		merged = merged[:spec.MaxFindings]
+	}
+	drafts := make([]BeadDraft, 0, len(merged))
+	for _, finding := range merged {
+		finding.Message = strings.TrimSpace(finding.Message)
+		if finding.Message == "" {
+			return nil, fmt.Errorf("%w: finding message is required", ErrInvalidRequest)
+		}
+		if spec.FindingPolicy.StampRequired && !contains(finding.Sources, source) {
+			return nil, fmt.Errorf("%w: finding %q missing source stamp %q", ErrInvalidRequest, finding.ID, source)
+		}
+		drafts = append(drafts, beadDraftFromFinding(spec, finding))
+	}
+	return drafts, nil
+}
+
 func ubsDefinition(id AuditID, title string, summary string, scopes []ScopeKind) Definition {
 	return Definition{
 		ID:                   id,
@@ -541,6 +589,200 @@ func dedupeKey(finding Finding) string {
 		strings.ToLower(strings.Join(strings.Fields(finding.Message), " ")),
 	}
 	return strings.Join(parts, "|")
+}
+
+func beadDraftFromFinding(spec RunnerSpec, finding Finding) BeadDraft {
+	return BeadDraft{
+		SchemaVersion:      CatalogSchemaVersion,
+		AuditID:            spec.AuditID,
+		FindingID:          strings.TrimSpace(finding.ID),
+		Source:             finding.Source,
+		Sources:            normalizeSources(finding.Sources...),
+		DedupeKey:          finding.DedupeKey,
+		IssueType:          "task",
+		Title:              findingTitle(finding),
+		Description:        findingDescription(spec, finding),
+		Priority:           priorityForSeverity(finding.Severity),
+		Labels:             findingLabels(spec, finding),
+		AcceptanceCriteria: findingAcceptanceCriteria(finding),
+	}
+}
+
+func findingTitle(finding Finding) string {
+	message := firstSentence(finding.Message)
+	if message == "" {
+		message = "specialized audit finding"
+	}
+	prefix := "Fix audit finding"
+	if finding.FilePath != "" {
+		prefix = "Fix " + shortPath(finding.FilePath)
+	}
+	return truncate(prefix+": "+message, 96)
+}
+
+func findingDescription(spec RunnerSpec, finding Finding) string {
+	lines := []string{
+		"Specialized audit: " + spec.Title,
+		"Audit ID: " + string(spec.AuditID),
+		"Source: " + finding.Source,
+	}
+	if len(finding.Sources) > 0 {
+		lines = append(lines, "Sources: "+strings.Join(normalizeSources(finding.Sources...), ", "))
+	}
+	lines = append(lines, "Dedupe key: "+finding.DedupeKey)
+	if loc := findingLocation(finding); loc != "" {
+		lines = append(lines, "Location: "+loc)
+	}
+	if strings.TrimSpace(finding.RuleID) != "" {
+		lines = append(lines, "Rule: "+strings.TrimSpace(finding.RuleID))
+	}
+	if strings.TrimSpace(finding.Severity) != "" {
+		lines = append(lines, "Severity: "+strings.TrimSpace(finding.Severity))
+	}
+	if strings.TrimSpace(finding.Category) != "" {
+		lines = append(lines, "Category: "+strings.TrimSpace(finding.Category))
+	}
+	lines = append(lines,
+		"",
+		"Finding:",
+		strings.TrimSpace(finding.Message),
+		"",
+		"Handling policy:",
+		"- Do not leave this as a free-floating TODO.",
+		"- Reproduce the issue or explicitly mark it false positive in the review ledger.",
+		"- Record verification evidence before closing the bead.",
+	)
+	return strings.Join(lines, "\n")
+}
+
+func findingAcceptanceCriteria(finding Finding) []string {
+	ref := strings.TrimSpace(finding.ID)
+	if ref == "" {
+		ref = strings.TrimSpace(finding.DedupeKey)
+	}
+	return []string{
+		"Finding " + ref + " is reproduced or explicitly marked false positive.",
+		"Fix, deferral, or linkage to an existing bead is recorded in the review ledger.",
+		"Relevant verification command or test evidence is recorded before closure.",
+	}
+}
+
+func findingLabels(spec RunnerSpec, finding Finding) []string {
+	labels := []string{
+		"review",
+		"specialized-audit",
+		"audit-" + labelToken(string(spec.AuditID)),
+		"source-" + labelToken(finding.Source),
+	}
+	if finding.Category != "" {
+		labels = append(labels, "cat-"+labelToken(finding.Category))
+	}
+	if finding.Severity != "" {
+		labels = append(labels, "sev-"+labelToken(finding.Severity))
+	}
+	return uniqueSorted(labels)
+}
+
+func priorityForSeverity(severity string) int {
+	switch strings.ToLower(strings.TrimSpace(severity)) {
+	case "critical":
+		return 0
+	case "high":
+		return 1
+	case "medium", "":
+		return 2
+	default:
+		return 3
+	}
+}
+
+func findingLocation(finding Finding) string {
+	path := strings.TrimSpace(finding.FilePath)
+	if path == "" {
+		return ""
+	}
+	if finding.Line <= 0 {
+		return filepath.ToSlash(filepath.Clean(path))
+	}
+	location := filepath.ToSlash(filepath.Clean(path)) + ":" + strconv.Itoa(finding.Line)
+	if finding.EndLine > finding.Line {
+		location += "-" + strconv.Itoa(finding.EndLine)
+	}
+	return location
+}
+
+func firstSentence(value string) string {
+	value = strings.Join(strings.Fields(value), " ")
+	if value == "" {
+		return ""
+	}
+	for _, sep := range []string{". ", "\n"} {
+		if idx := strings.Index(value, sep); idx >= 0 {
+			return strings.TrimSpace(value[:idx+1])
+		}
+	}
+	return value
+}
+
+func shortPath(path string) string {
+	path = filepath.ToSlash(filepath.Clean(strings.TrimSpace(path)))
+	parts := strings.Split(path, "/")
+	if len(parts) <= 2 {
+		return path
+	}
+	return strings.Join(parts[len(parts)-2:], "/")
+}
+
+func truncate(value string, limit int) string {
+	value = strings.Join(strings.Fields(value), " ")
+	if limit <= 0 || len(value) <= limit {
+		return value
+	}
+	if limit <= 3 {
+		return value[:limit]
+	}
+	return strings.TrimSpace(value[:limit-3]) + "..."
+}
+
+func labelToken(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	var b strings.Builder
+	lastDash := false
+	for _, r := range value {
+		allowed := r >= 'a' && r <= 'z' || r >= '0' && r <= '9'
+		if allowed {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	out := strings.Trim(b.String(), "-")
+	if out == "" {
+		return "unknown"
+	}
+	if len(out) > 48 {
+		return strings.Trim(out[:48], "-")
+	}
+	return out
+}
+
+func uniqueSorted(values []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func contains(values []string, want string) bool {

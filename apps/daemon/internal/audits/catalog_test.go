@@ -262,6 +262,115 @@ func TestStampAndMergeFindingsPreservesCrossToolSources(t *testing.T) {
 	}
 }
 
+func TestBeadDraftsFromFindingsCreateStampedBeadDrafts(t *testing.T) {
+	t.Parallel()
+	spec, err := BuildRunnerSpec(DefaultCatalog(), RunnerRequest{
+		AuditID: AuditDeadlock,
+	})
+	if err != nil {
+		t.Fatalf("BuildRunnerSpec: %v", err)
+	}
+	drafts, err := BeadDraftsFromFindings(spec, []Finding{
+		{
+			ID:       "deadlock-1",
+			FilePath: "apps/daemon/internal/api/server.go",
+			Line:     42,
+			EndLine:  44,
+			RuleID:   "lock-order",
+			Severity: "critical",
+			Category: "concurrency",
+			Message:  "mutex order can deadlock. acquire project lock before session lock",
+		},
+		{
+			Source:   ubs.SourceUBS,
+			Sources:  []string{ubs.SourceUBS},
+			FilePath: "apps/daemon/internal/api/server.go",
+			Line:     42,
+			RuleID:   "lock-order",
+			Severity: "high",
+			Category: "concurrency",
+			Message:  "mutex order can deadlock",
+		},
+	})
+	if err != nil {
+		t.Fatalf("BeadDraftsFromFindings: %v", err)
+	}
+	if len(drafts) != 2 {
+		t.Fatalf("drafts = %+v", drafts)
+	}
+	var first BeadDraft
+	for _, draft := range drafts {
+		if draft.FindingID == "deadlock-1" {
+			first = draft
+			break
+		}
+	}
+	if first.FindingID == "" {
+		t.Fatalf("drafts = %+v, missing deadlock-1", drafts)
+	}
+	if first.SchemaVersion != CatalogSchemaVersion || first.AuditID != AuditDeadlock || first.IssueType != "task" {
+		t.Fatalf("draft metadata = %+v", first)
+	}
+	if first.Source != "skill:deadlock-finder-and-fixer" || !contains(first.Sources, first.Source) {
+		t.Fatalf("source stamp = %+v", first)
+	}
+	if first.Priority != 0 {
+		t.Fatalf("priority = %d, want critical P0", first.Priority)
+	}
+	for _, label := range []string{"review", "specialized-audit", "audit-deadlock-concurrency", "source-skill-deadlock-finder-and-fixer", "cat-concurrency", "sev-critical"} {
+		if !contains(first.Labels, label) {
+			t.Fatalf("labels = %#v, missing %q", first.Labels, label)
+		}
+	}
+	if !strings.Contains(first.Description, "Source: skill:deadlock-finder-and-fixer") ||
+		!strings.Contains(first.Description, "Location: apps/daemon/internal/api/server.go:42-44") ||
+		!strings.Contains(first.Description, "Do not leave this as a free-floating TODO") {
+		t.Fatalf("description = %s", first.Description)
+	}
+	if len(first.AcceptanceCriteria) != 3 || !strings.Contains(first.AcceptanceCriteria[0], "deadlock-1") {
+		t.Fatalf("acceptance = %#v", first.AcceptanceCriteria)
+	}
+}
+
+func TestBeadDraftsFromFindingsDedupeAndRespectMaxFindings(t *testing.T) {
+	t.Parallel()
+	spec, err := BuildRunnerSpec(DefaultCatalog(), RunnerRequest{
+		AuditID:     AuditMockCode,
+		MaxFindings: 1,
+	})
+	if err != nil {
+		t.Fatalf("BuildRunnerSpec: %v", err)
+	}
+	findings := []Finding{
+		{Source: "skill:mock-code-finder", FilePath: "a.go", Line: 1, RuleID: "placeholder", Message: "placeholder implementation"},
+		{Source: ubs.SourceUBS, Sources: []string{ubs.SourceUBS}, FilePath: "a.go", Line: 1, RuleID: "placeholder", Message: "placeholder implementation"},
+		{FilePath: "b.go", Line: 2, RuleID: "todo", Message: "TODO remains"},
+	}
+	drafts, err := BeadDraftsFromFindings(spec, findings)
+	if err != nil {
+		t.Fatalf("BeadDraftsFromFindings: %v", err)
+	}
+	if len(drafts) != 1 {
+		t.Fatalf("drafts = %+v, want max 1", drafts)
+	}
+	if !contains(drafts[0].Sources, "skill:mock-code-finder") || !contains(drafts[0].Sources, ubs.SourceUBS) {
+		t.Fatalf("sources = %#v, want skill + UBS dedupe", drafts[0].Sources)
+	}
+}
+
+func TestBeadDraftsFromFindingsRejectsFreeFloatingPolicy(t *testing.T) {
+	t.Parallel()
+	spec, err := BuildRunnerSpec(DefaultCatalog(), RunnerRequest{AuditID: AuditMockCode})
+	if err != nil {
+		t.Fatalf("BuildRunnerSpec: %v", err)
+	}
+	spec.FindingPolicy.CreateBeads = false
+	_, err = BeadDraftsFromFindings(spec, []Finding{{Message: "finding"}})
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("err = %v, want ErrInvalidRequest", err)
+	}
+}
+
 func TestValidateCatalogRejectsBadDelegatedSource(t *testing.T) {
 	t.Parallel()
 	catalog := DefaultCatalog()
