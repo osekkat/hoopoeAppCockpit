@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { goldenOutputPath, type GoldenOutputFixture } from "../src/index.ts";
 import { assertToolConformance } from "./harness.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -102,8 +103,18 @@ interface RobotStatus {
   agent_mail: { available: boolean; server_url: string };
 }
 
+function parseJSON<T>(text: string, where: string): T {
+  try {
+    return JSON.parse(text) as T;
+  } catch (error) {
+    throw new Error(
+      `${where} did not parse as JSON: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
 function loadJSON<T>(path: string): T {
-  return JSON.parse(readFileSync(path, "utf8")) as T;
+  return parseJSON<T>(readFileSync(path, "utf8"), path);
 }
 
 function normalizeTool(tool: RobotTool) {
@@ -238,6 +249,22 @@ describe("ntm adapter contract conformance", () => {
     assertToolConformance("ntm");
   });
 
+  test("unsupported-version fixture marks ntm minimum version missing", () => {
+    const fixture = loadJSON<GoldenOutputFixture>(goldenOutputPath("ntm", "unsupported-version"));
+
+    expect(fixture.meta).toMatchObject({
+      adapter: "ntm",
+      state: "unsupported-version",
+    });
+    expect(fixture.argv).toEqual(["ntm", "--version"]);
+    expect(fixture.exit).toBe(0);
+    expect(fixture.stdoutText).toBe("ntm 0.0.1\n");
+    expect(fixture.capabilities?.["ntm._minVersion"]).toMatchObject({
+      status: "missing",
+      notes: "observed 0.0.1; min-compatible per integration contract is higher",
+    });
+  });
+
   test("phase0 real-VPS fixture matrix is keyed by ntm version and commit", () => {
     const matrix = buildPhase0Matrix();
 
@@ -257,24 +284,28 @@ describe("ntm adapter contract conformance", () => {
 
   test("phase0 captures normalize to stable daemon adapter outputs", () => {
     const matrix = buildPhase0Matrix();
-    const canonicalBytes = JSON.stringify(matrix.canonical);
-    const roundTripped = JSON.stringify(JSON.parse(canonicalBytes));
+    const { canonical, manifest } = matrix;
+    const { version, snapshot, status } = canonical;
+    const system = version.system;
+    const canonicalBytes = JSON.stringify(canonical);
+    const roundTripped = JSON.stringify(parseJSON<unknown>(canonicalBytes, "canonical matrix"));
 
     expect(roundTripped).toBe(canonicalBytes);
-    expect(matrix.canonical.version.success).toBe(true);
-    expect(matrix.canonical.version.system.version).toBe(matrix.manifest.ntmVersion);
-    expect(matrix.canonical.version.system.commit).toBe(matrix.manifest.ntmCommit);
-    expect(matrix.canonical.version.system.build_date).toBe(matrix.manifest.ntmBuildDate);
-    expect(matrix.canonical.version.system.go_version).toBe(matrix.manifest.goVersion);
-    expect(matrix.canonical.snapshot.sessions).toEqual([]);
-    expect(matrix.canonical.status.sessions).toEqual([]);
-    expect(matrix.canonical.status.summary.total_sessions).toBe(0);
-    expect(matrix.canonical.status.summary.total_agents).toBe(0);
+    expect(version.success).toBe(true);
+    expect(system.version).toBe(manifest.ntmVersion);
+    expect(system.commit).toBe(manifest.ntmCommit);
+    expect(system.build_date).toBe(manifest.ntmBuildDate);
+    expect(system.go_version).toBe(manifest.goVersion);
+    expect(snapshot.sessions).toEqual([]);
+    expect(status.sessions).toEqual([]);
+    expect(status.summary.total_sessions).toBe(0);
+    expect(status.summary.total_agents).toBe(0);
   });
 
   test("phase0 capability output covers the robot surfaces the daemon adapter must gate on", () => {
     const matrix = buildPhase0Matrix();
-    const flags = new Set(matrix.canonical.capabilities.commands.map((command) => command.flag));
+    const { commands } = matrix.canonical.capabilities;
+    const flags = new Set(commands.map((command) => command.flag));
 
     expect(flags.has("--robot-snapshot")).toBe(true);
     expect(flags.has("--robot-status")).toBe(true);
@@ -283,15 +314,14 @@ describe("ntm adapter contract conformance", () => {
     expect(flags.has("--robot-tools")).toBe(true);
     expect(flags.has("--robot-mail")).toBe(true);
     expect(flags.has("--robot-alerts")).toBe(true);
-    expect(matrix.canonical.capabilities.commands.length).toBeGreaterThan(50);
+    expect(commands.length).toBeGreaterThan(50);
   });
 
   test("phase0 snapshot and tool inventory preserve source-of-truth capability posture", () => {
     const matrix = buildPhase0Matrix();
-    const snapshotTools = new Map(matrix.canonical.snapshot.tools.map((tool) => [tool.name, tool]));
-    const inventoryTools = new Map(
-      matrix.canonical.toolInventory.tools.map((tool) => [tool.name, tool]),
-    );
+    const { snapshot, toolInventory } = matrix.canonical;
+    const snapshotTools = new Map(snapshot.tools.map((tool) => [tool.name, tool]));
+    const inventoryTools = new Map(toolInventory.tools.map((tool) => [tool.name, tool]));
 
     expect(snapshotTools.size).toBeGreaterThan(10);
     expect(inventoryTools.size).toBe(snapshotTools.size);
@@ -309,17 +339,19 @@ describe("ntm adapter contract conformance", () => {
 
   test("phase0 mail, alert, and bead surfaces preserve the fresh-VPS state", () => {
     const matrix = buildPhase0Matrix();
+    const { snapshot, status, mail, mailCheck, alerts } = matrix.canonical;
+    const beadsSummary = snapshot.beads_summary;
 
-    expect(matrix.canonical.snapshot.beads_summary).toEqual({
+    expect(beadsSummary).toEqual({
       available: false,
       reason: "no .beads/ directory in /home/admin",
     });
-    expect(matrix.canonical.status.beads).toEqual(matrix.canonical.snapshot.beads_summary);
-    expect(matrix.canonical.snapshot.agent_mail).toEqual({
+    expect(status.beads).toEqual(beadsSummary);
+    expect(snapshot.agent_mail).toEqual({
       available: true,
       project: "/home/admin",
     });
-    expect(matrix.canonical.mail).toEqual({
+    expect(mail).toEqual({
       success: true,
       available: true,
       project_key: "/home/admin",
@@ -330,9 +362,9 @@ describe("ntm adapter contract conformance", () => {
         pending_ack: 0,
       },
     });
-    expect(matrix.canonical.mailCheck.success).toBe(false);
-    expect(matrix.canonical.mailCheck.error_code).toBe("INTERNAL_ERROR");
-    expect(matrix.canonical.alerts).toEqual({
+    expect(mailCheck.success).toBe(false);
+    expect(mailCheck.error_code).toBe("INTERNAL_ERROR");
+    expect(alerts).toEqual({
       success: true,
       count: 0,
       alerts: [],
@@ -341,9 +373,9 @@ describe("ntm adapter contract conformance", () => {
 
   test("phase0 discrepancy ledger accounts for intentional session and robot-flag gaps", () => {
     const matrix = buildPhase0Matrix();
-    const discrepancies = new Map(
-      matrix.ledger.expectedDiscrepancies.map((entry) => [entry.id, entry]),
-    );
+    const { ledger, manifest } = matrix;
+    const { drift } = manifest;
+    const discrepancies = new Map(ledger.expectedDiscrepancies.map((entry) => [entry.id, entry]));
 
     expect(discrepancies.get("ntm.phase0.no-active-sessions")?.fields).toEqual([
       "sessions",
@@ -351,12 +383,12 @@ describe("ntm adapter contract conformance", () => {
       "actions",
       "approvals",
     ]);
-    expect(matrix.manifest.drift.absentFlags).toEqual(["--robot-events", "--robot-attention"]);
+    expect(drift.absentFlags).toEqual(["--robot-events", "--robot-attention"]);
     expect(discrepancies.get("ntm.phase0.robot-events-absent")?.substitution).toBe(
-      matrix.manifest.drift.substitutions["--robot-events"],
+      drift.substitutions["--robot-events"],
     );
     expect(discrepancies.get("ntm.phase0.robot-attention-absent")?.substitution).toBe(
-      matrix.manifest.drift.substitutions["--robot-attention"],
+      drift.substitutions["--robot-attention"],
     );
   });
 });
