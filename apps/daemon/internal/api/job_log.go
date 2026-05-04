@@ -6,10 +6,12 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/jobs"
 	joblog "github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/jobs/log"
+	daemonmetrics "github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/metrics"
 )
 
 const logFinalHeader = "X-Log-Final"
@@ -29,7 +31,12 @@ func (s *server) handleJobLogChunk(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jobID := chi.URLParam(r, "jobId")
+	start := time.Now()
 	chunk, err := s.jobs.ReadLog(r.Context(), jobID, offset, maxBytes)
+	_ = s.metrics.ObserveDuration(daemonmetrics.MetricLogFetchDurationSeconds, daemonmetrics.Labels{
+		"result": logFetchResult(err),
+		"final":  strconv.FormatBool(chunk.Final),
+	}, time.Since(start))
 	if err != nil {
 		s.writeLogJobError(w, err)
 		return
@@ -43,6 +50,13 @@ func (s *server) handleJobLogChunk(w http.ResponseWriter, r *http.Request) {
 	setLogHeader(w.Header(), logNextOffsetHeader, strconv.FormatInt(chunk.NextOffset, 10))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(chunk.Data)
+}
+
+func logFetchResult(err error) string {
+	if err == nil {
+		return "ok"
+	}
+	return "error"
 }
 
 func parseLogMaxBytes(r *http.Request) (int64, error) {

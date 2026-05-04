@@ -19,6 +19,7 @@ import (
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/auth"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/capabilities"
 	jobstore "github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/jobs"
+	daemonmetrics "github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/metrics"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/onboarding/checkpoints"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/security"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/systemd"
@@ -36,6 +37,7 @@ type Config struct {
 	WSValidator         api.WebSocketTokenValidator
 	Capabilities        *capabilities.Registry
 	Inventory           api.InventoryService
+	Metrics             *daemonmetrics.Registry
 	PublicBindConfirmer security.PublicBindConfirmer
 	StateDir            string
 	SystemdNotifier     systemdNotifier
@@ -124,6 +126,7 @@ func Run(ctx context.Context, args []string, cfg Config) error {
 		WSValidator:  wsValidator,
 		Capabilities: cfg.Capabilities,
 		Inventory:    cfg.Inventory,
+		Metrics:      cfg.Metrics,
 		Now:          now,
 	})
 	router = api.WithBindSafetyReport(router, security.NewBindReport(decision, now()))

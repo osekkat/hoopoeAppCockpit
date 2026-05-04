@@ -9,6 +9,7 @@ import (
 	"time"
 
 	jobstore "github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/jobs"
+	daemonmetrics "github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/metrics"
 )
 
 func TestJobLogEndpointReturnsRawRangeWithOffsetHeaders(t *testing.T) {
@@ -43,6 +44,38 @@ func TestJobLogEndpointReturnsRawRangeWithOffsetHeaders(t *testing.T) {
 	assertHeader(t, rec, logTotalBytesHeader, "11")
 	assertHeader(t, rec, logNextOffsetHeader, "11")
 	assertHeader(t, rec, logFinalHeader, "true")
+}
+
+func TestJobLogEndpointRecordsFetchDurationMetric(t *testing.T) {
+	reader := jobLogReader{
+		jobs: map[string]jobstore.Job{
+			"job_test": {
+				ID:            "job_test",
+				Kind:          "bootstrap.acfs",
+				SchemaVersion: jobstore.SchemaVersion,
+				Status:        jobstore.StatusRunning,
+				CreatedAt:     time.Unix(20, 0).UTC(),
+				UpdatedAt:     time.Unix(20, 0).UTC(),
+			},
+		},
+		logs: map[string][]byte{
+			"job_test": []byte("hello world"),
+		},
+	}
+	registry := daemonmetrics.NewRegistry(daemonmetrics.Config{})
+	router := NewRouter(Config{Jobs: reader, Metrics: registry})
+	req := httptest.NewRequest(http.MethodGet, "/v1/jobs/job_test/log?offset=0&maxBytes=5", nil)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	series := registry.Snapshot().SeriesByName(daemonmetrics.MetricLogFetchDurationSeconds)
+	if len(series) != 1 || series[0].Count != 1 || series[0].Labels["result"] != "ok" || series[0].Labels["final"] != "false" {
+		t.Fatalf("log fetch metric = %+v", series)
+	}
 }
 
 func TestJobLogEndpointSupportsReconnectFromOffsetWhileRunning(t *testing.T) {

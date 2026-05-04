@@ -11,6 +11,7 @@ import (
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/capabilities"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/fixtures"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/inventory"
+	daemonmetrics "github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/metrics"
 )
 
 type Config struct {
@@ -26,6 +27,7 @@ type Daemon struct {
 	Jobs         *JobReader
 	Capabilities *capabilities.Registry
 	Inventory    *inventory.Service
+	Metrics      *daemonmetrics.Registry
 	Build        api.BuildInfo
 	Now          func() time.Time
 }
@@ -68,6 +70,12 @@ func NewDaemon(cfg Config) (*Daemon, error) {
 	}
 
 	events := api.NewEventHub(api.EventHubConfig{Now: now})
+	metricsRegistry := daemonmetrics.NewRegistry(daemonmetrics.Config{
+		Now:                   now,
+		IncludeDefaultTargets: true,
+	})
+	_ = metricsRegistry.SetGauge(daemonmetrics.MetricInFlightJobs, nil, 0)
+	_ = metricsRegistry.SetGauge(daemonmetrics.MetricJobCancellationOrphans, nil, 0)
 	events.Publish(api.PublishInput{
 		Channel: "_system",
 		Type:    "mock.scenario.loaded",
@@ -104,8 +112,9 @@ func NewDaemon(cfg Config) (*Daemon, error) {
 			Registry: registry,
 			Now:      now,
 		}),
-		Build: build,
-		Now:   now,
+		Metrics: metricsRegistry,
+		Build:   build,
+		Now:     now,
 	}, nil
 }
 
@@ -134,6 +143,7 @@ func (d *Daemon) Router() http.Handler {
 		Jobs:         d.Jobs,
 		Capabilities: d.Capabilities,
 		Inventory:    d.Inventory,
+		Metrics:      d.Metrics,
 		Now:          d.Now,
 	}))
 	return r

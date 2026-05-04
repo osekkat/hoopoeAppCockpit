@@ -17,6 +17,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/capabilities"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/jobs"
+	daemonmetrics "github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/metrics"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/onboarding/checkpoints"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/projects"
 	schemas "github.com/hoopoe-cockpit/hoopoe/packages/schemas/go"
@@ -47,6 +48,7 @@ type Config struct {
 	Onboarding   *checkpoints.Service
 	Auth         *AuthConfig
 	Upgrade      http.Handler
+	Metrics      *daemonmetrics.Registry
 	Now          func() time.Time
 }
 
@@ -88,6 +90,7 @@ type server struct {
 	onboarding   *checkpoints.Service
 	authConfig   *AuthConfig
 	upgrade      http.Handler
+	metrics      *daemonmetrics.Registry
 	now          func() time.Time
 }
 
@@ -115,6 +118,8 @@ func NewRouter(cfg Config) http.Handler {
 	r.Get("/v1/events/replay", s.handleEventReplay)
 	r.Get("/v1/events/sse", s.handleEventSSE)
 	r.Get("/v1/events/ws", s.handleEventWS)
+	r.Get("/v1/diagnostics/metrics", s.handleMetrics)
+	r.Get("/v1/diagnostics/metrics/prometheus", s.handleMetricsPrometheus)
 	s.mountCapabilityRoutes(r)
 	s.mountInventoryRoutes(r)
 	s.mountSeedContractRoutes(r)
@@ -167,6 +172,13 @@ func normalizeConfig(cfg Config) *server {
 		wsValidator = AllowAllWebSocketTokens{}
 	}
 	inventory := resolveInventoryService(cfg.Inventory, cfg.Capabilities, now)
+	metrics := cfg.Metrics
+	if metrics == nil {
+		metrics = daemonmetrics.NewRegistry(daemonmetrics.Config{
+			Now:                   now,
+			IncludeDefaultTargets: true,
+		})
+	}
 	return &server{
 		build:        build,
 		events:       events,
@@ -180,6 +192,7 @@ func normalizeConfig(cfg Config) *server {
 		onboarding:   cfg.Onboarding,
 		authConfig:   cfg.Auth,
 		upgrade:      cfg.Upgrade,
+		metrics:      metrics,
 		now:          now,
 	}
 }
@@ -187,14 +200,20 @@ func normalizeConfig(cfg Config) *server {
 func (s *server) requestLogMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
-		start := s.now()
+		start := time.Now()
 		next.ServeHTTP(rec, r)
+		duration := time.Since(start)
+		_ = s.metrics.ObserveDuration(daemonmetrics.MetricRequestDurationSeconds, daemonmetrics.Labels{
+			"method": r.Method,
+			"route":  metricRoute(r),
+			"status": strconv.Itoa(rec.status),
+		}, duration)
 		s.logger.Info(r.Context(), "http_request", map[string]any{
 			"method":      r.Method,
 			"path":        s.redactor.Redact("path", r.URL.Path),
 			"remote":      s.redactor.Redact("remote", remoteHost(r.RemoteAddr)),
 			"status":      rec.status,
-			"duration_ms": time.Since(start).Milliseconds(),
+			"duration_ms": duration.Milliseconds(),
 		})
 	})
 }
@@ -249,6 +268,7 @@ func (s *server) handleJobs(w http.ResponseWriter, r *http.Request) {
 		s.writeProblem(w, http.StatusInternalServerError, "job list failed", err.Error())
 		return
 	}
+	_ = s.metrics.SetGauge(daemonmetrics.MetricInFlightJobs, nil, float64(countInFlightJobs(jobList)))
 	if jobList == nil {
 		jobList = []jobs.Job{}
 	}
@@ -266,7 +286,16 @@ func (s *server) handleEventReplay(w http.ResponseWriter, r *http.Request) {
 		s.writeProblem(w, http.StatusBadRequest, "invalid sinceSequence", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, eventReplayResponse(s.events.replayWindow(channel, since), channel))
+	start := time.Now()
+	window := s.events.replayWindow(channel, since)
+	_ = s.metrics.IncCounter(daemonmetrics.MetricEventsReplayedTotal, daemonmetrics.Labels{"channel": channel}, float64(len(window.Events)))
+	if since > 0 {
+		_ = s.metrics.ObserveDuration(daemonmetrics.MetricEventReplayAfterDisconnectMS, daemonmetrics.Labels{
+			"channel": channel,
+			"gap":     strconv.FormatBool(window.Gap),
+		}, time.Since(start))
+	}
+	writeJSON(w, http.StatusOK, eventReplayResponse(window, channel))
 }
 
 func (s *server) handleEventSSE(w http.ResponseWriter, r *http.Request) {
@@ -342,6 +371,10 @@ func (s *server) handleEventWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer conn.Close(websocket.StatusNormalClosure, "daemon stream closed")
+	_ = s.metrics.AddGauge(daemonmetrics.MetricActiveWSConnections, nil, 1)
+	defer func() {
+		_ = s.metrics.AddGauge(daemonmetrics.MetricActiveWSConnections, nil, -1)
+	}()
 
 	subscribe, err := s.webSocketSubscribeRequest(r.Context(), r, conn)
 	if err != nil {
