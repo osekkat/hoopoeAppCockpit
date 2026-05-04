@@ -1,0 +1,253 @@
+/* hp-ilt — Phase 4 Project Entry view styles. */
+
+.hh-project-entry {
+  display: grid;
+  gap: 18px;
+  padding: 22px;
+  border: 1px solid var(--surface-border-soft);
+  border-radius: var(--radius-lg);
+  background: var(--surface-panel);
+  min-width: 0;
+}
+
+.hh-project-entry-header {
+  display: grid;
+  gap: 6px;
+}
+
+.hh-project-entry-header h2 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 18px;
+  font-weight: 760;
+  line-height: 1.2;
+}
+
+.hh-project-entry-header p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.hh-project-entry-header code {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--surface-panel-alt);
+  color: var(--text-secondary);
+  font-size: 11.5px;
+}
+
+.hh-project-entry-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.hh-project-entry-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 6px 12px;
+  border: 1px solid var(--surface-border-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface-panel-alt);
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.hh-project-entry-tab[data-selected="true"] {
+  background: rgba(229, 130, 83, 0.18);
+  color: var(--text-primary);
+  border-color: rgba(229, 130, 83, 0.45);
+}
+
+.hh-project-entry-help {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.hh-project-entry-body {
+  display: grid;
+  gap: 14px;
+}
+
+.hh-project-entry-form {
+  display: grid;
+  gap: 14px;
+}
+
+.hh-project-entry-field {
+  display: grid;
+  gap: 4px;
+}
+
+.hh-project-entry-field label {
+  color: var(--text-primary);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.hh-project-entry-field input {
+  height: 32px;
+  padding: 6px 10px;
+  border: 1px solid var(--surface-border-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface-panel-alt);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.hh-project-entry-field input:focus {
+  outline: none;
+  border-color: rgba(229, 130, 83, 0.55);
+}
+
+.hh-project-entry-field[data-error="true"] input {
+  border-color: var(--danger, #ff8e8e);
+}
+
+.hh-project-entry-hint {
+  color: var(--text-muted);
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+
+.hh-project-entry-error {
+  color: var(--danger, #ff8e8e);
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+
+.hh-project-entry-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.hh-project-entry-submit {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 6px 16px;
+  border: 1px solid rgba(229, 130, 83, 0.55);
+  border-radius: var(--radius-md);
+  background: rgba(229, 130, 83, 0.18);
+  color: var(--text-primary);
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.hh-project-entry-submit:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.hh-project-entry-submit[data-busy="true"] {
+  cursor: progress;
+}
+
+.hh-spin {
+  animation: hh-spin 1.1s linear infinite;
+}
+
+@keyframes hh-spin {
+  to { transform: rotate(360deg); }
+}
+
+.hh-project-entry-banner {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--surface-border-soft);
+  background: var(--surface-panel-alt);
+  color: var(--text-primary);
+  font-size: 12.5px;
+}
+
+.hh-project-entry-banner strong {
+  display: block;
+  margin-bottom: 2px;
+}
+
+.hh-project-entry-banner p {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.hh-project-entry-banner-error {
+  border-color: rgba(255, 142, 142, 0.45);
+  background: rgba(255, 142, 142, 0.12);
+}
+
+.hh-project-entry-banner-success {
+  grid-template-columns: 18px auto;
+  border-color: rgba(123, 198, 138, 0.45);
+  background: rgba(123, 198, 138, 0.12);
+}
+
+.hh-readiness-panel {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--surface-border-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface-panel-alt);
+}
+
+.hh-readiness-panel-error {
+  border-color: rgba(255, 142, 142, 0.45);
+}
+
+.hh-readiness-panel h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 13.5px;
+  font-weight: 720;
+}
+
+.hh-readiness-panel ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+
+.hh-readiness-requirement {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.hh-readiness-requirement[data-satisfied="true"] {
+  color: var(--text-primary);
+}
+
+.hh-readiness-requirement strong {
+  display: block;
+  color: inherit;
+  font-weight: 700;
+}
+
+.hh-readiness-requirement p {
+  margin: 4px 0 0;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}

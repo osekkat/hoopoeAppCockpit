@@ -1,11 +1,12 @@
 import { Link, useParams } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
   defaultProjectId,
   getStageDefinition,
   projectDisplayName,
   type ShellRouteId,
 } from "../stages.ts";
+import { ProjectEntry } from "../projects/index.ts";
 import { BeadsStage } from "../stages/Beads/BeadsStage.tsx";
 import { SwarmStage } from "../stages/Swarm/SwarmStage.tsx";
 import { useShellUiStore } from "../store.ts";
@@ -17,6 +18,7 @@ export function ProjectPickerRoute() {
   const projects = useShellUiStore((state) => state.projects);
   const projectViewStateById = useShellUiStore((state) => state.projectViewStateById);
   const rememberProject = useShellUiStore((state) => state.rememberProject);
+  const [entryOpen, setEntryOpen] = useState(false);
 
   return (
     <section className="hh-project-picker" aria-labelledby="project-picker-title">
@@ -44,11 +46,30 @@ export function ProjectPickerRoute() {
             </Link>
           );
         })}
-        <button className="hh-project-card hh-project-card-muted" type="button">
-          <span className="hh-project-card-title">Add project</span>
-          <span className="hh-project-card-meta">Pending daemon pairing</span>
+        <button
+          aria-expanded={entryOpen}
+          className="hh-project-card hh-project-card-muted"
+          data-testid="project-picker-add"
+          onClick={() => setEntryOpen((open) => !open)}
+          type="button"
+        >
+          <span className="hh-project-card-title">{entryOpen ? "Close project entry" : "Add project"}</span>
+          <span className="hh-project-card-meta">
+            {entryOpen ? "Hide import / create / clone" : "Import, create, or clone"}
+          </span>
         </button>
       </div>
+      {entryOpen ? (
+        <ProjectEntry
+          onProjectReady={(input) => {
+            // Daemon-side wiring (LilacBear) returns the new id; the
+            // store is refreshed from daemon state via TanStack Query
+            // invalidation so we just close the panel.
+            rememberProject(input.projectId);
+            setEntryOpen(false);
+          }}
+        />
+      ) : null}
     </section>
   );
 }

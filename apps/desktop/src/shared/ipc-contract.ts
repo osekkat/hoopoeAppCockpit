@@ -50,6 +50,13 @@ export const DAEMON_REQUEST_METHODS = [
   "settings.set",
   // Project / bead read surface.
   "projects.list",
+  // hp-ilt: Project lifecycle. Daemon-side handlers persist the new project
+  // in the SQLite registry and call the lifecycle helpers in
+  // `apps/desktop/electron/projects/` (shared between daemon + main).
+  "projects.create",
+  "projects.import",
+  "projects.clone",
+  "projects.readiness",
   "beads.get",
   "triage.get",
   "swarm.snapshot",
