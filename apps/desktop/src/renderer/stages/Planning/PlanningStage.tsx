@@ -11,6 +11,7 @@ import { ArtifactRail } from "./ArtifactRail.tsx";
 import { ComparativeMatrix } from "./ComparativeMatrix.tsx";
 import { HistoryTimeline } from "./HistoryTimeline.tsx";
 import { PlanEditor } from "./PlanEditor.tsx";
+import { PlanInputChatBox } from "./PlanInputChatBox.tsx";
 import { PlanList } from "./PlanList.tsx";
 import "./PlanningStage.css";
 
@@ -70,10 +71,14 @@ export function PlanningStage({ projectId }: { readonly projectId: string }) {
   }
 
   if (!activePlan || !activeBundle) {
+    // §7.1 'Plan-input chat box' empty state. Renders without an
+    // availability prop so PlanInputChatBox falls back to its
+    // emptyPlanModelAvailability default — the renderer-side
+    // subscription wiring (CAAM via daemon RPC) is a Phase 5 follow-up
+    // and shows the no-subscription banner today.
     return (
-      <div className="hh-live-stage hh-plan-stage-empty" role="status">
-        <FileText size={18} strokeWidth={2.1} />
-        <span>No plans yet. Start by capturing a rough idea.</span>
+      <div className="hh-live-stage hh-plan-stage-empty" data-testid="plan-stage-empty">
+        <PlanInputChatBox />
       </div>
     );
   }
