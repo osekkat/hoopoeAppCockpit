@@ -146,6 +146,152 @@ func TestStatsAccumulateByPattern(t *testing.T) {
 	t.Fatalf("provider stats missing or wrong: %#v", stats.Patterns)
 }
 
+// TestRedactValueWalksTypedStruct verifies that EventHub-style payload
+// structs (CommitCreatedPayload, ActivityData, etc.) get their string fields
+// redacted. Without the reflect path RedactValue's default branch returned
+// the struct verbatim, leaving secret-shaped commit messages and mail body
+// previews on the WS/SSE wire.
+func TestRedactValueWalksTypedStruct(t *testing.T) {
+	type inner struct {
+		Subject string `json:"subject"`
+		Hidden  string `json:"-"`
+	}
+	type payload struct {
+		ProjectID string    `json:"projectId"`
+		Message   string    `json:"message"`
+		Inner     *inner    `json:"inner,omitempty"`
+		Tags      []string  `json:"tags,omitempty"`
+		At        time.Time `json:"at"`
+		Empty     string    `json:"empty,omitempty"`
+	}
+
+	r := NewDefault()
+	now := time.Unix(1, 0).UTC()
+	value := payload{
+		ProjectID: "demo",
+		Message:   "feat: rotate sk-abcdef0123456789ABCDEF0123456789",
+		Inner:     &inner{Subject: "leaked: ghp_abcdefghijklmnopqrstuvwxyz0123456789", Hidden: "skipped"},
+		Tags:      []string{"normal", "Bearer abcdefghijklmnopqrstuvwxyz012345"},
+		At:        now,
+	}
+
+	out, traces := r.RedactValue(SurfaceEvents, "event.data", value)
+	outMap, ok := out.(map[string]any)
+	if !ok {
+		t.Fatalf("out type = %T, want map[string]any", out)
+	}
+	if outMap["projectId"] != "demo" {
+		t.Fatalf("projectId mutated: %#v", outMap["projectId"])
+	}
+	msg, ok := outMap["message"].(string)
+	if !ok {
+		t.Fatalf("message type = %T, want string", outMap["message"])
+	}
+	if strings.Contains(msg, "sk-abcdef") {
+		t.Fatalf("message leaked secret: %q", msg)
+	}
+	innerMap, ok := outMap["inner"].(map[string]any)
+	if !ok {
+		t.Fatalf("inner type = %T, want map[string]any", outMap["inner"])
+	}
+	if subject, _ := innerMap["subject"].(string); strings.Contains(subject, "ghp_") {
+		t.Fatalf("inner.subject leaked secret: %q", subject)
+	}
+	if _, present := innerMap["hidden"]; present {
+		t.Fatal(`json:"-" field "hidden" should be skipped`)
+	}
+	tags, ok := outMap["tags"].([]any)
+	if !ok {
+		t.Fatalf("tags type = %T, want []any", outMap["tags"])
+	}
+	if len(tags) != 2 {
+		t.Fatalf("tags length = %d, want 2", len(tags))
+	}
+	if tag, _ := tags[1].(string); strings.Contains(tag, "abcdefghijklmnopqrstuvwxyz012345") {
+		t.Fatalf("tags[1] leaked secret: %q", tag)
+	}
+	at, ok := outMap["at"].(time.Time)
+	if !ok || !at.Equal(now) {
+		t.Fatalf("time.Time mangled: %#v", outMap["at"])
+	}
+	if _, present := outMap["empty"]; present {
+		t.Fatal("omitempty zero-value should be skipped")
+	}
+	if len(traces) == 0 {
+		t.Fatal("expected traces from struct walk")
+	}
+	foundInnerCtx := false
+	for _, trace := range traces {
+		if strings.HasPrefix(trace.Context, "event.data.inner.subject") {
+			foundInnerCtx = true
+		}
+	}
+	if !foundInnerCtx {
+		t.Fatalf("expected inner.subject trace context, traces: %#v", traces)
+	}
+}
+
+// TestRedactValueWalksNilPointersAndSlices verifies the reflect path handles
+// nil-valued fields without panicking and without producing false-positive
+// "redacted" markers.
+func TestRedactValueWalksNilPointersAndSlices(t *testing.T) {
+	type payload struct {
+		Optional *string  `json:"optional,omitempty"`
+		List     []string `json:"list,omitempty"`
+		Empty    *struct {
+			Inner string `json:"inner"`
+		} `json:"empty,omitempty"`
+	}
+	r := NewDefault()
+	out, _ := r.RedactValue(SurfaceEvents, "event.data", payload{})
+	outMap, ok := out.(map[string]any)
+	if !ok {
+		t.Fatalf("out type = %T, want map[string]any", out)
+	}
+	if len(outMap) != 0 {
+		t.Fatalf("expected empty output (omitempty), got %#v", outMap)
+	}
+}
+
+// TestRedactValueWalksSliceOfStructs covers []TypedStruct values that flow
+// through producers like origin_updated payloads and Agent Mail recipient
+// lists.
+func TestRedactValueWalksSliceOfStructs(t *testing.T) {
+	type ref struct {
+		Name string `json:"name"`
+		Note string `json:"note"`
+	}
+	type payload struct {
+		Refs []ref `json:"refs"`
+	}
+	r := NewDefault()
+	value := payload{
+		Refs: []ref{
+			{Name: "main", Note: "see Bearer abcdefghijklmnopqrstuvwxyz012345"},
+			{Name: "feature", Note: "clean"},
+		},
+	}
+	out, _ := r.RedactValue(SurfaceEvents, "event.data", value)
+	outMap, ok := out.(map[string]any)
+	if !ok {
+		t.Fatalf("out type = %T", out)
+	}
+	refs, ok := outMap["refs"].([]any)
+	if !ok {
+		t.Fatalf("refs type = %T", outMap["refs"])
+	}
+	if len(refs) != 2 {
+		t.Fatalf("refs length = %d, want 2", len(refs))
+	}
+	first, ok := refs[0].(map[string]any)
+	if !ok {
+		t.Fatalf("refs[0] type = %T", refs[0])
+	}
+	if note, _ := first["note"].(string); strings.Contains(note, "abcdefghijklmnopqrstuvwxyz012345") {
+		t.Fatalf("refs[0].note leaked: %q", note)
+	}
+}
+
 func stringify(value any) string {
 	switch v := value.(type) {
 	case string:

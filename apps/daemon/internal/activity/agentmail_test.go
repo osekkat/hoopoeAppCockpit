@@ -2,7 +2,9 @@ package activity
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -183,6 +185,94 @@ func TestSyncOncePollsAgentMailAndPublishesToEventHub(t *testing.T) {
 	data := replayed[1].Data.(ActivityData)
 	if data.BeadID != "hp-3se" {
 		t.Fatalf("reservation bead id = %q", data.BeadID)
+	}
+}
+
+// TestAgentMailEventHubRedactsMessageAndReservationSecrets guards hp-aek.2:
+// a mail subject/body or a reservation conflict string carrying a
+// secret-shaped value must be scrubbed before it reaches WS/SSE subscribers
+// or the replay buffer. ActivityData is a typed struct, so producer payloads
+// bypass the original RedactValue walker; this test exercises the central
+// redaction-on-Publish wiring through the real EventHub.
+func TestAgentMailEventHubRedactsMessageAndReservationSecrets(t *testing.T) {
+	t.Parallel()
+	const messageSecret = "sk-abcdef0123456789ABCDEF0123456789"
+	const subjectSecret = "ghp_abcdefghijklmnopqrstuvwxyz0123456789"
+	const reservationSecret = "Bearer abcdefghijklmnopqrstuvwxyz012345"
+
+	hub := api.NewEventHub(api.EventHubConfig{
+		Now: func() time.Time { return time.Date(2026, 5, 4, 0, 0, 0, 0, time.UTC) },
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sub := hub.Subscribe(ctx, []string{"activity:proj_01"})
+	defer sub.Close()
+
+	ingestor := newTestIngestorWithPublisher(t, &fakeAgentMail{}, hub)
+
+	mailEvents := ingestor.IngestMessages([]agentmail.Message{{
+		ID:        50,
+		ThreadID:  "br-hp-aek",
+		Subject:   "rotated " + subjectSecret,
+		BodyMD:    "leaked " + messageSecret + " in mail body",
+		CreatedTS: "2026-05-04T00:00:00Z",
+		From:      "TealPond",
+		To:        []string{"WhiteStream"},
+	}})
+	if len(mailEvents) != 1 {
+		t.Fatalf("mail events len = %d, want 1", len(mailEvents))
+	}
+	resEvents := ingestor.IngestReservations([]agentmail.Reservation{{
+		ID:          77,
+		Agent:       "BlueLake",
+		PathPattern: "apps/daemon/**",
+		Reason:      reservationSecret,
+		ExpiresTS:   "2026-05-04T02:00:00Z",
+	}})
+	if len(resEvents) != 1 {
+		t.Fatalf("reservation events len = %d, want 1", len(resEvents))
+	}
+
+	leaks := []string{messageSecret, subjectSecret, "abcdefghijklmnopqrstuvwxyz012345"}
+	deadline := time.After(time.Second)
+	got := 0
+	for got < 2 {
+		select {
+		case ev := <-sub.Events():
+			body, err := json.Marshal(ev.Data)
+			if err != nil {
+				t.Fatalf("marshal delivered Data: %v", err)
+			}
+			rendered := string(body)
+			for _, leak := range leaks {
+				if strings.Contains(rendered, leak) {
+					t.Fatalf("subscriber received raw secret %q in: %s", leak, rendered)
+				}
+			}
+			got++
+		case <-deadline:
+			t.Fatalf("only saw %d of 2 expected events", got)
+		}
+	}
+
+	replayed, gap := hub.Replay("activity:proj_01", 0)
+	if gap {
+		t.Fatalf("unexpected replay gap")
+	}
+	if len(replayed) != 2 {
+		t.Fatalf("replay count = %d, want 2", len(replayed))
+	}
+	for _, ev := range replayed {
+		body, err := json.Marshal(ev.Data)
+		if err != nil {
+			t.Fatalf("marshal replayed Data: %v", err)
+		}
+		rendered := string(body)
+		for _, leak := range leaks {
+			if strings.Contains(rendered, leak) {
+				t.Fatalf("replay buffer holds raw secret %q in: %s", leak, rendered)
+			}
+		}
 	}
 }
 

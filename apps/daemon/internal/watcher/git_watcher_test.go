@@ -2,6 +2,7 @@ package watcher
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -348,6 +349,75 @@ func TestEventHubPublisherFlowsThroughSequenceReplay(t *testing.T) {
 	}
 	if len(replayed) != 1 || replayed[0].Sequence != 1 || replayed[0].Type != gitevents.EventVPSCommitCreated {
 		t.Fatalf("replayed events = %+v", replayed)
+	}
+}
+
+// TestGitWatcherEventHubRedactsCommitMessageSecret guards hp-aek.1: a commit
+// subject containing a secret-shaped string must not survive the EventHub
+// redactor on the subscriber wire or in the replay buffer. CommitCreatedPayload
+// is a typed struct, which the original RedactValue walker did not traverse —
+// without producer- or central-redactor coverage of struct fields, the secret
+// would reach WS/SSE subscribers raw.
+func TestGitWatcherEventHubRedactsCommitMessageSecret(t *testing.T) {
+	t.Parallel()
+	const secret = "sk-abcdef0123456789ABCDEF0123456789"
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	hub := api.NewEventHub(api.EventHubConfig{Now: fixedWatcherNow})
+	sub := hub.Subscribe(ctx, []string{gitevents.ProjectChannel("proj_01")})
+	defer sub.Close()
+
+	client := &fakeGitClient{
+		status: &gitadapter.Status{Branch: "main"},
+		head: gitadapter.Commit{
+			SHA:     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			Subject: "baseline",
+		},
+	}
+	w := NewGitWatcher("proj_01", client, EventHubPublisher{Hub: hub})
+	w.Now = fixedWatcherNow
+	if err := w.Seed(ctx); err != nil {
+		t.Fatalf("Seed: %v", err)
+	}
+
+	client.head = gitadapter.Commit{
+		SHA:        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		Subject:    "feat: rotate provider " + secret + " trailer",
+		ParentSHAs: []string{"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+	}
+	client.unpushed = []gitadapter.Commit{{SHA: client.head.SHA, Subject: client.head.Subject}}
+
+	if _, err := w.PollLocal(ctx); err != nil {
+		t.Fatalf("PollLocal: %v", err)
+	}
+
+	select {
+	case ev := <-sub.Events():
+		body, err := json.Marshal(ev.Data)
+		if err != nil {
+			t.Fatalf("marshal delivered Data: %v", err)
+		}
+		if strings.Contains(string(body), "sk-abcdef") {
+			t.Fatalf("subscriber received raw commit-message secret: %s", body)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for delivered commit event")
+	}
+
+	replayed, gap := hub.Replay(gitevents.ProjectChannel("proj_01"), 0)
+	if gap {
+		t.Fatalf("unexpected replay gap")
+	}
+	if len(replayed) != 1 || replayed[0].Type != gitevents.EventVPSCommitCreated {
+		t.Fatalf("replayed events = %+v", replayed)
+	}
+	body, err := json.Marshal(replayed[0].Data)
+	if err != nil {
+		t.Fatalf("marshal replay Data: %v", err)
+	}
+	if strings.Contains(string(body), "sk-abcdef") {
+		t.Fatalf("replay buffer holds raw commit-message secret: %s", body)
 	}
 }
 

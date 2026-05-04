@@ -950,6 +950,75 @@ func TestEventHubWithoutRedactorEscapeHatchDeliversVerbatim(t *testing.T) {
 	}
 }
 
+type secretCarryingPayload struct {
+	ProjectID string                `json:"projectId"`
+	Message   string                `json:"message"`
+	Nested    *secretCarryingNested `json:"nested,omitempty"`
+	List      []string              `json:"list,omitempty"`
+	Extra     map[string]any        `json:"extra,omitempty"`
+}
+
+type secretCarryingNested struct {
+	Subject string `json:"subject"`
+}
+
+func TestEventHubRedactsTypedStructPublishDataAndPreservesType(t *testing.T) {
+	// hp-aek.1 / hp-aek.2: typed-struct producers (git watcher's
+	// CommitCreatedPayload, activity ingestor's ActivityData) publish Data as a
+	// concrete Go struct. The redactor walker only handles strings/maps/slices
+	// natively, so before this fix a secret-shaped commit message or mail
+	// subject inside a struct field reached subscribers raw. After redaction,
+	// the original Go type must be preserved so existing callers and tests
+	// still see the typed Data shape.
+	const secret = "sk-abcdef0123456789ABCDEF0123456789"
+	hub := NewEventHub(EventHubConfig{Redactor: redaction.NewDefault()})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sub := hub.Subscribe(ctx, []string{"project:typed"})
+	defer sub.Close()
+
+	payload := secretCarryingPayload{
+		ProjectID: "proj_01",
+		Message:   "leak " + secret + " in commit",
+		Nested:    &secretCarryingNested{Subject: "Bearer abcdefghijklmnopqrstuvwxyz012345 leaked"},
+		List:      []string{"safe", secret},
+		Extra:     map[string]any{"token": secret},
+	}
+	hub.Publish(PublishInput{Channel: "project:typed", Type: "project.event", Data: payload})
+
+	select {
+	case ev := <-sub.Events():
+		typed, ok := ev.Data.(secretCarryingPayload)
+		if !ok {
+			t.Fatalf("typed Data shape lost after redaction: %T", ev.Data)
+		}
+		body, _ := json.Marshal(typed)
+		if strings.Contains(string(body), "sk-abcdef0123456789") {
+			t.Fatalf("subscriber received raw secret in struct field: %s", body)
+		}
+		if strings.Contains(string(body), "abcdefghijklmnopqrstuvwxyz012345") {
+			t.Fatalf("subscriber received raw bearer token in nested struct field: %s", body)
+		}
+		if typed.ProjectID != "proj_01" {
+			t.Fatalf("non-secret field mutated: projectId = %q", typed.ProjectID)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for typed-struct event")
+	}
+
+	replayed, _ := hub.Replay("project:typed", 0)
+	if len(replayed) == 0 {
+		t.Fatal("replay buffer empty after typed-struct publish")
+	}
+	body, err := json.Marshal(replayed[0].Data)
+	if err != nil {
+		t.Fatalf("marshal replay event: %v", err)
+	}
+	if strings.Contains(string(body), "sk-abcdef0123456789") {
+		t.Fatalf("replay buffer holds raw secret in struct field: %s", body)
+	}
+}
+
 func TestNormalizeConfigFallbackEventHubGetsRedactor(t *testing.T) {
 	// hp-cy4: when api.Config.Events is nil (the production wiring path —
 	// transport/server.go does not set it), normalizeConfig must construct

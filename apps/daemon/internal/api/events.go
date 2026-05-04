@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
+	"reflect"
 	"sync"
 	"time"
 
@@ -159,10 +161,7 @@ func (h *EventHub) Publish(input PublishInput) Event {
 	// must not let secret-shaped strings (commit messages, mail bodies,
 	// any other 'any' payload) reach WS/SSE subscribers or sit in the
 	// replay buffer raw.
-	data := input.Data
-	if h.redactor != nil && data != nil {
-		data, _ = h.redactor.RedactStreamedEvent(data)
-	}
+	data := h.redactData(input.Data)
 
 	h.mu.Lock()
 	ev := Event{
@@ -194,6 +193,50 @@ func (h *EventHub) Publish(input PublishInput) Event {
 		sub.deliver(ev, h.lagEvent(ev))
 	}
 	return ev
+}
+
+// redactData scrubs Publish.Data through the configured redactor before the
+// event is persisted in the replay buffer or delivered to subscribers.
+// redaction.RedactValue walks typed structs by emitting a map[string]any
+// keyed by JSON tag. Producer payloads like gitevents.CommitCreatedPayload
+// and activity.ActivityData need their typed Go shape preserved so existing
+// callers, tests, and replay-buffer consumers keep the expected struct
+// identity — re-decode the redacted map back into the source type via JSON.
+func (h *EventHub) redactData(value any) any {
+	if h.redactor == nil || value == nil {
+		return value
+	}
+	redacted, _ := h.redactor.RedactStreamedEvent(value)
+	rt := reflect.TypeOf(value)
+	if rt == nil {
+		return redacted
+	}
+	if !isStructLike(rt) {
+		return redacted
+	}
+	redactedMap, ok := redacted.(map[string]any)
+	if !ok {
+		return redacted
+	}
+	body, err := json.Marshal(redactedMap)
+	if err != nil {
+		return redacted
+	}
+	target := reflect.New(rt)
+	if err := json.Unmarshal(body, target.Interface()); err != nil {
+		return redacted
+	}
+	return target.Elem().Interface()
+}
+
+func isStructLike(rt reflect.Type) bool {
+	switch rt.Kind() {
+	case reflect.Struct:
+		return true
+	case reflect.Pointer:
+		return rt.Elem().Kind() == reflect.Struct
+	}
+	return false
 }
 
 func (h *EventHub) Replay(channel string, since uint64) ([]Event, bool) {
