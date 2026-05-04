@@ -4,6 +4,8 @@ Each active Section 8.8 scenario has a `.goldens/` directory with three frozen a
 
 Active scenarios currently covered by replay goldens: `healthy-hour`, `idle-but-not-stuck`, `wedged-pane`, `rate-limited-no-caam`, `rate-limited-with-caam`, `stale-reservation`, `commit-burst`, `budget-breach`, `skill-drift`, `missing-tool`, `postcondition-failure`, and `action-arbitration`.
 
+Closure audit `hp-7we`: the canonical no-CAAM rate-limit scenario ID is `rate-limited-no-caam`; all 12 `TENDING_SCENARIOS` IDs are now populated on disk and covered by replay goldens.
+
 - `scenario-source.first-read.json` records the canonical output of `loadTendingScenario()`.
 - `event-stream.ndjson` records the instant replay order plus final cursor maps from `startReplay()`.
 - `mock-daemon.responses.json` records a fixed set of `MockDaemonClient` responses (`br.list`, `bv.triage`, `ntm.snapshot`, Agent Mail, reservations, logs, auth, and subscribe cursors).
