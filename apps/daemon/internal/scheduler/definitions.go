@@ -264,8 +264,18 @@ func parseSimpleYAML(data []byte) (DefinitionDisk, error) {
 			disk.Version = parsed
 		case "schedule":
 			disk.Schedule = value
+		case "project_scope":
+			disk.ProjectScope = value
+		case "enabled_toolsets":
+			disk.EnabledToolsets = parseFlowList(value)
+		case "capabilities_required":
+			disk.CapabilitiesRequired = parseFlowList(value)
+		case "capabilities_optional":
+			disk.CapabilitiesOptional = parseFlowList(value)
 		case "script":
 			disk.Script = value
+		case "skills":
+			disk.Skills = parseFlowList(value)
 		case "prompt":
 			disk.Prompt = value
 		case "deliver":
@@ -292,9 +302,30 @@ func parseSimpleYAML(data []byte) (DefinitionDisk, error) {
 				return DefinitionDisk{}, err
 			}
 			disk.DeadLetterAfter = parsed
+		case "audit_always":
+			parsed := value == "true"
+			disk.AuditAlways = &parsed
 		}
 	}
 	return disk, nil
+}
+
+func parseFlowList(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	raw = strings.TrimPrefix(raw, "[")
+	raw = strings.TrimSuffix(raw, "]")
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.Trim(strings.TrimSpace(part), "\"'")
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }
 
 func parseOptionalDuration(raw string) (time.Duration, error) {
