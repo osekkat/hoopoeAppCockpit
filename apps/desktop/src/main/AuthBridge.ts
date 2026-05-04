@@ -83,11 +83,34 @@ export interface EnsureFreshBearerInput {
   readonly session: BearerSession;
 }
 
+export type SecretRotationRecoveryState =
+  | "normal"
+  | "secret_rotation_detected"
+  | "bearer_cleared"
+  | "pairing_screen"
+  | "awaiting_token"
+  | "token_submitted"
+  | "bearer_minted"
+  | "resubscribed";
+
+export interface SecretRotationTransition {
+  readonly from: SecretRotationRecoveryState;
+  readonly to: SecretRotationRecoveryState;
+  readonly reason: string;
+  readonly at: string;
+}
+
+export interface CompleteSecretRotationRepairInput extends ExchangePairingForBearerInput {
+  readonly environmentId: string;
+}
+
 export class AuthBridge {
   private readonly fetchImpl: typeof fetch;
   private readonly options: AuthBridgeOptions;
   private readonly requestTimeoutMs: number;
   private readonly refreshWindowMs: number;
+  private secretRotationState: SecretRotationRecoveryState = "normal";
+  private readonly secretRotationTrace: SecretRotationTransition[] = [];
   constructor(options: AuthBridgeOptions) {
     this.options = options;
     this.fetchImpl = options.fetchImpl ?? fetch;
@@ -148,6 +171,43 @@ export class AuthBridge {
     const expiresAtMs = Date.parse(expiresAt);
     if (!Number.isFinite(expiresAtMs)) return true;
     return expiresAtMs - now.getTime() <= this.refreshWindowMs;
+  }
+
+  getSecretRotationRecoveryState(): SecretRotationRecoveryState {
+    return this.secretRotationState;
+  }
+
+  getSecretRotationTrace(): readonly SecretRotationTransition[] {
+    return [...this.secretRotationTrace];
+  }
+
+  handleAuthFailure(response: Response, environmentId: string): boolean {
+    if (!isSecretRotationRevocation(response)) {
+      return false;
+    }
+    this.transitionSecretRotation("secret_rotation_detected", "daemon reported secret rotation");
+    this.forgetBearer(environmentId);
+    this.transitionSecretRotation("bearer_cleared", "persisted bearer cleared");
+    this.transitionSecretRotation("pairing_screen", "renderer must show in-app pairing flow");
+    this.transitionSecretRotation("awaiting_token", "waiting for replacement pairing token");
+    return true;
+  }
+
+  async completeSecretRotationRepair(
+    input: CompleteSecretRotationRepairInput,
+  ): Promise<BearerSession> {
+    if (this.secretRotationState !== "awaiting_token") {
+      throw new AuthBridgeRedactedError("Secret rotation repair requires awaiting_token state.");
+    }
+    this.transitionSecretRotation("token_submitted", "replacement pairing token submitted");
+    const session = await this.exchangePairingForBearer(input);
+    if (!this.persistBearer(input.environmentId, session)) {
+      throw new AuthBridgeRedactedError("Secret rotation repair could not persist bearer.");
+    }
+    this.transitionSecretRotation("bearer_minted", "replacement bearer minted");
+    this.transitionSecretRotation("resubscribed", "event subscriptions may replay from sequence cursors");
+    this.transitionSecretRotation("normal", "secret rotation recovery complete");
+    return session;
   }
 
   async issueWsToken(input: IssueWsTokenInput): Promise<WsTokenSession> {
@@ -252,6 +312,18 @@ export class AuthBridge {
       },
     });
   }
+
+  private transitionSecretRotation(to: SecretRotationRecoveryState, reason: string): void {
+    const from = this.secretRotationState;
+    if (from === to) return;
+    this.secretRotationState = to;
+    this.secretRotationTrace.push({
+      from,
+      to,
+      reason,
+      at: new Date().toISOString(),
+    });
+  }
 }
 
 export function capturePairingTokenFromBootstrapOutput(stdout: string): CapturedPairingToken | null {
@@ -348,6 +420,11 @@ function normalizePairingToken(value: string): string | null {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isSecretRotationRevocation(response: Response): boolean {
+  if (response.status !== 401) return false;
+  return response.headers.get("X-Hoopoe-Revocation-Cause") === "secret_rotation";
 }
 
 function isAbortError(error: unknown): boolean {

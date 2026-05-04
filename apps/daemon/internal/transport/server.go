@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/api"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/approvals"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/auth"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/capabilities"
 	jobstore "github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/jobs"
@@ -250,8 +251,9 @@ func prepareAuthRuntime(ctx context.Context, stateDir string, now func() time.Ti
 	}
 	return authRuntime{
 		config: &api.AuthConfig{
-			Service: sessions,
-			Pairing: pairings,
+			Service:   sessions,
+			Pairing:   pairings,
+			Approvals: api.ApprovalQueueLookup{Queue: approvals.NewQueue(approvals.Config{Now: now})},
 		},
 		wsValidator:           sessionWebSocketValidator{service: sessions},
 		initialPairing:        initial,

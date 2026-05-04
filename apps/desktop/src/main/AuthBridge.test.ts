@@ -359,6 +359,111 @@ test("AuthBridge: refreshBearer posts bearer auth and parses the renewed session
   expect(recordedHeaders[0]?.authorization).toBe("Bearer fixture-session-old");
 });
 
+test("AuthBridge: secret-rotation auth failure clears bearer and records recovery trace", () => {
+  const auth = new AuthBridge({
+    registryPath,
+    secretStorage: new InMemorySecretStorage(),
+    fetchImpl: (() => {
+      throw new Error("fetch should not be called");
+    }) as unknown as typeof fetch,
+  });
+  expect(auth.persistBearer(ENV_ID, bearerSession())).toBe(true);
+  expect(auth.loadBearer(ENV_ID)).toBe("fixture-bearer");
+
+  const handled = auth.handleAuthFailure(
+    new Response("revoked", {
+      status: 401,
+      headers: { "X-Hoopoe-Revocation-Cause": "secret_rotation" },
+    }),
+    ENV_ID,
+  );
+
+  expect(handled).toBe(true);
+  expect(auth.loadBearer(ENV_ID)).toBeNull();
+  expect(auth.getSecretRotationRecoveryState()).toBe("awaiting_token");
+  expect(auth.getSecretRotationTrace().map((entry) => entry.to)).toEqual([
+    "secret_rotation_detected",
+    "bearer_cleared",
+    "pairing_screen",
+    "awaiting_token",
+  ]);
+});
+
+test("AuthBridge: secret-rotation repair exchanges replacement token and returns to normal", async () => {
+  const replacementBearer = "replacement-rotation-bearer";
+  const recordedBodies: string[] = [];
+  const fetchImpl = ((input: string | URL, init?: RequestInit) => {
+    expect(String(input)).toBe("http://127.0.0.1:3779/v1/auth/bootstrap/bearer");
+    recordedBodies.push(String(init?.body ?? ""));
+    return Promise.resolve(
+      new Response(
+        JSON.stringify({
+          token: replacementBearer,
+          sid: "sid-rotated-owner",
+          role: "owner",
+          issuedAt: "2026-05-04T00:02:00Z",
+          expiresAt: "2026-06-03T00:02:00Z",
+        }),
+        { status: 200 },
+      ),
+    );
+  }) as unknown as typeof fetch;
+  const auth = new AuthBridge({
+    registryPath,
+    secretStorage: new InMemorySecretStorage(),
+    fetchImpl,
+  });
+  auth.handleAuthFailure(
+    new Response("revoked", {
+      status: 401,
+      headers: { "X-Hoopoe-Revocation-Cause": "secret_rotation" },
+    }),
+    ENV_ID,
+  );
+
+  const session = await auth.completeSecretRotationRepair({
+    daemonBaseUrl: "http://127.0.0.1:3779",
+    pairingToken: "ABCDEFGHJKM1",
+    instanceId: "desktop-1",
+    environmentId: ENV_ID,
+  });
+
+  expect(session.bearerToken).toBe(replacementBearer);
+  expect(auth.loadBearer(ENV_ID)).toBe(replacementBearer);
+  expect(auth.getSecretRotationRecoveryState()).toBe("normal");
+  expect(auth.getSecretRotationTrace().map((entry) => entry.to)).toEqual([
+    "secret_rotation_detected",
+    "bearer_cleared",
+    "pairing_screen",
+    "awaiting_token",
+    "token_submitted",
+    "bearer_minted",
+    "resubscribed",
+    "normal",
+  ]);
+  expect(recordedBodies[0]).toBe(JSON.stringify({
+    pairingToken: "ABCDEFGHJKM1",
+    instanceId: "desktop-1",
+  }));
+});
+
+test("AuthBridge: non-rotation auth failures do not clear bearer", () => {
+  const auth = new AuthBridge({
+    registryPath,
+    secretStorage: new InMemorySecretStorage(),
+    fetchImpl: (() => {
+      throw new Error("fetch should not be called");
+    }) as unknown as typeof fetch,
+  });
+  expect(auth.persistBearer(ENV_ID, bearerSession())).toBe(true);
+
+  const handled = auth.handleAuthFailure(new Response("unauthorized", { status: 401 }), ENV_ID);
+
+  expect(handled).toBe(false);
+  expect(auth.loadBearer(ENV_ID)).toBe("fixture-bearer");
+  expect(auth.getSecretRotationRecoveryState()).toBe("normal");
+});
+
 function bearerSession(overrides: Partial<BearerSession> = {}): BearerSession {
   return {
     bearerToken: "fixture-bearer",

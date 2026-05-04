@@ -12,7 +12,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/approvals"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/auth"
+	schemas "github.com/hoopoe-cockpit/hoopoe/packages/schemas/go"
 )
 
 // fakePairing is a minimal PairingConsumer used by the auth route tests.
@@ -23,6 +25,9 @@ type fakePairing struct {
 	consumeErr error
 	record     auth.PairingRecord
 	calls      int
+	pairings   []auth.PairingRecord
+	created    []auth.IssuedPairing
+	revoked    []auth.RevokePairingRequest
 }
 
 func (f *fakePairing) ConsumePairing(_ context.Context, req auth.ConsumePairingRequest) (auth.PairingRecord, error) {
@@ -42,13 +47,51 @@ func (f *fakePairing) ConsumePairing(_ context.Context, req auth.ConsumePairingR
 	return r, nil
 }
 
+func (f *fakePairing) CreatePairing(_ context.Context, req auth.CreatePairingRequest) (auth.IssuedPairing, error) {
+	role := req.Role
+	if role == "" {
+		role = auth.PairingRoleClient
+	}
+	issued := auth.IssuedPairing{
+		TokenID:      "pair_rotation_owner",
+		DisplayToken: "ABCDEFGHJKM1",
+		Role:         role,
+		CreatedAt:    time.Date(2026, 5, 4, 0, 0, 0, 0, time.UTC),
+	}
+	f.created = append(f.created, issued)
+	return issued, nil
+}
+
+func (f *fakePairing) ListPairings(_ context.Context) ([]auth.PairingRecord, error) {
+	out := make([]auth.PairingRecord, len(f.pairings))
+	copy(out, f.pairings)
+	return out, nil
+}
+
+func (f *fakePairing) RevokePairing(_ context.Context, req auth.RevokePairingRequest) (auth.PairingRecord, error) {
+	f.revoked = append(f.revoked, req)
+	for i, record := range f.pairings {
+		if record.TokenID != req.TokenID {
+			continue
+		}
+		now := time.Date(2026, 5, 4, 0, 0, 0, 0, time.UTC)
+		record.RevokedAt = &now
+		record.RevokedBy = req.Actor
+		f.pairings[i] = record
+		return record, nil
+	}
+	return auth.PairingRecord{}, auth.ErrPairingNotFound
+}
+
 // newAuthRouterTestRig wires a real SessionCredentialService + fakePairing
 // behind NewRouter. Returns the rig handle for assertions.
 type authRig struct {
-	router  http.Handler
-	svc     *auth.SessionCredentialService
-	pairing *fakePairing
-	clock   func() time.Time
+	router    http.Handler
+	svc       *auth.SessionCredentialService
+	pairing   *fakePairing
+	approvals *approvals.Queue
+	events    *EventHub
+	clock     func() time.Time
 }
 
 func newAuthRouter(t *testing.T) *authRig {
@@ -78,16 +121,33 @@ func newAuthRouter(t *testing.T) *authRig {
 			Role:         auth.PairingRoleOwner,
 			CreatedAt:    now(),
 		},
+		pairings: []auth.PairingRecord{
+			{
+				TokenID:      "pair_open",
+				DisplayToken: "ABCDEFGHJKM1",
+				Role:         auth.PairingRoleOwner,
+				CreatedAt:    now(),
+			},
+		},
 	}
+	approvalQueue := approvals.NewQueue(approvals.Config{Now: now})
+	events := NewEventHub(EventHubConfig{Now: now})
 	return &authRig{
 		router: NewRouter(Config{
-			Build: BuildInfo{Version: "0.1.0", Commit: "test", BuildDate: "test", APIVersion: "v1"},
-			Auth: &AuthConfig{Service: svc, Pairing: pairing},
-			Now:  now,
+			Build:  BuildInfo{Version: "0.1.0", Commit: "test", BuildDate: "test", APIVersion: "v1"},
+			Events: events,
+			Auth: &AuthConfig{
+				Service:   svc,
+				Pairing:   pairing,
+				Approvals: ApprovalQueueLookup{Queue: approvalQueue},
+			},
+			Now: now,
 		}),
-		svc:     svc,
-		pairing: pairing,
-		clock:   now,
+		svc:       svc,
+		pairing:   pairing,
+		approvals: approvalQueue,
+		events:    events,
+		clock:     now,
 	}
 }
 
@@ -317,6 +377,166 @@ func TestSessionRevokeMissingSID(t *testing.T) {
 	}
 }
 
+func TestRotateSecretHappyPathInvalidatesBearerAndReturnsReplacementPairing(t *testing.T) {
+	rig := newAuthRouter(t)
+	bootRR := postJSON(t, rig.router, "/v1/auth/bootstrap/bearer", map[string]any{
+		"pairingToken": "H0123456789AB",
+		"instanceId":   "desktop-1",
+	}, nil)
+	if bootRR.Code != http.StatusOK {
+		t.Fatalf("bootstrap status=%d body=%s", bootRR.Code, bootRR.Body.String())
+	}
+	bearer := decodeBearer(t, bootRR)
+	ws, err := rig.svc.IssueWSToken(bearer.Token)
+	if err != nil {
+		t.Fatalf("issue ws before rotation: %v", err)
+	}
+	approvalID := approveRotateSecret(t, rig)
+
+	rr := postJSON(t, rig.router, "/v1/auth/rotate-secret", nil, map[string]string{
+		"Authorization":                "Bearer " + bearer.Token,
+		authRotateSecretConfirmHeader:  "yes",
+		authRotateSecretApprovalHeader: approvalID,
+	})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("rotate status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var resp struct {
+		FlowID          string `json:"flowId"`
+		NewPairingToken struct {
+			Value   string           `json:"value"`
+			TokenID string           `json:"tokenId"`
+			Role    auth.PairingRole `json:"role"`
+		} `json:"newPairingToken"`
+		Revoked struct {
+			Bearers       int `json:"bearers"`
+			PairingGrants int `json:"pairingGrants"`
+		} `json:"revoked"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v body=%s", err, rr.Body.String())
+	}
+	if !strings.HasPrefix(resp.FlowID, "rot_") {
+		t.Fatalf("flowId=%q", resp.FlowID)
+	}
+	if resp.NewPairingToken.Value != "ABCDEFGHJKM1" || resp.NewPairingToken.Role != auth.PairingRoleOwner {
+		t.Fatalf("new pairing = %+v", resp.NewPairingToken)
+	}
+	if resp.Revoked.Bearers != 1 || resp.Revoked.PairingGrants != 1 {
+		t.Fatalf("revoked = %+v", resp.Revoked)
+	}
+	if len(rig.pairing.revoked) != 1 || rig.pairing.revoked[0].TokenID != "pair_open" {
+		t.Fatalf("pairing revocations = %+v", rig.pairing.revoked)
+	}
+	staleRR := postJSON(t, rig.router, "/v1/auth/ws-token", nil, map[string]string{
+		"Authorization": "Bearer " + bearer.Token,
+	})
+	if staleRR.Code != http.StatusUnauthorized {
+		t.Fatalf("stale bearer status=%d body=%s", staleRR.Code, staleRR.Body.String())
+	}
+	if staleRR.Header().Get("X-Hoopoe-Revocation-Cause") != authRotateSecretRevocationCause {
+		t.Fatalf("revocation header=%q", staleRR.Header().Get("X-Hoopoe-Revocation-Cause"))
+	}
+	if _, err := rig.svc.VerifyBearer(bearer.Token); !errors.Is(err, auth.ErrTokenSignatureMismatch) {
+		t.Fatalf("old bearer verify err=%v", err)
+	}
+	if _, err := rig.svc.VerifyWSToken(ws.Token); !errors.Is(err, auth.ErrTokenSignatureMismatch) {
+		t.Fatalf("old ws verify err=%v", err)
+	}
+
+	events, gap := rig.events.Replay("_system", 0)
+	if gap {
+		t.Fatal("unexpected replay gap")
+	}
+	if len(events) != 2 || events[0].Type != authRotateSecretImminentEvent || events[1].Type != authRotateSecretCompletedEvent {
+		t.Fatalf("events = %+v", events)
+	}
+	rawEvents, err := json.Marshal(events)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(rawEvents), resp.NewPairingToken.Value) {
+		t.Fatalf("event stream leaked replacement pairing token: %s", rawEvents)
+	}
+}
+
+func TestRotateSecretRejectsMissingApprovalAndConfirmation(t *testing.T) {
+	rig := newAuthRouter(t)
+	bootRR := postJSON(t, rig.router, "/v1/auth/bootstrap/bearer", map[string]any{
+		"pairingToken": "H0123456789AB",
+		"instanceId":   "desktop-1",
+	}, nil)
+	bearer := decodeBearer(t, bootRR)
+
+	missingConfirm := postJSON(t, rig.router, "/v1/auth/rotate-secret", nil, map[string]string{
+		"Authorization":                "Bearer " + bearer.Token,
+		authRotateSecretApprovalHeader: approveRotateSecret(t, rig),
+	})
+	if missingConfirm.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("missing confirm status=%d body=%s", missingConfirm.Code, missingConfirm.Body.String())
+	}
+
+	missingApproval := postJSON(t, rig.router, "/v1/auth/rotate-secret", nil, map[string]string{
+		"Authorization":               "Bearer " + bearer.Token,
+		authRotateSecretConfirmHeader: "yes",
+	})
+	if missingApproval.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("missing approval status=%d body=%s", missingApproval.Code, missingApproval.Body.String())
+	}
+}
+
+func TestRotateSecretRequiresOwnerRole(t *testing.T) {
+	rig := newAuthRouter(t)
+	rig.pairing.record.Role = auth.PairingRoleClient
+	bootRR := postJSON(t, rig.router, "/v1/auth/bootstrap/bearer", map[string]any{
+		"pairingToken": "H0123456789AB",
+		"instanceId":   "desktop-1",
+	}, nil)
+	bearer := decodeBearer(t, bootRR)
+
+	rr := postJSON(t, rig.router, "/v1/auth/rotate-secret", nil, map[string]string{
+		"Authorization":                "Bearer " + bearer.Token,
+		authRotateSecretConfirmHeader:  "yes",
+		authRotateSecretApprovalHeader: approveRotateSecret(t, rig),
+	})
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestRotateSecretRejectsWrongApprovalShape(t *testing.T) {
+	rig := newAuthRouter(t)
+	bootRR := postJSON(t, rig.router, "/v1/auth/bootstrap/bearer", map[string]any{
+		"pairingToken": "H0123456789AB",
+		"instanceId":   "desktop-1",
+	}, nil)
+	bearer := decodeBearer(t, bootRR)
+	approval, _, err := rig.approvals.Request(context.Background(), approvals.Request{
+		RequestedAction: schemas.CommandSpec{Kind: "git.push_branch", Target: map[string]interface{}{}},
+		RequestActor:    schemas.Actor{Kind: schemas.ActorKindUser},
+		RiskClass:       schemas.Critical,
+		Scope:           schemas.Once,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	approved, err := rig.approvals.Approve(context.Background(), approval.Id, schemas.ApprovalDecisionRequest{
+		DecisionActor: schemas.Actor{Kind: schemas.ActorKindUser},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rr := postJSON(t, rig.router, "/v1/auth/rotate-secret", nil, map[string]string{
+		"Authorization":                "Bearer " + bearer.Token,
+		authRotateSecretConfirmHeader:  "yes",
+		authRotateSecretApprovalHeader: approved.Id,
+	})
+	if rr.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
 func TestAuthRoutesNotMountedWithoutConfig(t *testing.T) {
 	// Without AuthConfig, the seed-contract `handlePlannedWrite` stubs
 	// answer with 501 — not 401/200. Pin this so a future bootstrap
@@ -330,6 +550,29 @@ func TestAuthRoutesNotMountedWithoutConfig(t *testing.T) {
 	if rr.Code != http.StatusNotImplemented {
 		t.Errorf("expected 501 from stub when AuthConfig is nil, got %d body=%s", rr.Code, rr.Body.String())
 	}
+}
+
+func approveRotateSecret(t *testing.T, rig *authRig) string {
+	t.Helper()
+	approval, _, err := rig.approvals.Request(context.Background(), approvals.Request{
+		RequestedAction: schemas.CommandSpec{
+			Kind:   authRotateSecretActionKind,
+			Target: map[string]interface{}{"daemon": "local"},
+		},
+		RequestActor: schemas.Actor{Kind: schemas.ActorKindUser},
+		RiskClass:    schemas.Critical,
+		Scope:        schemas.Once,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	approved, err := rig.approvals.Approve(context.Background(), approval.Id, schemas.ApprovalDecisionRequest{
+		DecisionActor: schemas.Actor{Kind: schemas.ActorKindUser},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return approved.Id
 }
 
 // extractBearerHeader edge cases.
