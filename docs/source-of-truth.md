@@ -41,6 +41,16 @@ rules. It exists because `plan.md` Appendix A moved the data-layout detail here.
   model and mark the stale surface degraded until refresh completes.
 - The desktop local clone is never a write target. Any staging, committing,
   branching, merging, or pushing request goes to the daemon and runs on the VPS.
+  **One narrow exception (`plan.md §7.7`):** an explicit, user-confirmed,
+  audited *repair* action — "Discard local changes" — is allowed to run
+  `git reset --hard @{u}` and `git clean -fd` against the mirror. This is a
+  maintenance operation that resets the mirror to its sync-source state, not
+  a staging/commit/branch/push path; Guardrail 3 still bans the canonical
+  write operations. The action is gated by a confirmation dialog (`hp-58wp`),
+  emits an audit entry on every invocation regardless of outcome (Guardrail 10),
+  and runs in main with safe argv (`apps/desktop/electron/clone/discard.ts` +
+  `CloneDiscardService.ts`). No other write path against the local clone is
+  permitted.
 - Health and coverage jobs do not run in the active agent working tree by
   default. They use dedicated worktrees under `~/.hoopoe/work/...`.
 - Terminal output is observability, not truth. Prefer structured robot/API

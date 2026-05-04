@@ -1,6 +1,6 @@
 # `git` integration contract
 
-> Canonical source of truth for code (`plan.md` §1.1). The desktop reads its local sync-mirror clone (`§7.7`); all writes go through the daemon's GitAdapter (`§5.3`). The local clone is **never** a write target (Guardrail 3).
+> Canonical source of truth for code (`plan.md` §1.1). The desktop reads its local sync-mirror clone (`§7.7`); all writes go through the daemon's GitAdapter (`§5.3`). The local clone is **never** a write target for canonical operations — staging, committing, branching, merging, and pushing are daemon-only (Guardrail 3). One narrow exception lives on the desktop side: a user-confirmed, audited *repair* action ("Discard local changes") may run `git reset --hard @{u}` and `git clean -fd` against the mirror to resync it with origin (`§7.7`); see the "Audited local-clone repair (Guardrail 3 exception)" row below.
 
 ## Source of truth
 
@@ -15,7 +15,7 @@
 ## Adapter precedence (per `plan.md` §2.3)
 
 1. **Daemon-side, libgit2-or-shell** for status/diff/push/log/worktree on the VPS clones at `/data/projects/<project>/`. Hoopoe ships shell-out by default; libgit2 is post-v1 if perf demands.
-2. **Desktop-side, shell** for the read-only sync mirror at `~/Library/Application Support/Hoopoe/projects/<project-id>/repo/`. Reads only — never `git add`, `git commit`, `git push` from here (Guardrail 3).
+2. **Desktop-side, shell** for the read-only sync mirror at `~/Library/Application Support/Hoopoe/projects/<project-id>/repo/`. Reads only for canonical operations — never `git add`, `git commit`, `git push`, `git branch`, or `git merge` from here (Guardrail 3). The single allowed *repair* path is the user-confirmed audited "Discard local changes" action (`hp-58wp`), implemented in `apps/desktop/electron/clone/discard.ts` + `CloneDiscardService.ts`; it runs `git reset --hard @{u}` and `git clean -fd` against the mirror with safe argv to resync it with origin and emits an audit entry on every invocation regardless of outcome (Guardrail 10).
 3. **Origin** is canonical (`§1.1`): GitHub / GitLab / etc. The desktop's local clone fetches from origin, **not** from the VPS clone.
 
 ## Capability IDs (per `plan.md` §2.8)
@@ -56,6 +56,17 @@
 | `worktree_add`         | `git worktree add <path> <ref>`                                   | 0    | `<path>` under `~/.hoopoe/work/<project>/`; never inside repo.         |
 | `worktree_remove`      | `git worktree remove --force <path>`                              | 0    | Idempotent if `prune` first.                                           |
 | `fetch`                | `git fetch origin --prune`                                        | 0    | Used by clone-sync subsystem (`hp-ind`).                               |
+
+### Audited local-clone repair (Guardrail 3 exception, desktop-side)
+
+This is the **only** path that mutates the desktop's read-only sync mirror, and it is intentionally a *repair* — not a staging/commit/branch/push path. It exists to resync the mirror with origin after a user has accidentally edited the local clone (file watcher detects it; the renderer surfaces a yellow banner with this option). User confirmation is mandatory; an audit entry fires on every invocation regardless of outcome (Guardrail 10).
+
+| Label                  | argv                                                              | Exit | Notes                                                                                                                                       |
+| ---------------------- | ----------------------------------------------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `discard_local_reset`  | `git reset --hard @{u}`                                           | 0    | First step of the audited repair. Argv is fixed (no user-controlled tokens). Runs against the desktop mirror only.                          |
+| `discard_local_clean`  | `git clean -fd`                                                   | 0    | Second step. Argv is fixed. Runs immediately after the reset succeeds.                                                                      |
+
+Implementation: `apps/desktop/electron/clone/discard.ts` and `apps/desktop/src/main/CloneDiscardService.ts`. Renderer surface: `DirtyBanner.tsx` confirmation dialog (`hp-58wp`). The renderer never supplies the path or argv — main resolves the clone path from the project registry, invokes `git` with the explicit fixed argv above, and audits both steps regardless of outcome.
 
 ## Failure modes & recovery
 
