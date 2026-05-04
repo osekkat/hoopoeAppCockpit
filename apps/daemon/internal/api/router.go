@@ -20,6 +20,7 @@ import (
 	daemonmetrics "github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/metrics"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/onboarding/checkpoints"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/projects"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/telemetry"
 	schemas "github.com/hoopoe-cockpit/hoopoe/packages/schemas/go"
 	"nhooyr.io/websocket"
 )
@@ -49,6 +50,7 @@ type Config struct {
 	Auth         *AuthConfig
 	Upgrade      http.Handler
 	Metrics      *daemonmetrics.Registry
+	Telemetry    *telemetry.Service
 	Now          func() time.Time
 }
 
@@ -91,6 +93,7 @@ type server struct {
 	authConfig   *AuthConfig
 	upgrade      http.Handler
 	metrics      *daemonmetrics.Registry
+	telemetry    *telemetry.Service
 	now          func() time.Time
 }
 
@@ -120,6 +123,7 @@ func NewRouter(cfg Config) http.Handler {
 	r.Get("/v1/events/ws", s.handleEventWS)
 	r.Get("/v1/diagnostics/metrics", s.handleMetrics)
 	r.Get("/v1/diagnostics/metrics/prometheus", s.handleMetricsPrometheus)
+	s.mountTelemetryRoutes(r)
 	s.mountCapabilityRoutes(r)
 	s.mountInventoryRoutes(r)
 	s.mountSeedContractRoutes(r)
@@ -179,6 +183,10 @@ func normalizeConfig(cfg Config) *server {
 			IncludeDefaultTargets: true,
 		})
 	}
+	telemetryService := cfg.Telemetry
+	if telemetryService == nil {
+		telemetryService, _ = telemetry.NewService(telemetry.Config{Now: now})
+	}
 	return &server{
 		build:        build,
 		events:       events,
@@ -193,6 +201,7 @@ func normalizeConfig(cfg Config) *server {
 		authConfig:   cfg.Auth,
 		upgrade:      cfg.Upgrade,
 		metrics:      metrics,
+		telemetry:    telemetryService,
 		now:          now,
 	}
 }

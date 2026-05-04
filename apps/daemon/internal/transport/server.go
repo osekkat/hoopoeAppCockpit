@@ -23,6 +23,7 @@ import (
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/onboarding/checkpoints"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/security"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/systemd"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/telemetry"
 	_ "modernc.org/sqlite"
 )
 
@@ -38,6 +39,7 @@ type Config struct {
 	Capabilities        *capabilities.Registry
 	Inventory           api.InventoryService
 	Metrics             *daemonmetrics.Registry
+	Telemetry           *telemetry.Service
 	PublicBindConfirmer security.PublicBindConfirmer
 	StateDir            string
 	SystemdNotifier     systemdNotifier
@@ -64,6 +66,8 @@ func Run(ctx context.Context, args []string, cfg Config) error {
 	allowPublicBind := flags.Bool("allow-public-bind", false, "allow non-loopback listen addresses")
 	publicBindToken := flags.String("public-bind-confirmation-token", "", "runtime confirmation token required with -allow-public-bind for public listen addresses")
 	wsToken := flags.String("dev-ws-token", "", "development WebSocket token; empty accepts any token until auth wiring lands")
+	telemetryOptIn := flags.Bool("telemetry-opt-in", false, "enable local crash report and aggregate telemetry recording")
+	telemetryCollectorURL := flags.String("telemetry-collector-url", "", "reserved collector URL; daemon records locally and never uploads directly")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -93,6 +97,10 @@ func Run(ctx context.Context, args []string, cfg Config) error {
 		return err
 	}
 	defer closeOnboarding()
+	telemetryService, err := prepareTelemetryRuntime(resolvedStateDir, now, cfg.Telemetry, *telemetryOptIn, *telemetryCollectorURL)
+	if err != nil {
+		return err
+	}
 
 	decision, err := resolveListenDecision(ctx, listenDecisionRequest{
 		Address:            *addr,
@@ -127,6 +135,7 @@ func Run(ctx context.Context, args []string, cfg Config) error {
 		Capabilities: cfg.Capabilities,
 		Inventory:    cfg.Inventory,
 		Metrics:      cfg.Metrics,
+		Telemetry:    telemetryService,
 		Now:          now,
 	})
 	router = api.WithBindSafetyReport(router, security.NewBindReport(decision, now()))
@@ -165,6 +174,18 @@ func Run(ctx context.Context, args []string, cfg Config) error {
 		return nil
 	}
 	return err
+}
+
+func prepareTelemetryRuntime(stateDir string, now func() time.Time, configured *telemetry.Service, optIn bool, collectorURL string) (*telemetry.Service, error) {
+	if configured != nil {
+		return configured, nil
+	}
+	return telemetry.NewService(telemetry.Config{
+		Enabled:      optIn,
+		Path:         telemetry.DefaultPath(stateDir),
+		CollectorURL: collectorURL,
+		Now:          now,
+	})
 }
 
 func prepareOnboardingRuntime(ctx context.Context, stateDir string, now func() time.Time, configured *checkpoints.Service) (*checkpoints.Service, func() error, error) {
