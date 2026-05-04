@@ -139,6 +139,29 @@ func TestUpgradeBlocksIncompatibleDesktopBeforeBackup(t *testing.T) {
 	}
 }
 
+func TestUpgradeVerificationFailureRefusesInstallBeforeBackup(t *testing.T) {
+	fixture := newServiceFixture(t)
+	fixture.verifier.err = errors.New("provenance identity mismatch")
+	svc := fixture.service()
+
+	result, err := svc.Upgrade(context.Background(), fixture.request())
+	if !errors.Is(err, ErrVerificationFailed) {
+		t.Fatalf("err = %v, want ErrVerificationFailed", err)
+	}
+	if fixture.backup.backedUp || fixture.installer.installed {
+		t.Fatalf("verification failure reached backup/install: backedUp=%v installed=%v", fixture.backup.backedUp, fixture.installer.installed)
+	}
+	if len(fixture.manager.calls) != 0 {
+		t.Fatalf("service calls after verification failure = %v", fixture.manager.calls)
+	}
+	if result.State.Phase != PhaseFailed || result.State.WriteMode != WriteModeNormal || result.State.InProgress {
+		t.Fatalf("state = %+v", result.State)
+	}
+	if !fixture.audit.has(ActionUpgradeFailed) {
+		t.Fatalf("audit events = %+v, want failed event", fixture.audit.events)
+	}
+}
+
 func TestHandlerServesStateAndUpgradeProblems(t *testing.T) {
 	fixture := newServiceFixture(t)
 	svc := fixture.service()

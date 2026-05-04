@@ -221,11 +221,17 @@ func TestListPairingsFoldsJSONLState(t *testing.T) {
 	if len(records) != 2 {
 		t.Fatalf("records length = %d", len(records))
 	}
-	if records[0].TokenID != first.TokenID || !records[0].Active() {
-		t.Fatalf("first record = %+v", records[0])
+	byID := map[string]PairingRecord{}
+	for _, record := range records {
+		byID[record.TokenID] = record
 	}
-	if records[1].TokenID != second.TokenID || records[1].ConsumedAt == nil {
-		t.Fatalf("second record = %+v", records[1])
+	firstRecord, ok := byID[first.TokenID]
+	if !ok || !firstRecord.Active() {
+		t.Fatalf("first record = %+v, ok=%v", firstRecord, ok)
+	}
+	secondRecord, ok := byID[second.TokenID]
+	if !ok || secondRecord.ConsumedAt == nil {
+		t.Fatalf("second record = %+v, ok=%v", secondRecord, ok)
 	}
 }
 

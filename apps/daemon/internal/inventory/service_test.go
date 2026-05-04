@@ -111,6 +111,103 @@ func TestSnapshotWarnsWhenNoSubscriptionsAreConfigured(t *testing.T) {
 	}
 }
 
+func TestPhase3InventoryCoversCanonicalToolSetAndSubscriptionTriad(t *testing.T) {
+	now := time.Date(2026, 5, 4, 4, 45, 0, 0, time.UTC)
+	registry := capabilities.New("v1")
+	registry.SetClock(func() time.Time { return now })
+	expectedTools := []capabilities.ToolID{
+		capabilities.ToolNTM,
+		capabilities.ToolBR,
+		capabilities.ToolBV,
+		capabilities.ToolAgentMail,
+		capabilities.ToolCAAM,
+		capabilities.ToolCAUT,
+		capabilities.ToolDCG,
+		capabilities.ToolCASR,
+		capabilities.ToolPT,
+		capabilities.ToolSRP,
+		capabilities.ToolSBH,
+		capabilities.ToolUBS,
+		capabilities.ToolJSM,
+		capabilities.ToolJFP,
+		capabilities.ToolRU,
+		capabilities.ToolOracle,
+	}
+	for _, tool := range expectedTools {
+		if err := registry.SetReport(&capabilities.ToolReport{
+			Tool:          tool,
+			Version:       "1.0.0",
+			Source:        "fixture",
+			LastCheckedAt: now.Format(time.RFC3339),
+			Capabilities: map[string]capabilities.Capability{
+				string(tool) + ".probe": {Status: capabilities.StatusOK},
+			},
+		}); err != nil {
+			t.Fatalf("set %s report: %v", tool, err)
+		}
+	}
+	client := &fakeCAAM{
+		list: &caam.ListResponse{Profiles: []caam.Profile{
+			{Tool: caam.ToolClaude, Name: "claude-max", IsActive: true, HealthStatus: "healthy"},
+			{Tool: caam.ToolCodex, Name: "codex-pro", IsFavorite: true, HealthStatus: "healthy"},
+			{Tool: caam.ToolGemini, Name: "gemini-ultra", HealthStatus: "healthy"},
+		}},
+		status: &caam.StatusResponse{Tools: []caam.ToolStatus{
+			{Tool: caam.ToolClaude, LoggedIn: true, ActiveProfile: "claude-max", Health: "healthy"},
+			{Tool: caam.ToolCodex, LoggedIn: true, ActiveProfile: "codex-pro", Health: "healthy"},
+			{Tool: caam.ToolGemini, LoggedIn: true, ActiveProfile: "gemini-ultra", Health: "healthy"},
+		}},
+		limits: &caam.LimitsResponse{Limits: []caam.Limit{
+			{Provider: "anthropic", Profile: "claude-max", UsedPct: 10},
+			{Provider: "openai", Profile: "codex-pro", UsedPct: 20},
+			{Provider: "google", Profile: "gemini-ultra", UsedPct: 30},
+		}},
+		detect: &caam.DetectResponse{Agents: []caam.AgentInventoryEntry{
+			{Name: "claude", DisplayName: "Claude Code", Installed: true, Version: "1.0.0", BinaryPath: "/usr/local/bin/claude"},
+			{Name: "codex", DisplayName: "Codex CLI", Installed: true, Version: "1.0.0", BinaryPath: "/usr/local/bin/codex"},
+			{Name: "gemini", DisplayName: "Gemini CLI", Installed: true, Version: "1.0.0", BinaryPath: "/usr/local/bin/gemini"},
+		}},
+	}
+	service := NewService(Config{
+		Registry: registry,
+		CAAM:     client,
+		Now:      func() time.Time { return now },
+	})
+
+	snapshot, err := service.Snapshot(context.Background())
+	if err != nil {
+		t.Fatalf("Snapshot returned error: %v", err)
+	}
+
+	seen := map[capabilities.ToolID]bool{}
+	for _, tool := range snapshot.Tools {
+		seen[tool.ID] = true
+	}
+	for _, tool := range expectedTools {
+		if !seen[tool] {
+			t.Fatalf("snapshot missing canonical Phase 3 tool %s; tools=%+v", tool, snapshot.Tools)
+		}
+	}
+	verification := snapshot.SubscriptionVerification
+	if verification.Status != VerificationOK || verification.SignedInCount != 3 ||
+		verification.TotalAccountCount != 3 || verification.TotalAvailableAccounts != 3 {
+		t.Fatalf("subscription verification = %+v", verification)
+	}
+	wantSubscriptions := map[string]string{
+		"claude": "Claude Max",
+		"codex":  "GPT Pro",
+		"gemini": "Gemini Ultra",
+	}
+	for _, tool := range verification.RequiredTools {
+		if wantSubscriptions[tool.Tool] != tool.ExpectedSubscription {
+			t.Fatalf("%s expected subscription = %q, want %q", tool.Tool, tool.ExpectedSubscription, wantSubscriptions[tool.Tool])
+		}
+		if !tool.SignedIn || tool.DetectedAgent == nil || len(tool.Limits) != 1 {
+			t.Fatalf("%s subscription details = %+v", tool.Tool, tool)
+		}
+	}
+}
+
 func TestSnapshotDegradesWhenCAAMFails(t *testing.T) {
 	service := NewService(Config{
 		Registry: capabilities.New("v1"),

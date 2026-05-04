@@ -128,6 +128,54 @@ func TestRetryFromFailureIncrementsAttempt(t *testing.T) {
 	}
 }
 
+func TestPhase3FailureCheckpointsExposeTargetedRepairActions(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		step string
+		want []RepairActionID
+	}{
+		{
+			name: "acfs doctor",
+			step: "acfs-install.doctor",
+			want: []RepairActionID{RepairResumeStep, RepairSkipStep, RepairViewLogs, RepairRunACFSDoctor},
+		},
+		{
+			name: "daemon install",
+			step: "daemon-install.installed",
+			want: []RepairActionID{RepairResumeStep, RepairSkipStep, RepairViewLogs, RepairReinstallDaemon},
+		},
+		{
+			name: "tool inventory",
+			step: "tool-inventory.caam",
+			want: []RepairActionID{RepairResumeStep, RepairSkipStep, RepairViewLogs, RepairRunACFSDoctor, RepairRefreshToolInventory},
+		},
+		{
+			name: "skills",
+			step: "extensions.skills",
+			want: []RepairActionID{RepairResumeStep, RepairSkipStep, RepairViewLogs, RepairVerifySkills, RepairRestartOracle},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			actions := RepairActionsForCheckpoint(Checkpoint{
+				RunID:  "run_phase3_repairs",
+				StepID: tc.step,
+				Status: StatusFailed,
+			})
+			got := repairActionIDs(actions)
+			for _, want := range tc.want {
+				if !got[want] {
+					t.Fatalf("%s repair actions = %+v, missing %s", tc.step, actions, want)
+				}
+			}
+		})
+	}
+	if actions := RepairActionsForCheckpoint(Checkpoint{StepID: "acfs-install.doctor", Status: StatusSucceeded}); len(actions) != 0 {
+		t.Fatalf("succeeded checkpoint repair actions = %+v, want none", actions)
+	}
+}
+
 type recordingAudit struct {
 	events []AuditEvent
 }
@@ -135,4 +183,12 @@ type recordingAudit struct {
 func (r *recordingAudit) RecordCheckpointTransition(_ context.Context, event AuditEvent) error {
 	r.events = append(r.events, cloneAuditEvent(event))
 	return nil
+}
+
+func repairActionIDs(actions []RepairAction) map[RepairActionID]bool {
+	out := make(map[RepairActionID]bool, len(actions))
+	for _, action := range actions {
+		out[action.ID] = true
+	}
+	return out
 }

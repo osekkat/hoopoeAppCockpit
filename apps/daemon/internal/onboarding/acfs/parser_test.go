@@ -367,6 +367,91 @@ func TestRunnerFailureTimelineResumesFromLastSuccessfulPhase(t *testing.T) {
 	}
 }
 
+func TestPhase3AcceptanceRunPersistsCanonicalCheckpoints(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 5, 4, 13, 10, 0, 0, time.UTC)
+	exec := &fakeExecutor{
+		lines: []Line{
+			{Stream: StreamStdout, Offset: 10, Text: "[acfs] phase.start preflight Pre-flight", At: now},
+			{Stream: StreamStdout, Offset: 20, Text: "[acfs] checkpoint preflight passed pass", At: now.Add(time.Millisecond)},
+			{Stream: StreamStdout, Offset: 30, Text: "[acfs] phase.end preflight rc=0 durationMs=10", At: now.Add(2 * time.Millisecond)},
+			{Stream: StreamStdout, Offset: 40, Text: "[acfs] phase.start base-packages Install packages", At: now.Add(3 * time.Millisecond)},
+			{Stream: StreamStdout, Offset: 50, Text: "[acfs] checkpoint base-packages installed pass", At: now.Add(4 * time.Millisecond)},
+			{Stream: StreamStdout, Offset: 60, Text: "[acfs] phase.end base-packages rc=0 durationMs=20", At: now.Add(5 * time.Millisecond)},
+			{Stream: StreamStdout, Offset: 70, Text: "[acfs] phase.start acfs-install Install ACFS", At: now.Add(6 * time.Millisecond)},
+			{Stream: StreamStdout, Offset: 80, Text: "[acfs] checkpoint acfs-install installed pass", At: now.Add(7 * time.Millisecond)},
+			{Stream: StreamStdout, Offset: 90, Text: "[acfs] checkpoint acfs-install doctor pass", At: now.Add(8 * time.Millisecond)},
+			{Stream: StreamStdout, Offset: 100, Text: "[acfs] phase.end acfs-install rc=0 durationMs=30", At: now.Add(9 * time.Millisecond)},
+			{Stream: StreamStdout, Offset: 110, Text: "[acfs] phase.start daemon-install Install daemon", At: now.Add(10 * time.Millisecond)},
+			{Stream: StreamStdout, Offset: 120, Text: "[acfs] checkpoint daemon-install installed pass", At: now.Add(11 * time.Millisecond)},
+			{Stream: StreamStdout, Offset: 130, Text: "[acfs] phase.end daemon-install rc=0 durationMs=40", At: now.Add(12 * time.Millisecond)},
+			{Stream: StreamStdout, Offset: 140, Text: "[acfs] phase.start daemon-pairing Pair daemon", At: now.Add(13 * time.Millisecond)},
+			{Stream: StreamStdout, Offset: 150, Text: "[acfs] checkpoint daemon-pairing paired pass", At: now.Add(14 * time.Millisecond)},
+			{Stream: StreamStdout, Offset: 160, Text: "[acfs] phase.end daemon-pairing rc=0 durationMs=50", At: now.Add(15 * time.Millisecond)},
+		},
+		result: CommandResult{
+			ExitCode:    0,
+			CompletedAt: now.Add(time.Second),
+		},
+	}
+	nextID := 0
+	service := checkpoints.NewService(checkpoints.Config{
+		Now: func() time.Time { return now },
+		NewID: func() (string, error) {
+			nextID++
+			return fmt.Sprintf("evt_phase3_%d", nextID), nil
+		},
+	})
+	runner := Runner{
+		Exec:        exec,
+		Checkpoints: service,
+		Now:         func() time.Time { return now },
+	}
+
+	result, err := runner.Run(context.Background(), RunRequest{
+		RunID:     "run_phase3_acceptance",
+		ProjectID: "proj_phase3",
+		Ref:       "v0.7.0",
+		LogDir:    t.TempDir(),
+	}, nil)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if result.ExitCode != 0 || result.RawLogFallback || result.ResumeHint != DefaultResumeHint {
+		t.Fatalf("result = %+v", result)
+	}
+	data, err := os.ReadFile(result.LogPath)
+	if err != nil {
+		t.Fatalf("read log: %v", err)
+	}
+	if !strings.Contains(string(data), "checkpoint daemon-pairing paired pass") {
+		t.Fatalf("log missing final pairing checkpoint: %q", data)
+	}
+	timeline, err := service.Timeline(context.Background(), "run_phase3_acceptance")
+	if err != nil {
+		t.Fatalf("Timeline: %v", err)
+	}
+	for _, stepID := range []string{
+		"preflight.passed",
+		"base-packages.installed",
+		"acfs-install.installed",
+		"acfs-install.doctor",
+		"daemon-install.installed",
+		"daemon-pairing.paired",
+	} {
+		checkpoint, ok := checkpointByStep(timeline.Checkpoints, stepID)
+		if !ok || checkpoint.Status != checkpoints.StatusSucceeded {
+			t.Fatalf("%s checkpoint = %+v, ok=%v", stepID, checkpoint, ok)
+		}
+		if checkpoint.ProjectID != "proj_phase3" || len(checkpoint.EvidenceRefs) == 0 {
+			t.Fatalf("%s context = %+v", stepID, checkpoint)
+		}
+	}
+	if len(timeline.Actions) != 0 {
+		t.Fatalf("successful acceptance run should not expose repair actions: %+v", timeline.Actions)
+	}
+}
+
 func TestRunnerRejectsUnsafeRefAndRunID(t *testing.T) {
 	t.Parallel()
 	runner := Runner{Exec: &fakeExecutor{}}
