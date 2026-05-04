@@ -279,6 +279,62 @@ func TestPollOriginExternalPushEmitsOriginUpdatedWithinPoll(t *testing.T) {
 	}
 }
 
+// TestPollOriginEmitsOriginUpdatedForDeletedBranch guards hp-ag1n: a
+// branch deleted from origin previously updated lastRemote silently
+// because changedRefs only iterated the new ref map. The fix iterates
+// both maps, emits a RefUpdate with Op=delete (empty NewSHA, populated
+// OldSHA), and surfaces the event to subscribers + the replay buffer.
+func TestPollOriginEmitsOriginUpdatedForDeletedBranch(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	refs := &fakeRemoteRefs{snapshots: [][]gitevents.RefState{
+		{
+			{Name: "refs/heads/main", SHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+			{Name: "refs/heads/feature", SHA: "cccccccccccccccccccccccccccccccccccccccc"},
+		},
+		{
+			// feature branch removed from origin; main unchanged.
+			{Name: "refs/heads/main", SHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		},
+	}}
+	publisher := &recordingPublisher{}
+	w := NewGitWatcher("proj_01", &fakeGitClient{status: &gitadapter.Status{Branch: "main"}}, publisher)
+	w.RemoteRefs = refs
+	w.Now = fixedWatcherNow
+
+	if first, err := w.PollOrigin(ctx); err != nil || len(first) != 0 {
+		t.Fatalf("seed PollOrigin: events=%+v err=%v", first, err)
+	}
+	second, err := w.PollOrigin(ctx)
+	if err != nil {
+		t.Fatalf("PollOrigin after deletion: %v", err)
+	}
+	if len(second) != 1 || second[0].Type != gitevents.EventOriginUpdated {
+		t.Fatalf("expected one origin_updated event for the deletion, got %+v", second)
+	}
+	payload := second[0].Data.(gitevents.OriginUpdatedPayload)
+	if len(payload.Refs) != 1 {
+		t.Fatalf("expected one RefUpdate (the deletion); got %+v", payload.Refs)
+	}
+	deleted := payload.Refs[0]
+	if deleted.Op != gitevents.RefUpdateOpDelete {
+		t.Fatalf("ref.Op = %q, want %q", deleted.Op, gitevents.RefUpdateOpDelete)
+	}
+	if deleted.Name != "refs/heads/feature" {
+		t.Fatalf("ref.Name = %q, want feature branch", deleted.Name)
+	}
+	if deleted.NewSHA != "" {
+		t.Fatalf("ref.NewSHA = %q, want empty for deletion", deleted.NewSHA)
+	}
+	if deleted.OldSHA != "cccccccccccccccccccccccccccccccccccccccc" {
+		t.Fatalf("ref.OldSHA = %q, want feature SHA", deleted.OldSHA)
+	}
+	// Re-poll once: lastRemote is now updated, so no duplicate emission.
+	if third, err := w.PollOrigin(ctx); err != nil || len(third) != 0 {
+		t.Fatalf("third PollOrigin should be quiet: events=%+v err=%v", third, err)
+	}
+}
+
 func TestPollOriginRetriesAfterPublishFailure(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

@@ -630,6 +630,12 @@ func refMap(refs []gitevents.RefState) map[string]string {
 	return out
 }
 
+// changedRefs computes the diff between two ref-snapshots as a list of
+// RefUpdate operations. It iterates BOTH maps so deletions (ref present
+// in old but missing from next) are surfaced as Op=delete events —
+// hp-ag1n. The previous implementation only walked next, which silently
+// dropped deletions on the floor and broke restartability for branch
+// removals.
 func changedRefs(old, next map[string]string) []gitevents.RefUpdate {
 	updates := []gitevents.RefUpdate{}
 	for name, newSHA := range next {
@@ -637,19 +643,51 @@ func changedRefs(old, next map[string]string) []gitevents.RefUpdate {
 		if ok && oldSHA == newSHA {
 			continue
 		}
-		updates = append(updates, gitevents.RefUpdate{Name: name, OldSHA: oldSHA, NewSHA: newSHA})
+		op := gitevents.RefUpdateOpUpdate
+		if !ok || strings.TrimSpace(oldSHA) == "" {
+			op = gitevents.RefUpdateOpCreate
+		}
+		updates = append(updates, gitevents.RefUpdate{Name: name, OldSHA: oldSHA, NewSHA: newSHA, Op: op})
+	}
+	for name, oldSHA := range old {
+		if _, stillPresent := next[name]; stillPresent {
+			continue
+		}
+		updates = append(updates, gitevents.RefUpdate{Name: name, OldSHA: oldSHA, Op: gitevents.RefUpdateOpDelete})
 	}
 	return normalizeRefUpdates(updates)
 }
 
+// normalizeRefUpdates trims whitespace and drops malformed entries.
+// Deletions (Op=delete) are kept even with empty NewSHA — the deletion
+// shape is structurally distinct from a missing-data error. Updates
+// without a NewSHA fall back to Op=delete classification when OldSHA
+// is present, otherwise they're discarded (no signal).
 func normalizeRefUpdates(refs []gitevents.RefUpdate) []gitevents.RefUpdate {
 	out := make([]gitevents.RefUpdate, 0, len(refs))
 	for _, ref := range refs {
 		ref.Name = strings.TrimSpace(ref.Name)
 		ref.OldSHA = strings.TrimSpace(ref.OldSHA)
 		ref.NewSHA = strings.TrimSpace(ref.NewSHA)
-		if ref.Name == "" || ref.NewSHA == "" {
+		if ref.Name == "" {
 			continue
+		}
+		// Reclassify based on shape so callers that build RefUpdate
+		// without setting Op (e.g. RecordPushCompleted's push.Refs)
+		// still get a correct Op value.
+		switch {
+		case ref.NewSHA == "" && ref.OldSHA == "":
+			continue
+		case ref.NewSHA == "":
+			ref.Op = gitevents.RefUpdateOpDelete
+		case ref.OldSHA == "":
+			if ref.Op == "" {
+				ref.Op = gitevents.RefUpdateOpCreate
+			}
+		default:
+			if ref.Op == "" {
+				ref.Op = gitevents.RefUpdateOpUpdate
+			}
 		}
 		out = append(out, ref)
 	}

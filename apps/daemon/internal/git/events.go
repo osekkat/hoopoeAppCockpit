@@ -43,10 +43,29 @@ type PushCompletedPayload struct {
 }
 
 type RefUpdate struct {
-	Name   string `json:"name"`
+	Name string `json:"name"`
+	// OldSHA is the prior SHA of the ref. Empty when the ref was just
+	// created.
 	OldSHA string `json:"oldSha,omitempty"`
-	NewSHA string `json:"newSha"`
+	// NewSHA is the current SHA of the ref. Empty when the ref was
+	// deleted from origin (hp-ag1n) — Op carries the explicit
+	// classification so consumers can branch on operation type
+	// without relying on string-emptiness checks.
+	NewSHA string `json:"newSha,omitempty"`
+	// Op classifies the update. Defaults to "update" for SHA changes,
+	// "create" when OldSHA is empty, and "delete" when NewSHA is empty.
+	Op RefUpdateOp `json:"op,omitempty"`
 }
+
+// RefUpdateOp classifies a RefUpdate so consumers can dispatch on
+// create / update / delete without re-deriving from SHA emptiness.
+type RefUpdateOp string
+
+const (
+	RefUpdateOpCreate RefUpdateOp = "create"
+	RefUpdateOpUpdate RefUpdateOp = "update"
+	RefUpdateOpDelete RefUpdateOp = "delete"
+)
 
 type OriginUpdatedPayload struct {
 	ProjectID string      `json:"projectId"`
