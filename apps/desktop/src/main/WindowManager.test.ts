@@ -66,8 +66,11 @@ test("window-policy: isAllowedNavigationUrl approves exact loopback origins", ()
   expect(isAllowedNavigationUrl("http://localhost:3779/index.html")).toBe(true);
   expect(isAllowedNavigationUrl("https://localhost/")).toBe(true);
   expect(isAllowedNavigationUrl("http://localhost.evil.example/")).toBe(false);
+  expect(isAllowedNavigationUrl("http://127.0.0.1.evil.example/")).toBe(false);
   expect(isAllowedNavigationUrl("https://127.0.0.1.evil.example/")).toBe(false);
+  expect(isAllowedNavigationUrl("http://localhost@evil.example/")).toBe(false);
   expect(isAllowedNavigationUrl("https://[::1]:3779/index.html")).toBe(false);
+  expect(isAllowedNavigationUrl("https://[::ffff:127.0.0.1]:3779/index.html")).toBe(false);
 });
 
 test("window-policy: isAllowedNavigationUrl approves only app-root file URLs", () => {
