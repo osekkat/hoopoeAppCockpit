@@ -67,8 +67,11 @@ type PublishInput struct {
 }
 
 type Subscriber struct {
-	hub *EventHub
-	sub *subscriber
+	hub         *EventHub
+	sub         *subscriber
+	done        chan struct{}
+	watcherDone chan struct{}
+	closeOnce   sync.Once
 }
 
 type subscriber struct {
@@ -297,10 +300,19 @@ func (h *EventHub) Subscribe(ctx context.Context, channels []string) *Subscriber
 	h.subscribers[sub.id] = sub
 	h.mu.Unlock()
 
-	wrapped := &Subscriber{hub: h, sub: sub}
+	wrapped := &Subscriber{
+		hub:         h,
+		sub:         sub,
+		done:        make(chan struct{}),
+		watcherDone: make(chan struct{}),
+	}
 	go func() {
-		<-ctx.Done()
-		wrapped.Close()
+		defer close(wrapped.watcherDone)
+		select {
+		case <-ctx.Done():
+			wrapped.Close()
+		case <-wrapped.done:
+		}
 	}()
 	return wrapped
 }
@@ -310,11 +322,14 @@ func (s *Subscriber) Events() <-chan Event {
 }
 
 func (s *Subscriber) Close() {
-	s.hub.mu.Lock()
-	if _, ok := s.hub.subscribers[s.sub.id]; ok {
-		delete(s.hub.subscribers, s.sub.id)
-	}
-	s.hub.mu.Unlock()
+	s.closeOnce.Do(func() {
+		func() {
+			s.hub.mu.Lock()
+			defer s.hub.mu.Unlock()
+			delete(s.hub.subscribers, s.sub.id)
+		}()
+		close(s.done)
+	})
 }
 
 func (s *subscriber) wants(channel string) bool {

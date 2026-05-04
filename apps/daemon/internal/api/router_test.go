@@ -828,6 +828,28 @@ func TestSlowConsumerReceivesLagEvent(t *testing.T) {
 	}
 }
 
+func TestEventHubSubscriberCloseStopsContextWatcher(t *testing.T) {
+	hub := NewEventHub(EventHubConfig{})
+	sub := hub.Subscribe(context.Background(), []string{"project:test"})
+
+	sub.Close()
+	select {
+	case <-sub.watcherDone:
+	case <-time.After(time.Second):
+		t.Fatal("subscriber context watcher did not exit after manual Close")
+	}
+	sub.Close()
+
+	if stillRegistered := func() bool {
+		hub.mu.RLock()
+		defer hub.mu.RUnlock()
+		_, ok := hub.subscribers[sub.sub.id]
+		return ok
+	}(); stillRegistered {
+		t.Fatal("subscriber still registered after Close")
+	}
+}
+
 func TestEventHubRedactsPublishDataBeforeDeliveryAndReplay(t *testing.T) {
 	// hp-aek: EventHub.Publish must scrub secret-shaped data before it
 	// reaches WS/SSE subscribers or sits in the replay buffer. Mirrors
