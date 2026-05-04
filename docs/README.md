@@ -11,8 +11,8 @@ points to.
 | ------------------------------------- | ------------------------------------------------------------------------------- |
 | `source-provenance.md`                | Pinned external-source SHAs and attribution rules (t3code lift).                |
 | (forthcoming) `api-seed.md`           | Seed daemon REST/WS contract per `plan.md §2.6`. Lands in Phase 2.5.            |
-| (forthcoming) `process-manager.md`    | Process registry + PTY/tmux multiplex invariants per `plan.md §2.7`. Phase 2.5. |
-| (forthcoming) `reconnect-replay.md`   | Sequence-cursor + snapshot-on-reconnect transport rules. Phase 2.5.             |
+| `process-manager.md`                  | Job registry, process, log, and artifact invariants per `plan.md §2.7`.         |
+| `reconnect-replay.md`                 | Job-log offset reconnect rules and replay boundaries.                           |
 | (forthcoming) `security.md`           | Threat model, secrets surface, audit-log contract per `plan.md §5`.             |
 | (forthcoming) `adr/0001-…`            | Architecture decision records.                                                  |
 

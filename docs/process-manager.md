@@ -64,9 +64,22 @@ live process, or else it has been made visibly interrupted.
 
 ## Log and Artifact Boundaries
 
-Logs are byte-addressable. Callers append bytes with `AppendLog` and fetch
-bounded chunks with `ReadLog(jobID, offset, limit)`. List responses never embed
-terminal output or full logs.
+Logs are byte-addressable and file-backed under the registry's log directory
+(`~/.hoopoe/logs/{jobId}.log` in production). Callers append bytes with
+`AppendLog` and fetch bounded chunks with `ReadLog(jobID, offset, limit)`.
+`ReadLog` reports the requested byte offset, the next offset, the total
+persisted byte count, EOF, and whether the job is terminal. List responses never
+embed terminal output or full logs.
+
+The HTTP read surface is:
+
+```http
+GET /v1/jobs/{jobId}/log?offset=<bytes>&maxBytes=<n>
+```
+
+The response body is raw `application/octet-stream` log bytes. The daemon sets
+`Content-Range`, `X-Log-Total-Bytes`, `X-Log-Final`, and `X-Log-Next-Offset` so
+clients can reconnect by asking for the last observed `nextOffset`.
 
 Artifacts are registry references only: kind, URI, digest, and timestamp. The
 blob store or artifact retention policy is intentionally separate.
@@ -81,7 +94,8 @@ The initial unit coverage asserts:
 - lease, heartbeat, complete, and file-backed reload preserve state;
 - restart recovery marks missing live processes interrupted;
 - restart recovery reattaches live processes from the process manager snapshot;
-- chunked log reads honor offsets;
+- chunked log reads honor offsets, report total bytes/final state, and support
+  reconnect-by-offset;
 - resource semaphores block at capacity and respect context cancellation;
 - process start rejects missing job IDs;
 - one process per job is enforced;
