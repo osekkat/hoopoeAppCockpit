@@ -21,6 +21,84 @@ type EvidenceLedger struct {
 	Now  func() time.Time
 }
 
+type ArtifactStore struct {
+	Root string
+}
+
+type WrittenArtifact struct {
+	Kind  string `json:"kind"`
+	Path  string `json:"path"`
+	Bytes int    `json:"bytes"`
+}
+
+func (s ArtifactStore) WriteConversionArtifacts(ctx context.Context, plan ConversionPlan) ([]WrittenArtifact, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if !safeSegment(plan.PlanID) {
+		return nil, fmt.Errorf("%w: plan id", ErrUnsafePath)
+	}
+	payloads := map[string]any{
+		"traceability":    plan.Traceability,
+		"quality_report":  plan.Quality,
+		"polish_plan":     plan.Polish,
+		"bv_graph_health": plan.Graph,
+	}
+	paths := BeadflowArtifactPaths(plan.PlanID)
+	written := make([]WrittenArtifact, 0, len(paths))
+	for _, artifact := range paths {
+		payload, ok := payloads[artifact.Kind]
+		if !ok {
+			return nil, fmt.Errorf("beadflow: no payload for artifact kind %q", artifact.Kind)
+		}
+		bytes, err := s.writeJSON(ctx, artifact.Path, payload)
+		if err != nil {
+			return nil, err
+		}
+		written = append(written, WrittenArtifact{
+			Kind:  artifact.Kind,
+			Path:  artifact.Path,
+			Bytes: bytes,
+		})
+	}
+	return written, nil
+}
+
+func (s ArtifactStore) writeJSON(ctx context.Context, rel string, payload any) (int, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	abs, err := resolveUnderRoot(s.Root, rel)
+	if err != nil {
+		return 0, err
+	}
+	if err := os.MkdirAll(filepath.Dir(abs), 0o700); err != nil {
+		return 0, err
+	}
+	encoded, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return 0, err
+	}
+	encoded = append(encoded, '\n')
+	tmp, err := os.CreateTemp(filepath.Dir(abs), ".tmp-"+filepath.Base(abs)+"-*")
+	if err != nil {
+		return 0, err
+	}
+	if _, err := tmp.Write(encoded); err != nil {
+		return 0, closeWithError(tmp, err)
+	}
+	if err := tmp.Sync(); err != nil {
+		return 0, closeWithError(tmp, err)
+	}
+	if err := tmp.Close(); err != nil {
+		return 0, err
+	}
+	if err := os.Rename(tmp.Name(), abs); err != nil {
+		return 0, err
+	}
+	return len(encoded), nil
+}
+
 func (l EvidenceLedger) Append(ctx context.Context, planID string, entry EvidenceEntry) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
@@ -47,17 +125,9 @@ func (l EvidenceLedger) Append(ctx context.Context, planID string, entry Evidenc
 		entry.Time = now().UTC()
 	}
 	rel := filepath.Join(".hoopoe", "plans", planID, "implementation-evidence.jsonl")
-	abs := filepath.Join(l.Root, rel)
-	cleanRoot, err := filepath.Abs(l.Root)
+	cleanAbs, err := resolveUnderRoot(l.Root, rel)
 	if err != nil {
 		return "", err
-	}
-	cleanAbs, err := filepath.Abs(abs)
-	if err != nil {
-		return "", err
-	}
-	if cleanAbs != cleanRoot && !strings.HasPrefix(cleanAbs, cleanRoot+string(os.PathSeparator)) {
-		return "", ErrUnsafePath
 	}
 	if err := os.MkdirAll(filepath.Dir(cleanAbs), 0o700); err != nil {
 		return "", err
@@ -80,6 +150,27 @@ func (l EvidenceLedger) Append(ctx context.Context, planID string, entry Evidenc
 		return "", err
 	}
 	return filepath.ToSlash(rel), nil
+}
+
+func resolveUnderRoot(root, rel string) (string, error) {
+	if strings.TrimSpace(root) == "" {
+		return "", fmt.Errorf("%w: empty root", ErrUnsafePath)
+	}
+	if filepath.IsAbs(rel) || strings.Contains(rel, "..") {
+		return "", ErrUnsafePath
+	}
+	cleanRoot, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	cleanAbs, err := filepath.Abs(filepath.Join(root, rel))
+	if err != nil {
+		return "", err
+	}
+	if cleanAbs != cleanRoot && !strings.HasPrefix(cleanAbs, cleanRoot+string(os.PathSeparator)) {
+		return "", ErrUnsafePath
+	}
+	return cleanAbs, nil
 }
 
 func closeWithError(file *os.File, err error) error {

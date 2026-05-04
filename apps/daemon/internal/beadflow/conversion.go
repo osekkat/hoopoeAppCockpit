@@ -47,6 +47,7 @@ type ConversionPlan struct {
 	Traceability  TraceabilityMap  `json:"traceability"`
 	Quality       QualityReport    `json:"quality"`
 	Polish        PolishPlan       `json:"polish"`
+	Graph         GraphHealth      `json:"graph"`
 	Findings      []string         `json:"findings,omitempty"`
 }
 
@@ -113,6 +114,7 @@ func BuildConversionPlan(input ConversionInput) ConversionPlan {
 		Traceability:  trace,
 		Quality:       quality,
 		Polish:        polish,
+		Graph:         input.Graph,
 		Findings:      uniqueSorted(findings),
 	}
 }

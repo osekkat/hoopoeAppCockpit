@@ -148,3 +148,71 @@ func TestEvidenceLedgerAppendsJSONLAndRejectsTraversal(t *testing.T) {
 		t.Fatalf("expected traversal rejection")
 	}
 }
+
+func TestArtifactStoreWritesConversionArtifacts(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	now := time.Date(2026, 5, 4, 15, 0, 0, 0, time.UTC)
+	plan := BuildConversionPlan(ConversionInput{
+		PlanID:     "plan-1",
+		PlanLocked: true,
+		Sections:   []PlanSection{{ID: "s1", Title: "Conversion", RequiredTests: []string{"unit: conversion"}}},
+		DraftBeads: []Bead{{
+			Title:              "Convert plan",
+			Description:        strings.Repeat("context ", 50),
+			PlanSections:       []string{"s1"},
+			TestObligations:    []string{"unit: conversion"},
+			AcceptanceCriteria: []string{"traceability artifacts are written"},
+		}},
+		Graph: GraphHealth{
+			ReadyCount:   1,
+			BlockedCount: 0,
+			ParallelTracks: []Track{{
+				ID:      "track-1",
+				BeadIDs: []string{"convert-plan"},
+			}},
+		},
+		Now: func() time.Time { return now },
+	})
+
+	written, err := ArtifactStore{Root: root}.WriteConversionArtifacts(context.Background(), plan)
+	if err != nil {
+		t.Fatalf("WriteConversionArtifacts: %v", err)
+	}
+	if len(written) != 4 {
+		t.Fatalf("written artifacts = %+v", written)
+	}
+	for _, artifact := range written {
+		if artifact.Bytes <= 0 {
+			t.Fatalf("artifact has no bytes: %+v", artifact)
+		}
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(artifact.Path))); err != nil {
+			t.Fatalf("stat %s: %v", artifact.Path, err)
+		}
+	}
+
+	var trace TraceabilityMap
+	readJSONArtifact(t, root, ".hoopoe/plans/plan-1/beadflow/traceability.json", &trace)
+	if trace.SchemaVersion != TraceabilitySchemaVersion || trace.PlanCoverageScore != 100 {
+		t.Fatalf("trace artifact = %+v", trace)
+	}
+	var graph GraphHealth
+	readJSONArtifact(t, root, ".hoopoe/plans/plan-1/beadflow/bv-graph-health.json", &graph)
+	if graph.ReadyCount != 1 || len(graph.ParallelTracks) != 1 {
+		t.Fatalf("graph artifact = %+v", graph)
+	}
+	if _, err := (ArtifactStore{Root: root}).WriteConversionArtifacts(context.Background(), ConversionPlan{PlanID: "../bad"}); err == nil {
+		t.Fatalf("expected unsafe plan id rejection")
+	}
+}
+
+func readJSONArtifact(t *testing.T, root, rel string, target any) {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
+	if err != nil {
+		t.Fatalf("read %s: %v", rel, err)
+	}
+	if err := json.Unmarshal(data, target); err != nil {
+		t.Fatalf("decode %s: %v", rel, err)
+	}
+}
