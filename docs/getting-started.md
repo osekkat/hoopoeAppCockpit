@@ -40,6 +40,15 @@ The demo path is not a second source of truth. It exercises the renderer
 against fixture-backed daemon shapes so contributors can inspect the product
 flow before pairing a real VPS.
 
+To smoke the fixture-backed path from a fresh checkout without pairing a VPS:
+
+```bash
+bun run mock-flywheel
+```
+
+This runs the scenario replay goldens plus the desktop mock daemon, local-demo
+auth bootstrap, IPC, and replay harnesses.
+
 ## Work Selection
 
 ```bash
