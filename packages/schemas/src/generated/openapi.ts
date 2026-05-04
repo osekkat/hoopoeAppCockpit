@@ -915,6 +915,7 @@ export interface components {
             lifecycleState: components["schemas"]["ProjectLifecycleState"];
             /** @description Whether AGENTS.md was found on import. */
             agentsManifestPresent?: boolean;
+            agentsContract?: components["schemas"]["ProjectAgentContract"];
             /** @description Whether the project has a populated `.hoopoe/` directory. */
             hoopoeInitialized?: boolean;
             toolDetectionDone?: boolean;
@@ -922,6 +923,39 @@ export interface components {
             importedAt?: string;
             /** Format: date-time */
             lastActivityAt?: string;
+        };
+        /**
+         * @description Per-project agent operating contract status. The daemon surfaces this
+         *     on import and readiness checks so swarm launch can require agents to
+         *     reread the project's own instructions before work starts (§7.3, §15).
+         */
+        ProjectAgentContract: {
+            /** @enum {string} */
+            status: "present" | "missing";
+            /** @description Repo-relative path to the detected AGENTS.md file when present. */
+            relativePath?: string;
+            /** @description Repo-relative path used by the create action when AGENTS.md is missing. */
+            defaultRelativePath: string;
+            /** @description True when swarm kickoff must instruct agents to reread this contract. */
+            readRequiredBeforeSwarm: boolean;
+            openAction?: components["schemas"]["ProjectAgentContractAction"];
+            createAction?: components["schemas"]["ProjectAgentContractCreateAction"];
+        };
+        ProjectAgentContractAction: {
+            /** @enum {string} */
+            id: "agents.open";
+            label: string;
+            targetRelativePath: string;
+        };
+        ProjectAgentContractCreateAction: {
+            /** @enum {string} */
+            id: "agents.create";
+            label: string;
+            targetRelativePath: string;
+            /** @description Editable recommended AGENTS.md template body. */
+            template: string;
+            /** @description SHA-256 of the provided template for audit/debug drift checks. */
+            templateSha256: string;
         };
         ProjectListResponse: {
             items: components["schemas"]["Project"][];

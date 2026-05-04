@@ -1225,12 +1225,65 @@ components:
         agentsManifestPresent:
           type: boolean
           description: 'Whether AGENTS.md was found on import.'
+        agentsContract:
+          $ref: '#/components/schemas/ProjectAgentContract'
         hoopoeInitialized:
           type: boolean
           description: 'Whether the project has a populated `.hoopoe/` directory.'
         toolDetectionDone: { type: boolean }
         importedAt: { type: string, format: date-time }
         lastActivityAt: { type: string, format: date-time }
+
+    ProjectAgentContract:
+      type: object
+      description: |
+        Per-project agent operating contract status. The daemon surfaces this
+        on import and readiness checks so swarm launch can require agents to
+        reread the project's own instructions before work starts (§7.3, §15).
+      required: [status, defaultRelativePath, readRequiredBeforeSwarm]
+      properties:
+        status:
+          type: string
+          enum: [present, missing]
+        relativePath:
+          type: string
+          description: 'Repo-relative path to the detected AGENTS.md file when present.'
+        defaultRelativePath:
+          type: string
+          description: 'Repo-relative path used by the create action when AGENTS.md is missing.'
+        readRequiredBeforeSwarm:
+          type: boolean
+          description: 'True when swarm kickoff must instruct agents to reread this contract.'
+        openAction:
+          $ref: '#/components/schemas/ProjectAgentContractAction'
+        createAction:
+          $ref: '#/components/schemas/ProjectAgentContractCreateAction'
+
+    ProjectAgentContractAction:
+      type: object
+      required: [id, label, targetRelativePath]
+      properties:
+        id:
+          type: string
+          enum: [agents.open]
+        label: { type: string }
+        targetRelativePath: { type: string }
+
+    ProjectAgentContractCreateAction:
+      type: object
+      required: [id, label, targetRelativePath, template, templateSha256]
+      properties:
+        id:
+          type: string
+          enum: [agents.create]
+        label: { type: string }
+        targetRelativePath: { type: string }
+        template:
+          type: string
+          description: 'Editable recommended AGENTS.md template body.'
+        templateSha256:
+          type: string
+          description: 'SHA-256 of the provided template for audit/debug drift checks.'
 
     ProjectListResponse:
       type: object

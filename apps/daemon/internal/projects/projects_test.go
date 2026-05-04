@@ -81,6 +81,18 @@ func TestServiceImportInitializesHoopoeBeadsAndRegistry(t *testing.T) {
 	if project.AgentsManifestPresent == nil || !*project.AgentsManifestPresent {
 		t.Fatalf("agents manifest flag = %v, want true", project.AgentsManifestPresent)
 	}
+	if project.AgentsContract == nil || project.AgentsContract.Status != schemas.Present {
+		t.Fatalf("agents contract = %+v, want present", project.AgentsContract)
+	}
+	if project.AgentsContract.RelativePath == nil || *project.AgentsContract.RelativePath != "AGENTS.md" {
+		t.Fatalf("agents contract relative path = %v, want AGENTS.md", project.AgentsContract.RelativePath)
+	}
+	if project.AgentsContract.OpenAction == nil || project.AgentsContract.OpenAction.Id != schemas.AgentsOpen {
+		t.Fatalf("agents contract open action = %+v, want agents.open", project.AgentsContract.OpenAction)
+	}
+	if project.AgentsContract.CreateAction != nil {
+		t.Fatalf("agents contract create action = %+v, want nil when AGENTS.md exists", project.AgentsContract.CreateAction)
+	}
 	if project.HoopoeInitialized == nil || !*project.HoopoeInitialized {
 		t.Fatalf("hoopoe initialized flag = %v, want true", project.HoopoeInitialized)
 	}
@@ -166,16 +178,86 @@ func TestServiceReadinessReportsMissingAgentAndManifest(t *testing.T) {
 	if len(readiness.Gates) != 1 || readiness.Gates[0].Satisfied {
 		t.Fatalf("readiness = %+v, want unsatisfied imported gate", readiness)
 	}
+	if project.AgentsContract == nil || project.AgentsContract.Status != schemas.Missing || project.AgentsContract.CreateAction == nil {
+		t.Fatalf("agents contract = %+v, want missing with create action", project.AgentsContract)
+	}
+	if project.AgentsContract.CreateAction.TargetRelativePath != DefaultAgentsManifestRelativePath ||
+		!strings.Contains(project.AgentsContract.CreateAction.Template, "# AGENTS.md - Docs Only") {
+		t.Fatalf("create action = %+v, want editable AGENTS.md template", project.AgentsContract.CreateAction)
+	}
 	missing := map[string]bool{}
 	for _, check := range readiness.Gates[0].Checks {
 		if !check.Ok {
 			missing[check.Id] = true
+			if check.Id == "agents.md" && (check.Detail == nil || !strings.Contains(*check.Detail, "agents.create")) {
+				t.Fatalf("agents.md detail = %v, want create action hint", check.Detail)
+			}
 		}
 	}
 	for _, id := range []string{"agents.md", "tools.detected"} {
 		if !missing[id] {
 			t.Fatalf("missing checks = %+v, want %s", missing, id)
 		}
+	}
+}
+
+func TestCreateAgentContractDraftWritesEditableTemplateAndRefreshesRegistry(t *testing.T) {
+	root := testProjectRoot(t, false)
+	writeTestFile(t, filepath.Join(root, "go.mod"), "module example.invalid/docs\n\ngo 1.26\n")
+	runner := &fakeRunner{repos: map[string]fakeRepo{
+		cleanPath(root): {isGit: true, origin: "https://example.invalid/docs.git", branch: "main"},
+	}}
+	service := testService(t, runner)
+
+	project, err := service.Import(context.Background(), testImportRequest(root, "proj_docs", "Docs Only", "idem-docs-draft"))
+	if err != nil {
+		t.Fatalf("import docs project: %v", err)
+	}
+	if project.AgentsContract == nil || project.AgentsContract.Status != schemas.Missing {
+		t.Fatalf("initial agents contract = %+v, want missing", project.AgentsContract)
+	}
+
+	contract, err := service.CreateAgentContractDraft(context.Background(), AgentContractDraftRequest{
+		ProjectID: project.Id,
+	})
+	if err != nil {
+		t.Fatalf("create AGENTS.md draft: %v", err)
+	}
+	if contract.Status != schemas.Present || contract.RelativePath == nil || *contract.RelativePath != DefaultAgentsManifestRelativePath {
+		t.Fatalf("created contract = %+v, want present AGENTS.md", contract)
+	}
+	body, err := os.ReadFile(filepath.Join(root, DefaultAgentsManifestRelativePath))
+	if err != nil {
+		t.Fatalf("read AGENTS.md: %v", err)
+	}
+	if !strings.Contains(string(body), "# AGENTS.md - Docs Only") || !strings.Contains(string(body), "Use Agent Mail") {
+		t.Fatalf("AGENTS.md body = %q, want recommended template", string(body))
+	}
+
+	stored, err := service.Get(context.Background(), project.Id)
+	if err != nil {
+		t.Fatalf("get project after AGENTS.md create: %v", err)
+	}
+	if stored.AgentsManifestPresent == nil || !*stored.AgentsManifestPresent ||
+		stored.AgentsContract == nil || stored.AgentsContract.Status != schemas.Present {
+		t.Fatalf("stored project = %+v, want refreshed AGENTS.md state", stored)
+	}
+	readiness, err := service.Readiness(context.Background(), project.Id)
+	if err != nil {
+		t.Fatalf("readiness after AGENTS.md create: %v", err)
+	}
+	for _, check := range readiness.Gates[0].Checks {
+		if check.Id == "agents.md" && !check.Ok {
+			t.Fatalf("agents.md readiness check = %+v, want ok after draft create", check)
+		}
+	}
+
+	_, err = service.CreateAgentContractDraft(context.Background(), AgentContractDraftRequest{
+		ProjectID: project.Id,
+		Body:      "custom body\n",
+	})
+	if !errors.Is(err, ErrAgentContractExists) {
+		t.Fatalf("second create err = %v, want ErrAgentContractExists", err)
 	}
 }
 

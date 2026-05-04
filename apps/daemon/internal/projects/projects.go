@@ -26,6 +26,11 @@ import (
 const (
 	SchemaVersion = 1
 	defaultVPSID  = "vps_local"
+
+	DefaultAgentsManifestRelativePath = "AGENTS.md"
+	AgentContractOpenLabel            = "Open AGENTS.md"
+	AgentContractCreateLabel          = "Create AGENTS.md"
+	maxAgentContractDraftBytes        = 128 * 1024
 )
 
 var (
@@ -37,6 +42,7 @@ var (
 	ErrCommandFailed        = errors.New("projects: command failed")
 	ErrIdempotencyConflict  = errors.New("projects: idempotency key reused with different request")
 	ErrProjectJSONMalformed = errors.New("projects: project.json malformed")
+	ErrAgentContractExists  = errors.New("projects: AGENTS.md already exists")
 )
 
 var supportedLanguageManifests = []string{
@@ -129,6 +135,13 @@ type ProjectJSON struct {
 type ImportRequest struct {
 	schemas.ProjectCreateRequest
 	IdempotencyKey string `json:"-"`
+}
+
+type AgentContractDraftRequest struct {
+	ProjectID string
+	Body      string
+	Actor     string
+	At        time.Time
 }
 
 type StoreProject struct {
@@ -313,6 +326,42 @@ func (s *SQLStore) Create(ctx context.Context, project StoreProject, idempotency
 	return project, nil
 }
 
+func (s *SQLStore) UpdateToolEnvironment(ctx context.Context, id string, tools ToolEnvironment, at time.Time) (StoreProject, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return StoreProject{}, fmt.Errorf("%w: project id is required", ErrInvalidRequest)
+	}
+	toolsJSON, err := json.Marshal(tools)
+	if err != nil {
+		return StoreProject{}, fmt.Errorf("projects: marshal tools: %w", err)
+	}
+	result, err := s.db.ExecContext(ctx, `UPDATE projects
+		SET agents_manifest_present = ?,
+			hoopoe_initialized = ?,
+			tool_detection_done = ?,
+			last_activity_at = ?,
+			tools_json = ?
+		WHERE id = ?`,
+		boolInt(tools.AgentsMDRelative != nil),
+		boolInt(tools.HasHoopoeDir),
+		1,
+		at.UTC().Format(time.RFC3339Nano),
+		string(toolsJSON),
+		id,
+	)
+	if err != nil {
+		return StoreProject{}, fmt.Errorf("projects: update tools: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return StoreProject{}, fmt.Errorf("projects: update tools rows affected: %w", err)
+	}
+	if affected == 0 {
+		return StoreProject{}, ErrNotFound
+	}
+	return s.Get(ctx, id)
+}
+
 type Service struct {
 	store  *SQLStore
 	runner CommandRunner
@@ -452,14 +501,68 @@ func (s *Service) Readiness(ctx context.Context, id string) (schemas.ProjectRead
 	return s.readinessFor(ctx, project), nil
 }
 
+func (s *Service) AgentContract(ctx context.Context, id string) (schemas.ProjectAgentContract, error) {
+	project, err := s.store.Get(ctx, id)
+	if err != nil {
+		return schemas.ProjectAgentContract{}, err
+	}
+	tools := DetectToolEnvironment(project.RootPath)
+	return agentContractFor(project.Name, tools), nil
+}
+
+func (s *Service) CreateAgentContractDraft(ctx context.Context, req AgentContractDraftRequest) (schemas.ProjectAgentContract, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	project, err := s.store.Get(ctx, strings.TrimSpace(req.ProjectID))
+	if err != nil {
+		return schemas.ProjectAgentContract{}, err
+	}
+	tools := DetectToolEnvironment(project.RootPath)
+	if tools.AgentsMDRelative != nil {
+		return schemas.ProjectAgentContract{}, ErrAgentContractExists
+	}
+	body := req.Body
+	if strings.TrimSpace(body) == "" {
+		body = RecommendedAgentsTemplate(project.Name)
+	}
+	if strings.Contains(body, "\x00") {
+		return schemas.ProjectAgentContract{}, fmt.Errorf("%w: AGENTS.md body contains NUL", ErrInvalidRequest)
+	}
+	if len([]byte(body)) > maxAgentContractDraftBytes {
+		return schemas.ProjectAgentContract{}, fmt.Errorf("%w: AGENTS.md body exceeds %d bytes", ErrInvalidRequest, maxAgentContractDraftBytes)
+	}
+	if !strings.HasSuffix(body, "\n") {
+		body += "\n"
+	}
+	target := filepath.Join(project.RootPath, DefaultAgentsManifestRelativePath)
+	if err := writeFileIfAbsent(target, body, 0o644); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return schemas.ProjectAgentContract{}, ErrAgentContractExists
+		}
+		return schemas.ProjectAgentContract{}, err
+	}
+	updatedTools := DetectToolEnvironment(project.RootPath)
+	at := req.At
+	if at.IsZero() {
+		at = s.now().UTC()
+	}
+	updated, err := s.store.UpdateToolEnvironment(ctx, project.ID, updatedTools, at)
+	if err != nil {
+		return schemas.ProjectAgentContract{}, err
+	}
+	return agentContractFor(updated.Name, updated.Tools), nil
+}
+
 func (s *Service) readinessFor(ctx context.Context, project StoreProject) schemas.ProjectReadiness {
 	git, gitErr := ReadGitInfo(ctx, s.runner, project.RootPath)
 	tools := DetectToolEnvironment(project.RootPath)
+	contract := agentContractFor(project.Name, tools)
 	checks := []schemas.GateCheck{
 		gateCheck("git.present", gitErr == nil && git.IsGitRepo, "no git work tree at project root"),
 		gateCheck("git.origin", gitErr == nil && git.OriginRemote != "", "v1 requires an origin remote"),
 		gateCheck("git.branch", gitErr == nil && git.Branch != "", "detached HEAD or empty branch"),
-		gateCheck("agents.md", tools.AgentsMDRelative != nil, "AGENTS.md missing"),
+		gateCheck("agents.md", contract.Status == schemas.Present, missingAgentContractDetail(contract)),
 		gateCheck("hoopoe.dir", tools.HasHoopoeDir, ".hoopoe/ is not initialized"),
 		gateCheck("tools.detected", len(tools.Manifests) > 0, "no supported language manifest detected"),
 	}
@@ -682,6 +785,78 @@ func DetectToolEnvironment(root string) ToolEnvironment {
 	}
 }
 
+func RecommendedAgentsTemplate(projectName string) string {
+	name := strings.TrimSpace(projectName)
+	if name == "" {
+		name = "This project"
+	}
+	return fmt.Sprintf(`# AGENTS.md - %s
+
+## Project Goal
+
+Describe the project goal, success criteria, and the boundaries agents must preserve.
+
+## Coordination
+
+- Use Beads (br) for task status and dependency-aware ready work.
+- Use Agent Mail for thread updates and file reservations before editing.
+- Include the bead ID in reservation reasons, thread subjects, commits, and handoff notes.
+- Push every successful commit promptly.
+
+## Build And Test
+
+- Record the exact build, lint, and test commands agents must run before commit.
+- Prefer remote build helpers when the project specifies them.
+- Do not mark work complete while required verification is still failing.
+
+## Source Of Truth
+
+- Keep canonical state in the project's native tools and files.
+- Do not replace existing project workflows with parallel agent-only state.
+- Ask before any destructive filesystem or Git operation.
+
+## Escalation
+
+- If a blocker is outside the bead scope, report it in the project thread with evidence.
+- If another agent owns a conflicting file reservation, coordinate before touching it.
+`, name)
+}
+
+func agentContractFor(projectName string, tools ToolEnvironment) schemas.ProjectAgentContract {
+	contract := schemas.ProjectAgentContract{
+		DefaultRelativePath:     DefaultAgentsManifestRelativePath,
+		ReadRequiredBeforeSwarm: true,
+	}
+	if tools.AgentsMDRelative != nil && strings.TrimSpace(*tools.AgentsMDRelative) != "" {
+		relative := strings.TrimSpace(*tools.AgentsMDRelative)
+		contract.Status = schemas.Present
+		contract.RelativePath = &relative
+		contract.OpenAction = &schemas.ProjectAgentContractAction{
+			Id:                 schemas.AgentsOpen,
+			Label:              AgentContractOpenLabel,
+			TargetRelativePath: relative,
+		}
+		return contract
+	}
+	template := RecommendedAgentsTemplate(projectName)
+	contract.Status = schemas.Missing
+	contract.CreateAction = &schemas.ProjectAgentContractCreateAction{
+		Id:                 schemas.AgentsCreate,
+		Label:              AgentContractCreateLabel,
+		TargetRelativePath: DefaultAgentsManifestRelativePath,
+		Template:           template,
+		TemplateSha256:     digestString(template),
+	}
+	return contract
+}
+
+func missingAgentContractDetail(contract schemas.ProjectAgentContract) string {
+	if contract.CreateAction != nil {
+		return fmt.Sprintf("AGENTS.md is missing; surface %s action targeting %s", contract.CreateAction.Id, contract.CreateAction.TargetRelativePath)
+	}
+	return "AGENTS.md is missing"
+}
+
 func RUListPathsArgv() []string {
 	return []string{"ru", "list", "--paths"}
 }
@@ -743,6 +918,7 @@ func toSchemaProject(project StoreProject) schemas.Project {
 	if project.DesktopMirrorPath != "" {
 		repo.DesktopMirrorPath = &project.DesktopMirrorPath
 	}
+	contract := agentContractFor(project.Name, project.Tools)
 	return schemas.Project{
 		SchemaVersion:         project.SchemaVersion,
 		Id:                    project.ID,
@@ -752,6 +928,7 @@ func toSchemaProject(project StoreProject) schemas.Project {
 		Repo:                  repo,
 		LifecycleState:        project.LifecycleState,
 		AgentsManifestPresent: &agents,
+		AgentsContract:        &contract,
 		HoopoeInitialized:     &hoopoe,
 		ToolDetectionDone:     &tools,
 		ImportedAt:            &importedAt,
@@ -908,6 +1085,21 @@ func writeJSONFileIfMissing(path string, value any) error {
 	return nil
 }
 
+func writeFileIfAbsent(path string, body string, perm os.FileMode) error {
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, perm)
+	if err != nil {
+		return err
+	}
+	if _, err := file.WriteString(body); err != nil {
+		_ = file.Close()
+		return fmt.Errorf("projects: write %s: %w", filepath.Base(path), err)
+	}
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("projects: close %s: %w", filepath.Base(path), err)
+	}
+	return nil
+}
+
 func requestHash(req ImportRequest, root string) string {
 	canonical := struct {
 		ID                      string `json:"id,omitempty"`
@@ -928,6 +1120,11 @@ func requestHash(req ImportRequest, root string) string {
 	}
 	data, _ := json.Marshal(canonical)
 	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+func digestString(value string) string {
+	sum := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(sum[:])
 }
 

@@ -470,6 +470,54 @@ func (e PlanLifecycleState) Valid() bool {
 	}
 }
 
+// Defines values for ProjectAgentContractStatus.
+const (
+	Missing ProjectAgentContractStatus = "missing"
+	Present ProjectAgentContractStatus = "present"
+)
+
+// Valid indicates whether the value is a known member of the ProjectAgentContractStatus enum.
+func (e ProjectAgentContractStatus) Valid() bool {
+	switch e {
+	case Missing:
+		return true
+	case Present:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProjectAgentContractActionId.
+const (
+	AgentsOpen ProjectAgentContractActionId = "agents.open"
+)
+
+// Valid indicates whether the value is a known member of the ProjectAgentContractActionId enum.
+func (e ProjectAgentContractActionId) Valid() bool {
+	switch e {
+	case AgentsOpen:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProjectAgentContractCreateActionId.
+const (
+	AgentsCreate ProjectAgentContractCreateActionId = "agents.create"
+)
+
+// Valid indicates whether the value is a known member of the ProjectAgentContractCreateActionId enum.
+func (e ProjectAgentContractCreateActionId) Valid() bool {
+	switch e {
+	case AgentsCreate:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ProjectGate.
 const (
 	ProjectGateBeadsCreated    ProjectGate = "beads_created"
@@ -1359,6 +1407,11 @@ type Problem struct {
 // canonical (§4); the daemon never lets a stage flip until the gate
 // invariants pass.
 type Project struct {
+	// AgentsContract Per-project agent operating contract status. The daemon surfaces this
+	// on import and readiness checks so swarm launch can require agents to
+	// reread the project's own instructions before work starts (§7.3, §15).
+	AgentsContract *ProjectAgentContract `json:"agentsContract,omitempty"`
+
 	// AgentsManifestPresent Whether AGENTS.md was found on import.
 	AgentsManifestPresent *bool `json:"agentsManifestPresent,omitempty"`
 
@@ -1383,6 +1436,53 @@ type Project struct {
 	// VpsId ID of the VpsHost hosting this project.
 	VpsId string `json:"vpsId"`
 }
+
+// ProjectAgentContract Per-project agent operating contract status. The daemon surfaces this
+// on import and readiness checks so swarm launch can require agents to
+// reread the project's own instructions before work starts (§7.3, §15).
+type ProjectAgentContract struct {
+	CreateAction *ProjectAgentContractCreateAction `json:"createAction,omitempty"`
+
+	// DefaultRelativePath Repo-relative path used by the create action when AGENTS.md is missing.
+	DefaultRelativePath string                      `json:"defaultRelativePath"`
+	OpenAction          *ProjectAgentContractAction `json:"openAction,omitempty"`
+
+	// ReadRequiredBeforeSwarm True when swarm kickoff must instruct agents to reread this contract.
+	ReadRequiredBeforeSwarm bool `json:"readRequiredBeforeSwarm"`
+
+	// RelativePath Repo-relative path to the detected AGENTS.md file when present.
+	RelativePath *string                    `json:"relativePath,omitempty"`
+	Status       ProjectAgentContractStatus `json:"status"`
+}
+
+// ProjectAgentContractStatus defines model for ProjectAgentContract.Status.
+type ProjectAgentContractStatus string
+
+// ProjectAgentContractAction defines model for ProjectAgentContractAction.
+type ProjectAgentContractAction struct {
+	Id                 ProjectAgentContractActionId `json:"id"`
+	Label              string                       `json:"label"`
+	TargetRelativePath string                       `json:"targetRelativePath"`
+}
+
+// ProjectAgentContractActionId defines model for ProjectAgentContractAction.Id.
+type ProjectAgentContractActionId string
+
+// ProjectAgentContractCreateAction defines model for ProjectAgentContractCreateAction.
+type ProjectAgentContractCreateAction struct {
+	Id                 ProjectAgentContractCreateActionId `json:"id"`
+	Label              string                             `json:"label"`
+	TargetRelativePath string                             `json:"targetRelativePath"`
+
+	// Template Editable recommended AGENTS.md template body.
+	Template string `json:"template"`
+
+	// TemplateSha256 SHA-256 of the provided template for audit/debug drift checks.
+	TemplateSha256 string `json:"templateSha256"`
+}
+
+// ProjectAgentContractCreateActionId defines model for ProjectAgentContractCreateAction.Id.
+type ProjectAgentContractCreateActionId string
 
 // ProjectCreateRequest Request body for importing an existing project checkout into the daemon
 // registry. `Idempotency-Key` is supplied as an HTTP header, not in this
