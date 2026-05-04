@@ -1180,3 +1180,91 @@ func waitForRunStatus(t *testing.T, registry *Registry, runID string, want RunSt
 	t.Fatalf("run %s status = %s, want %s", runID, run.Status, want)
 	return Run{}
 }
+
+func TestFileStoreSaveDoesNotLeaveTmpOnSuccess(t *testing.T) {
+	// hp-5la1: success path must rename tmp → final and leave no
+	// .tmp.<unix_nano> orphan in the directory.
+	dir := t.TempDir()
+	store := FileStore{Path: filepath.Join(dir, "scheduler-state.json")}
+	if err := store.Save(context.Background(), emptyState()); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	for _, name := range listDir(t, dir) {
+		if strings.Contains(name, ".tmp.") {
+			t.Fatalf("Save left orphan tmp file: %q", name)
+		}
+	}
+}
+
+func TestFileStoreSaveCleansTmpOnRenameFailure(t *testing.T) {
+	// hp-5la1: when Rename fails (here: target path is a non-empty
+	// directory, which os.Rename refuses), the deferred cleanup must
+	// remove the tmp file. Before the fix this leaked
+	// `<final>.tmp.<unix_nano>` indefinitely.
+	dir := t.TempDir()
+	target := filepath.Join(dir, "scheduler-state.json")
+	// Make the target a non-empty directory so os.Rename fails on
+	// every platform we care about (Linux: ENOTEMPTY; macOS: ENOTDIR
+	// on the source side; both end as Rename errors).
+	if err := os.MkdirAll(target, 0o700); err != nil {
+		t.Fatalf("mkdir target dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(target, "blocker"), []byte("x"), 0o600); err != nil {
+		t.Fatalf("write blocker: %v", err)
+	}
+	store := FileStore{Path: target}
+	if err := store.Save(context.Background(), emptyState()); err == nil {
+		t.Fatal("Save against directory-target unexpectedly succeeded")
+	}
+	for _, name := range listDir(t, dir) {
+		if strings.Contains(name, ".tmp.") {
+			t.Fatalf("rename-failure left orphan tmp file: %q", name)
+		}
+	}
+}
+
+func TestPruneOrphanTmpFilesRemovesOldOrphansAndKeepsRecent(t *testing.T) {
+	// hp-5la1: pruneOrphanTmpFiles is the boot-time hygiene step that
+	// sweeps up tmp files left by previous daemon crashes. Recent tmp
+	// files (younger than minAge) must be preserved so we don't race a
+	// concurrent Save mid-write.
+	dir := t.TempDir()
+	old := filepath.Join(dir, "state.json.tmp.111")
+	recent := filepath.Join(dir, "definitions.yaml.tmp.999")
+	keepUnrelated := filepath.Join(dir, "scheduler-state.json")
+	for _, p := range []string{old, recent, keepUnrelated} {
+		if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+			t.Fatalf("write %s: %v", p, err)
+		}
+	}
+	// Backdate `old` past the minAge threshold; leave `recent` at now.
+	pastModTime := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(old, pastModTime, pastModTime); err != nil {
+		t.Fatalf("chtimes: %v", err)
+	}
+	if err := pruneOrphanTmpFiles(dir, time.Hour, time.Now); err != nil {
+		t.Fatalf("pruneOrphanTmpFiles: %v", err)
+	}
+	if _, err := os.Stat(old); !os.IsNotExist(err) {
+		t.Fatalf("old tmp file still exists: stat err=%v", err)
+	}
+	if _, err := os.Stat(recent); err != nil {
+		t.Fatalf("recent tmp file removed (expected to keep): %v", err)
+	}
+	if _, err := os.Stat(keepUnrelated); err != nil {
+		t.Fatalf("non-tmp file removed (expected to keep): %v", err)
+	}
+}
+
+func listDir(t *testing.T, dir string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("ReadDir %s: %v", dir, err)
+	}
+	out := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		out = append(out, entry.Name())
+	}
+	return out
+}

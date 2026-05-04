@@ -40,6 +40,9 @@ func LoadDefinitions(ctx context.Context, dir string) ([]Definition, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	// hp-5la1: best-effort prune of orphan tmp files left behind by an
+	// earlier crash between OpenFile and Rename in WriteDefinitionFile.
+	_ = pruneOrphanTmpFiles(dir, time.Hour, time.Now)
 	entries, err := os.ReadDir(dir)
 	if os.IsNotExist(err) {
 		return nil, nil
@@ -131,6 +134,13 @@ func WriteDefinitionFile(ctx context.Context, path string, definition Definition
 	if err != nil {
 		return err
 	}
+	// hp-5la1: cleanup tmp if Rename never succeeds. See FileStore.Save.
+	renamed := false
+	defer func() {
+		if !renamed {
+			_ = os.Remove(tmp)
+		}
+	}()
 	if _, err := f.Write(data); err != nil {
 		_ = f.Close()
 		return err
@@ -145,6 +155,7 @@ func WriteDefinitionFile(ctx context.Context, path string, definition Definition
 	if err := os.Rename(tmp, path); err != nil {
 		return err
 	}
+	renamed = true
 	dir, err := os.Open(filepath.Dir(path))
 	if err != nil {
 		return fmt.Errorf("sync scheduler definitions directory: %w", err)

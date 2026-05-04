@@ -36,6 +36,11 @@ func (s FileStore) Load(ctx context.Context) (State, error) {
 	if s.Path == "" {
 		return State{}, fmt.Errorf("%w: empty store path", ErrInvalidState)
 	}
+	// hp-5la1: best-effort prune of orphan tmp files left behind by an
+	// earlier crash between OpenFile and Rename. The threshold has to be
+	// long enough to never race a concurrent Save (none should run during
+	// daemon boot, but a defensive 1h window is harmless).
+	_ = pruneOrphanTmpFiles(filepath.Dir(s.Path), time.Hour, time.Now)
 	f, err := os.Open(s.Path)
 	if os.IsNotExist(err) {
 		return emptyState(), nil
@@ -69,6 +74,16 @@ func (s FileStore) Save(ctx context.Context, state State) error {
 	if err != nil {
 		return err
 	}
+	// hp-5la1: cleanup the tmp file if Rename never succeeds. A failure in
+	// Encode/Sync/Close/Rename used to leak a .tmp.<unix_nano> orphan that
+	// accumulated over the daemon's lifetime. The defer is a no-op on the
+	// success path because Rename has already moved the file.
+	renamed := false
+	defer func() {
+		if !renamed {
+			_ = os.Remove(tmp)
+		}
+	}()
 	enc := json.NewEncoder(f)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(state); err != nil {
@@ -85,12 +100,48 @@ func (s FileStore) Save(ctx context.Context, state State) error {
 	if err := os.Rename(tmp, s.Path); err != nil {
 		return err
 	}
+	renamed = true
 	dir, err := os.Open(filepath.Dir(s.Path))
 	if err != nil {
 		return fmt.Errorf("sync scheduler state directory: %w", err)
 	}
 	defer dir.Close()
 	_ = dir.Sync()
+	return nil
+}
+
+// pruneOrphanTmpFiles removes "*.tmp.*" siblings of the state file that are
+// older than minAge. Implements the cleanup half of hp-5la1: FileStore.Save
+// and WriteDefinitionFile both write a tmp file and rename atomically; a
+// crash or partial-failure between OpenFile and Rename leaves an orphaned
+// `<final>.tmp.<unix_nano>` behind. The Load paths call this on boot to
+// sweep up. Best-effort by design — any error is silently absorbed because
+// Load shouldn't fail just because cleanup couldn't read the directory.
+func pruneOrphanTmpFiles(dir string, minAge time.Duration, now func() time.Time) error {
+	if dir == "" || dir == "." {
+		return nil
+	}
+	if now == nil {
+		now = time.Now
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	cutoff := now().Add(-minAge)
+	for _, entry := range entries {
+		name := entry.Name()
+		if !strings.Contains(name, ".tmp.") {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		if info.ModTime().Before(cutoff) {
+			_ = os.Remove(filepath.Join(dir, name))
+		}
+	}
 	return nil
 }
 
