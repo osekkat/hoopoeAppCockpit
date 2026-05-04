@@ -3,6 +3,7 @@ package acfs
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -249,6 +250,123 @@ func TestRunnerWritesResumableCheckpoints(t *testing.T) {
 	}
 }
 
+func TestRunnerRawLogFallbackPreservesRunExitAndResume(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 5, 4, 12, 45, 0, 0, time.UTC)
+	lines := make([]Line, 0, DefaultLowConfidenceAfterLines)
+	for i := 0; i < DefaultLowConfidenceAfterLines; i++ {
+		lines = append(lines, Line{
+			Stream: StreamStdout,
+			Text:   fmt.Sprintf("installer raw line %02d", i+1),
+			At:     now.Add(time.Duration(i) * time.Millisecond),
+		})
+	}
+	exec := &fakeExecutor{
+		lines: lines,
+		result: CommandResult{
+			ExitCode:    17,
+			CompletedAt: now.Add(time.Second),
+		},
+	}
+	runner := Runner{
+		Exec: exec,
+		Now:  func() time.Time { return now },
+	}
+	var events []Event
+	result, err := runner.Run(context.Background(), RunRequest{
+		RunID:  "run_raw",
+		Ref:    "v0.7.0",
+		LogDir: t.TempDir(),
+	}, func(event Event) error {
+		events = append(events, event)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if result.RunID != "run_raw" || result.ExitCode != 17 || !result.RawLogFallback || result.ResumeHint != DefaultResumeHint {
+		t.Fatalf("result = %+v", result)
+	}
+	if result.Events != len(events) {
+		t.Fatalf("result events = %d, emitted %d", result.Events, len(events))
+	}
+	confidence := lastEventOfType(events, EventParserConfidence)
+	if confidence == nil || confidence.RunID != "run_raw" || !confidence.RawLogFallback {
+		t.Fatalf("confidence event = %+v", confidence)
+	}
+	fail := lastEventOfType(events, EventPhaseFail)
+	if fail == nil || fail.RunID != "run_raw" || fail.Phase != "bootstrap" || fail.RC != 17 {
+		t.Fatalf("fail event = %+v", fail)
+	}
+	if fail.ResumeHint != DefaultResumeHint || len(fail.LastLines) != DefaultLowConfidenceAfterLines {
+		t.Fatalf("fail context = %+v", fail)
+	}
+}
+
+func TestRunnerFailureTimelineResumesFromLastSuccessfulPhase(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 5, 4, 12, 50, 0, 0, time.UTC)
+	exec := &fakeExecutor{
+		lines: []Line{
+			{Stream: StreamStdout, Text: "[acfs] phase.start preflight Verify OS", At: now},
+			{Stream: StreamStdout, Text: "[acfs] phase.end preflight rc=0 durationMs=10", At: now.Add(time.Millisecond)},
+			{Stream: StreamStdout, Text: "[acfs] phase.start acfs-install Install ACFS", At: now.Add(2 * time.Millisecond)},
+			{Stream: StreamStderr, Text: "network dropped while fetching tool bundle", At: now.Add(3 * time.Millisecond)},
+		},
+		result: CommandResult{
+			ExitCode:    255,
+			CompletedAt: now.Add(time.Second),
+		},
+	}
+	nextID := 0
+	service := checkpoints.NewService(checkpoints.Config{
+		Now: func() time.Time { return now },
+		NewID: func() (string, error) {
+			nextID++
+			return fmt.Sprintf("evt_resume_%d", nextID), nil
+		},
+	})
+	runner := Runner{
+		Exec:        exec,
+		Checkpoints: service,
+		Now:         func() time.Time { return now },
+	}
+	result, err := runner.Run(context.Background(), RunRequest{
+		RunID:     "run_resume",
+		ProjectID: "proj_resume",
+		Ref:       "v0.7.0",
+		LogDir:    t.TempDir(),
+	}, nil)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if result.ExitCode != 255 || result.ResumeHint != DefaultResumeHint {
+		t.Fatalf("result = %+v", result)
+	}
+	timeline, err := service.Timeline(context.Background(), "run_resume")
+	if err != nil {
+		t.Fatalf("Timeline: %v", err)
+	}
+	preflight, ok := checkpointByStep(timeline.Checkpoints, "preflight")
+	if !ok || preflight.Status != checkpoints.StatusSucceeded {
+		t.Fatalf("preflight checkpoint = %+v, ok=%v", preflight, ok)
+	}
+	acfsInstall, ok := checkpointByStep(timeline.Checkpoints, "acfs-install")
+	if !ok || acfsInstall.Status != checkpoints.StatusFailed {
+		t.Fatalf("acfs-install checkpoint = %+v, ok=%v", acfsInstall, ok)
+	}
+	if acfsInstall.Attempt != 1 || acfsInstall.ProjectID != "proj_resume" || acfsInstall.ResumeHint != DefaultResumeHint {
+		t.Fatalf("acfs-install context = %+v", acfsInstall)
+	}
+	if acfsInstall.StartedAt == nil || acfsInstall.CompletedAt == nil {
+		t.Fatalf("acfs-install timestamps = %+v", acfsInstall)
+	}
+	if len(timeline.Actions) != 1 || !hasRepairAction(timeline.Actions[0], checkpoints.RepairResumeStep) ||
+		!hasRepairAction(timeline.Actions[0], checkpoints.RepairRunACFSDoctor) {
+		t.Fatalf("timeline actions = %+v", timeline.Actions)
+	}
+}
+
 func TestRunnerRejectsUnsafeRefAndRunID(t *testing.T) {
 	t.Parallel()
 	runner := Runner{Exec: &fakeExecutor{}}
@@ -346,6 +464,24 @@ func lastEventOfType(events []Event, eventType EventType) *Event {
 		}
 	}
 	return nil
+}
+
+func checkpointByStep(items []checkpoints.Checkpoint, stepID string) (checkpoints.Checkpoint, bool) {
+	for _, item := range items {
+		if item.StepID == stepID {
+			return item, true
+		}
+	}
+	return checkpoints.Checkpoint{}, false
+}
+
+func hasRepairAction(hint checkpoints.RepairHint, id checkpoints.RepairActionID) bool {
+	for _, action := range hint.Actions {
+		if action.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 func assertNoLowConfidence(t *testing.T, events []Event) {
