@@ -20,6 +20,8 @@ import {
   ToolHealthPill,
 } from "../topbar/index.ts";
 import "../topbar/topbar-pills.css";
+import { ConnectionStatusPill, TunnelSubscription } from "../tunnel/index.ts";
+import "../tunnel/connection-status.css";
 import { CommandPaletteHost } from "./command-palette/CommandPaletteHost.tsx";
 
 export function RootLayout() {
@@ -137,6 +139,7 @@ export function RootLayout() {
 
           <div className="hh-topbar-status" aria-label="Project status">
             <ProjectRunningPill project={activeProject} />
+            <ConnectionStatusPill />
             <ToolHealthPill project={activeProject} />
             <SwarmStatePill project={activeProject} />
             <BeadsPulsePill project={activeProject} />
@@ -202,6 +205,7 @@ export function RootLayout() {
 
       <ErrorUxRoot />
       <DirtyBannerSubscription />
+      <TunnelSubscription />
     </div>
   );
 }

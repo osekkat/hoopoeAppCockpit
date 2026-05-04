@@ -1,0 +1,45 @@
+/* hp-m79e — ConnectionStatus pill styles. Riffs on .hh-topbar-pill. */
+
+.hh-connection-status-pill[data-severity="ok"] {
+  border-color: rgba(123, 198, 138, 0.45);
+  background: rgba(123, 198, 138, 0.10);
+}
+
+.hh-connection-status-pill[data-severity="warning"] {
+  border-color: rgba(229, 196, 100, 0.45);
+  background: rgba(229, 196, 100, 0.10);
+}
+
+.hh-connection-status-pill[data-severity="danger"] {
+  border-color: rgba(255, 142, 142, 0.45);
+  background: rgba(255, 142, 142, 0.10);
+}
+
+.hh-connection-status-pill[data-severity="in-flight"] {
+  border-color: rgba(229, 130, 83, 0.45);
+  background: rgba(229, 130, 83, 0.10);
+}
+
+.hh-connection-status-pill small {
+  color: var(--text-muted);
+  font-size: 11px;
+  margin-left: 2px;
+}
+
+.hh-connection-status-pill strong {
+  color: var(--text-secondary);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.hh-connection-fault-code {
+  margin-left: 4px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 10.5px;
+  font-style: normal;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
