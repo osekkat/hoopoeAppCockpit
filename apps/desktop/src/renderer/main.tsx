@@ -3,6 +3,8 @@ import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import { router } from "./routes.tsx";
+import { ErrorBoundary } from "./error-ux/ErrorBoundary.tsx";
+import "./error-ux/error-ux.css";
 import "./styles.css";
 
 const rootElement = document.getElementById("root");
@@ -20,10 +22,16 @@ const queryClient = new QueryClient({
   },
 });
 
+// hp-sgy: wrap the entire renderer tree in an ErrorBoundary so a
+// thrown render error in any descendant — TanStack Router route
+// component, stage panel, store-derived selector, etc. — surfaces a
+// recoverable fallback instead of unmounting the window.
 createRoot(rootElement).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
+    </ErrorBoundary>
   </StrictMode>,
 );

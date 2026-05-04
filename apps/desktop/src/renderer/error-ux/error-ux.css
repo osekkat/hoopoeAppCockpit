@@ -383,3 +383,84 @@
     animation: none;
   }
 }
+
+/* ─────────────────────────────── ErrorBoundary fallback (hp-sgy) ─── */
+
+.hh-error-boundary-root {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: rgba(8, 12, 22, 0.92);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.hh-error-boundary-card {
+  max-width: 720px;
+  width: 100%;
+  background: rgba(20, 26, 40, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 24px 28px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+}
+
+.hh-error-boundary-title {
+  margin: 0 0 8px;
+  font-size: 18px;
+  font-weight: 600;
+  color: rgb(255, 220, 220);
+}
+
+.hh-error-boundary-message {
+  margin: 0 0 16px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.hh-error-boundary-detail {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  max-height: 320px;
+  overflow: auto;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: rgba(255, 220, 220, 0.88);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.hh-error-boundary-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.hh-error-boundary-secondary {
+  background: transparent;
+  color: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.hh-error-boundary-primary {
+  background: rgba(96, 165, 250, 0.2);
+  color: rgb(199, 220, 255);
+  border: 1px solid rgba(96, 165, 250, 0.55);
+  padding: 6px 16px;
+  border-radius: 999px;
+  font-weight: 600;
+  cursor: pointer;
+}
