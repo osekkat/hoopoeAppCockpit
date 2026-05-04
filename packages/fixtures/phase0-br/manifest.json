@@ -1,0 +1,12 @@
+{
+  "fixturesVersion": "phase0-br-2026-05-04",
+  "tool": "br",
+  "purpose": "Versioned br adapter conformance captures for apps/daemon/internal/adapters/br.",
+  "captures": [
+    {
+      "file": "captures/br-0.2.3.json",
+      "toolVersion": "0.2.3",
+      "source": "Derived from packages/fixtures/phase0-2026-05-02/scenarios/active/adapters/br.json, with dep-cycles/probe-list normalized into deterministic daemon-adapter inputs."
+    }
+  ]
+}

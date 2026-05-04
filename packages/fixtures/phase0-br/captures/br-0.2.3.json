@@ -1,0 +1,198 @@
+{
+  "tool": "br",
+  "toolVersion": "0.2.3",
+  "fixturesVersion": "phase0-br-2026-05-04",
+  "source": "phase0-2026-05-02 active br capture, reduced to stable daemon adapter inputs",
+  "commands": {
+    "version": {
+      "argv": ["br", "version", "--short"],
+      "exit": 0,
+      "stdoutText": "0.2.3\n",
+      "stderrText": ""
+    },
+    "list": {
+      "argv": ["br", "list", "--json"],
+      "exit": 0,
+      "stdoutJson": {
+        "issues": [
+          {
+            "id": "nexusaudio-9ga.3",
+            "title": "Neural token decoder and latent-space reconstruction",
+            "status": "open",
+            "priority": 4,
+            "issue_type": "task",
+            "labels": ["decoder", "r3", "research"],
+            "dependency_count": 2,
+            "dependent_count": 0
+          },
+          {
+            "id": "nexusaudio-9ga.2",
+            "title": "WebGPU neural encoder inference (< 2ms per 10ms frame)",
+            "status": "open",
+            "priority": 4,
+            "issue_type": "task",
+            "labels": ["inference", "r3", "research"],
+            "dependency_count": 2,
+            "dependent_count": 0
+          },
+          {
+            "id": "nexusaudio-9ga.1",
+            "title": "Joint neural encoder training/adaptation",
+            "status": "open",
+            "priority": 4,
+            "issue_type": "task",
+            "labels": ["encoder", "r3", "research"],
+            "dependency_count": 1,
+            "dependent_count": 2
+          },
+          {
+            "id": "nexusaudio-9ga",
+            "title": "R3: Neural Encoder Path",
+            "status": "open",
+            "priority": 4,
+            "issue_type": "epic",
+            "labels": ["neural", "r3", "research"],
+            "dependency_count": 1,
+            "dependent_count": 3
+          }
+        ],
+        "total": 4,
+        "limit": 50,
+        "offset": 0,
+        "has_more": false
+      },
+      "stderrText": ""
+    },
+    "probe_list": {
+      "argv": ["br", "list", "--json", "--limit", "1"],
+      "exit": 0,
+      "stdoutJson": {
+        "issues": [
+          {
+            "id": "nexusaudio-9ga.3",
+            "title": "Neural token decoder and latent-space reconstruction",
+            "status": "open",
+            "priority": 4,
+            "issue_type": "task",
+            "dependency_count": 2,
+            "dependent_count": 0
+          }
+        ],
+        "total": 4,
+        "limit": 1,
+        "offset": 0,
+        "has_more": true
+      },
+      "stderrText": ""
+    },
+    "ready": {
+      "argv": ["br", "ready", "--json"],
+      "exit": 0,
+      "stdoutJson": [
+        {
+          "id": "nexusaudio-9ga.1",
+          "title": "Joint neural encoder training/adaptation",
+          "status": "open",
+          "priority": 4,
+          "issue_type": "task"
+        }
+      ],
+      "stderrText": ""
+    },
+    "show_existing": {
+      "argv": ["br", "show", "nexusaudio-9ga.1", "--json"],
+      "exit": 0,
+      "stdoutJson": [
+        {
+          "id": "nexusaudio-9ga.1",
+          "title": "Joint neural encoder training/adaptation",
+          "status": "open",
+          "priority": 4,
+          "issue_type": "task",
+          "labels": ["encoder", "r3", "research"],
+          "dependencies": [
+            {
+              "id": "nexusaudio-9ga",
+              "title": "R3: Neural Encoder Path",
+              "status": "open",
+              "priority": 4,
+              "dependency_type": "parent-child"
+            }
+          ]
+        }
+      ],
+      "stderrText": ""
+    },
+    "dep_cycles": {
+      "argv": ["br", "dep", "cycles", "--json"],
+      "exit": 0,
+      "stdoutJson": {
+        "cycles": [],
+        "count": 0
+      },
+      "stderrText": ""
+    }
+  },
+  "expected": {
+    "list": {
+      "total": 4,
+      "limit": 50,
+      "offset": 0,
+      "hasMore": false,
+      "ids": ["nexusaudio-9ga.3", "nexusaudio-9ga.2", "nexusaudio-9ga.1", "nexusaudio-9ga"],
+      "first": {
+        "id": "nexusaudio-9ga.3",
+        "title": "Neural token decoder and latent-space reconstruction",
+        "status": "open",
+        "priority": 4,
+        "issueType": "task",
+        "labels": ["decoder", "r3", "research"],
+        "dependencyCount": 2,
+        "dependentCount": 0
+      }
+    },
+    "ready": {
+      "count": 1,
+      "ids": ["nexusaudio-9ga.1"],
+      "first": {
+        "id": "nexusaudio-9ga.1",
+        "title": "Joint neural encoder training/adaptation",
+        "status": "open",
+        "priority": 4,
+        "issueType": "task"
+      }
+    },
+    "show": {
+      "count": 1,
+      "ids": ["nexusaudio-9ga.1"],
+      "first": {
+        "id": "nexusaudio-9ga.1",
+        "title": "Joint neural encoder training/adaptation",
+        "status": "open",
+        "priority": 4,
+        "issueType": "task",
+        "labels": ["encoder", "r3", "research"],
+        "dependencyTitles": ["R3: Neural Encoder Path"]
+      }
+    },
+    "probe": {
+      "version": "0.2.3",
+      "capabilities": {
+        "br._present": "ok",
+        "br.issues.read": "ok",
+        "br.issues.update": "ok",
+        "br.ready": "ok",
+        "br.create": "ok",
+        "br.close": "ok",
+        "br.dep.add": "ok",
+        "br.dep.remove": "ok",
+        "br.dep.cycles": "ok",
+        "br.sync.flush_only": "ok",
+        "br.sync.flush": "ok",
+        "br.doctor": "ok",
+        "br.schema": "ok",
+        "br.tui": "blocked-by-policy"
+      }
+    }
+  }
+}
