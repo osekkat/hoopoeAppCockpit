@@ -1650,7 +1650,7 @@ Round 0 is the cheap, deterministic first pass — `UBS` against the changed sur
 
 Review rounds can execute in two modes, selected per round:
 
-1. **Direct LLM review** — daemon gathers the plan, bead context, recent diffs, health hotspots, AGENTS.md, and target files, then calls a provider directly. This is good for cheap fresh-eyes critique, random exploration, and targeted hotspot review where tool use is not required.
+1. **CLI/browser LLM review** — daemon gathers the plan, bead context, recent diffs, health hotspots, AGENTS.md, and target files, then starts a review job through the allowed subscription-backed substrate: Claude Code, Codex CLI, Gemini CLI, or `oracle --engine browser` with CAAM/CLI account auth. No provider SDK, BYOK, or direct provider API path exists. This is good for cheap fresh-eyes critique, random exploration, and targeted hotspot review where project command execution is not required.
 2. **Delegated agent review** — daemon sends marching orders to an NTM-managed agent pane, usually an orchestrator or fresh agent, and streams its output into the review topic. This is required for reviews that need tool use, live test execution, cross-agent coordination, UBS scans, or project-specific commands.
 
 Both modes write findings into the same finding ledger and use the same prompt templates. The mode is an implementation detail; the user sees a consistent Review tab.
@@ -2366,4 +2366,3 @@ Copy `t3code/LICENSE` to `apps/desktop/src/vendored/t3code/LICENSE`. Document th
 10. Do not suppress audit entries just because a job returned `[SILENT]`.
 11. **Do not call provider APIs directly.** No `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` config field anywhere; no `openai`, `@anthropic-ai/sdk`, `@google/generative-ai`, or equivalent SDK in `apps/daemon/` or `apps/desktop/`. Every model reach goes through Claude Code / Codex CLI / Gemini CLI (subscription-backed CLIs) or `oracle --engine browser` (ChatGPT Pro web). This is what keeps §5.1's secrets surface minimal and what makes Hoopoe's "subscription-required" position structurally enforceable rather than honor-system. Linter / CI rule: import of any provider SDK in daemon or desktop code fails the build.
 12. **Do not surface raw terminal panes in the default swarm UI.** PTY plumbing exists on the daemon side for tending and forensics; the user-visible Swarm dashboard shows bead state + agent state + Activity panel only. Terminal scrollback is reachable from Diagnostics behind an explicit, audited "Show raw pane" toggle, never from the default agent grid.
-
