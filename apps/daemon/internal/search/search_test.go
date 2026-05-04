@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -118,6 +119,42 @@ func TestServiceReturnsCommandFailureForRipgrepErrors(t *testing.T) {
 	_, err := service.Search(context.Background(), Request{RepoPath: root, Query: "["})
 	if !errors.Is(err, ErrCommandFailed) {
 		t.Fatalf("Search err = %v, want ErrCommandFailed", err)
+	}
+}
+
+func TestServicePreservesOutputLimitError(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	service := NewService(Config{Runner: fakeRunner{err: ErrOutputTooLarge}})
+	_, err := service.Search(context.Background(), Request{RepoPath: root, Query: "needle"})
+	if !errors.Is(err, ErrCommandFailed) || !errors.Is(err, ErrOutputTooLarge) {
+		t.Fatalf("Search err = %v, want ErrCommandFailed wrapping ErrOutputTooLarge", err)
+	}
+}
+
+func TestOSRunnerCancelsCommandWhenStdoutExceedsLimit(t *testing.T) {
+	t.Parallel()
+	yesPath, err := exec.LookPath("yes")
+	if err != nil {
+		t.Skip("yes binary unavailable")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	run, err := OSRunner{}.Run(ctx, CommandSpec{
+		Path:           yesPath,
+		Args:           []string{"needle"},
+		Dir:            t.TempDir(),
+		MaxStdoutBytes: 128,
+		MaxStderrBytes: DefaultMaxStderrBytes,
+	})
+	if !errors.Is(err, ErrOutputTooLarge) {
+		t.Fatalf("Run err = %v, want ErrOutputTooLarge", err)
+	}
+	if len(run.Stdout) > 128 {
+		t.Fatalf("stdout length = %d, want <= 128", len(run.Stdout))
+	}
+	if ctx.Err() != nil {
+		t.Fatalf("runner should cancel only the child process before test context expires: %v", ctx.Err())
 	}
 }
 

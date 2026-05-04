@@ -17,9 +17,11 @@ import (
 )
 
 const (
-	SchemaVersion     = 1
-	DefaultMaxResults = 500
-	HardMaxResults    = 5000
+	SchemaVersion         = 1
+	DefaultMaxResults     = 500
+	HardMaxResults        = 5000
+	DefaultMaxStdoutBytes = 16 << 20
+	DefaultMaxStderrBytes = 128 << 10
 )
 
 var (
@@ -27,6 +29,7 @@ var (
 	ErrPathOutsideRoot = errors.New("search: path outside repo root")
 	ErrCommandFailed   = errors.New("search: command failed")
 	ErrMalformedOutput = errors.New("search: malformed ripgrep output")
+	ErrOutputTooLarge  = errors.New("search: command output exceeded limit")
 )
 
 type Request struct {
@@ -66,9 +69,11 @@ type Submatch struct {
 }
 
 type CommandSpec struct {
-	Path string
-	Args []string
-	Dir  string
+	Path           string
+	Args           []string
+	Dir            string
+	MaxStdoutBytes int64
+	MaxStderrBytes int64
 }
 
 type RunResult struct {
@@ -117,7 +122,7 @@ func (s *Service) Search(ctx context.Context, req Request) (Response, error) {
 	}
 	run, err := s.runner.Run(ctx, spec)
 	if err != nil {
-		return Response{}, fmt.Errorf("%w: %v", ErrCommandFailed, err)
+		return Response{}, fmt.Errorf("%w: %w", ErrCommandFailed, err)
 	}
 	if run.ExitCode > 1 {
 		return Response{}, fmt.Errorf("%w: exit %d: %s", ErrCommandFailed, run.ExitCode, strings.TrimSpace(string(run.Stderr)))
@@ -178,7 +183,13 @@ func BuildCommand(binary string, req Request) (CommandSpec, error) {
 		return CommandSpec{}, err
 	}
 	args = append(args, paths...)
-	return CommandSpec{Path: binary, Args: args, Dir: root}, nil
+	return CommandSpec{
+		Path:           binary,
+		Args:           args,
+		Dir:            root,
+		MaxStdoutBytes: DefaultMaxStdoutBytes,
+		MaxStderrBytes: DefaultMaxStderrBytes,
+	}, nil
 }
 
 type ParsedOutput struct {
@@ -262,24 +273,97 @@ func (m rgMessage) result() Result {
 type OSRunner struct{}
 
 func (OSRunner) Run(ctx context.Context, spec CommandSpec) (RunResult, error) {
-	cmd := exec.CommandContext(ctx, spec.Path, spec.Args...)
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	cmd := exec.CommandContext(runCtx, spec.Path, spec.Args...)
 	cmd.Dir = spec.Dir
 	cmd.Env = append(os.Environ(), "LC_ALL=C")
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	err := cmd.Run()
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return RunResult{ExitCode: -1}, err
+	}
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		return RunResult{ExitCode: -1}, err
+	}
+	if err := cmd.Start(); err != nil {
+		return RunResult{ExitCode: -1}, err
+	}
+	stdout := newLimitedBuffer("stdout", normalizeByteLimit(spec.MaxStdoutBytes, DefaultMaxStdoutBytes))
+	stderr := newLimitedBuffer("stderr", normalizeByteLimit(spec.MaxStderrBytes, DefaultMaxStderrBytes))
+	errs := make(chan error, 2)
+	go copyCommandOutput(cancel, errs, stdout, stdoutPipe)
+	go copyCommandOutput(cancel, errs, stderr, stderrPipe)
+	err = cmd.Wait()
+	stdoutErr := <-errs
+	stderrErr := <-errs
 	exitCode := 0
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
 			exitCode = exitErr.ExitCode()
 		} else {
-			return RunResult{Stdout: stdout.Bytes(), Stderr: stderr.Bytes(), ExitCode: -1}, err
+			exitCode = -1
 		}
 	}
-	return RunResult{Stdout: stdout.Bytes(), Stderr: stderr.Bytes(), ExitCode: exitCode}, nil
+	result := RunResult{Stdout: stdout.Bytes(), Stderr: stderr.Bytes(), ExitCode: exitCode}
+	if stdoutErr != nil {
+		return result, stdoutErr
+	}
+	if stderrErr != nil {
+		return result, stderrErr
+	}
+	if err != nil && exitCode == -1 {
+		return result, err
+	}
+	return result, nil
+}
+
+func copyCommandOutput(cancel context.CancelFunc, errs chan<- error, dst *limitedBuffer, src io.Reader) {
+	_, err := io.Copy(dst, src)
+	if err != nil {
+		cancel()
+	}
+	errs <- err
+}
+
+type limitedBuffer struct {
+	stream string
+	limit  int64
+	buf    bytes.Buffer
+}
+
+func newLimitedBuffer(stream string, limit int64) *limitedBuffer {
+	return &limitedBuffer{stream: stream, limit: limit}
+}
+
+func (b *limitedBuffer) Write(p []byte) (int, error) {
+	remaining := b.limit - int64(b.buf.Len())
+	if remaining <= 0 {
+		return 0, outputLimitError{stream: b.stream, limit: b.limit}
+	}
+	if int64(len(p)) > remaining {
+		_, _ = b.buf.Write(p[:remaining])
+		return int(remaining), outputLimitError{stream: b.stream, limit: b.limit}
+	}
+	return b.buf.Write(p)
+}
+
+func (b *limitedBuffer) Bytes() []byte {
+	return append([]byte(nil), b.buf.Bytes()...)
+}
+
+type outputLimitError struct {
+	stream string
+	limit  int64
+}
+
+func (e outputLimitError) Error() string {
+	return fmt.Sprintf("%v: %s exceeded %d bytes", ErrOutputTooLarge, e.stream, e.limit)
+}
+
+func (e outputLimitError) Unwrap() error {
+	return ErrOutputTooLarge
 }
 
 func resolveRoot(root string) (string, error) {
@@ -364,6 +448,13 @@ func normalizeMaxResults(maxResults int) int {
 		return HardMaxResults
 	}
 	return maxResults
+}
+
+func normalizeByteLimit(limit int64, fallback int64) int64 {
+	if limit <= 0 {
+		return fallback
+	}
+	return limit
 }
 
 func hasControl(value string) bool {
