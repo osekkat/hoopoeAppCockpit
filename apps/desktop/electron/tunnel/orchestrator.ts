@@ -1,5 +1,11 @@
 import { dispatch, type DispatchContext } from "./fsm.ts";
 import {
+  networkSignalMessage,
+  tunnelEventForNetworkSignal,
+  type CaptivePortalProbeResult,
+  type NetworkSignal,
+} from "./networkMonitor.ts";
+import {
   INITIAL_TUNNEL_SNAPSHOT,
   type TunnelSnapshot,
   type VpsProfile,
@@ -42,6 +48,7 @@ export interface TunnelOrchestratorOptions {
   readonly scheduler?: Scheduler;
   readonly now?: () => Date;
   readonly onSnapshot?: (snapshot: TunnelSnapshot) => void;
+  readonly captivePortalProbe?: () => Promise<CaptivePortalProbeResult>;
 }
 
 export class TunnelOrchestrator {
@@ -97,6 +104,17 @@ export class TunnelOrchestrator {
   handleTunnelClosed(reason?: Error): TunnelSnapshot {
     void this.#closeCurrentTunnel();
     this.#transition("tunnel_closed", reason ? { faultMessage: reason.message } : {});
+    this.#scheduleReconnect();
+    return this.#snapshot;
+  }
+
+  async handleNetworkSignal(signal: NetworkSignal): Promise<TunnelSnapshot> {
+    const event = tunnelEventForNetworkSignal(signal);
+    if (event === null) return this.#snapshot;
+    this.#connectGeneration += 1;
+    this.#cancelReconnect();
+    await this.#closeCurrentTunnel();
+    this.#transition(event, { faultMessage: networkSignalMessage(signal) });
     this.#scheduleReconnect();
     return this.#snapshot;
   }
@@ -162,6 +180,7 @@ export class TunnelOrchestrator {
     } catch (err) {
       if (!this.#isCurrent(generation)) return;
       this.#classifyPipelineError(err);
+      await this.#maybeProbeCaptivePortal();
       this.#scheduleReconnect();
     }
   }
@@ -203,9 +222,16 @@ export class TunnelOrchestrator {
     const delayMs = Math.max(0, target - now);
     const profile = this.#profile;
     this.#reconnectTimer = (this.#opts.scheduler ?? realScheduler).schedule(delayMs, () => {
-      this.#transition("backoff_elapsed");
-      void this.connect(profile);
+      void this.#retryConnect(profile);
     });
+  }
+
+  async #retryConnect(profile: VpsProfile): Promise<void> {
+    this.#cancelReconnect();
+    this.#connectGeneration += 1;
+    const generation = this.#connectGeneration;
+    this.#transition("backoff_elapsed");
+    await this.#runConnectPipeline(profile, generation);
   }
 
   #cancelReconnect(): void {
@@ -218,6 +244,20 @@ export class TunnelOrchestrator {
     this.#currentTunnel = null;
     if (tunnel) {
       await tunnel.close();
+    }
+  }
+
+  async #maybeProbeCaptivePortal(): Promise<void> {
+    if (
+      this.#snapshot.state !== "reconnecting" ||
+      this.#snapshot.reconnectAttempts < 2 ||
+      !this.#opts.captivePortalProbe
+    ) {
+      return;
+    }
+    const result = await this.#opts.captivePortalProbe();
+    if (result.signal?.kind === "network.captive_portal_detected") {
+      await this.handleNetworkSignal(result.signal);
     }
   }
 

@@ -76,6 +76,52 @@ test("probe failure enters reconnecting and scheduled retry can reach ready", as
   expect(orchestrator.snapshot.localPort).toBe(17655);
 });
 
+test("two failed reconnect attempts run captive portal probe and pause retries on positive detection", async () => {
+  let probeFailures = 2;
+  let captiveProbeCalls = 0;
+  const scheduler = new FakeScheduler();
+  const orchestrator = new TunnelOrchestrator({
+    tunnel: {
+      probe: async () => {
+        if (probeFailures > 0) {
+          probeFailures -= 1;
+          throw new Error("ssh timeout");
+        }
+      },
+      bootstrap: async () => {},
+      open: async () => new FakeOpenTunnel(17655),
+    },
+    auth: { authenticate: async () => {} },
+    heartbeat: { check: async () => "ok" },
+    captivePortalProbe: async () => {
+      captiveProbeCalls += 1;
+      return {
+        classification: "captive",
+        signal: {
+          kind: "network.captive_portal_detected",
+          capturedAt: clock.toISOString(),
+        },
+      };
+    },
+    scheduler,
+    now: () => clock,
+  });
+
+  await orchestrator.connect(profile);
+  expect(orchestrator.snapshot.state).toBe("reconnecting");
+  expect(orchestrator.snapshot.reconnectAttempts).toBe(1);
+  expect(captiveProbeCalls).toBe(0);
+
+  scheduler.runNext();
+  await flushAsync();
+
+  expect(captiveProbeCalls).toBe(1);
+  expect(orchestrator.snapshot.state).toBe("captive_portal_blocked");
+  expect(orchestrator.snapshot.nextRetryAt).toBeNull();
+  expect(orchestrator.snapshot.lastFault?.code).toBe("network_captive_portal");
+  expect(scheduler.scheduled).toHaveLength(0);
+});
+
 test("tunnel close from ready schedules a reconnect and clears local port", async () => {
   const scheduler = new FakeScheduler();
   const tunnel = new FakeOpenTunnel(18000);
@@ -152,6 +198,72 @@ test("system sleep closes the tunnel and wake restarts the profile", async () =>
 
   expect(awake.state).toBe("ready");
   expect(awake.localPort).toBe(17656);
+});
+
+test("network route change closes stale tunnel and schedules immediate reconnect", async () => {
+  const scheduler = new FakeScheduler();
+  const tunnel = new FakeOpenTunnel(17655);
+  const orchestrator = new TunnelOrchestrator({
+    tunnel: {
+      probe: async () => {},
+      bootstrap: async () => {},
+      open: async () => tunnel,
+    },
+    auth: { authenticate: async () => {} },
+    heartbeat: { check: async () => "ok" },
+    scheduler,
+    now: () => clock,
+  });
+  await orchestrator.connect(profile);
+
+  const snapshot = await orchestrator.handleNetworkSignal({
+    kind: "network.route_changed",
+    capturedAt: clock.toISOString(),
+    detail: { fromInterface: "en0", toInterface: "en1" },
+  });
+
+  expect(snapshot.state).toBe("reconnecting");
+  expect(snapshot.nextRetryAt).toBe("2026-05-04T04:00:00.000Z");
+  expect(snapshot.lastFault).toMatchObject({
+    code: "network_unavailable",
+    message: "Network route changed; SSH tunnel may be stale.",
+  });
+  expect(tunnel.closed).toBe(true);
+  expect(scheduler.scheduled.at(-1)?.delayMs).toBe(0);
+});
+
+test("captive portal signal pauses reconnect until cleared", async () => {
+  const scheduler = new FakeScheduler();
+  const tunnel = new FakeOpenTunnel(17655);
+  const orchestrator = new TunnelOrchestrator({
+    tunnel: {
+      probe: async () => {},
+      bootstrap: async () => {},
+      open: async () => tunnel,
+    },
+    auth: { authenticate: async () => {} },
+    heartbeat: { check: async () => "ok" },
+    scheduler,
+    now: () => clock,
+  });
+  await orchestrator.connect(profile);
+
+  const blocked = await orchestrator.handleNetworkSignal({
+    kind: "network.captive_portal_detected",
+    capturedAt: clock.toISOString(),
+  });
+
+  expect(blocked.state).toBe("captive_portal_blocked");
+  expect(blocked.nextRetryAt).toBeNull();
+  expect(blocked.lastFault?.code).toBe("network_captive_portal");
+  expect(scheduler.scheduled).toHaveLength(0);
+
+  const cleared = await orchestrator.handleNetworkSignal({
+    kind: "network.captive_portal_cleared",
+    capturedAt: clock.toISOString(),
+  });
+  expect(cleared.state).toBe("reconnecting");
+  expect(scheduler.scheduled.at(-1)?.delayMs).toBe(0);
 });
 
 test("heartbeat version mismatch degrades without dropping the tunnel", async () => {

@@ -25,6 +25,10 @@ export const TUNNEL_STATES = [
   "authenticating",
   /** Healthy: tunnel + bearer + heartbeat all good. */
   "ready",
+  /** Network is offline; reconnect attempts pause until it comes back. */
+  "awaiting_network",
+  /** Captive portal is positively detected; reconnect pauses until cleared. */
+  "captive_portal_blocked",
   /** Tunnel up but a downstream signal degraded (heartbeat slow, version
    *  mismatch warning, etc.) — UI shows the project as degraded but does
    *  NOT block requests. */
@@ -53,6 +57,12 @@ export const TUNNEL_EVENTS = [
   "version_mismatch",
   "bearer_expired",       // HTTP 401 on a privileged call
   "network_changed",      // macOS Wi-Fi / VPN / captive-portal probe
+  "network_offline",      // Electron net.online false / reachability unavailable
+  "network_online",       // Electron net.online true / reachability restored
+  "network_route_changed", // default route changed (Wi-Fi / VPN handoff)
+  "network_vpn_state_changed",
+  "network_captive_portal_detected",
+  "network_captive_portal_cleared",
   "system_sleep",         // powerMonitor 'suspend'
   "system_wake",          // powerMonitor 'resume'
   "user_disconnect",
@@ -72,6 +82,7 @@ export const FAULT_CODES = [
   "version_incompatible",
   "heartbeat_timeout",
   "network_unavailable",
+  "network_captive_portal",
   "system_sleep",
   "user_initiated",
   "unknown",

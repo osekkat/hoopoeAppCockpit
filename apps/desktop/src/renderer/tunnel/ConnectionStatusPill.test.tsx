@@ -40,6 +40,20 @@ const DEGRADED: TunnelSnapshot = {
   nextRetryAt: null,
 };
 
+const NETWORK_RECONNECTING: TunnelSnapshot = {
+  ...RECONNECTING,
+  lastFault: { code: "network_unavailable", message: "Network route changed", capturedAt: "2026-05-04T03:00:00.000Z" },
+};
+
+const CAPTIVE_PORTAL: TunnelSnapshot = {
+  state: "captive_portal_blocked",
+  activeProfileId: "profile-1",
+  localPort: null,
+  lastFault: { code: "network_captive_portal", message: "Captive portal detected", capturedAt: "2026-05-04T03:00:00.000Z" },
+  reconnectAttempts: 0,
+  nextRetryAt: null,
+};
+
 test("ConnectionStatusPill: unconfigured snapshot shows 'No VPS' with idle severity", () => {
   const html = renderToStaticMarkup(
     <ConnectionStatusPillView now={FIXED_NOW} snapshot={INITIAL_TUNNEL_SNAPSHOT} />,
@@ -90,6 +104,25 @@ test("ConnectionStatusPill: degraded snapshot shows warning severity + fault bad
   expect(html).not.toContain("data-testid=\"topbar-connection-countdown\"");
 });
 
+test("ConnectionStatusPill: network reconnect uses warning severity for the top-bar affordance", () => {
+  const html = renderToStaticMarkup(
+    <ConnectionStatusPillView now={FIXED_NOW} snapshot={NETWORK_RECONNECTING} />,
+  );
+  expect(html).toContain("data-state=\"reconnecting\"");
+  expect(html).toContain("data-severity=\"warning\"");
+  expect(html).toContain("network_unavailable");
+});
+
+test("ConnectionStatusPill: captive portal blocked surfaces a red actionable state", () => {
+  const html = renderToStaticMarkup(
+    <ConnectionStatusPillView now={FIXED_NOW} snapshot={CAPTIVE_PORTAL} />,
+  );
+  expect(html).toContain("data-state=\"captive_portal_blocked\"");
+  expect(html).toContain("data-severity=\"danger\"");
+  expect(html).toContain("Captive portal");
+  expect(html).toContain("network_captive_portal");
+});
+
 test("ConnectionStatusPill: in-flight states render with the spinning icon class", () => {
   const html = renderToStaticMarkup(
     <ConnectionStatusPillView now={FIXED_NOW} snapshot={{ ...INITIAL_TUNNEL_SNAPSHOT, state: "ssh_probing" }} />,
@@ -113,6 +146,8 @@ test("ConnectionStatusPill: every TunnelState renders without throwing", () => {
     "tunnel_connecting",
     "authenticating",
     "ready",
+    "awaiting_network",
+    "captive_portal_blocked",
     "degraded",
     "reconnecting",
     "disconnected",

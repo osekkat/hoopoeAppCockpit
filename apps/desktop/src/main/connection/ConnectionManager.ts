@@ -13,6 +13,8 @@ export const TUNNEL_STATES = [
   "tunnel_connecting",
   "authenticating",
   "ready",
+  "awaiting_network",
+  "captive_portal_blocked",
   "degraded",
   "reconnecting",
   "disconnected",
@@ -30,6 +32,12 @@ export type TunnelTrigger =
   | "tunnel.closed"
   | "macos.wake"
   | "network.changed"
+  | "network.online"
+  | "network.offline"
+  | "network.route_changed"
+  | "network.vpn_state_changed"
+  | "network.captive_portal_detected"
+  | "network.captive_portal_cleared"
   | "bearer.expired"
   | "version.mismatch"
   | "disconnect.requested"
@@ -94,6 +102,11 @@ export interface ConnectionDiagnosticsSnapshot {
   readonly capturedAt: string;
   readonly current: TunnelSnapshot;
   readonly recentTransitions: readonly ConnectionDiagnosticTransition[];
+}
+
+export interface ConnectionNetworkSignal {
+  readonly kind: string;
+  readonly detail?: Readonly<Record<string, unknown>>;
 }
 
 export class ConnectionManagerError extends Error {
@@ -581,6 +594,66 @@ export class ConnectionManager {
     return this.snapshot();
   }
 
+  handleNetworkSignal(signal: ConnectionNetworkSignal): TunnelSnapshot {
+    switch (signal.kind) {
+      case "network.offline":
+        return this.handleNetworkOffline();
+      case "network.online":
+        return this.handleNetworkOnline();
+      case "network.route_changed":
+        return this.handleRouteChange();
+      case "network.vpn_state_changed":
+        return this.handleVpnStateChange(
+          signal.detail?.["vpnUp"] === true
+            ? "VPN connected. Re-establishing tunnel via VPN route."
+            : "VPN state changed. Re-establishing tunnel route.",
+        );
+      case "network.captive_portal_detected":
+        return this.handleCaptivePortalDetected();
+      case "network.captive_portal_cleared":
+        return this.handleCaptivePortalCleared();
+      case "network.changed":
+        return this.handleNetworkChange();
+      default:
+        return this.snapshot();
+    }
+  }
+
+  handleNetworkOffline(message = "Network unavailable."): TunnelSnapshot {
+    this.markPausedNetworkState("awaiting_network", "network.offline", message, "network.offline");
+    return this.snapshot();
+  }
+
+  handleNetworkOnline(message = "Network back online."): TunnelSnapshot {
+    this.markImmediateReconnect("network.online", message, "network.online");
+    return this.snapshot();
+  }
+
+  handleRouteChange(message = "Network route changed; SSH tunnel may be stale."): TunnelSnapshot {
+    this.markImmediateReconnect("network.route_changed", message, "network.route_changed");
+    return this.snapshot();
+  }
+
+  handleVpnStateChange(message = "VPN state changed. Re-establishing tunnel route."): TunnelSnapshot {
+    this.markImmediateReconnect("network.vpn_state_changed", message, "network.vpn_state_changed");
+    return this.snapshot();
+  }
+
+  handleCaptivePortalDetected(message = "Captive portal detected. Sign in to Wi-Fi to continue."): TunnelSnapshot {
+    this.markPausedNetworkState(
+      "captive_portal_blocked",
+      "network.captive_portal_detected",
+      message,
+      "network.captive_portal_detected",
+    );
+    return this.snapshot();
+  }
+
+  handleCaptivePortalCleared(message = "Captive portal cleared."): TunnelSnapshot {
+    this.markImmediateReconnect("network.captive_portal_cleared", message, "network.captive_portal_cleared");
+    return this.snapshot();
+  }
+
   handleBearerExpired(): TunnelSnapshot {
     this.markReconnect("bearer.expired", "Bearer expired; reconnect must refresh session credentials.", "bearer.expired");
     return this.snapshot();
@@ -631,6 +704,34 @@ export class ConnectionManager {
     this.transition("reconnecting", trigger, this.fault);
   }
 
+  private markImmediateReconnect(code: string, message: string, trigger: TunnelTrigger): void {
+    const staleHandle = this.handle;
+    this.handle = null;
+    if (staleHandle !== null) {
+      void staleHandle.close().catch(() => undefined);
+    }
+    this.attempts += 1;
+    this.fault = { code, message, capturedAt: this.now().toISOString() };
+    this.nextRetry = this.now();
+    this.transition("reconnecting", trigger, this.fault);
+  }
+
+  private markPausedNetworkState(
+    state: "awaiting_network" | "captive_portal_blocked",
+    code: string,
+    message: string,
+    trigger: TunnelTrigger,
+  ): void {
+    const staleHandle = this.handle;
+    this.handle = null;
+    if (staleHandle !== null) {
+      void staleHandle.close().catch(() => undefined);
+    }
+    this.nextRetry = null;
+    this.fault = { code, message, capturedAt: this.now().toISOString() };
+    this.transition(state, trigger, this.fault);
+  }
+
   private transition(to: TunnelState, trigger: TunnelTrigger, fault: ConnectionFault | null = this.fault): void {
     const from = this.currentState;
     this.currentState = to;
@@ -679,6 +780,18 @@ function diagnosticReasonForTrigger(trigger: TunnelTrigger): string {
       return "macOS woke from sleep; tunnel must be revalidated.";
     case "network.changed":
       return "Network changed; tunnel may be stale.";
+    case "network.online":
+      return "Network came back online.";
+    case "network.offline":
+      return "Network went offline; reconnect paused.";
+    case "network.route_changed":
+      return "Default route changed; tunnel may be stale.";
+    case "network.vpn_state_changed":
+      return "VPN state changed; tunnel route must be revalidated.";
+    case "network.captive_portal_detected":
+      return "Captive portal detected; reconnect paused.";
+    case "network.captive_portal_cleared":
+      return "Captive portal cleared; reconnect may resume.";
     case "bearer.expired":
       return "Bearer expired and must be refreshed.";
     case "version.mismatch":

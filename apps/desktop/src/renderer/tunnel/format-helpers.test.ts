@@ -8,6 +8,8 @@ import {
   tunnelAriaLabel,
   tunnelHealthDot,
   tunnelSeverity,
+  tunnelSnapshotHealthDot,
+  tunnelSnapshotSeverity,
 } from "./index.ts";
 
 const FIXED_NOW = () => new Date("2026-05-04T03:00:00.000Z");
@@ -22,6 +24,8 @@ test("TUNNEL_STATE_LABELS: covers every TunnelState value", () => {
 test("tunnelSeverity: every state maps to the expected bucket", () => {
   expect(tunnelSeverity("ready")).toBe("ok");
   expect(tunnelSeverity("degraded")).toBe("warning");
+  expect(tunnelSeverity("awaiting_network")).toBe("danger");
+  expect(tunnelSeverity("captive_portal_blocked")).toBe("danger");
   expect(tunnelSeverity("reconnecting")).toBe("danger");
   expect(tunnelSeverity("disconnected")).toBe("danger");
   expect(tunnelSeverity("ssh_probing")).toBe("in-flight");
@@ -34,10 +38,33 @@ test("tunnelSeverity: every state maps to the expected bucket", () => {
 test("tunnelHealthDot: severity → HealthDot mapping for the ToolHealthPill", () => {
   expect(tunnelHealthDot("ready")).toBe("healthy");
   expect(tunnelHealthDot("degraded")).toBe("degraded");
+  expect(tunnelHealthDot("awaiting_network")).toBe("offline");
+  expect(tunnelHealthDot("captive_portal_blocked")).toBe("offline");
   expect(tunnelHealthDot("reconnecting")).toBe("offline");
   expect(tunnelHealthDot("disconnected")).toBe("offline");
   expect(tunnelHealthDot("ssh_probing")).toBe("degraded");
   expect(tunnelHealthDot("unconfigured")).toBe("unknown");
+});
+
+test("tunnelSnapshotSeverity: network reconnects show warning, captive portal stays offline", () => {
+  expect(
+    tunnelSnapshotSeverity({
+      state: "reconnecting",
+      lastFault: { code: "network_unavailable" },
+    }),
+  ).toBe("warning");
+  expect(
+    tunnelSnapshotHealthDot({
+      state: "reconnecting",
+      lastFault: { code: "network_unavailable" },
+    }),
+  ).toBe("degraded");
+  expect(
+    tunnelSnapshotSeverity({
+      state: "captive_portal_blocked",
+      lastFault: { code: "network_captive_portal" },
+    }),
+  ).toBe("danger");
 });
 
 test("formatReconnectCountdown: null + invalid timestamp → null", () => {

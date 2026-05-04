@@ -13,6 +13,8 @@ export const TUNNEL_STATE_LABELS: Record<TunnelState, string> = {
   tunnel_connecting: "Opening tunnel",
   authenticating: "Authenticating",
   ready: "Connected",
+  awaiting_network: "Network unavailable",
+  captive_portal_blocked: "Captive portal",
   degraded: "Degraded",
   reconnecting: "Reconnecting",
   disconnected: "Disconnected",
@@ -28,8 +30,10 @@ export function tunnelSeverity(state: TunnelState): TunnelSeverity {
       return "ok";
     case "degraded":
       return "warning";
+    case "awaiting_network":
     case "reconnecting":
     case "disconnected":
+    case "captive_portal_blocked":
       return "danger";
     case "ssh_probing":
     case "bootstrapping":
@@ -42,11 +46,35 @@ export function tunnelSeverity(state: TunnelState): TunnelSeverity {
   }
 }
 
+export function tunnelSnapshotSeverity(input: {
+  readonly state: TunnelState;
+  readonly lastFault: { readonly code: string } | null;
+}): TunnelSeverity {
+  if (input.state === "reconnecting" && input.lastFault?.code === "network_unavailable") {
+    return "warning";
+  }
+  return tunnelSeverity(input.state);
+}
+
 /** Map severity to the same HealthDot enum the ToolHealthPill consumes
  *  so the VPS dot can swap from the seed "unknown" to the live FSM
  *  signal in a single line of glue. */
 export function tunnelHealthDot(state: TunnelState): "healthy" | "degraded" | "offline" | "unknown" {
   switch (tunnelSeverity(state)) {
+    case "ok": return "healthy";
+    case "warning": return "degraded";
+    case "danger": return "offline";
+    case "in-flight": return "degraded";
+    case "idle": return "unknown";
+    default: return "unknown";
+  }
+}
+
+export function tunnelSnapshotHealthDot(input: {
+  readonly state: TunnelState;
+  readonly lastFault: { readonly code: string } | null;
+}): "healthy" | "degraded" | "offline" | "unknown" {
+  switch (tunnelSnapshotSeverity(input)) {
     case "ok": return "healthy";
     case "warning": return "degraded";
     case "danger": return "offline";

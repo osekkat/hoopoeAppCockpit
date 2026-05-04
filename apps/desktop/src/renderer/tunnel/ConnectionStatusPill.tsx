@@ -17,7 +17,7 @@ import {
   TUNNEL_STATE_LABELS,
   formatReconnectCountdown,
   tunnelAriaLabel,
-  tunnelSeverity,
+  tunnelSnapshotSeverity,
 } from "./format-helpers.ts";
 import {
   selectTunnelSnapshot,
@@ -52,7 +52,7 @@ export function ConnectionStatusPillView({
   useCountdownTick(snapshot.nextRetryAt, () => setTick((t) => t + 1));
 
   const countdown = useMemo(() => formatReconnectCountdown(snapshot.nextRetryAt, now), [snapshot.nextRetryAt, now]);
-  const severity = tunnelSeverity(snapshot.state);
+  const severity = tunnelSnapshotSeverity(snapshot);
   const aria = tunnelAriaLabel({
     state: snapshot.state,
     fault: snapshot.lastFault,
@@ -107,6 +107,8 @@ function iconForState(state: TunnelState): typeof Plug {
     case "tunnel_connecting":
     case "authenticating":
       return Loader2;
+    case "awaiting_network":
+    case "captive_portal_blocked":
     case "disconnected":
       return AlertTriangle;
     case "unconfigured":

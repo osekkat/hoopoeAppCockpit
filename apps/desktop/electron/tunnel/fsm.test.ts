@@ -174,8 +174,81 @@ test("network_changed in ready → reconnecting with network_unavailable fault",
   expect(snap.lastFault?.code).toBe("network_unavailable");
 });
 
+test("network_offline in ready → awaiting_network with reconnect paused", () => {
+  let snap: TunnelSnapshot = dispatchAll(freshSnapshot(), [
+    { event: "profile_set", ctx: { profileId: "v1" } },
+    { event: "ssh_probe_succeeded" },
+    { event: "bootstrap_succeeded" },
+    { event: "tunnel_opened", ctx: { localPort: 17655 } },
+    { event: "auth_succeeded", ctx: { localPort: 17655 } },
+  ]);
+  snap = dispatch(snap, "network_offline", { now: FIXED_NOW }).snapshot;
+  expect(snap.state).toBe("awaiting_network");
+  expect(snap.localPort).toBeNull();
+  expect(snap.nextRetryAt).toBeNull();
+  expect(snap.lastFault).toMatchObject({
+    code: "network_unavailable",
+    message: "Network unavailable",
+  });
+});
+
+test("awaiting_network + network_online → reconnecting immediately", () => {
+  let snap: TunnelSnapshot = dispatchAll(freshSnapshot(), [
+    { event: "profile_set", ctx: { profileId: "v1" } },
+    { event: "ssh_probe_succeeded" },
+    { event: "bootstrap_succeeded" },
+    { event: "tunnel_opened", ctx: { localPort: 17655 } },
+    { event: "auth_succeeded", ctx: { localPort: 17655 } },
+    { event: "network_offline", ctx: { now: FIXED_NOW } },
+  ]);
+  snap = dispatch(snap, "network_online", { now: FIXED_NOW }).snapshot;
+  expect(snap.state).toBe("reconnecting");
+  expect(snap.reconnectAttempts).toBe(1);
+  expect(snap.nextRetryAt).toBe("2026-05-04T03:00:00.000Z");
+  expect(snap.lastFault?.message).toBe("Network back online");
+});
+
+test("route and VPN changes force immediate reconnect without backoff delay", () => {
+  let snap: TunnelSnapshot = dispatchAll(freshSnapshot(), [
+    { event: "profile_set", ctx: { profileId: "v1" } },
+    { event: "ssh_probe_succeeded" },
+    { event: "bootstrap_succeeded" },
+    { event: "tunnel_opened", ctx: { localPort: 17655 } },
+    { event: "auth_succeeded", ctx: { localPort: 17655 } },
+  ]);
+  snap = dispatch(snap, "network_route_changed", { now: FIXED_NOW }).snapshot;
+  expect(snap.state).toBe("reconnecting");
+  expect(snap.nextRetryAt).toBe("2026-05-04T03:00:00.000Z");
+  expect(snap.lastFault?.message).toBe("Network route changed");
+
+  snap = dispatch(snap, "network_vpn_state_changed", { now: FIXED_NOW }).snapshot;
+  expect(snap.reconnectAttempts).toBe(2);
+  expect(snap.nextRetryAt).toBe("2026-05-04T03:00:00.000Z");
+  expect(snap.lastFault?.message).toBe("VPN state changed");
+});
+
+test("positive captive portal probe blocks reconnect until cleared", () => {
+  let snap: TunnelSnapshot = dispatchAll(freshSnapshot(), [
+    { event: "profile_set", ctx: { profileId: "v1" } },
+    { event: "ssh_probe_succeeded" },
+    { event: "bootstrap_succeeded" },
+    { event: "tunnel_opened", ctx: { localPort: 17655 } },
+    { event: "auth_succeeded", ctx: { localPort: 17655 } },
+    { event: "network_captive_portal_detected", ctx: { now: FIXED_NOW } },
+  ]);
+  expect(snap.state).toBe("captive_portal_blocked");
+  expect(snap.localPort).toBeNull();
+  expect(snap.nextRetryAt).toBeNull();
+  expect(snap.lastFault?.code).toBe("network_captive_portal");
+
+  snap = dispatch(snap, "network_captive_portal_cleared", { now: FIXED_NOW }).snapshot;
+  expect(snap.state).toBe("reconnecting");
+  expect(snap.nextRetryAt).toBe("2026-05-04T03:00:00.000Z");
+  expect(snap.lastFault?.message).toBe("Captive portal cleared");
+});
+
 test("user_disconnect from any non-unconfigured state → disconnected with user_initiated fault", () => {
-  for (const start of ["ssh_probing", "tunnel_connecting", "authenticating", "ready", "degraded"] as const) {
+  for (const start of ["ssh_probing", "tunnel_connecting", "authenticating", "ready", "awaiting_network", "captive_portal_blocked", "degraded"] as const) {
     let snap: TunnelSnapshot = dispatch(freshSnapshot(), "profile_set", { profileId: "v" }).snapshot;
     if (start !== "ssh_probing") snap = { ...snap, state: start };
     const after = dispatch(snap, "user_disconnect", { now: FIXED_NOW }).snapshot;

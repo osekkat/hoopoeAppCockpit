@@ -143,6 +143,29 @@ test("selectVpsHealthDot: reflects the live FSM state after the first event land
   // tunnelHealthDot maps reconnecting → offline.
   expect(selectVpsHealthDot(useTunnelStore.getState())).toBe("offline");
 
+  useTunnelStore.getState().recordEvent({
+    ...RECONNECTING_SNAPSHOT,
+    lastFault: {
+      code: "network_unavailable",
+      message: "Network route changed",
+      capturedAt: "2026-05-04T03:00:00.000Z",
+    },
+  }, FIXED_NOW);
+  expect(selectVpsHealthDot(useTunnelStore.getState())).toBe("degraded");
+
+  useTunnelStore.getState().recordEvent({
+    ...RECONNECTING_SNAPSHOT,
+    state: "captive_portal_blocked",
+    reconnectAttempts: 0,
+    nextRetryAt: null,
+    lastFault: {
+      code: "network_captive_portal",
+      message: "Captive portal detected",
+      capturedAt: "2026-05-04T03:00:00.000Z",
+    },
+  }, FIXED_NOW);
+  expect(selectVpsHealthDot(useTunnelStore.getState())).toBe("offline");
+
   // Reset clears receivedAt → back to unknown.
   useTunnelStore.getState().clear();
   expect(selectVpsHealthDot(useTunnelStore.getState())).toBe("unknown");

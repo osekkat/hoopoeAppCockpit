@@ -13,7 +13,7 @@
 import { create } from "zustand";
 
 import type { HealthDot } from "../topbar/topbar-data.ts";
-import { tunnelHealthDot } from "./format-helpers.ts";
+import { tunnelSnapshotHealthDot } from "./format-helpers.ts";
 
 // ── Wire shapes (mirror the FSM types from electron/tunnel/types.ts) ──
 
@@ -24,6 +24,8 @@ export const TUNNEL_STATES = [
   "tunnel_connecting",
   "authenticating",
   "ready",
+  "awaiting_network",
+  "captive_portal_blocked",
   "degraded",
   "reconnecting",
   "disconnected",
@@ -86,7 +88,7 @@ export function selectTunnelSnapshot(state: TunnelStoreState): TunnelSnapshot {
 // ── HealthDot mapping ─────────────────────────────────────────────────────
 //
 // hp-m79e: ToolHealthPill's VPS dot reads its state from the tunnel FSM
-// snapshot. `selectVpsHealthDot` gates the existing `tunnelHealthDot`
+// snapshot. `selectVpsHealthDot` gates the existing health-dot
 // mapping (in `./format-helpers.ts`) on `receivedAt` so a renderer that
 // has not yet received any snapshot from the orchestrator stays at
 // `unknown` rather than reporting whatever the INITIAL_TUNNEL_SNAPSHOT
@@ -94,13 +96,13 @@ export function selectTunnelSnapshot(state: TunnelStoreState): TunnelSnapshot {
 
 /** Selector for the VPS health dot. Returns `unknown` when the tunnel
  *  store has not yet received any snapshot (`receivedAt === null`); past
- *  the first hydrate, derives from the live FSM state via the existing
- *  `tunnelHealthDot` mapping. The format-helpers import is type-only on
+ *  the first hydrate, derives from the live FSM state via the snapshot
+ *  severity mapping. The format-helpers import is type-only on
  *  the back side (format-helpers imports `type TunnelState` from here)
  *  so the runtime graph stays acyclic. */
 export function selectVpsHealthDot(state: TunnelStoreState): HealthDot {
   if (state.receivedAt === null) return "unknown";
-  return tunnelHealthDot(state.snapshot.state);
+  return tunnelSnapshotHealthDot(state.snapshot);
 }
 
 // ── Bridge resolution ────────────────────────────────────────────────────

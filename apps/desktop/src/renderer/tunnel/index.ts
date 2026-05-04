@@ -20,6 +20,8 @@ export {
   tunnelAriaLabel,
   tunnelHealthDot,
   tunnelSeverity,
+  tunnelSnapshotHealthDot,
+  tunnelSnapshotSeverity,
   type TunnelSeverity,
 } from "./format-helpers.ts";
 

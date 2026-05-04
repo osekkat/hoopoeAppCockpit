@@ -212,9 +212,21 @@ describe("hp-e7k :: ConnectionManager FSM", () => {
 
     expect(manager.handleWake()).toMatchObject({ state: "reconnecting", reconnectAttempts: 1 });
     expect(manager.handleNetworkChange()).toMatchObject({ state: "reconnecting", reconnectAttempts: 2 });
-    expect(manager.handleBearerExpired()).toMatchObject({
+    expect(manager.handleRouteChange()).toMatchObject({
       state: "reconnecting",
       reconnectAttempts: 3,
+      nextRetryAt: "2026-05-04T04:00:00.000Z",
+      lastFault: { code: "network.route_changed" },
+    });
+    expect(manager.handleVpnStateChange()).toMatchObject({
+      state: "reconnecting",
+      reconnectAttempts: 4,
+      nextRetryAt: "2026-05-04T04:00:00.000Z",
+      lastFault: { code: "network.vpn_state_changed" },
+    });
+    expect(manager.handleBearerExpired()).toMatchObject({
+      state: "reconnecting",
+      reconnectAttempts: 5,
       lastFault: { code: "bearer.expired" },
     });
     expect(manager.markVersionMismatch("daemon API is too old")).toMatchObject({
@@ -228,6 +240,69 @@ describe("hp-e7k :: ConnectionManager FSM", () => {
     });
     expect(driver.closed).toBe(1);
     expect(manager.transitionHistory().map((entry) => entry.trigger)).toContain("version.mismatch");
+  });
+
+  test("network offline and captive portal states pause retries until recovery", async () => {
+    const keyPath = join(workDir, "id_ed25519");
+    await writeFile(keyPath, "PRIVATE\n");
+    const driver = new FakeTunnelDriver();
+    const manager = new ConnectionManager({
+      driver,
+      now: () => new Date("2026-05-04T04:30:00.000Z"),
+      jitter: () => 0,
+    });
+    await manager.connect(fixtureProfile(keyPath));
+
+    expect(manager.handleNetworkOffline()).toMatchObject({
+      state: "awaiting_network",
+      localPort: null,
+      nextRetryAt: null,
+      lastFault: { code: "network.offline" },
+    });
+    expect(manager.handleNetworkOnline()).toMatchObject({
+      state: "reconnecting",
+      reconnectAttempts: 1,
+      nextRetryAt: "2026-05-04T04:30:00.000Z",
+      lastFault: { code: "network.online" },
+    });
+
+    expect(manager.handleCaptivePortalDetected()).toMatchObject({
+      state: "captive_portal_blocked",
+      localPort: null,
+      nextRetryAt: null,
+      lastFault: { code: "network.captive_portal_detected" },
+    });
+    expect(manager.handleCaptivePortalCleared()).toMatchObject({
+      state: "reconnecting",
+      reconnectAttempts: 2,
+      nextRetryAt: "2026-05-04T04:30:00.000Z",
+      lastFault: { code: "network.captive_portal_cleared" },
+    });
+    expect(manager.transitionHistory().map((entry) => entry.trigger)).toContain("network.captive_portal_detected");
+  });
+
+  test("handleNetworkSignal dispatches macOS monitor signals into explicit triggers", async () => {
+    const keyPath = join(workDir, "id_ed25519");
+    await writeFile(keyPath, "PRIVATE\n");
+    const driver = new FakeTunnelDriver();
+    const manager = new ConnectionManager({
+      driver,
+      now: () => new Date("2026-05-04T04:45:00.000Z"),
+      jitter: () => 0,
+    });
+    await manager.connect(fixtureProfile(keyPath));
+
+    expect(manager.handleNetworkSignal({ kind: "network.vpn_state_changed", detail: { vpnUp: true } })).toMatchObject({
+      state: "reconnecting",
+      lastFault: {
+        code: "network.vpn_state_changed",
+        message: "VPN connected. Re-establishing tunnel via VPN route.",
+      },
+    });
+    expect(manager.handleNetworkSignal({ kind: "network.ssid_changed" })).toMatchObject({
+      state: "reconnecting",
+      lastFault: { code: "network.vpn_state_changed" },
+    });
   });
 
   test("diagnosticsSnapshot exposes current state and reasoned transitions", async () => {

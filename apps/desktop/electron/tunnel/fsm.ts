@@ -131,6 +131,52 @@ function startReconnect(code: FaultCode, fallbackMessage: string): Transition {
   };
 }
 
+function startImmediateReconnect(code: FaultCode, fallbackMessage: string): Transition {
+  return (current, ctx, now) => {
+    const attempts = current.reconnectAttempts + 1;
+    return {
+      ...current,
+      state: "reconnecting",
+      reconnectAttempts: attempts,
+      nextRetryAt: now().toISOString(),
+      lastFault: {
+        code,
+        message: ctx.faultMessage ?? fallbackMessage,
+        capturedAt: now().toISOString(),
+      },
+      localPort: null,
+    };
+  };
+}
+
+function awaitNetwork(): Transition {
+  return (current, ctx, now) => ({
+    ...current,
+    state: "awaiting_network",
+    nextRetryAt: null,
+    localPort: null,
+    lastFault: {
+      code: "network_unavailable",
+      message: ctx.faultMessage ?? "Network unavailable",
+      capturedAt: now().toISOString(),
+    },
+  });
+}
+
+function blockOnCaptivePortal(): Transition {
+  return (current, ctx, now) => ({
+    ...current,
+    state: "captive_portal_blocked",
+    nextRetryAt: null,
+    localPort: null,
+    lastFault: {
+      code: "network_captive_portal",
+      message: ctx.faultMessage ?? "Captive portal detected",
+      capturedAt: now().toISOString(),
+    },
+  });
+}
+
 function setProfile(): Transition {
   return (current, ctx) => ({
     ...current,
@@ -172,6 +218,10 @@ const TRANSITIONS: Partial<Record<TunnelState, Partial<Record<TunnelEvent, Trans
     ssh_probe_failed: startReconnect("ssh_unreachable", "SSH probe failed"),
     user_disconnect: userDisconnect(),
     network_changed: startReconnect("network_unavailable", "Network changed"),
+    network_offline: awaitNetwork(),
+    network_route_changed: startImmediateReconnect("network_unavailable", "Network route changed"),
+    network_vpn_state_changed: startImmediateReconnect("network_unavailable", "VPN state changed"),
+    network_captive_portal_detected: blockOnCaptivePortal(),
     system_sleep: gotoState("disconnected"),
   },
   bootstrapping: {
@@ -179,6 +229,11 @@ const TRANSITIONS: Partial<Record<TunnelState, Partial<Record<TunnelEvent, Trans
     bootstrap_succeeded: gotoState("tunnel_connecting"),
     bootstrap_failed: startReconnect("bootstrap_install_failed", "Bootstrap failed"),
     user_disconnect: userDisconnect(),
+    network_changed: startReconnect("network_unavailable", "Network changed"),
+    network_offline: awaitNetwork(),
+    network_route_changed: startImmediateReconnect("network_unavailable", "Network route changed"),
+    network_vpn_state_changed: startImmediateReconnect("network_unavailable", "VPN state changed"),
+    network_captive_portal_detected: blockOnCaptivePortal(),
     system_sleep: gotoState("disconnected"),
   },
   tunnel_connecting: {
@@ -187,6 +242,10 @@ const TRANSITIONS: Partial<Record<TunnelState, Partial<Record<TunnelEvent, Trans
     tunnel_closed: startReconnect("tunnel_dropped", "Tunnel closed before authentication"),
     user_disconnect: userDisconnect(),
     network_changed: startReconnect("network_unavailable", "Network changed"),
+    network_offline: awaitNetwork(),
+    network_route_changed: startImmediateReconnect("network_unavailable", "Network route changed"),
+    network_vpn_state_changed: startImmediateReconnect("network_unavailable", "VPN state changed"),
+    network_captive_portal_detected: blockOnCaptivePortal(),
     system_sleep: gotoState("disconnected"),
   },
   authenticating: {
@@ -195,6 +254,11 @@ const TRANSITIONS: Partial<Record<TunnelState, Partial<Record<TunnelEvent, Trans
     auth_failed: recordFault("auth_rejected", "Auth rejected"),
     tunnel_closed: startReconnect("tunnel_dropped", "Tunnel dropped during auth"),
     user_disconnect: userDisconnect(),
+    network_changed: startReconnect("network_unavailable", "Network changed"),
+    network_offline: awaitNetwork(),
+    network_route_changed: startImmediateReconnect("network_unavailable", "Network route changed"),
+    network_vpn_state_changed: startImmediateReconnect("network_unavailable", "VPN state changed"),
+    network_captive_portal_detected: blockOnCaptivePortal(),
     system_sleep: gotoState("disconnected"),
   },
   ready: {
@@ -212,14 +276,42 @@ const TRANSITIONS: Partial<Record<TunnelState, Partial<Record<TunnelEvent, Trans
       },
     }),
     network_changed: startReconnect("network_unavailable", "Network changed"),
+    network_offline: awaitNetwork(),
+    network_route_changed: startImmediateReconnect("network_unavailable", "Network route changed"),
+    network_vpn_state_changed: startImmediateReconnect("network_unavailable", "VPN state changed"),
+    network_captive_portal_detected: blockOnCaptivePortal(),
     system_sleep: gotoState("disconnected"),
     user_disconnect: userDisconnect(),
+  },
+  awaiting_network: {
+    profile_cleared: clearProfile(),
+    network_online: startImmediateReconnect("network_unavailable", "Network back online"),
+    network_changed: startImmediateReconnect("network_unavailable", "Network changed"),
+    network_route_changed: startImmediateReconnect("network_unavailable", "Network route changed"),
+    network_vpn_state_changed: startImmediateReconnect("network_unavailable", "VPN state changed"),
+    network_captive_portal_detected: blockOnCaptivePortal(),
+    user_disconnect: userDisconnect(),
+    system_sleep: gotoState("disconnected"),
+  },
+  captive_portal_blocked: {
+    profile_cleared: clearProfile(),
+    network_captive_portal_cleared: startImmediateReconnect("network_unavailable", "Captive portal cleared"),
+    network_online: startImmediateReconnect("network_unavailable", "Network back online"),
+    network_changed: startImmediateReconnect("network_unavailable", "Network changed"),
+    network_offline: awaitNetwork(),
+    user_disconnect: userDisconnect(),
+    system_sleep: gotoState("disconnected"),
   },
   degraded: {
     profile_cleared: clearProfile(),
     heartbeat_ok: gotoReady(),
     heartbeat_timeout: startReconnect("heartbeat_timeout", "Heartbeat timed out"),
     tunnel_closed: startReconnect("tunnel_dropped", "Tunnel closed during degraded state"),
+    network_changed: startReconnect("network_unavailable", "Network changed"),
+    network_offline: awaitNetwork(),
+    network_route_changed: startImmediateReconnect("network_unavailable", "Network route changed"),
+    network_vpn_state_changed: startImmediateReconnect("network_unavailable", "VPN state changed"),
+    network_captive_portal_detected: blockOnCaptivePortal(),
     user_disconnect: userDisconnect(),
     system_sleep: gotoState("disconnected"),
   },
@@ -227,6 +319,11 @@ const TRANSITIONS: Partial<Record<TunnelState, Partial<Record<TunnelEvent, Trans
     profile_cleared: clearProfile(),
     backoff_elapsed: gotoState("ssh_probing"),
     user_reconnect: gotoState("ssh_probing"),
+    network_offline: awaitNetwork(),
+    network_online: startImmediateReconnect("network_unavailable", "Network back online"),
+    network_route_changed: startImmediateReconnect("network_unavailable", "Network route changed"),
+    network_vpn_state_changed: startImmediateReconnect("network_unavailable", "VPN state changed"),
+    network_captive_portal_detected: blockOnCaptivePortal(),
     user_disconnect: userDisconnect(),
     system_sleep: gotoState("disconnected"),
   },
