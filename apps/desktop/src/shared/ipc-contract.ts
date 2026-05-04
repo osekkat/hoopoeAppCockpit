@@ -69,6 +69,10 @@ export const DAEMON_REQUEST_METHODS = [
   "approvals.approve",
   "approvals.deny",
   "approvals.extend",
+  // hp-m79e: ConnectionManager FSM snapshot for the renderer's
+  // ConnectionStatus pill + ToolHealthPill VPS dot. Lives on top of
+  // the hp-e7k FSM via the hp-fkov orchestrator.
+  "tunnel.snapshot",
 ] as const;
 
 export type DaemonRequestMethod = (typeof DAEMON_REQUEST_METHODS)[number];
@@ -104,6 +108,10 @@ export const DAEMON_SUBSCRIBE_TOPICS = [
   // ahead/behind counts) emitted by the desktop main-process clone
   // watcher whenever a debounced fs event triggers a fresh probe.
   "events.clone.dirty",
+  // hp-m79e: ConnectionManager FSM transitions emitted by the
+  // tunnel orchestrator (hp-fkov) so the ConnectionStatus pill
+  // renders live state without polling.
+  "events.tunnel",
 ] as const;
 
 export type DaemonSubscribeTopic = (typeof DAEMON_SUBSCRIBE_TOPICS)[number];
@@ -152,6 +160,13 @@ export const PRELOAD_IPC_CHANNELS = {
   // with explicit, non-interpolated argv (Guardrail 2). Audit fires on
   // every invocation regardless of outcome (Guardrail 10).
   cloneDiscardLocalChanges: "hoopoe.clone.discard-local-changes",
+  // hp-5bhy: Three more clone-action channels backing CloneSettingsCard
+  // (hp-1fd1). Same safety posture as cloneDiscardLocalChanges — the
+  // renderer carries only the projectId; main resolves the clone path
+  // and audits every invocation regardless of outcome.
+  cloneRevealInFinder: "hoopoe.clone.reveal-in-finder",
+  cloneOpenInTerminal: "hoopoe.clone.open-in-terminal",
+  cloneSetCapOverride: "hoopoe.clone.set-cap-override",
 } as const satisfies Record<string, `hoopoe.${string}`>;
 
 export type PreloadIpcChannelKey = keyof typeof PRELOAD_IPC_CHANNELS;

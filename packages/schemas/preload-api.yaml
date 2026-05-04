@@ -337,6 +337,31 @@ daemonRequestMethods:
         approvalId: { type: string }
         additionalSeconds: { type: integer, minimum: 60, maximum: 86400 }
     output: { $ref: ./openapi.yaml#/components/schemas/Approval }
+  tunnel.snapshot:
+    description: |
+      Read the current ConnectionManager FSM snapshot (state, active profile,
+      local port, last fault, reconnect attempts, nextRetryAt). Surfaces
+      hp-e7k's pure FSM via the orchestrator from hp-fkov so the renderer
+      can render the ConnectionStatus pill + ToolHealthPill VPS dot.
+    bead: hp-m79e
+    input: { type: 'null' }
+    output:
+      type: object
+      required: [state, activeProfileId, localPort, lastFault, reconnectAttempts, nextRetryAt]
+      properties:
+        state:
+          type: string
+          enum: [unconfigured, ssh_probing, bootstrapping, tunnel_connecting, authenticating, ready, degraded, reconnecting, disconnected]
+        activeProfileId: { type: [string, "null"] }
+        localPort: { type: [integer, "null"] }
+        lastFault:
+          type: [object, "null"]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            capturedAt: { type: string, format: date-time }
+        reconnectAttempts: { type: integer, minimum: 0 }
+        nextRetryAt: { type: [string, "null"], format: date-time }
 
 # ── 2. Daemon WS subscribe topics ──────────────────────────────────────────
 #
@@ -377,6 +402,13 @@ daemonSubscribeTopics:
       probeDirtyState call. Powers the "Local clone has unsaved changes"
       banner in the stage header.
     bead: hp-ndx5
+  events.tunnel:
+    description: |
+      ConnectionManager FSM transitions (state, fault, reconnect attempts,
+      next-retry timestamp). Emitted by the desktop main-process tunnel
+      orchestrator (hp-fkov) on every FSM dispatch so the
+      ConnectionStatus pill renders live state without polling.
+    bead: hp-m79e
 
 # ── 3. Preload IPC channels (preload ↔ main) ───────────────────────────────
 #
@@ -415,6 +447,14 @@ preloadChannels:
   # with explicit, non-interpolated argv (Guardrail 2). Audit fires on
   # every invocation regardless of outcome (Guardrail 10).
   cloneDiscardLocalChanges: hoopoe.clone.discard-local-changes
+  # hp-5bhy: Three more clone-action channels backing the
+  # CloneSettingsCard (hp-1fd1) per-project + cache-view actions. Same
+  # safety posture as cloneDiscardLocalChanges — the renderer carries
+  # only the projectId; main resolves the clone path from the project
+  # registry and audits every invocation regardless of outcome.
+  cloneRevealInFinder: hoopoe.clone.reveal-in-finder
+  cloneOpenInTerminal: hoopoe.clone.open-in-terminal
+  cloneSetCapOverride: hoopoe.clone.set-cap-override
 
 # ── 4. Internal IPC command prefixes (main-only) ───────────────────────────
 #

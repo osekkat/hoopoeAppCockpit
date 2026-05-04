@@ -105,6 +105,20 @@ export interface HoopoeBridge {
      *  argv. The renderer never supplies a path; only the projectId is
      *  carried across the IPC boundary. */
     readonly discardLocalChanges: <O>(input: { projectId: string }) => Promise<O>;
+    /** hp-5bhy: Reveal the project's local clone in Finder. Main
+     *  resolves the path from the project registry; renderer carries
+     *  only the projectId. */
+    readonly revealInFinder: (input: { projectId: string }) => Promise<void>;
+    /** hp-5bhy: Open the project's local clone in the user's default
+     *  terminal app. Main resolves the path; safe argv. */
+    readonly openInTerminal: (input: { projectId: string }) => Promise<void>;
+    /** hp-5bhy: Persist a per-project cap override into clone-state.json.
+     *  Pass `capsOverride: null` to clear the override and fall back to
+     *  the global cap config. */
+    readonly setCapOverride: <O>(input: {
+      projectId: string;
+      capsOverride: { softCapBytes: number; hardCapBytes: number } | null;
+    }) => Promise<O>;
   };
 }
 
@@ -165,6 +179,9 @@ export const hoopoeBridge: HoopoeBridge = {
   },
   clone: {
     discardLocalChanges: (input) => invoke(CHANNELS.cloneDiscardLocalChanges, input),
+    revealInFinder: (input) => invoke(CHANNELS.cloneRevealInFinder, input),
+    openInTerminal: (input) => invoke(CHANNELS.cloneOpenInTerminal, input),
+    setCapOverride: (input) => invoke(CHANNELS.cloneSetCapOverride, input),
   },
 };
 

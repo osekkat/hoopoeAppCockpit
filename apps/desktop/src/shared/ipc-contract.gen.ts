@@ -42,6 +42,7 @@ export const DAEMON_REQUEST_METHODS = [
   "approvals.approve",
   "approvals.deny",
   "approvals.extend",
+  "tunnel.snapshot",
 ] as const;
 
 export type DaemonRequestMethod = (typeof DAEMON_REQUEST_METHODS)[number];
@@ -62,6 +63,7 @@ export const DAEMON_SUBSCRIBE_TOPICS = [
   "events.replay",
   "events.settings",
   "events.clone.dirty",
+  "events.tunnel",
 ] as const;
 
 export type DaemonSubscribeTopic = (typeof DAEMON_SUBSCRIBE_TOPICS)[number];
@@ -91,6 +93,9 @@ export const PRELOAD_IPC_CHANNELS = {
   sshListKeys: "hoopoe.ssh.listKeys",
   sshGenerateKey: "hoopoe.ssh.generateKey",
   cloneDiscardLocalChanges: "hoopoe.clone.discard-local-changes",
+  cloneRevealInFinder: "hoopoe.clone.reveal-in-finder",
+  cloneOpenInTerminal: "hoopoe.clone.open-in-terminal",
+  cloneSetCapOverride: "hoopoe.clone.set-cap-override",
 } as const satisfies Record<string, `hoopoe.${string}`>;
 
 export type PreloadIpcChannelKey = keyof typeof PRELOAD_IPC_CHANNELS;
