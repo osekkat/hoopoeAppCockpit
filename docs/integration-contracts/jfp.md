@@ -65,6 +65,10 @@ See [`../research-spike/gotchas.md`](../research-spike/gotchas.md) (`hp-d54`).
 
 ## Adapter notes (Hoopoe Go side)
 
-- Lives at `apps/daemon/internal/adapters/skills/jfp/` (Phase 10, bead `hp-4d7`).
+- Current checkout: `apps/daemon/internal/skills/` contains the live lock-file,
+  digest, and loader substrate for resolving pinned or fallback skills.
+- Future Phase 10 target: a CLI adapter package may live at
+  `apps/daemon/internal/adapters/skills/jfp/` when bead `hp-4d7` wires direct
+  `jfp` command execution.
 - Skill loader logic: try `jsm install <skill> --version <sha>`; on 401 / not-installed, try `jfp install <skill>`; on both fail, fail tending boot loudly.
 - The lock-file `source: 'jsm' | 'jfp'` field is the audit trail.

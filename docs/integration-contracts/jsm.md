@@ -94,7 +94,12 @@ See [`../research-spike/gotchas.md`](../research-spike/gotchas.md) (`hp-d54`).
 
 ## Adapter notes (Hoopoe Go side)
 
-- Lives at `apps/daemon/internal/adapters/skills/jsm/` (Phase 10, bead `hp-4d7`).
+- Current checkout: `apps/daemon/internal/skills/` contains the live lock-file,
+  digest, and loader substrate for resolving pinned skills at tending-job boot.
+- Future Phase 10 target: a CLI adapter package may live at
+  `apps/daemon/internal/adapters/skills/jsm/` when bead `hp-4d7` wires direct
+  `jsm` command execution.
 - Skill loader (`hp-4d7`) prefers `jsm`, falls back to `jfp`.
-- `.hoopoe/skills.lock.json` is the source of truth at runtime; adapter reconciles installed-set against lock on every tending-job boot.
+- `.hoopoe/skills.lock.json` is the source of truth at runtime; the loader
+  reconciles installed-set against the lock on every tending-job boot.
 - Audit: every install / update / verify / fallback recorded.
