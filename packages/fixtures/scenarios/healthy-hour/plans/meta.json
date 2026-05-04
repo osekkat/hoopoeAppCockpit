@@ -1,0 +1,28 @@
+{
+  "scenarioId": "healthy-hour",
+  "fixturesVersion": "2026-05-04-r1",
+  "capturedAt": "2026-05-04T01:00:00.000Z",
+  "vpsId": "fixture-vps-01",
+  "plans": [
+    {
+      "planId": "plan-001",
+      "title": "Hoopoe v1 — cockpit MVP for ACFS swarms",
+      "version": 7,
+      "lockState": "locked",
+      "lockedAt": "2026-05-03T22:14:00.000Z",
+      "branch": "main",
+      "active": true,
+      "summary": "Strategic plan: cockpit-first, VPS-execution, robot-API surfaces, subscription-only model access."
+    },
+    {
+      "planId": "plan-002",
+      "title": "Onboarding wizard polish — first-run + 13-step flow",
+      "version": 2,
+      "lockState": "draft",
+      "lockedAt": null,
+      "branch": "main",
+      "active": false,
+      "summary": "Refine the canonical 13-step ACFS wizard wrapper with checkpoints + retry semantics."
+    }
+  ]
+}

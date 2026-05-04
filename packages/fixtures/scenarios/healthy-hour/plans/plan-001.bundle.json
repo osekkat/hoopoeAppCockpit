@@ -1,0 +1,105 @@
+{
+  "planId": "plan-001",
+  "title": "Hoopoe v1 — cockpit MVP for ACFS swarms",
+  "version": 7,
+  "lockState": "locked",
+  "lockedAt": "2026-05-03T22:14:00.000Z",
+  "branch": "main",
+  "active": true,
+  "artifacts": [
+    {
+      "path": "plan.md",
+      "kind": "plan",
+      "status": "completed",
+      "label": "Locked plan",
+      "content": "# Hoopoe v1 — cockpit MVP for ACFS swarms\n\n> Locked plan, version 7. Source-of-truth strategic document for the Hoopoe cockpit.\n\n## 0. Executive thesis\n\nHoopoe is the **cockpit** for the Agentic Coding Flywheel — not the engine. The VPS is the\nexecution plane. `br`, `bv`, `ntm`, Agent Mail, ACFS, CAAM, DCG, CASS, Git, and the agent CLIs\nremain the source-of-truth systems. Hoopoe centralizes, visualizes, automates, and audits the\nworkflow without replacing them.\n\n## 1. Product principles\n\n1. Preserve native sources of truth. Wrap, do not replace.\n2. The desktop is not the orchestrator of record — the VPS daemon owns long-running jobs.\n3. Robot/API surfaces first, shell parsing last.\n4. Every automation must be inspectable.\n5. Build for restartability.\n6. Make the first successful run boring.\n7. Sync-driven mirrors allowed; parallel sources of truth not.\n8. Tend agents with skill-attached jobs, not bespoke loops.\n\n## 2. Stages\n\nThe cockpit is `STAGE N — VERB` chrome:\n\n- **01 Planning** — chat-box → 3-4 candidate models → comparative matrix → synthesis →\n  fresh-eyes critique → 4-5 refinement rounds → lock.\n- **02 Beads** — locked plan → `br` beads with traceability map.\n- **03 Swarm** — NTM agent launch with composition picker; bead state + agent state +\n  Activity panel only (no terminals by default).\n- **04 Debugging / Hardening** — code health metrics, review rounds, finding tracker.\n\nThe Activity panel is a cross-stage drawer hosting agent ↔ agent mail and the user ↔\norchestrator chat.\n"
+    },
+    {
+      "path": "rough-idea.md",
+      "kind": "rough-idea",
+      "status": "completed",
+      "label": "Rough idea",
+      "content": "# Rough idea — Hoopoe cockpit\n\nA desktop app for the Agentic Coding Flywheel. Sits on top of the existing CLI-driven workflow\n(NTM tmux swarms, `br`/`bv` beads, Agent Mail, build helpers, code health) and gives one\noperator console. Don't reimplement the engine; just visualize, automate, and audit it.\n\nOpen questions:\n\n- macOS only for v1, or cross-platform?\n- VPS-only execution, or local fallback?\n- BYOK or subscription-only for model access?\n"
+    },
+    {
+      "path": "candidates/claude-opus-4-7.md",
+      "kind": "candidate",
+      "status": "completed",
+      "label": "Claude (Opus 4.7)",
+      "model": "claude-opus-4-7",
+      "harness": "claude-code",
+      "caamAccount": "claude-max-primary",
+      "latencyMs": 42180,
+      "content": "# Candidate — Claude (Opus 4.7)\n\n## Recommendation: Cockpit-first, VPS-only, subscription-only\n\nA desktop cockpit (Electron + React) on top of an HTTP/WS daemon running on the VPS. macOS\nfirst. Subscription-only — every model reach goes through Claude Code, Codex CLI, Gemini CLI,\nor `oracle --engine browser`. No BYOK.\n\n## Strengths\n\n- **Single deploy target.** Static Go binary on the VPS, signed DMG on the laptop.\n- **Auditable.** Every agent action emits an `ActionPlan` the daemon executes; postcondition\n  verification against canonical state.\n- **Scoped MVP.** Phase 0 produces JSON snapshots from a real ACFS VPS before any adapter\n  ships. Phase 1 vendors the desktop scaffold from t3code and decomposes the 2,175-line\n  `main.ts` on day one.\n\n## Weaknesses\n\n- macOS-only narrows the audience; Linux power users will want a port.\n- Subscription-only can block users with API-key-only providers, but the BYOK alternative\n  fragments the threat model.\n\n## Cost: ~$440-$656/month (VPS + Claude Max + ChatGPT Pro + optional Gemini Ultra).\n\n## Quality dimensions\n\n| Dimension       | Score | Notes                                                         |\n| --------------- | ----- | ------------------------------------------------------------- |\n| Vision clarity  | 9/10  | Cockpit-not-engine framing is unambiguous.                    |\n| Risk coverage   | 8/10  | §14 lists 14 named risks with mitigations.                    |\n| Phase sequence  | 9/10  | Phase 0 → 1 → 2 → 2.5 → 3+ is well-ordered.                  |\n| Test strategy   | 8/10  | Mock Flywheel Mode required; capability-asserting tests.      |\n| Cost realism    | 9/10  | Mirrors agent-flywheel.com numbers.                           |\n"
+    },
+    {
+      "path": "candidates/gpt-5-pro.md",
+      "kind": "candidate",
+      "status": "completed",
+      "label": "GPT-5 Pro (Codex)",
+      "model": "gpt-5-pro",
+      "harness": "codex-cli",
+      "caamAccount": "chatgpt-pro-primary",
+      "latencyMs": 38920,
+      "content": "# Candidate — GPT-5 Pro (via Codex CLI)\n\n## Recommendation: Web-first cockpit with desktop wrapper\n\nBuild the cockpit as a web app first (React + tRPC) and wrap it in Tauri for desktop. The VPS\ndaemon exposes an authenticated WebSocket; the same UI runs in a browser tab against a remote\nor in a Tauri shell against a local tunnel. BYOK supported for power users who already have\nprovider API keys.\n\n## Strengths\n\n- Lower total surface — one UI codebase serves web + desktop.\n- BYOK welcomes existing API users without forcing them onto subscriptions.\n- Tauri's Rust shell is lighter than Electron.\n\n## Weaknesses\n\n- macOS Keychain integration via Tauri is rougher than Electron `safeStorage`.\n- BYOK adds a credential-storage threat surface (Hoopoe would own provider keys instead of\n  delegating to CAAM).\n- Splitting between browser + Tauri increases QA burden.\n\n## Cost: ~$340-$556/month (VPS + Claude Max + optional ChatGPT Pro; BYOK reduces some seats).\n\n## Quality dimensions\n\n| Dimension       | Score | Notes                                                       |\n| --------------- | ----- | ----------------------------------------------------------- |\n| Vision clarity  | 7/10  | Web-first + desktop wrapper has more moving parts.         |\n| Risk coverage   | 6/10  | BYOK threat model under-specified.                         |\n| Phase sequence  | 7/10  | Phasing fine, but Tauri integration is a Phase-1 unknown.  |\n| Test strategy   | 8/10  | Same Mock Flywheel pattern works.                          |\n| Cost realism    | 8/10  | Slightly cheaper, but BYOK savings are user-dependent.     |\n"
+    },
+    {
+      "path": "candidates/gemini-3-pro.md",
+      "kind": "candidate",
+      "status": "completed",
+      "label": "Gemini 3 Pro (Deep Think)",
+      "model": "gemini-3-pro",
+      "harness": "gemini-cli",
+      "caamAccount": "gemini-ultra-primary",
+      "latencyMs": 51240,
+      "content": "# Candidate — Gemini 3 Pro (Deep Think)\n\n## Recommendation: Native macOS app + sidecar daemon\n\nNative Swift + SwiftUI cockpit on macOS, talking to the same Go daemon over a Unix socket\n(when local) or SSH tunnel (when remote). Provider integration through CAAM only —\nsubscription-only matches the Anthropic-Codex-Gemini reality.\n\n## Strengths\n\n- Best macOS look-and-feel (Liquid Glass / system materials are native).\n- No Electron memory cost.\n- Tighter integration with macOS Keychain, sandbox profiles, and Shortcuts.\n\n## Weaknesses\n\n- Cross-platform port (Linux/Windows) becomes effectively a rewrite.\n- SwiftUI's data flow is harder to share with web demos.\n- Hiring/contributor pool for SwiftUI engineering is smaller than React.\n- Loses the t3code lift entirely — restart from blank.\n\n## Cost: ~$440-$656/month (same as Claude proposal — daemon side identical).\n\n## Quality dimensions\n\n| Dimension       | Score | Notes                                                   |\n| --------------- | ----- | ------------------------------------------------------- |\n| Vision clarity  | 8/10  | Clear native focus, but narrower target audience.       |\n| Risk coverage   | 7/10  | Loses lift; everything hand-built.                      |\n| Phase sequence  | 6/10  | Native rewrite blows up Phase 1 timeline.               |\n| Test strategy   | 7/10  | XCTest harness viable but loses Vitest reuse.           |\n| Cost realism    | 9/10  | Same as Claude.                                         |\n"
+    },
+    {
+      "path": "comparative-matrix.md",
+      "kind": "comparative-matrix",
+      "status": "completed",
+      "label": "Comparative matrix",
+      "content": "# Comparative matrix — Hoopoe v1 candidates\n\n| Dimension           | Claude (Opus 4.7)            | GPT-5 Pro (Codex)            | Gemini 3 Pro (Deep Think)    |\n| ------------------- | ---------------------------- | ---------------------------- | ---------------------------- |\n| Shell               | Electron + t3code lift       | Tauri + web fallback         | Native SwiftUI                |\n| Daemon              | Go (chi/echo, modernc SQLite)| Go (same)                    | Go (same)                    |\n| Provider model      | Subscription-only            | BYOK + subscription          | Subscription-only            |\n| Platform v1         | macOS                        | macOS + browser              | macOS                        |\n| Cross-platform path | Strip Linux/Windows now      | Already cross via web        | Effective rewrite            |\n| Threat surface      | Smallest (CAAM only)         | Larger (BYOK)                | Smallest (CAAM only)         |\n| Phase 0 fit         | Strong — fixtures-first      | Strong — same fixtures       | Weaker — must rewrite parsers|\n| Cost                | $440-$656/mo                 | $340-$556/mo                 | $440-$656/mo                 |\n| Hiring pool         | Large (TS/React)             | Large (TS/React)             | Smaller (Swift)              |\n"
+    },
+    {
+      "path": "synthesis.md",
+      "kind": "synthesis",
+      "status": "completed",
+      "label": "Synthesis",
+      "content": "# Synthesis — best of all worlds\n\nAdopt Claude's cockpit-first frame as the spine. Reject BYOK (delegate to CAAM, smallest\nthreat surface). Reject SwiftUI rewrite (vendor t3code Electron scaffolding instead;\nre-evaluate after v1 ships). Carry GPT-5 Pro's web-first reflex as a *deferred* future\n(post-v1.5 if user demand warrants).\n\n## Locked decisions\n\n1. **Shell:** Electron + TypeScript + React + Vite + Tailwind. Lift `t3code` Electron\n   scaffolding (auth, settings, keybindings, build pipeline). Decompose t3code's 2,175-line\n   `main.ts` into `BackendLifecycle`, `UpdateMachine`, `IpcRegistry`, `WindowManager`,\n   `SettingsBridge`, `AuthBridge` on day one.\n2. **Daemon:** Go (chi/echo + modernc SQLite + gorilla/nhooyr WS + creack/pty).\n3. **Schemas:** OpenAPI source-of-truth → TS client + Go types. No hand-maintained dupes.\n4. **Provider model:** Subscription-only. CAAM is the sole credential pathway. CI fails on\n   provider-SDK import.\n5. **Phase 0 first.** Real ACFS VPS → JSON snapshots → parser fixtures before any adapter\n   ships.\n"
+    },
+    {
+      "path": "fresh-eyes-critique.md",
+      "kind": "fresh-eyes-critique",
+      "status": "completed",
+      "label": "Fresh-eyes critique",
+      "content": "# Fresh-eyes critique\n\n## What's strong\n\n- Cockpit-not-engine framing is the load-bearing decision; everything else flows from it.\n- Phase 0 → Phase 1 → Phase 2.5 hardening is the right sequence.\n- Subscription-only is a brave call but matches reality.\n\n## What's risky\n\n- **Electron memory pressure.** A 16-GB MacBook running 8 agent panes + Hoopoe will feel it.\n- **Tunnel flapping.** Three-token auth is sensible but the reconnect path is a known footgun.\n- **Adapter brittleness.** Capability probing for `bv --robot-help` versions still needs care.\n\n## What's missing\n\n- **Disaster recovery.** What happens if the VPS dies mid-swarm?\n- **Multi-user.** v1 is single-operator; multi-operator is post-v1.\n"
+    },
+    {
+      "path": "refinement-round-001.md",
+      "kind": "refinement-round",
+      "status": "completed",
+      "label": "Refinement round 001",
+      "round": 1,
+      "content": "# Refinement round 001 — tunnel reconnect + DR\n\n## Changes from synthesis\n\n1. **Tunnel reconnect:** Phase 2 acceptance tests now include three named scenarios — laptop\n   sleep > 30s, daemon restart, tunnel TCP-reset.\n2. **DR:** new §17 \"Disaster recovery\" section. Hoopoe surfaces the failure, offers a\n   \"restart from canonical\" flow.\n3. **Renderer memory pressure:** new §14.7 risk. Mitigation: aggressively prune renderer\n   state on stage transition; defer xterm.js to Diagnostics.\n\n## Quality-dimension delta (vs. synthesis)\n\n| Dimension       | Synthesis | Refinement-001 | Notes                                |\n| --------------- | --------- | -------------- | ------------------------------------ |\n| Vision clarity  | 9/10      | 9/10           | Unchanged.                           |\n| Risk coverage   | 8/10      | 9/10           | DR + memory-pressure now explicit.   |\n| Phase sequence  | 9/10      | 9/10           | Unchanged.                           |\n| Test strategy   | 8/10      | 9/10           | Phase 2 acceptance tests strengthened.|\n| Cost realism    | 9/10      | 9/10           | Unchanged.                           |\n\n## Meaningful changes? **YES** — risk coverage + test strategy both moved.\n"
+    },
+    {
+      "path": "unresolved-decisions.md",
+      "kind": "unresolved-decisions",
+      "status": "completed",
+      "label": "Unresolved decisions",
+      "content": "# Unresolved decisions\n\n## Open\n\n1. **Provider plug-in slot for OVH/Contabo/Hetzner** — Phase 13.\n2. **Local-fallback execution mode** — explicitly out of scope for v1.\n3. **Multi-VPS / Connection entity migration** — post-MVP per ADR-0001.\n4. **mTLS direct-mode transport** — post-v1.x.\n\n## Closed (recently)\n\n- BYOK rejected (synthesis) — CAAM is the sole credential pathway.\n- Tauri shell rejected (synthesis) — Electron lift is faster.\n- SwiftUI rewrite rejected (synthesis) — wrong sequencing.\n- Browser-first cockpit deferred (synthesis) — post-v1.5 if demand warrants.\n"
+    }
+  ],
+  "history": [
+    { "ts": "2026-05-01T10:00:00.000Z", "kind": "plan_created", "actor": "user", "summary": "Plan created from rough-idea.md" },
+    { "ts": "2026-05-01T10:14:00.000Z", "kind": "candidate_generated", "actor": "claude-opus-4-7", "artifact": "candidates/claude-opus-4-7.md", "latencyMs": 42180 },
+    { "ts": "2026-05-01T10:15:00.000Z", "kind": "candidate_generated", "actor": "gpt-5-pro", "artifact": "candidates/gpt-5-pro.md", "latencyMs": 38920 },
+    { "ts": "2026-05-01T10:17:00.000Z", "kind": "candidate_generated", "actor": "gemini-3-pro", "artifact": "candidates/gemini-3-pro.md", "latencyMs": 51240 },
+    { "ts": "2026-05-01T10:24:00.000Z", "kind": "comparative_matrix_built", "actor": "oracle-chatgpt", "artifact": "comparative-matrix.md", "latencyMs": 18400 },
+    { "ts": "2026-05-01T10:31:00.000Z", "kind": "synthesis_run", "actor": "claude-opus-4-7", "artifact": "synthesis.md", "latencyMs": 29110 },
+    { "ts": "2026-05-01T10:42:00.000Z", "kind": "fresh_eyes_critique", "actor": "gpt-5-pro", "artifact": "fresh-eyes-critique.md", "latencyMs": 21670 },
+    { "ts": "2026-05-02T08:11:00.000Z", "kind": "refinement_round_complete", "actor": "claude-opus-4-7", "artifact": "refinement-round-001.md", "round": 1, "latencyMs": 34520 },
+    { "ts": "2026-05-03T22:14:00.000Z", "kind": "plan_locked", "actor": "user", "version": 7, "summary": "Locked at v7 after refinement-round-001" }
+  ]
+}

@@ -1,0 +1,9 @@
+{"ts":"2026-05-01T10:00:00.000Z","kind":"plan_created","actor":"user","summary":"Plan created from rough-idea.md"}
+{"ts":"2026-05-01T10:14:00.000Z","kind":"candidate_generated","actor":"claude-opus-4-7","artifact":"candidates/claude-opus-4-7.md","latencyMs":42180}
+{"ts":"2026-05-01T10:15:00.000Z","kind":"candidate_generated","actor":"gpt-5-pro","artifact":"candidates/gpt-5-pro.md","latencyMs":38920}
+{"ts":"2026-05-01T10:17:00.000Z","kind":"candidate_generated","actor":"gemini-3-pro","artifact":"candidates/gemini-3-pro.md","latencyMs":51240}
+{"ts":"2026-05-01T10:24:00.000Z","kind":"comparative_matrix_built","actor":"oracle-chatgpt","artifact":"comparative-matrix.md","latencyMs":18400}
+{"ts":"2026-05-01T10:31:00.000Z","kind":"synthesis_run","actor":"claude-opus-4-7","artifact":"synthesis.md","latencyMs":29110}
+{"ts":"2026-05-01T10:42:00.000Z","kind":"fresh_eyes_critique","actor":"gpt-5-pro","artifact":"fresh-eyes-critique.md","latencyMs":21670}
+{"ts":"2026-05-02T08:11:00.000Z","kind":"refinement_round_complete","actor":"claude-opus-4-7","artifact":"refinement-round-001.md","round":1,"latencyMs":34520}
+{"ts":"2026-05-03T22:14:00.000Z","kind":"plan_locked","actor":"user","version":7,"summary":"Locked at v7 after refinement-round-001"}

@@ -1,0 +1,40 @@
+{
+  "planId": "plan-002",
+  "title": "Onboarding wizard polish — first-run + 13-step flow",
+  "version": 2,
+  "lockState": "draft",
+  "lockedAt": null,
+  "branch": "main",
+  "active": false,
+  "artifacts": [
+    {
+      "path": "rough-idea.md",
+      "kind": "rough-idea",
+      "status": "completed",
+      "label": "Rough idea",
+      "content": "# Rough idea — onboarding wizard polish\n\nThe canonical 13-step ACFS wizard runs end-to-end but the checkpoint UX feels brittle when a\nstep fails halfway. Specifically:\n\n- Step 4 (DNS provisioning) sometimes returns before propagation is complete.\n- Step 9 (Claude Max OAuth) gets stuck in a webview loop on macOS Sequoia.\n- Step 12 (NTM session warmup) silently fails when tmux is < 3.4 — version probe needed.\n\nGoals: structured checkpoints with `pending/running/completed/failed/skipped` states, clear\nretry semantics per step, and a 'resume from where I left off' flow on subsequent runs.\n"
+    },
+    {
+      "path": "candidates/claude-opus-4-7.md",
+      "kind": "candidate",
+      "status": "completed",
+      "label": "Claude (Opus 4.7)",
+      "model": "claude-opus-4-7",
+      "harness": "claude-code",
+      "caamAccount": "claude-max-primary",
+      "latencyMs": 36110,
+      "content": "# Candidate — Claude (Opus 4.7)\n\n## Recommendation: Per-step state machine + resumable runs\n\nEach of the 13 steps becomes a small state machine with idempotent retry. Wizard runs are\nstored in `~/Library/Application Support/Hoopoe/onboarding/<run-id>/state.json` so a partial\nrun can be resumed even after laptop sleep or crash.\n\n## Specifically\n\n- Step 4: poll DNS with exponential backoff, max 5 minutes; show 'still propagating' UX.\n- Step 9: replace webview OAuth with the Claude Max device-code flow.\n- Step 12: probe `tmux -V` before starting NTM warmup; require ≥ 3.4 with clear error.\n"
+    },
+    {
+      "path": "comparative-matrix.md",
+      "kind": "comparative-matrix",
+      "status": "queued",
+      "label": "Comparative matrix",
+      "content": "# Comparative matrix\n\n_Queued — waiting on additional candidates from gpt-5-pro and gemini-3-pro._\n"
+    }
+  ],
+  "history": [
+    { "ts": "2026-05-03T18:30:00.000Z", "kind": "plan_created", "actor": "user", "summary": "Plan created" },
+    { "ts": "2026-05-03T19:02:00.000Z", "kind": "candidate_generated", "actor": "claude-opus-4-7", "artifact": "candidates/claude-opus-4-7.md", "latencyMs": 36110 }
+  ]
+}
