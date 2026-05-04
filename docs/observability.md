@@ -6,22 +6,24 @@ subsystem emits the same JSON envelope, runs the same redaction patterns
 before buffering, and supports the same transport set (file, stderr/journald,
 console, in-memory test capture).
 
-`hp-lxs` deliverable. This file is the authoritative reference; if other
-documents disagree, this file wins (file an issue).
+`hp-lxs` deliverable. This file is the code-near observability contract for
+the current implementation. `plan.md` remains the authoritative strategy
+document; if another document drifts from this contract or from `plan.md`, fix
+the drift or file an issue.
 
 ## On-disk implementation
 
 | Surface | Path |
 | --- | --- |
-| Daemon redaction primitive (Go) | `apps/daemon/internal/redact/` |
+| Daemon redaction primitive (Go) | `apps/daemon/internal/redaction/` |
 | Daemon logger (Go) | `apps/daemon/internal/logger/{types,redactor,logger,transport}.go` |
 | Desktop redaction primitive (TS) | `apps/desktop/src/shared/redact/` |
 | Desktop logger (TS) | `apps/desktop/src/shared/logger/` |
 | CI lint (raw logging) | `scripts/loggerlint/check-no-raw-logging.{ts,test.ts}` |
 | CI lint (redact drift Go ↔ TS) | `scripts/redactlint/check-redact-drift.{ts,test.ts}` |
-| Authoritative reference | `docs/observability.md` (this file) |
+| Code-near observability contract | `docs/observability.md` (this file) |
 
-The redaction primitive (Go `internal/redact` + TS `shared/redact`) is
+The redaction primitive (Go `internal/redaction` + TS `shared/redact`) is
 deliberately separable from the logger so non-logger consumers — the audit
 log writer (hp-g73), the WebSocket event fan-out, adapter capture pipes
 (br/bv/ntm/agent_mail/oracle CLI stdout/stderr), and the renderer-side
@@ -181,7 +183,7 @@ interface RedactionTraceEvent {
 Trace events are themselves redacted (no leaked secret content) — the
 event carries metadata, not payload.
 
-The `Stats` accumulator (`internal/redact.Stats` / `RedactionStats`) keeps
+The `Stats` accumulator (`internal/redaction.Stats` / `RedactionStats`) keeps
 running totals per pattern. Diagnostics renders the breakdown so operators
 can verify redaction is firing in production.
 
