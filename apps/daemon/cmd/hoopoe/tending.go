@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/agent"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/redaction"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/scheduler"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/tending/prescript"
 )
@@ -463,6 +464,11 @@ func newTendingScheduler(ctx context.Context, io *tendingIO, registry *scheduler
 		Registry: registry,
 		Runner:   runner,
 		Context:  ctx,
+		// hp-dqxs: scrub recovered panic values before they land in
+		// run.Error / scheduler-state.json / audit. A panicking
+		// pre-script that wraps an upstream error embedding a token
+		// would leak it otherwise.
+		Redactor: redaction.New(redaction.Config{Now: io.Now}),
 	})
 }
 
