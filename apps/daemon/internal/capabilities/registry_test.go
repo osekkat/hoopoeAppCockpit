@@ -5,8 +5,11 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
+
+	schemas "github.com/hoopoe-cockpit/hoopoe/packages/schemas/go"
 )
 
 const fixedDaemonAPI = "0.1.0"
@@ -522,6 +525,94 @@ func TestHandleCapabilitiesRejectsPOST(t *testing.T) {
 	r.HandleCapabilities(rr, req)
 	if rr.Code != http.StatusMethodNotAllowed {
 		t.Errorf("expected 405, got %d", rr.Code)
+	}
+}
+
+func TestHandleCapabilitiesRejectsPOSTReturnsProblemJSON(t *testing.T) {
+	// hp-49tc: error responses must be RFC 7807 problem+json (matches the
+	// rest of the daemon), not text/plain http.Error output.
+	r := newTestRegistry(t, "2026-05-02T23:29:34Z")
+	req := httptest.NewRequest(http.MethodPost, "/v1/capabilities", nil)
+	rr := httptest.NewRecorder()
+	r.HandleCapabilities(rr, req)
+	if got := rr.Header().Get("Content-Type"); !strings.HasPrefix(got, "application/problem+json") {
+		t.Fatalf("content-type = %q, want problem+json", got)
+	}
+	var problem schemas.Problem
+	if err := json.Unmarshal(rr.Body.Bytes(), &problem); err != nil {
+		t.Fatalf("decode problem: %v", err)
+	}
+	if problem.Code != "capabilities.method_not_allowed" {
+		t.Fatalf("problem.Code = %q, want capabilities.method_not_allowed", problem.Code)
+	}
+	if problem.Status != http.StatusMethodNotAllowed {
+		t.Fatalf("problem.Status = %d, want %d", problem.Status, http.StatusMethodNotAllowed)
+	}
+	if rr.Header().Get("Allow") != "GET" {
+		t.Fatalf("Allow header = %q, want GET", rr.Header().Get("Allow"))
+	}
+}
+
+func TestHandleCompatibilityRejectsPOSTReturnsProblemJSON(t *testing.T) {
+	// hp-49tc: same shape contract for /v1/compatibility.
+	r := newTestRegistry(t, "2026-05-02T23:29:34Z")
+	composer := StaticCompatibilityComposer{MinDesktopVersion: "0.1.0"}
+	handler := r.HandleCompatibility(composer)
+	req := httptest.NewRequest(http.MethodPost, "/v1/compatibility", nil)
+	rr := httptest.NewRecorder()
+	handler(rr, req)
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusMethodNotAllowed)
+	}
+	if got := rr.Header().Get("Content-Type"); !strings.HasPrefix(got, "application/problem+json") {
+		t.Fatalf("content-type = %q, want problem+json", got)
+	}
+	var problem schemas.Problem
+	if err := json.Unmarshal(rr.Body.Bytes(), &problem); err != nil {
+		t.Fatalf("decode problem: %v", err)
+	}
+	if problem.Code != "compatibility.method_not_allowed" {
+		t.Fatalf("problem.Code = %q, want compatibility.method_not_allowed", problem.Code)
+	}
+}
+
+type nilReturningComposer struct{}
+
+func (nilReturningComposer) Compose(*CapabilityRegistry) *CompatibilityReport { return nil }
+
+func TestHandleCompatibilityNilComposerResultReturnsProblemJSON(t *testing.T) {
+	// hp-49tc: composer returning nil is a misconfiguration; the response
+	// must be problem+json (was plain-text http.Error). Note: this is the
+	// COMPOSE-returning-nil path, distinct from the boot-time panic when
+	// HandleCompatibility itself is constructed with a nil CompatibilityComposer.
+	r := newTestRegistry(t, "2026-05-02T23:29:34Z")
+	handler := r.HandleCompatibility(nilReturningComposer{})
+	req := httptest.NewRequest(http.MethodGet, "/v1/compatibility", nil)
+	rr := httptest.NewRecorder()
+	handler(rr, req)
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusInternalServerError, rr.Body.String())
+	}
+	if got := rr.Header().Get("Content-Type"); !strings.HasPrefix(got, "application/problem+json") {
+		t.Fatalf("content-type = %q, want problem+json", got)
+	}
+	var problem schemas.Problem
+	if err := json.Unmarshal(rr.Body.Bytes(), &problem); err != nil {
+		t.Fatalf("decode problem: %v", err)
+	}
+	if problem.Code != "compatibility.composer_returned_nil" {
+		t.Fatalf("problem.Code = %q, want compatibility.composer_returned_nil", problem.Code)
+	}
+}
+
+func TestEncodeCapabilityJSONEncodingFailureReturnsError(t *testing.T) {
+	// hp-49tc: writeCapabilityJSON now buffers the encoded body before
+	// WriteHeader. The fix relies on encodeCapabilityJSON surfacing
+	// encoding errors instead of writing partial bytes to the response —
+	// pin that contract here so a future refactor doesn't regress to
+	// "encode mid-stream after WriteHeader committed."
+	if _, err := encodeCapabilityJSON(map[string]any{"bad": func() {}}); err == nil {
+		t.Fatal("encodeCapabilityJSON returned nil error for func payload; encoding-failure detection is broken")
 	}
 }
 
