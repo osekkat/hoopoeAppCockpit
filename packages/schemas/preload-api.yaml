@@ -455,6 +455,20 @@ preloadChannels:
   cloneRevealInFinder: hoopoe.clone.reveal-in-finder
   cloneOpenInTerminal: hoopoe.clone.open-in-terminal
   cloneSetCapOverride: hoopoe.clone.set-cap-override
+  # hp-6gs4 / hp-ark: Scoped Mac awake assertion while a ChatGPT Pro Oracle
+  # browser round is actively running. Main owns the OS-level mechanisms
+  # (powerSaveBlocker / NSProcessInfo / caffeinate); renderer carries only
+  # round metadata across the IPC boundary. Acquire takes
+  # `{roundId, modelId?, oracleTopology?, estimatedDurationMs?, reason?}`;
+  # release takes `{assertionId, reason?}`; snapshot takes `{}`. All three
+  # return a PowerAssertionSnapshot. Input/output validators live next to
+  # the IpcRegistry registrations at apps/desktop/src/main/macPowerAssert.ts
+  # (assertAcquireInput / assertReleaseInput / assertEmptyObject /
+  # assertPowerAssertionSnapshot). Audit fires on every acquire/release
+  # via the manager's audit sink (Guardrail 10).
+  powerAcquire: hoopoe.power.acquire
+  powerRelease: hoopoe.power.release
+  powerSnapshot: hoopoe.power.snapshot
 
 # ── 4. Internal IPC command manifests (main-only) ──────────────────────────
 #

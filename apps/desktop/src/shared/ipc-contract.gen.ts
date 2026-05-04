@@ -96,6 +96,9 @@ export const PRELOAD_IPC_CHANNELS = {
   cloneRevealInFinder: "hoopoe.clone.reveal-in-finder",
   cloneOpenInTerminal: "hoopoe.clone.open-in-terminal",
   cloneSetCapOverride: "hoopoe.clone.set-cap-override",
+  powerAcquire: "hoopoe.power.acquire",
+  powerRelease: "hoopoe.power.release",
+  powerSnapshot: "hoopoe.power.snapshot",
 } as const satisfies Record<string, `hoopoe.${string}`>;
 
 export type PreloadIpcChannelKey = keyof typeof PRELOAD_IPC_CHANNELS;
