@@ -23,3 +23,24 @@ export {
   type DirtyBannerViewProps,
 } from "./DirtyBanner.tsx";
 export { DirtyBannerSubscription } from "./DirtyBannerSubscription.tsx";
+
+export { CloneSettingsCard, type CloneSettingsCardProps } from "./CloneSettingsCard.tsx";
+
+export {
+  CAP_HARD_MAX_BYTES,
+  CloneActionsBridgeUnavailableError,
+  DEFAULT_CACHE_SORT,
+  STUB_CLONE_ACTIONS_BRIDGE,
+  formatBytes,
+  formatRelativeTime,
+  sortCacheRows,
+  totalCacheBytes,
+  validateCapOverride,
+  type CapOverrideError,
+  type CapOverrideForm,
+  type CloneActionsBridge,
+  type CloneCacheRow,
+  type CloneCacheSort,
+  type CloneCacheSortDir,
+  type CloneCacheSortKey,
+} from "./cache-view-model.ts";
