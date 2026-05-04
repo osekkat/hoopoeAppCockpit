@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/capabilities"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/jobs"
 	"nhooyr.io/websocket"
 )
@@ -31,13 +32,14 @@ type BuildInfo struct {
 
 // Config carries the daemon dependencies required by the HTTP transport.
 type Config struct {
-	Build       BuildInfo
-	Events      *EventHub
-	Jobs        JobsReader
-	Logger      Logger
-	Redactor    Redactor
-	WSValidator WebSocketTokenValidator
-	Now         func() time.Time
+	Build        BuildInfo
+	Events       *EventHub
+	Jobs         JobsReader
+	Logger       Logger
+	Redactor     Redactor
+	WSValidator  WebSocketTokenValidator
+	Capabilities *capabilities.Registry
+	Now          func() time.Time
 }
 
 // Logger is the structured logging hook used by router middleware.
@@ -59,13 +61,14 @@ type WebSocketTokenValidator interface {
 }
 
 type server struct {
-	build       BuildInfo
-	events      *EventHub
-	jobs        JobsReader
-	logger      Logger
-	redactor    Redactor
-	wsValidator WebSocketTokenValidator
-	now         func() time.Time
+	build        BuildInfo
+	events       *EventHub
+	jobs         JobsReader
+	logger       Logger
+	redactor     Redactor
+	wsValidator  WebSocketTokenValidator
+	capabilities *capabilities.Registry
+	now          func() time.Time
 }
 
 type subscribeRequest struct {
@@ -92,6 +95,7 @@ func NewRouter(cfg Config) http.Handler {
 	r.Get("/v1/events/replay", s.handleEventReplay)
 	r.Get("/v1/events/sse", s.handleEventSSE)
 	r.Get("/v1/events/ws", s.handleEventWS)
+	s.mountCapabilityRoutes(r)
 	s.mountSeedContractRoutes(r)
 
 	return r
@@ -136,13 +140,14 @@ func normalizeConfig(cfg Config) *server {
 		wsValidator = AllowAllWebSocketTokens{}
 	}
 	return &server{
-		build:       build,
-		events:      events,
-		jobs:        jobs,
-		logger:      logger,
-		redactor:    redactor,
-		wsValidator: wsValidator,
-		now:         now,
+		build:        build,
+		events:       events,
+		jobs:         jobs,
+		logger:       logger,
+		redactor:     redactor,
+		wsValidator:  wsValidator,
+		capabilities: cfg.Capabilities,
+		now:          now,
 	}
 }
 
