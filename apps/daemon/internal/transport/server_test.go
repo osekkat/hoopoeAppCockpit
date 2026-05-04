@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -103,6 +105,9 @@ func TestRunBootstrapTokenOnlyCreatesInitialPairingOnce(t *testing.T) {
 	}
 	if got := strings.TrimSpace(second.String()); got != "HOOPOE_PAIRING_TOKEN_ALREADY_INITIALIZED=1" {
 		t.Fatalf("second bootstrap output = %q, want already initialized marker", got)
+	}
+	if _, err := os.Stat(filepath.Join(stateDir, "onboarding.sqlite3")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("bootstrap-token-only should not create onboarding database, stat err=%v", err)
 	}
 }
 

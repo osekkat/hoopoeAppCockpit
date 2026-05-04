@@ -3,6 +3,7 @@ package transport
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"flag"
 	"fmt"
@@ -17,8 +18,10 @@ import (
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/api"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/auth"
 	jobstore "github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/jobs"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/onboarding/checkpoints"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/security"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/systemd"
+	_ "modernc.org/sqlite"
 )
 
 type Config struct {
@@ -26,6 +29,7 @@ type Config struct {
 	Events              *api.EventHub
 	Jobs                jobstore.Reader
 	Auth                *api.AuthConfig
+	Onboarding          *checkpoints.Service
 	Logger              api.Logger
 	Redactor            api.Redactor
 	WSValidator         api.WebSocketTokenValidator
@@ -67,7 +71,8 @@ func Run(ctx context.Context, args []string, cfg Config) error {
 	if stdout == nil {
 		stdout = io.Discard
 	}
-	authRuntime, err := prepareAuthRuntime(ctx, resolveStateDir(*stateDir), now, cfg.Auth)
+	resolvedStateDir := resolveStateDir(*stateDir)
+	authRuntime, err := prepareAuthRuntime(ctx, resolvedStateDir, now, cfg.Auth)
 	if err != nil {
 		return err
 	}
@@ -78,6 +83,11 @@ func Run(ctx context.Context, args []string, cfg Config) error {
 		}
 		return nil
 	}
+	onboarding, closeOnboarding, err := prepareOnboardingRuntime(ctx, resolvedStateDir, now, cfg.Onboarding)
+	if err != nil {
+		return err
+	}
+	defer closeOnboarding()
 
 	decision, err := resolveListenDecision(ctx, listenDecisionRequest{
 		Address:            *addr,
@@ -105,6 +115,7 @@ func Run(ctx context.Context, args []string, cfg Config) error {
 		Events:      cfg.Events,
 		Jobs:        cfg.Jobs,
 		Auth:        authRuntime.config,
+		Onboarding:  onboarding,
 		Logger:      cfg.Logger,
 		Redactor:    cfg.Redactor,
 		WSValidator: wsValidator,
@@ -146,6 +157,26 @@ func Run(ctx context.Context, args []string, cfg Config) error {
 		return nil
 	}
 	return err
+}
+
+func prepareOnboardingRuntime(ctx context.Context, stateDir string, now func() time.Time, configured *checkpoints.Service) (*checkpoints.Service, func() error, error) {
+	if configured != nil {
+		return configured, func() error { return nil }, nil
+	}
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+		return nil, nil, fmt.Errorf("onboarding state dir: %w", err)
+	}
+	db, err := sql.Open("sqlite", filepath.Join(stateDir, "onboarding.sqlite3"))
+	if err != nil {
+		return nil, nil, fmt.Errorf("onboarding sqlite open: %w", err)
+	}
+	store, err := checkpoints.NewSQLStore(ctx, db)
+	if err != nil {
+		_ = db.Close()
+		return nil, nil, err
+	}
+	service := checkpoints.NewService(checkpoints.Config{Store: store, Now: now})
+	return service, db.Close, nil
 }
 
 type authRuntime struct {

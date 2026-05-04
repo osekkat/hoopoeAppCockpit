@@ -86,9 +86,10 @@ type ParserState struct {
 }
 
 type RunRequest struct {
-	RunID  string
-	Ref    string
-	LogDir string
+	RunID     string
+	ProjectID string
+	Ref       string
+	LogDir    string
 }
 
 type RunResult struct {

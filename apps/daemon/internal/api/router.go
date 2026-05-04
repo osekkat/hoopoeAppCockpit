@@ -17,6 +17,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/capabilities"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/jobs"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/onboarding/checkpoints"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/projects"
 	schemas "github.com/hoopoe-cockpit/hoopoe/packages/schemas/go"
 	"nhooyr.io/websocket"
@@ -42,6 +43,7 @@ type Config struct {
 	Redactor     Redactor
 	WSValidator  WebSocketTokenValidator
 	Capabilities *capabilities.Registry
+	Onboarding   *checkpoints.Service
 	Auth         *AuthConfig
 	Upgrade      http.Handler
 	Now          func() time.Time
@@ -81,6 +83,7 @@ type server struct {
 	redactor     Redactor
 	wsValidator  WebSocketTokenValidator
 	capabilities *capabilities.Registry
+	onboarding   *checkpoints.Service
 	authConfig   *AuthConfig
 	upgrade      http.Handler
 	now          func() time.Time
@@ -112,6 +115,7 @@ func NewRouter(cfg Config) http.Handler {
 	r.Get("/v1/events/ws", s.handleEventWS)
 	s.mountCapabilityRoutes(r)
 	s.mountSeedContractRoutes(r)
+	s.mountOnboardingRoutes(r)
 	// Auth routes mount AFTER the seed contract so they override the
 	// `handlePlannedWrite` stubs at /v1/auth/bootstrap/bearer + ws-token
 	// + session/revoke (chi's last registration wins for a given path +
@@ -168,6 +172,7 @@ func normalizeConfig(cfg Config) *server {
 		redactor:     redactor,
 		wsValidator:  wsValidator,
 		capabilities: cfg.Capabilities,
+		onboarding:   cfg.Onboarding,
 		authConfig:   cfg.Auth,
 		upgrade:      cfg.Upgrade,
 		now:          now,

@@ -6,11 +6,17 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/onboarding/checkpoints"
+	schemas "github.com/hoopoe-cockpit/hoopoe/packages/schemas/go"
 )
 
 const DefaultInstallerTimeout = 45 * time.Minute
+
+const acfsCheckpointActorID = "acfs-runner"
 
 var (
 	ErrInvalidRunRequest = errors.New("acfs: invalid run request")
@@ -21,10 +27,15 @@ type Executor interface {
 	Run(ctx context.Context, spec CommandSpec, onLine func(Line) error) (CommandResult, error)
 }
 
+type CheckpointSink interface {
+	Transition(context.Context, checkpoints.TransitionRequest) (checkpoints.TransitionResult, error)
+}
+
 type Runner struct {
-	Exec    Executor
-	Now     func() time.Time
-	Markers MarkerLibrary
+	Exec        Executor
+	Checkpoints CheckpointSink
+	Now         func() time.Time
+	Markers     MarkerLibrary
 }
 
 func (r Runner) Run(ctx context.Context, req RunRequest, emit func(Event) error) (RunResult, error) {
@@ -80,6 +91,9 @@ func (r Runner) Run(ctx context.Context, req RunRequest, emit func(Event) error)
 	offset := int64(0)
 	emitEvents := func(events []Event) error {
 		for _, event := range events {
+			if err := r.recordCheckpointEvent(ctx, req.ProjectID, event); err != nil {
+				return err
+			}
 			eventCount++
 			if emit != nil {
 				if err := emit(event); err != nil {
@@ -134,6 +148,99 @@ func (r Runner) Run(ctx context.Context, req RunRequest, emit func(Event) error)
 		RawLogFallback: state.RawLogFallback,
 		ResumeHint:     state.ResumeHint,
 	}, runErr
+}
+
+func (r Runner) recordCheckpointEvent(ctx context.Context, projectID string, event Event) error {
+	if r.Checkpoints == nil {
+		return nil
+	}
+	req, ok := checkpointTransitionFromEvent(projectID, event)
+	if !ok {
+		return nil
+	}
+	_, err := r.Checkpoints.Transition(ctx, req)
+	return err
+}
+
+func checkpointTransitionFromEvent(projectID string, event Event) (checkpoints.TransitionRequest, bool) {
+	base := checkpoints.TransitionRequest{
+		RunID:        event.RunID,
+		ProjectID:    strings.TrimSpace(projectID),
+		Actor:        schemas.Actor{Kind: schemas.ActorKindSystem, Id: stringPtr(acfsCheckpointActorID)},
+		At:           event.At,
+		EvidenceRefs: checkpointEvidenceRefs(event),
+	}
+	if base.RunID == "" {
+		return checkpoints.TransitionRequest{}, false
+	}
+	switch event.Type {
+	case EventPhaseStart:
+		base.StepID = checkpointStepID(event.Phase, "")
+		base.StepLabel = event.Name
+		base.Status = checkpoints.StatusRunning
+		return base, true
+	case EventPhaseCheckpoint:
+		base.StepID = checkpointStepID(event.Phase, event.Key)
+		base.Status = checkpointStatus(event.Status)
+		if event.ResumeHint != "" {
+			base.ResumeHint = event.ResumeHint
+		}
+		if base.Status == checkpoints.StatusFailed {
+			base.FailureReason = "ACFS checkpoint reported failure"
+			if base.ResumeHint == "" {
+				base.ResumeHint = DefaultResumeHint
+			}
+		}
+		return base, true
+	case EventPhaseEnd:
+		base.StepID = checkpointStepID(event.Phase, "")
+		base.Status = checkpoints.StatusSucceeded
+		return base, true
+	case EventPhaseFail:
+		base.StepID = checkpointStepID(event.Phase, "")
+		base.Status = checkpoints.StatusFailed
+		base.FailureReason = "ACFS phase failed"
+		base.ResumeHint = event.ResumeHint
+		return base, true
+	default:
+		return checkpoints.TransitionRequest{}, false
+	}
+}
+
+func checkpointStatus(status CheckpointStatus) checkpoints.Status {
+	switch status {
+	case CheckpointPass, CheckpointWarn:
+		return checkpoints.StatusSucceeded
+	case CheckpointFail:
+		return checkpoints.StatusFailed
+	case CheckpointSkip:
+		return checkpoints.StatusSkipped
+	default:
+		return checkpoints.StatusPending
+	}
+}
+
+func checkpointStepID(phase, key string) string {
+	phase = strings.TrimSpace(phase)
+	if phase == "" {
+		phase = "bootstrap"
+	}
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return phase
+	}
+	return phase + "." + key
+}
+
+func checkpointEvidenceRefs(event Event) []string {
+	if event.Offset <= 0 {
+		return []string{"acfs-log:" + event.RunID}
+	}
+	return []string{"acfs-log:" + event.RunID + ":" + strconv.FormatInt(event.Offset, 10)}
+}
+
+func stringPtr(value string) *string {
+	return &value
 }
 
 func DefaultCommandSpec(ref string) CommandSpec {

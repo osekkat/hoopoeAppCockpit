@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/onboarding/checkpoints"
 )
 
 func TestParserCleanInstall(t *testing.T) {
@@ -207,6 +209,46 @@ func TestRunnerPersistsLogAndStreamsEvents(t *testing.T) {
 	}
 }
 
+func TestRunnerWritesResumableCheckpoints(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 5, 4, 12, 30, 0, 0, time.UTC)
+	exec := &fakeExecutor{lines: []Line{
+		{Stream: StreamStdout, Text: "[acfs] phase.start acfs-install Install ACFS", At: now},
+		{Stream: StreamStdout, Text: "[acfs] checkpoint acfs-install doctor fail", At: now.Add(time.Millisecond)},
+	}}
+	sink := &fakeCheckpointSink{}
+	runner := Runner{
+		Exec:        exec,
+		Checkpoints: sink,
+		Now:         func() time.Time { return now },
+	}
+	_, err := runner.Run(context.Background(), RunRequest{
+		RunID:     "run_checkpoints",
+		ProjectID: "proj_onboard",
+		Ref:       "v0.7.0",
+		LogDir:    t.TempDir(),
+	}, nil)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(sink.requests) < 2 {
+		t.Fatalf("checkpoint requests = %+v", sink.requests)
+	}
+	var failed checkpoints.TransitionRequest
+	for _, request := range sink.requests {
+		if request.StepID == "acfs-install.doctor" {
+			failed = request
+			break
+		}
+	}
+	if failed.StepID != "acfs-install.doctor" || failed.Status != checkpoints.StatusFailed {
+		t.Fatalf("failed checkpoint request = %+v", failed)
+	}
+	if failed.ProjectID != "proj_onboard" || failed.ResumeHint != DefaultResumeHint {
+		t.Fatalf("checkpoint context = %+v", failed)
+	}
+}
+
 func TestRunnerRejectsUnsafeRefAndRunID(t *testing.T) {
 	t.Parallel()
 	runner := Runner{Exec: &fakeExecutor{}}
@@ -236,6 +278,15 @@ type fakeExecutor struct {
 	result CommandResult
 	err    error
 	spec   CommandSpec
+}
+
+type fakeCheckpointSink struct {
+	requests []checkpoints.TransitionRequest
+}
+
+func (f *fakeCheckpointSink) Transition(_ context.Context, req checkpoints.TransitionRequest) (checkpoints.TransitionResult, error) {
+	f.requests = append(f.requests, req)
+	return checkpoints.TransitionResult{}, nil
 }
 
 func (f *fakeExecutor) Run(_ context.Context, spec CommandSpec, onLine func(Line) error) (CommandResult, error) {
