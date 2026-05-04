@@ -5,6 +5,7 @@ import { ActivityDrawer, useActivityStore } from "../activity/index.ts";
 import { DirtyBanner, DirtyBannerSubscription } from "../clone/index.ts";
 import { ErrorUxRoot } from "../error-ux/index.ts";
 import "../error-ux/error-ux.css";
+import { OnboardingTour } from "../onboarding/OnboardingTour.tsx";
 import {
   stageDefinitions,
   stageForPathname,
@@ -36,6 +37,13 @@ export function RootLayout() {
   const setCommandPaletteOpen = useShellUiStore((state) => state.setCommandPaletteOpen);
   const toggleCommandPalette = useShellUiStore((state) => state.toggleCommandPalette);
   const rememberStageScroll = useShellUiStore((state) => state.rememberStageScroll);
+  const onboardingTourOpen = useShellUiStore((state) => state.onboardingTourOpen);
+  const onboardingTourStepId = useShellUiStore((state) => state.onboardingTourStepId);
+  const closeOnboardingTour = useShellUiStore((state) => state.closeOnboardingTour);
+  const skipOnboardingTour = useShellUiStore((state) => state.skipOnboardingTour);
+  const completeOnboardingTour = useShellUiStore((state) => state.completeOnboardingTour);
+  const advanceOnboardingTour = useShellUiStore((state) => state.advanceOnboardingTour);
+  const retreatOnboardingTour = useShellUiStore((state) => state.retreatOnboardingTour);
   const projectViewStateById = useShellUiStore((state) => state.projectViewStateById);
   const projects = useShellUiStore((state) => state.projects);
   const activeProjectId = useShellUiStore((state) => state.activeProjectId);
@@ -201,6 +209,16 @@ export function RootLayout() {
         pathname={pathname}
         projectId={projectId}
         onClose={closeCommandPalette}
+      />
+
+      <OnboardingTour
+        open={onboardingTourOpen}
+        stepId={onboardingTourStepId}
+        onBack={retreatOnboardingTour}
+        onClose={closeOnboardingTour}
+        onComplete={completeOnboardingTour}
+        onNext={advanceOnboardingTour}
+        onSkip={skipOnboardingTour}
       />
 
       <ErrorUxRoot />

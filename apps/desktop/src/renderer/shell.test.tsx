@@ -62,6 +62,7 @@ test("Swarm empty state exposes bead board and agent grid without terminal panes
 test("Diagnostics empty state links back to the first-run wizard", () => {
   const markup = renderToStaticMarkup(<EmptyStage stageId="diag" />);
   expect(markup).toContain('data-testid="diagnostics-reconnect-wizard"');
+  expect(markup).toContain('data-testid="diagnostics-onboarding-tour"');
   expect(markup).toContain('href="/first-run"');
 });
 
@@ -97,6 +98,11 @@ test("shell UI store persists activity drawer and route memory state", () => {
     firstRunCompletedAt: null,
     lastProjectId: null,
     lastStageId: "plan",
+    onboardingTourCompletedAt: null,
+    onboardingTourLastOpenedAt: null,
+    onboardingTourOpen: false,
+    onboardingTourSkippedAt: null,
+    onboardingTourStepId: "planning",
     pendingSwitchProjectId: null,
     projectViewStateById: {},
   });
@@ -110,12 +116,43 @@ test("shell UI store persists activity drawer and route memory state", () => {
   expect(useShellUiStore.getState().lastStageId).toBe("bead");
   useShellUiStore.getState().markFirstRunCompleted("2026-05-04T07:00:00Z");
   expect(useShellUiStore.getState().firstRunCompletedAt).toBe("2026-05-04T07:00:00Z");
+  expect(useShellUiStore.getState().onboardingTourOpen).toBe(true);
+  expect(useShellUiStore.getState().onboardingTourStepId).toBe("topbar");
   expect(
     useShellUiStore.getState().projectViewStateById["local-demo"]?.activityPanelOpen,
   ).toBe(true);
   expect(
     useShellUiStore.getState().projectViewStateById["local-demo"]?.lastStageId,
   ).toBe("bead");
+});
+
+test("shell UI store persists onboarding tour resume and terminal states", () => {
+  useShellUiStore.setState({
+    onboardingTourCompletedAt: null,
+    onboardingTourLastOpenedAt: null,
+    onboardingTourOpen: false,
+    onboardingTourSkippedAt: null,
+    onboardingTourStepId: "topbar",
+  });
+
+  useShellUiStore.getState().openOnboardingTour("planning");
+  expect(useShellUiStore.getState().onboardingTourOpen).toBe(true);
+  expect(useShellUiStore.getState().onboardingTourStepId).toBe("planning");
+
+  useShellUiStore.getState().advanceOnboardingTour();
+  expect(useShellUiStore.getState().onboardingTourStepId).toBe("beads");
+
+  useShellUiStore.getState().retreatOnboardingTour();
+  expect(useShellUiStore.getState().onboardingTourStepId).toBe("planning");
+
+  useShellUiStore.getState().skipOnboardingTour("2026-05-04T07:01:00Z");
+  expect(useShellUiStore.getState().onboardingTourOpen).toBe(false);
+  expect(useShellUiStore.getState().onboardingTourSkippedAt).toBe("2026-05-04T07:01:00Z");
+
+  useShellUiStore.getState().openOnboardingTour();
+  useShellUiStore.getState().completeOnboardingTour("2026-05-04T07:02:00Z");
+  expect(useShellUiStore.getState().onboardingTourStepId).toBe("hardening");
+  expect(useShellUiStore.getState().onboardingTourCompletedAt).toBe("2026-05-04T07:02:00Z");
 });
 
 test("shell launch target restores the persisted project and stage from root", () => {

@@ -16,7 +16,7 @@ points to.
 | `reconnect-replay.md` | Event replay and reconnect rules. |
 | `security.md` | Threat model, CommandSpec, approvals, audit log, bind safety, release verification. |
 | `onboarding.md` | Project metadata, readiness checks, checkpoints, onboarding modes. |
-| `wizard.md` | First-run wizard step contract and failure surfaces. |
+| `wizard.md` | First-run wizard step contract, guided-tour handoff, and failure surfaces. |
 | `testing.md` | Runner taxonomy, evidence layout, integration/e2e strategy, smoke checks. |
 | `upgrade-and-rollback.md` | Verified daemon upgrade flow and rollback behavior. |
 | `troubleshooting.md` | Canonical-state-first recovery runbook. |

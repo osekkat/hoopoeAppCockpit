@@ -2,6 +2,7 @@ import { Boxes, ShieldCheck, Stethoscope } from "lucide-react";
 import type { ReactNode } from "react";
 import type { ShellRouteId } from "../stages.ts";
 import { StateSurface } from "../state-view/index.ts";
+import { useShellUiStore } from "../store.ts";
 
 interface StagePanel {
   readonly title: string;
@@ -66,6 +67,11 @@ const panelsByStage: Record<ShellRouteId, readonly StagePanel[]> = {
 };
 
 export function EmptyStage({ stageId }: { readonly stageId: ShellRouteId }) {
+  const openOnboardingTour = useShellUiStore((state) => state.openOnboardingTour);
+  const onboardingTourCompletedAt = useShellUiStore((state) => state.onboardingTourCompletedAt);
+  const onboardingTourSkippedAt = useShellUiStore((state) => state.onboardingTourSkippedAt);
+  const onboardingTourVisited = onboardingTourCompletedAt !== null || onboardingTourSkippedAt !== null;
+
   return (
     <div className="hh-empty-stage">
       <StateSurface
@@ -89,13 +95,23 @@ export function EmptyStage({ stageId }: { readonly stageId: ShellRouteId }) {
         ))}
       </section>
       {stageId === "diag" ? (
-        <a
-          className="hh-wizard-secondary"
-          data-testid="diagnostics-reconnect-wizard"
-          href="/first-run"
-        >
-          Reconnect VPS
-        </a>
+        <div className="hh-empty-actions">
+          <a
+            className="hh-text-button"
+            data-testid="diagnostics-reconnect-wizard"
+            href="/first-run"
+          >
+            Reconnect VPS
+          </a>
+          <button
+            className="hh-text-button"
+            data-testid="diagnostics-onboarding-tour"
+            onClick={() => openOnboardingTour()}
+            type="button"
+          >
+            {onboardingTourVisited ? "Resume onboarding tour" : "Start onboarding tour"}
+          </button>
+        </div>
       ) : null}
     </div>
   );

@@ -554,6 +554,13 @@ button {
   gap: 14px;
 }
 
+.hh-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
 .hh-empty-panel,
 .hh-project-card,
 .hh-activity-row {
@@ -594,6 +601,128 @@ button {
   background: var(--surface-panel-alt);
   color: var(--text-secondary);
   font-size: 12px;
+}
+
+.hh-onboarding-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 42;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(4, 8, 16, 0.58);
+}
+
+.hh-onboarding-tour {
+  display: grid;
+  width: min(640px, 100%);
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-panel);
+  box-shadow: var(--shadow-glass);
+}
+
+.hh-onboarding-tour-header,
+.hh-onboarding-tour-footer,
+.hh-onboarding-tour-actions,
+.hh-onboarding-tour-count {
+  display: flex;
+  align-items: center;
+}
+
+.hh-onboarding-tour-header,
+.hh-onboarding-tour-footer {
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.hh-onboarding-tour-header h2 {
+  margin: 4px 0 0;
+  color: var(--text-primary);
+  font-size: 22px;
+  line-height: 1.15;
+}
+
+.hh-onboarding-tour-body {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.hh-onboarding-progress {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.hh-onboarding-progress span {
+  height: 5px;
+  border-radius: var(--radius-full);
+  background: var(--surface-panel-alt);
+}
+
+.hh-onboarding-progress span[data-current="true"] {
+  background: var(--hoopoe-blue);
+}
+
+.hh-onboarding-callouts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.hh-onboarding-callouts span {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  padding: 0 10px;
+  border: 1px solid var(--surface-border-soft);
+  border-radius: var(--radius-full);
+  background: var(--surface-panel-alt);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.hh-onboarding-tour-count,
+.hh-onboarding-tour-actions {
+  gap: 8px;
+}
+
+.hh-onboarding-tour-count {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.hh-onboarding-primary,
+.hh-onboarding-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 6px 14px;
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.hh-onboarding-primary {
+  border: 1px solid rgba(229, 130, 83, 0.55);
+  background: rgba(229, 130, 83, 0.18);
+}
+
+.hh-onboarding-secondary {
+  border: 1px solid var(--surface-border-soft);
+  background: var(--surface-panel-alt);
+}
+
+.hh-onboarding-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .hh-project-picker {

@@ -15,6 +15,38 @@ Mock Flywheel development mode.
 Existing-VPS stays first. Provider automation must not block manual VPS
 onboarding (`plan.md §6.2`, Guardrail 6).
 
+## Guided Tour State
+
+After the first-run wizard reaches the success step, the renderer opens the
+guided onboarding tour once unless the user has already skipped or completed
+it. The tour state is client UI state, not canonical project state.
+
+| Field | Meaning |
+| --- | --- |
+| `firstRunCompletedAt` | Timestamp recorded when the wizard success CTA enters the cockpit. |
+| `onboardingTourOpen` | Whether the overlay is currently visible. |
+| `onboardingTourStepId` | Last viewed tour step; used for resume. |
+| `onboardingTourSkippedAt` | Timestamp for an explicit skip. |
+| `onboardingTourCompletedAt` | Timestamp for finishing all steps. |
+| `onboardingTourLastOpenedAt` | Last manual or automatic launch timestamp. |
+
+Diagnostics exposes a "Start onboarding tour" / "Resume onboarding tour"
+button. This is the supported relaunch path for users who skip the tour during
+setup but later want the walkthrough.
+
+The step order mirrors the product flow:
+
+1. Top bar status pills
+2. Activity drawer
+3. Stage rail
+4. Planning
+5. Beads
+6. Swarm
+7. Hardening
+
+The tour is informative only. It must never gate readiness, daemon pairing,
+project import, or Mock Flywheel access.
+
 ## `project.json`
 
 `project.json` lives in the Hoopoe project metadata area for each imported
@@ -97,6 +129,22 @@ checks:
 | Success | Optional tutorial launch; not required for ready state. |
 
 `docs/wizard.md` contains the UI-facing step contract.
+
+## Demo Project Path
+
+The local demo path uses Mock Flywheel fixtures so the user can inspect the
+cockpit without a paired VPS. The demo project must preserve the same source of
+truth boundaries as a real project:
+
+- fixture snapshots stand in for canonical daemon/tool reads;
+- renderer stores are still caches and UI preferences;
+- no provider SDKs or direct model APIs are introduced;
+- terminal panes remain Diagnostics-only;
+- every displayed automation event has replayable fixture evidence.
+
+The demo is acceptable when a new user can open Planning, Beads, Swarm,
+Hardening, Activity, and Diagnostics from fixture data and then relaunch the
+guided tour from Diagnostics.
 
 ## Cross-References
 

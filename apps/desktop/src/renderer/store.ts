@@ -9,6 +9,17 @@ import type { ShellRouteId } from "./stages.ts";
 export type ProjectGitStatus = "clean" | "dirty" | "unpushed";
 export type ProjectToolHealth = "healthy" | "degraded" | "offline";
 export type ProjectSwarmStatus = "idle" | "running" | "paused";
+export const ONBOARDING_TOUR_STEP_IDS = [
+  "topbar",
+  "activity",
+  "stages",
+  "planning",
+  "beads",
+  "swarm",
+  "hardening",
+] as const;
+export type OnboardingTourStepId = (typeof ONBOARDING_TOUR_STEP_IDS)[number];
+export const FIRST_ONBOARDING_TOUR_STEP_ID: OnboardingTourStepId = "topbar";
 
 export interface ShellProjectSummary {
   readonly id: string;
@@ -65,6 +76,11 @@ export interface ShellUiState {
   readonly lastProjectId: string | null;
   readonly lastStageId: ShellRouteId;
   readonly firstRunCompletedAt: string | null;
+  readonly onboardingTourOpen: boolean;
+  readonly onboardingTourStepId: OnboardingTourStepId;
+  readonly onboardingTourSkippedAt: string | null;
+  readonly onboardingTourCompletedAt: string | null;
+  readonly onboardingTourLastOpenedAt: string | null;
   readonly projectSwitcherOpen: boolean;
   readonly projectSearch: string;
   readonly pendingSwitchProjectId: string | null;
@@ -89,6 +105,12 @@ export interface ShellUiState {
   readonly rememberProject: (projectId: string) => void;
   readonly rememberStage: (stageId: ShellRouteId) => void;
   readonly markFirstRunCompleted: (completedAt?: string) => void;
+  readonly openOnboardingTour: (stepId?: OnboardingTourStepId) => void;
+  readonly closeOnboardingTour: () => void;
+  readonly skipOnboardingTour: (skippedAt?: string) => void;
+  readonly completeOnboardingTour: (completedAt?: string) => void;
+  readonly advanceOnboardingTour: () => void;
+  readonly retreatOnboardingTour: () => void;
   readonly rememberStageScroll: (
     projectId: string,
     stageId: ShellRouteId,
@@ -225,6 +247,16 @@ function updateProjectViewState(
   };
 }
 
+export function nextOnboardingTourStepId(stepId: OnboardingTourStepId): OnboardingTourStepId {
+  const index = ONBOARDING_TOUR_STEP_IDS.indexOf(stepId);
+  return ONBOARDING_TOUR_STEP_IDS[index + 1] ?? stepId;
+}
+
+export function previousOnboardingTourStepId(stepId: OnboardingTourStepId): OnboardingTourStepId {
+  const index = ONBOARDING_TOUR_STEP_IDS.indexOf(stepId);
+  return ONBOARDING_TOUR_STEP_IDS[index - 1] ?? stepId;
+}
+
 export function resolveShellLaunchTarget(
   state: Pick<
     ShellUiState,
@@ -270,6 +302,11 @@ export const useShellUiStore = create<ShellUiState>()(
       lastProjectId: null,
       lastStageId: "plan",
       firstRunCompletedAt: null,
+      onboardingTourOpen: false,
+      onboardingTourStepId: FIRST_ONBOARDING_TOUR_STEP_ID,
+      onboardingTourSkippedAt: null,
+      onboardingTourCompletedAt: null,
+      onboardingTourLastOpenedAt: null,
       projectSwitcherOpen: false,
       projectSearch: "",
       pendingSwitchProjectId: null,
@@ -418,7 +455,50 @@ export const useShellUiStore = create<ShellUiState>()(
         }));
       },
       markFirstRunCompleted: (completedAt) => {
-        set({ firstRunCompletedAt: completedAt ?? new Date().toISOString() });
+        const recordedAt = completedAt ?? new Date().toISOString();
+        const shouldOpenTour =
+          get().onboardingTourSkippedAt === null && get().onboardingTourCompletedAt === null;
+        set((state) => ({
+          firstRunCompletedAt: recordedAt,
+          onboardingTourOpen: shouldOpenTour,
+          onboardingTourStepId: shouldOpenTour
+            ? FIRST_ONBOARDING_TOUR_STEP_ID
+            : state.onboardingTourStepId,
+          onboardingTourLastOpenedAt: shouldOpenTour ? recordedAt : state.onboardingTourLastOpenedAt,
+        }));
+      },
+      openOnboardingTour: (stepId) => {
+        set({
+          onboardingTourOpen: true,
+          onboardingTourStepId: stepId ?? get().onboardingTourStepId,
+          onboardingTourLastOpenedAt: new Date().toISOString(),
+        });
+      },
+      closeOnboardingTour: () => {
+        set({ onboardingTourOpen: false });
+      },
+      skipOnboardingTour: (skippedAt) => {
+        set({
+          onboardingTourOpen: false,
+          onboardingTourSkippedAt: skippedAt ?? new Date().toISOString(),
+        });
+      },
+      completeOnboardingTour: (completedAt) => {
+        set({
+          onboardingTourOpen: false,
+          onboardingTourStepId: ONBOARDING_TOUR_STEP_IDS.at(-1) ?? FIRST_ONBOARDING_TOUR_STEP_ID,
+          onboardingTourCompletedAt: completedAt ?? new Date().toISOString(),
+        });
+      },
+      advanceOnboardingTour: () => {
+        set((state) => ({
+          onboardingTourStepId: nextOnboardingTourStepId(state.onboardingTourStepId),
+        }));
+      },
+      retreatOnboardingTour: () => {
+        set((state) => ({
+          onboardingTourStepId: previousOnboardingTourStepId(state.onboardingTourStepId),
+        }));
       },
       rememberStageScroll: (projectId, stageId, scrollY) => {
         set((state) => ({
@@ -495,6 +575,11 @@ export const useShellUiStore = create<ShellUiState>()(
         lastProjectId: state.lastProjectId,
         lastStageId: state.lastStageId,
         firstRunCompletedAt: state.firstRunCompletedAt,
+        onboardingTourOpen: state.onboardingTourOpen,
+        onboardingTourStepId: state.onboardingTourStepId,
+        onboardingTourSkippedAt: state.onboardingTourSkippedAt,
+        onboardingTourCompletedAt: state.onboardingTourCompletedAt,
+        onboardingTourLastOpenedAt: state.onboardingTourLastOpenedAt,
         activeProjectId: state.activeProjectId,
         projects: state.projects,
         projectViewStateById: state.projectViewStateById,

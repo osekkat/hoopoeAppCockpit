@@ -29,6 +29,17 @@ Read:
 3. `plan.md`
 4. `docs/README.md`
 
+## Try The Cockpit
+
+For a no-VPS walkthrough, use the local demo path in the first-run wizard. It
+loads Mock Flywheel fixtures for Planning, Beads, Swarm, Hardening, Activity,
+and Diagnostics. After the wizard success screen, the guided tour opens once
+and can be skipped, completed, or resumed from Diagnostics.
+
+The demo path is not a second source of truth. It exercises the renderer
+against fixture-backed daemon shapes so contributors can inspect the product
+flow before pairing a real VPS.
+
 ## Work Selection
 
 ```bash
@@ -89,5 +100,6 @@ Do not stage unrelated dirty files. This repo is a shared multi-agent worktree.
 
 - `docs/source-of-truth.md` — where state lives.
 - `docs/onboarding.md` — product onboarding flow.
+- `docs/wizard.md` — first-run wizard and guided-tour handoff.
 - `docs/testing.md` — runner/evidence details.
 - `docs/troubleshooting.md` — common recovery paths.

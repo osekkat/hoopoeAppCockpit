@@ -35,6 +35,20 @@ for checkpoints, parser, inventory, and daemon upgrade lives under
 `apps/daemon/internal/onboarding/`, `apps/daemon/internal/inventory/`, and
 `apps/daemon/internal/upgrade/`.
 
+## Success Handoff
+
+The success CTA records `firstRunCompletedAt` and then routes to the cockpit.
+If the onboarding tour has not been skipped or completed, the shell opens the
+guided tour at `topbar`. The tour records the last viewed step so closing the
+overlay is not destructive; Diagnostics can reopen the same tour later.
+
+The success handoff is intentionally separate from readiness:
+
+- wizard checkpoints prove setup and resume state;
+- project readiness comes from daemon/tool/capability checks;
+- the guided tour is a UI preference only;
+- completing or skipping the tour must not mutate canonical project state.
+
 ## Failure Surfaces
 
 | Failure | Surface |
@@ -46,6 +60,7 @@ for checkpoints, parser, inventory, and daemon upgrade lives under
 | Missing `br`/`bv`/NTM/Agent Mail | Blocks dependent stages until repaired. |
 | Daemon provenance failure | Blocking error; no install unless dev override. |
 | Mid-install disconnect | Resume from last completed checkpoint. |
+| Tour dismissed early | Diagnostics button resumes the last viewed step. |
 
 ## Cross-References
 
