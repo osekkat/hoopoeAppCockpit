@@ -15,6 +15,11 @@ import { Step1PathPicker } from "./Step1PathPicker.tsx";
 import { Step11Success } from "./Step11Success.tsx";
 import { StepSshKey, type SshKeySelection } from "./StepSshKey.tsx";
 import { StepStub } from "./StepStub.tsx";
+import {
+  StepVpsConnect,
+  buildVpsConnectCheckpointData,
+  type VpsConnectSelection,
+} from "./StepVpsConnect.tsx";
 import { WizardReplaySink } from "./state.ts";
 import {
   WIZARD_STEP_IDS,
@@ -155,6 +160,40 @@ export function WizardShell({ initialRunId, onComplete, persist, sink: providedS
     [persist, refreshUi, sink],
   );
 
+  const recordVpsConnectComplete = useCallback(
+    (selection: VpsConnectSelection) => {
+      const next = sink.recordCheckpoint({
+        stepId: "vps_connect",
+        outcome: "completed",
+        data: buildVpsConnectCheckpointData(selection),
+      });
+      persist?.(next);
+      refreshUi();
+    },
+    [persist, refreshUi, sink],
+  );
+
+  const recordVpsConnectFailure = useCallback(
+    (failure: { readonly code: string; readonly message: string }) => {
+      const next = sink.recordCheckpoint({
+        stepId: "vps_connect",
+        outcome: "failed",
+        failure,
+      });
+      persist?.(next);
+      refreshUi();
+    },
+    [persist, refreshUi, sink],
+  );
+
+  // Pull the SSH key step's persisted private-key path so the connect
+  // step can pre-fill the field — saves the user from re-typing.
+  const sshKeyData = run.checkpoints.findLast(
+    (c) => c.stepId === "ssh_key" && c.outcome === "completed",
+  )?.data;
+  const sshKeyPath =
+    sshKeyData && typeof sshKeyData["path"] === "string" ? (sshKeyData["path"] as string) : undefined;
+
   const finish = useCallback(() => {
     const next = sink.recordCheckpoint({ stepId: "success", outcome: "completed" });
     persist?.(next);
@@ -190,6 +229,12 @@ export function WizardShell({ initialRunId, onComplete, persist, sink: providedS
               runId={run.runId}
               onComplete={recordSshKeyComplete}
               onFailed={recordSshKeyFailure}
+            />
+          ) : computed.currentStep === "vps_connect" ? (
+            <StepVpsConnect
+              {...(sshKeyPath ? { defaultPrivateKeyPath: sshKeyPath } : {})}
+              onComplete={recordVpsConnectComplete}
+              onFailed={recordVpsConnectFailure}
             />
           ) : (
             <StubStep

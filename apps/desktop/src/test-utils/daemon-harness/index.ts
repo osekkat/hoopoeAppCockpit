@@ -131,8 +131,8 @@ async function pollForReady(baseUrl: string, timeoutMs: number, intervalMs: numb
   return { ok: false, lastError: lastError ?? "timed out polling /v1/health" };
 }
 
-function makeArgs(options: Required<Pick<DaemonStartOptions, "mode">>): string[] {
-  const args: string[] = [];
+function makeArgs(options: Required<Pick<DaemonStartOptions, "mode" | "port">>): string[] {
+  const args = ["--addr", `127.0.0.1:${options.port}`];
   if (options.mode === "mock") args.push("--mock");
   return args;
 }
@@ -164,7 +164,7 @@ export async function tryStartDaemon(
     ...(options.envOverrides ?? {}),
   };
 
-  const child = spawn(binaryPath, makeArgs({ mode }), {
+  const child = spawn(binaryPath, makeArgs({ mode, port }), {
     cwd: repoRoot,
     stdio: ["ignore", "pipe", "pipe"],
     env,
