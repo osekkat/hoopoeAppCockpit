@@ -1,0 +1,355 @@
+{
+  "agent_mail.fetch_inbox": {
+    "messages": [
+      {
+        "ack_required": false,
+        "body_md": "push-stale-commits ActionPlan ap-001 returned exit 0 but the postcondition origin/<branch>.sha == local.<branch>.sha failed because of a concurrent force-push during the push window. Cached branch-up-to-date flag invalidated; next tend tick will re-check origin without an LLM reach.",
+        "from": "orchestrator",
+        "id": "msg-postcondition-failure-001",
+        "sent_at": "2026-05-04T15:10:02.6Z",
+        "subject": "[hp-2rp-demo] push-stale-commits postcondition failed; rolled back",
+        "thread_id": "hp-2rp-demo",
+        "to": [
+          "HoopoeCC2"
+        ]
+      }
+    ],
+    "threads": [
+      {
+        "id": "hp-2rp-demo",
+        "message_count": 1,
+        "subject": "[hp-2rp-demo] push-stale-commits postcondition failed; rolled back"
+      }
+    ],
+    "unread_total": 0
+  },
+  "agent_mail.reservations": {
+    "conflicts": [],
+    "reservations": []
+  },
+  "auth.exchangePairingForBearer": {
+    "bearerToken": "hp-bearer-mock-do-not-trust"
+  },
+  "auth.issueWsToken": {
+    "wsToken": "hp-ws-mock-do-not-trust"
+  },
+  "br.list": {
+    "issues": [
+      {
+        "created_at": "2026-05-04T15:00:00Z",
+        "description": "Synthetic stand-in for whatever bead the agent's branch belongs to. The push-stale-commits job tries to sync the agent's local commits to origin and the postcondition that origin SHA matches local SHA fails because of a concurrent force-push.",
+        "id": "hp-2rp-demo",
+        "issue_type": "task",
+        "priority": 2,
+        "status": "in_progress",
+        "title": "Demo bead an agent committed against in this scenario",
+        "updated_at": "2026-05-04T15:09:00Z"
+      }
+    ],
+    "total": 1
+  },
+  "build_logs.first": {
+    "runId": "run-006",
+    "text": "2026-05-02T23:33:12Z tend-swarm pre-script start\nrequired capability ntm.robot.snapshot: missing\ntend-swarm blocked before agent wake\n"
+  },
+  "build_logs.missing": null,
+  "bv.triage": {
+    "data_hash": "postcondition-failure-synthetic",
+    "generated_at": "2026-05-04T15:09:00Z",
+    "triage": {
+      "meta": {
+        "compute_time_ms": 1,
+        "generated_at": "2026-05-04T15:09:00Z",
+        "issue_count": 1,
+        "phase2_ready": true,
+        "version": "1.0.0"
+      },
+      "quick_ref": {
+        "actionable_count": 0,
+        "blocked_count": 0,
+        "in_progress_count": 1,
+        "open_count": 1,
+        "top_picks": []
+      },
+      "recommendations": []
+    }
+  },
+  "events.subscribe": {
+    "cursors": {
+      "activity": 8,
+      "audit": 7,
+      "tending": 9
+    },
+    "delivered": [
+      {
+        "channel": "tending",
+        "payload": {
+          "beadId": "hp-2rp-demo",
+          "branch": "agent/hp-2rp-demo",
+          "jobId": "push-stale-commits"
+        },
+        "seq": 1,
+        "ts": "2026-05-04T15:10:00Z",
+        "type": "tending.job_started"
+      },
+      {
+        "channel": "tending",
+        "payload": {
+          "actionPlanId": "ap-001",
+          "jobId": "push-stale-commits",
+          "preconditions": [
+            "branch.exists",
+            "branch.has_unpushed_commits",
+            "origin.reachable"
+          ]
+        },
+        "seq": 2,
+        "ts": "2026-05-04T15:10:00.5Z",
+        "type": "tending.action_plan.preconditions_passed"
+      },
+      {
+        "channel": "tending",
+        "payload": {
+          "actionPlanId": "ap-001",
+          "argv": [
+            "git",
+            "push",
+            "origin",
+            "agent/hp-2rp-demo"
+          ],
+          "jobId": "push-stale-commits"
+        },
+        "seq": 3,
+        "ts": "2026-05-04T15:10:01Z",
+        "type": "tending.action_plan.exec_started"
+      },
+      {
+        "channel": "tending",
+        "payload": {
+          "actionPlanId": "ap-001",
+          "exit": 0,
+          "jobId": "push-stale-commits",
+          "stderrBytes": 118,
+          "stdoutBytes": 0
+        },
+        "seq": 4,
+        "ts": "2026-05-04T15:10:02Z",
+        "type": "tending.action_plan.exec_succeeded"
+      },
+      {
+        "channel": "tending",
+        "payload": {
+          "actionPlanId": "ap-001",
+          "actual": "deadbeefcafef00d0102030405060708090a0b0c",
+          "check": "origin.<branch>.sha == local.<branch>.sha",
+          "expected": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+          "jobId": "push-stale-commits",
+          "reason": "origin diverged due to concurrent force-push from peer agent during the push window"
+        },
+        "seq": 5,
+        "ts": "2026-05-04T15:10:02.3Z",
+        "type": "tending.action_plan.postcondition_failed"
+      },
+      {
+        "channel": "tending",
+        "payload": {
+          "actionPlanId": "ap-001",
+          "cacheKey": "branch.up_to_date.agent/hp-2rp-demo",
+          "jobId": "push-stale-commits",
+          "note": "local push completed but origin postcondition failed; cached up-to-date flag invalidated so the next tend tick re-checks origin",
+          "rollbackKind": "cache.invalidate"
+        },
+        "seq": 6,
+        "ts": "2026-05-04T15:10:02.4Z",
+        "type": "tending.action_plan.rollback"
+      },
+      {
+        "channel": "audit",
+        "payload": {
+          "actionPlanId": "ap-001",
+          "execResult": "success",
+          "jobId": "push-stale-commits",
+          "postconditionsPassed": false,
+          "preconditionsPassed": true,
+          "rollbackExecuted": true,
+          "silent": false
+        },
+        "seq": 7,
+        "ts": "2026-05-04T15:10:02.5Z",
+        "type": "audit.action_plan.postcondition_failed"
+      },
+      {
+        "channel": "activity",
+        "payload": {
+          "severity": "warning",
+          "summary": "push-stale-commits: postcondition failed for agent/hp-2rp-demo (origin diverged); rolled back, re-checking next tick"
+        },
+        "seq": 8,
+        "ts": "2026-05-04T15:10:02.6Z",
+        "type": "activity.warning"
+      },
+      {
+        "channel": "tending",
+        "payload": {
+          "jobId": "push-stale-commits",
+          "outcome": "postcondition_failed_with_rollback",
+          "wakeAgent": false
+        },
+        "seq": 9,
+        "ts": "2026-05-04T15:10:02.7Z",
+        "type": "tending.job_completed"
+      }
+    ]
+  },
+  "ntm.snapshot": {
+    "counters": {
+      "alive": 1,
+      "errored": 0,
+      "panes": 1,
+      "sessions": 1,
+      "wedged": 0
+    },
+    "sessions": [
+      {
+        "id": "session-hp-2rp-demo",
+        "windows": [
+          {
+            "id": "window-1",
+            "panes": [
+              {
+                "agent": "HoopoeCC2",
+                "id": "pane-HoopoeCC2",
+                "lastActivityAt": "2026-05-04T15:09:50Z",
+                "state": "alive"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "pane_logs.first": {
+    "agent": "GreenBear",
+    "bytes": {
+      "encoding": "base64",
+      "data": "R3JlZW5CZWFyIGlkbGUuIE5UTSB1bmF2YWlsYWJsZTsgbm8gcGFuZSB0YWlsIGNhbiBiZSBjYXB0dXJlZC4K"
+    }
+  },
+  "pane_logs.missing": null,
+  "projects.list": [
+    {
+      "id": "mock-flywheel-project",
+      "meta": {
+        "capturedAt": "<scrubbed-captured-at>",
+        "fixturesVersion": "phase0-2026-05-02",
+        "kind": "synthetic",
+        "notes": "A push-stale-commits ActionPlan executes successfully (git push returns 0) but the post-execution postcondition that origin/<branch> SHA equals the local <branch> SHA fails — origin still points at the old SHA because of a race with another agent's force-push that arrived between the local commit and our push. Per plan.md §8.3.1 the daemon rolls back the action's cached state ('branch-up-to-date' flag), refuses to mark the bead as pushed, emits an activity warning, and the audit log records the precondition pass + postcondition fail + rollback decision regardless of [SILENT] semantics (Guardrail 10). wakeAgent stays false because the deterministic rollback covers the recovery path; an LLM reach is unnecessary.",
+        "scenario": "postcondition-failure",
+        "source": "hand-written hp-2rp postcondition-failure tending fixture",
+        "vpsId": "mock-flywheel"
+      },
+      "name": "postcondition-failure",
+      "rootPath": "<fixtures-root>/scenarios/postcondition-failure"
+    }
+  ],
+  "scenario.id": "postcondition-failure",
+  "system.capabilities": {
+    "agent_mail": {
+      "agent_mail.messages.read": {
+        "status": "ok"
+      },
+      "agent_mail.messages.send": {
+        "status": "ok"
+      },
+      "agent_mail.reservations.list": {
+        "status": "ok"
+      }
+    },
+    "br": {
+      "br.dep.add": {
+        "status": "ok"
+      },
+      "br.issues.read": {
+        "status": "ok"
+      },
+      "br.issues.update": {
+        "status": "ok"
+      },
+      "br.sync.flush_only": {
+        "status": "ok"
+      }
+    },
+    "bv": {
+      "bv.robot.diff": {
+        "status": "ok"
+      },
+      "bv.robot.insights": {
+        "status": "ok"
+      },
+      "bv.robot.plan": {
+        "status": "ok"
+      },
+      "bv.robot.triage": {
+        "status": "ok"
+      },
+      "bv.tui": {
+        "notes": "Guardrail 1: bare bv launches TUI; never invoked",
+        "status": "blocked-by-policy"
+      }
+    },
+    "caam": {},
+    "casr": {},
+    "caut": {},
+    "dcg": {},
+    "git": {
+      "git.diff.read": {
+        "status": "ok"
+      },
+      "git.push": {
+        "notes": "push-stale-commits ActionPlan exercises this capability; postcondition verifies the resulting origin SHA",
+        "status": "ok"
+      },
+      "git.status.read": {
+        "status": "ok"
+      },
+      "git.unpushed.list": {
+        "status": "ok"
+      }
+    },
+    "health": {
+      "health.complexity": {
+        "status": "untested"
+      },
+      "health.coverage": {
+        "status": "untested"
+      }
+    },
+    "jfp": {},
+    "jsm": {},
+    "ntm": {
+      "ntm.robot.snapshot": {
+        "status": "ok"
+      },
+      "ntm.robot.status": {
+        "status": "ok"
+      },
+      "ntm.robot.tail": {
+        "status": "ok"
+      }
+    },
+    "oracle": {},
+    "pt": {},
+    "sbh": {},
+    "srp": {},
+    "ubs": {}
+  },
+  "system.health": {
+    "environment": "mock-flywheel",
+    "status": "ok",
+    "time": "<scrubbed-runtime-time>"
+  },
+  "system.version": {
+    "api": "v1.0.0-mock",
+    "daemon": "mock-flywheel"
+  }
+}

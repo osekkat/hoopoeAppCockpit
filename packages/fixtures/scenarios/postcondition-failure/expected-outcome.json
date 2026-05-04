@@ -1,0 +1,72 @@
+{
+  "meta": {
+    "kind": "synthetic",
+    "scenario": "postcondition-failure",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-04T15:10:00Z",
+    "vpsId": "mock-flywheel",
+    "source": "hand-written hp-2rp postcondition-failure tending fixture",
+    "notes": "ActionPlan exec succeeds (git push exit 0) but the post-execution postcondition (origin SHA == local SHA) fails because of a concurrent force-push from a peer agent. Daemon rolls back the cached 'branch up-to-date' flag, refuses to mark the bead as pushed, surfaces an activity warning, and audit fires regardless of [SILENT] (Guardrail 10). wakeAgent stays false: the deterministic rollback covers recovery; the next tend tick re-checks origin without an LLM reach."
+  },
+  "detections": [
+    {
+      "kind": "action_plan.preconditions_passed",
+      "payload": {
+        "jobId": "push-stale-commits",
+        "actionPlanId": "ap-001",
+        "preconditions": [
+          "branch.exists",
+          "branch.has_unpushed_commits",
+          "origin.reachable"
+        ]
+      }
+    },
+    {
+      "kind": "action_plan.exec_succeeded",
+      "payload": {
+        "jobId": "push-stale-commits",
+        "actionPlanId": "ap-001",
+        "exit": 0
+      }
+    },
+    {
+      "kind": "action_plan.postcondition_failed",
+      "payload": {
+        "jobId": "push-stale-commits",
+        "actionPlanId": "ap-001",
+        "check": "origin.<branch>.sha == local.<branch>.sha",
+        "reason": "origin diverged due to concurrent force-push from peer agent during the push window"
+      }
+    },
+    {
+      "kind": "action_plan.rollback",
+      "payload": {
+        "jobId": "push-stale-commits",
+        "actionPlanId": "ap-001",
+        "rollbackKind": "cache.invalidate",
+        "cacheKey": "branch.up_to_date.agent/hp-2rp-demo"
+      }
+    }
+  ],
+  "wakeAgent": false,
+  "approvalsRequested": [],
+  "postconditions": [
+    {
+      "check": "tending.job.outcome == postcondition_failed_with_rollback",
+      "expect": true
+    },
+    {
+      "check": "audit.action_plan.postcondition_failed.recorded",
+      "expect": true
+    },
+    {
+      "check": "activity.warning_emitted",
+      "expect": true
+    },
+    {
+      "check": "cache.branch_up_to_date.invalidated",
+      "expect": true
+    }
+  ],
+  "activityBehavior": "surface"
+}

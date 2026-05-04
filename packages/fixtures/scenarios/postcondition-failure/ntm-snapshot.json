@@ -1,0 +1,27 @@
+{
+  "sessions": [
+    {
+      "id": "session-hp-2rp-demo",
+      "windows": [
+        {
+          "id": "window-1",
+          "panes": [
+            {
+              "id": "pane-HoopoeCC2",
+              "agent": "HoopoeCC2",
+              "state": "alive",
+              "lastActivityAt": "2026-05-04T15:09:50Z"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "counters": {
+    "sessions": 1,
+    "panes": 1,
+    "alive": 1,
+    "wedged": 0,
+    "errored": 0
+  }
+}

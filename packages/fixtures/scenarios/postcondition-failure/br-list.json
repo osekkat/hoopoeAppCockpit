@@ -1,0 +1,15 @@
+{
+  "issues": [
+    {
+      "id": "hp-2rp-demo",
+      "title": "Demo bead an agent committed against in this scenario",
+      "description": "Synthetic stand-in for whatever bead the agent's branch belongs to. The push-stale-commits job tries to sync the agent's local commits to origin and the postcondition that origin SHA matches local SHA fails because of a concurrent force-push.",
+      "status": "in_progress",
+      "priority": 2,
+      "issue_type": "task",
+      "created_at": "2026-05-04T15:00:00Z",
+      "updated_at": "2026-05-04T15:09:00Z"
+    }
+  ],
+  "total": 1
+}
