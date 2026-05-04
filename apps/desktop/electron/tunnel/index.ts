@@ -63,6 +63,38 @@ export {
 } from "./orchestrator.ts";
 
 export {
+  HeartbeatTimer,
+  type HeartbeatTimerAuditEvent,
+  type HeartbeatTimerAuditEventKind,
+  type HeartbeatTimerAuditSink,
+  type HeartbeatTimerOptions,
+  type HeartbeatTimerOrchestrator,
+  type IntervalScheduler,
+  type ScheduledHandle as HeartbeatTimerScheduledHandle,
+} from "./heartbeatTimer.ts";
+
+export {
+  HttpHeartbeatDriver,
+  HttpHeartbeatError,
+  type FetchLike,
+  type FetchResponse,
+  type HttpHeartbeatDriverOptions,
+  type HttpHeartbeatErrorCode,
+} from "./httpHeartbeatDriver.ts";
+
+export {
+  HttpVersionDriver,
+  HttpVersionError,
+  VersionedHeartbeatDriver,
+  type HttpVersionDriverOptions,
+  type HttpVersionErrorCode,
+  type HttpVersionProbeResult,
+  type VersionCompatibility,
+  type VersionProbeDriver,
+  type VersionedHeartbeatDriverOptions,
+} from "./httpVersionDriver.ts";
+
+export {
   installSleepWakeMonitor,
   type PowerMonitorEvent,
   type PowerMonitorLike,

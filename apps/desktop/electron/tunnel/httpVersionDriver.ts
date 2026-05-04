@@ -17,6 +17,7 @@
 
 import type { VpsProfile } from "./types.ts";
 import type { FetchLike, FetchResponse } from "./httpHeartbeatDriver.ts";
+import type { HeartbeatDriver, HeartbeatStatus } from "./orchestrator.ts";
 
 export class HttpVersionError extends Error {
   override readonly name = "HttpVersionError";
@@ -86,6 +87,41 @@ export interface HttpVersionProbeResult {
   readonly daemonVersion?: string;
   readonly commit?: string;
   readonly channel?: string;
+}
+
+export interface VersionProbeDriver {
+  check(input: { readonly profile: VpsProfile; readonly localPort: number }): Promise<HttpVersionProbeResult>;
+}
+
+export interface VersionedHeartbeatDriverOptions {
+  readonly health: HeartbeatDriver;
+  readonly version: VersionProbeDriver;
+}
+
+/** HeartbeatDriver wrapper used by the connect pipeline.
+ *
+ * The cheap /v1/health probe proves the tunnel and daemon process are
+ * reachable. The /v1/version probe then maps schema drift into the FSM's
+ * non-blocking `version_mismatch` transition instead of treating it like a
+ * dropped tunnel.
+ */
+export class VersionedHeartbeatDriver implements HeartbeatDriver {
+  readonly #health: HeartbeatDriver;
+  readonly #version: VersionProbeDriver;
+
+  constructor(options: VersionedHeartbeatDriverOptions) {
+    this.#health = options.health;
+    this.#version = options.version;
+  }
+
+  async check(input: { readonly profile: VpsProfile; readonly localPort: number }): Promise<HeartbeatStatus> {
+    const health = await this.#health.check(input);
+    if (health === "version_mismatch") {
+      return health;
+    }
+    const version = await this.#version.check(input);
+    return version.compatibility === "compatible" ? "ok" : "version_mismatch";
+  }
 }
 
 export class HttpVersionDriver {

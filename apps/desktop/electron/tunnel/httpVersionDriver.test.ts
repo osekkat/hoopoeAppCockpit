@@ -5,8 +5,13 @@ import { describe, expect, test } from "bun:test";
 import {
   HttpVersionDriver,
   HttpVersionError,
+  VersionedHeartbeatDriver,
+  type HttpVersionProbeResult,
+  type VersionCompatibility,
+  type VersionProbeDriver,
 } from "./httpVersionDriver.ts";
 import type { FetchLike, FetchResponse } from "./httpHeartbeatDriver.ts";
+import type { HeartbeatDriver } from "./orchestrator.ts";
 import type { VpsProfile } from "./types.ts";
 
 const PROFILE: VpsProfile = {
@@ -358,3 +363,105 @@ describe("HttpVersionDriver.check", () => {
     expect(called).toBe(2);
   });
 });
+
+describe("VersionedHeartbeatDriver.check", () => {
+  test("compatible version: health ok + version compatible returns ok", async () => {
+    const calls: string[] = [];
+    const driver = new VersionedHeartbeatDriver({
+      health: makeHeartbeatDriver(async () => {
+        calls.push("health");
+        return "ok";
+      }),
+      version: makeVersionProbe(async () => {
+        calls.push("version");
+        return versionResult("compatible", 1);
+      }),
+    });
+
+    const result = await driver.check({ profile: PROFILE, localPort: 17655 });
+
+    expect(result).toBe("ok");
+    expect(calls).toEqual(["health", "version"]);
+  });
+
+  test("version mismatch: maps compatibility verdict to HeartbeatStatus", async () => {
+    const driver = new VersionedHeartbeatDriver({
+      health: makeHeartbeatDriver(async () => "ok"),
+      version: makeVersionProbe(async () => versionResult("version_mismatch", 99)),
+    });
+
+    const result = await driver.check({ profile: PROFILE, localPort: 17655 });
+
+    expect(result).toBe("version_mismatch");
+  });
+
+  test("health mismatch short-circuits version probe", async () => {
+    let versionCalls = 0;
+    const driver = new VersionedHeartbeatDriver({
+      health: makeHeartbeatDriver(async () => "version_mismatch"),
+      version: makeVersionProbe(async () => {
+        versionCalls += 1;
+        return versionResult("compatible", 1);
+      }),
+    });
+
+    const result = await driver.check({ profile: PROFILE, localPort: 17655 });
+
+    expect(result).toBe("version_mismatch");
+    expect(versionCalls).toBe(0);
+  });
+
+  test("health failure propagates and skips version probe", async () => {
+    let versionCalls = 0;
+    const driver = new VersionedHeartbeatDriver({
+      health: makeHeartbeatDriver(async () => {
+        throw new Error("daemon unreachable");
+      }),
+      version: makeVersionProbe(async () => {
+        versionCalls += 1;
+        return versionResult("compatible", 1);
+      }),
+    });
+
+    try {
+      await driver.check({ profile: PROFILE, localPort: 17655 });
+      throw new Error("expected throw");
+    } catch (err) {
+      expect((err as Error).message).toBe("daemon unreachable");
+    }
+    expect(versionCalls).toBe(0);
+  });
+
+  test("version failure propagates after health succeeds", async () => {
+    const driver = new VersionedHeartbeatDriver({
+      health: makeHeartbeatDriver(async () => "ok"),
+      version: makeVersionProbe(async () => {
+        throw new Error("malformed version response");
+      }),
+    });
+
+    try {
+      await driver.check({ profile: PROFILE, localPort: 17655 });
+      throw new Error("expected throw");
+    } catch (err) {
+      expect((err as Error).message).toBe("malformed version response");
+    }
+  });
+});
+
+function makeHeartbeatDriver(check: HeartbeatDriver["check"]): HeartbeatDriver {
+  return { check };
+}
+
+function makeVersionProbe(
+  check: (input: { readonly profile: VpsProfile; readonly localPort: number }) => Promise<HttpVersionProbeResult>,
+): VersionProbeDriver {
+  return { check };
+}
+
+function versionResult(
+  compatibility: VersionCompatibility,
+  reportedSchemaVersion: number,
+): HttpVersionProbeResult {
+  return { compatibility, reportedSchemaVersion };
+}
