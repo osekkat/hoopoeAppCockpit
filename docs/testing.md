@@ -102,6 +102,56 @@ release-gate workflow that diffs envelopes against `main` are tracked
 separately in the CI bead — they touch `.github/workflows/` which is
 shared infra.
 
+## Strategy Matrix
+
+| Surface | Required coverage | Evidence |
+| --- | --- | --- |
+| Desktop unit | Components, stores, hooks, IPC contracts, renderer hardening. | `bun-test` envelope. |
+| Desktop e2e | First-run wizard, Activity panel, stage navigation, Diagnostics, error surfaces. | Playwright envelope, screenshots where relevant. |
+| Daemon unit | Adapters, scheduler invariants, auth, jobs, process manager, audit, upgrade, capabilities. | `go-test` envelope. |
+| Adapter contracts | Normal, missing tool, unsupported version, malformed JSON, timeout, high-volume output. | Golden fixtures under `docs/integration-contracts/` and `packages/fixtures/`. |
+| Tending harness | Healthy hour, idle-not-stuck, wedged pane, rate limit, stale reservation, budget breach, skill drift, missing tool, postcondition failure. | Fixture replay evidence. |
+| Chaos | Tunnel drop, daemon restart, disk pressure, slow renderer, malformed adapter output, long scheduler job. | `@chaos` evidence plus replay logs. |
+| Release smoke | Install, pair, launch mock swarm, health, review, upgrade, restart/replay, no-secret audit scan. | `@release` evidence under `docs/test-evidence/release/`. |
+
+## Disposable VPS E2E
+
+Real-VPS suites are gated and never run in ordinary local unit loops. A nightly
+or pre-release job may provision or attach a disposable Ubuntu VPS, run the
+wizard, install ACFS, install the daemon, import a fixture repo, execute the
+Phase 3/18 smoke path, then destroy or archive the VPS according to provider
+policy.
+
+Required artifacts:
+
+- bootstrap raw log and parsed checkpoint stream;
+- `/v1/version`, `/v1/capabilities`, and readiness snapshots;
+- `br`, `bv --robot-*`, NTM, Agent Mail, CAAM, caut, rch adapter snapshots;
+- audit excerpt with secrets scan result;
+- daemon upgrade happy-path or rollback evidence when testing releases.
+
+## Smoke Commands
+
+Use `rch` for Go and heavy test/build work:
+
+```bash
+cd apps/daemon
+rch exec -- go test ./...
+rch exec -- go build ./...
+rch exec -- go vet ./...
+```
+
+Desktop smoke:
+
+```bash
+rch exec -- bun run --cwd apps/desktop typecheck
+rch exec -- bun run --cwd apps/desktop test
+```
+
+Docs-only changes should at minimum run a no-op docs/link check when one exists,
+UBS on changed supported files, and a relevant surface smoke if the docs claim a
+specific code contract.
+
 ## Cross-references
 
 - `plan.md §10.5` — SLO numeric targets.

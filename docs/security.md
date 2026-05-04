@@ -3,6 +3,87 @@
 `plan.md` remains authoritative. This file records implementation guidance that
 daemon and desktop code should follow when the plan names a security boundary.
 
+## CommandSpec
+
+All mutating project-level actions cross the daemon boundary as typed command
+specifications. The renderer and normal daemon API never expose arbitrary shell
+execution.
+
+```json
+{
+  "schemaVersion": 1,
+  "id": "git.commit",
+  "actor": "agent:FuchsiaBear",
+  "projectId": "hoopoe-app-cockpit",
+  "intent": "commit staged changes for hp-l7e",
+  "argv": ["git", "commit", "-m", "[hp-l7e] add docs suite"],
+  "workingDirectory": "/data/projects/hoopoeAppCockpit/repo",
+  "environmentPolicy": "minimal",
+  "approval": {
+    "required": false,
+    "checkpoint": "typed-allowlist"
+  },
+  "idempotencyKey": "hp-l7e:commit:docs-suite"
+}
+```
+
+Rules:
+
+- `argv` is an array, never a shell string.
+- `workingDirectory` must pass project sandbox validation.
+- `environmentPolicy` is allowlisted; secrets are injected only by the
+  subsystem that owns them.
+- Destructive or privileged commands require an approval checkpoint before
+  execution.
+- Every attempt, refusal, approval, and result emits an audit event.
+
+## Approval Checkpoint Matrix
+
+| Action | Checkpoint | Default | Evidence |
+| --- | --- | --- | --- |
+| Stage/commit/push from VPS repo | Typed allowlist | Allowed after bead reservation checks | Git command result, bead id, actor |
+| Force push | Human approval plus DCG/SLB when configured | Blocked | Remote ref, old/new SHA, reason |
+| Hard reset or destructive checkout | Human approval | Blocked | Target ref, affected files |
+| Delete project or local clone | Explicit human approval | Blocked | Path, project id, confirmation text |
+| Kill agent, swarm, or session | Human approval or tending policy | Conditional | NTM session id, reason |
+| Release another agent's reservation | Policy approval plus audit | Conditional | Reservation id, holder, TTL, reason |
+| Public daemon bind | Config flag plus runtime confirmation token | Blocked | Requested/effective bind, token result |
+| Daemon upgrade | Human approval plus provenance verification | Conditional | Manifest, checks, backup path |
+| Insecure dev override | Explicit human approval plus persistent warning | Blocked outside dev | Actor, reason, failed verification |
+| Provider create/destroy instance | Human approval | Blocked | Provider, instance id, cost/destroy ack |
+| Budget or subscription cap raise | Human approval | Blocked | Old/new cap, provider/account |
+| Raw pane reveal | Audited Diagnostics toggle | Hidden by default | Pane id, requester, timestamp |
+
+## Audit Log Schema
+
+The daemon writes append-only JSONL to `~/.hoopoe/audit.jsonl`. `[SILENT]`
+activity may be hidden from the Activity panel, but it is still audited.
+
+```json
+{
+  "schemaVersion": 1,
+  "id": "audit_01HX...",
+  "ts": "2026-05-04T00:00:00Z",
+  "actor": "agent:FuchsiaBear",
+  "projectId": "hoopoe-app-cockpit",
+  "category": "command",
+  "action": "git.commit",
+  "target": {
+    "type": "repo",
+    "id": "/data/projects/hoopoeAppCockpit/repo"
+  },
+  "decision": "allowed",
+  "approvalId": null,
+  "idempotencyKey": "hp-l7e:commit:docs-suite",
+  "redactionVersion": 1,
+  "details": {}
+}
+```
+
+Audit entries must be redacted before persistence and before streaming to the
+desktop. Tokens, passphrases, provider credentials, bearer values, WS-tokens,
+and raw secrets are never valid audit payloads.
+
 ## Renderer Hardening (hp-rflj, plan.md §5.4 lines 1-2)
 
 Hoopoe's renderer process cannot reach the filesystem, network, SSH,

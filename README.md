@@ -10,18 +10,22 @@ Hoopoe turns the Agentic Coding Flywheel — a powerful but manual collection of
 
 ## Status
 
-This repository is in the **planning phase** (pre-Phase-1). The monorepo described below is the *target* layout per `plan.md §12`; it does not yet exist on disk.
+This repository is now an active Hoopoe monorepo. `plan.md` remains the
+authoritative strategy document, while the code and docs tree contain the
+living implementation contracts that Appendix A moved out of the plan.
 
-Current authoritative artifacts:
+Current authoritative entry points:
 
-| Path                       | What it is                                                                |
-| -------------------------- | ------------------------------------------------------------------------- |
-| `plan.md`                  | Strategic plan: vision, principles, architecture, decisions, roadmap       |
-| `plan.full.md`             | Preserved earlier full version of the plan                                 |
-| `AGENTS.md`                | Guidelines for AI coding agents working in this repo                       |
-| `design/mockups/v1/`       | Pre-Phase-1 visual sketches (Liquid Glass shell, stages, wizard)           |
-| `design/DECISIONS.md`      | Design-vs-plan conflicts ledger                                            |
-| `.beads/`                  | Bead tracking via `br`                                                     |
+| Path | What it is |
+| --- | --- |
+| `plan.md` | Strategic plan: vision, principles, architecture, decisions, roadmap |
+| `AGENTS.md` | Required operating rules for agents working in this repo |
+| `apps/desktop/` | Electron + TypeScript desktop cockpit |
+| `apps/daemon/` | Go daemon that runs on the VPS and wraps Flywheel tools |
+| `packages/` | Shared schemas, fixtures, design-system, and test infrastructure |
+| `docs/` | Code-near architecture, security, onboarding, testing, and operations references |
+| `design/` | Mockups and design-vs-plan decisions |
+| `.beads/` | Bead tracking via `br` |
 
 When `plan.md` and any other document disagree, **`plan.md` wins**.
 
@@ -179,13 +183,18 @@ Hoopoe is an integrator. It does not reimplement what these tools already do.
 
 ## Repository layout
 
-### Today
+### Current tree
 
 ```
 hoopoeAppCockpit/
 ├── AGENTS.md            # Guidelines for AI coding agents (read first)
 ├── plan.md              # Strategic plan (authoritative)
 ├── plan.full.md         # Preserved earlier full version
+├── apps/
+│   ├── daemon/          # Go daemon and scripts
+│   └── desktop/         # Electron desktop app
+├── packages/            # Schemas, fixtures, test infra, design-system
+├── docs/                # Architecture refs, ADRs, runbooks
 ├── design/
 │   ├── README.md
 │   ├── DECISIONS.md     # Design-vs-plan conflicts ledger
@@ -193,7 +202,7 @@ hoopoeAppCockpit/
 └── .beads/              # Issue tracking via br
 ```
 
-### Target (per `plan.md §12 Phase 1`)
+### Workspace intent (per `plan.md §12 Phase 1+`)
 
 ```
 apps/
@@ -237,7 +246,9 @@ Phase 12   Debugging / Hardening: review rounds and convergence
 Phase 13   Provider automation and production polish
 ```
 
-The current immediate work is **Phase 0** — a research spike on a real ACFS VPS that produces machine-readable JSON snapshots and parser fixtures for Git, beads, `bv`, NTM, Agent Mail, reservations, and health.
+Phase 0, Phase 1, Phase 1.5, and the early Phase 2 daemon substrate have
+landed in this checkout. The remaining beads continue to follow the same
+roadmap order and the milestone acceptance tests in `plan.md §18`.
 
 ---
 
@@ -323,14 +334,22 @@ Issue tracking uses `br` (beads_rust). Coordination uses MCP Agent Mail with fil
 | ----------------------------------------------------- | ---------------------------------------------- |
 | What is Hoopoe and why?                               | `plan.md §0`, `§1`                             |
 | How is the system put together?                       | `plan.md §2`, `§3`                             |
+| What owns each source of truth and data path?          | `docs/source-of-truth.md`                      |
+| How do I get a dev checkout running?                   | `docs/getting-started.md`                      |
 | What does the user see and do?                        | `plan.md §7` (the four stages + Activity panel) |
 | How does the cockpit reach models?                    | `plan.md §7.1`, `§13`                          |
 | How is the swarm tended?                              | `plan.md §8`                                   |
 | How does Hardening work?                              | `plan.md §7.4`, `§9`                           |
-| Security model and approvals                          | `plan.md §5`                                   |
-| First install / VPS onboarding                        | `plan.md §6`                                   |
+| Security model, approvals, audit schema               | `docs/security.md`                             |
+| First install / VPS onboarding                        | `docs/onboarding.md`, `docs/wizard.md`         |
+| Daemon API seed contract                              | `docs/api-seed.md`                             |
+| Process and job management                            | `docs/process-manager.md`                      |
+| Reconnect and event replay                            | `docs/reconnect-replay.md`                     |
+| Daemon upgrade and rollback                           | `docs/upgrade-and-rollback.md`                 |
+| Testing and release smoke                             | `docs/testing.md`                              |
+| Troubleshooting                                       | `docs/troubleshooting.md`                      |
 | Roadmap and milestone acceptance                      | `plan.md §12`, `§16`, `§18`                    |
-| Risks and mitigations                                 | `plan.md §14`                                  |
+| Risks and mitigations                                 | `docs/risks.md`, `plan.md §14`                 |
 | MVP scope (in/out of scope, deferred)                 | `plan.md §13`                                  |
 | t3code lift inventory + anti-patterns to refuse       | `plan.md` Appendix B                           |
 | Non-negotiable guardrails                             | `plan.md` Appendix C                           |
@@ -341,4 +360,4 @@ Issue tracking uses `br` (beads_rust). Coordination uses MCP Agent Mail with fil
 
 ## License
 
-Hoopoe's own code is unreleased while the project is pre-Phase-1. The desktop scaffolding lifts files from [`github.com/pingdotgg/t3code`](https://github.com/pingdotgg/t3code) (MIT, Copyright 2026 T3 Tools Inc.); the MIT notice is preserved on every vendored file under `apps/desktop/src/vendored/t3code/` per `plan.md` Appendix B.
+Hoopoe's own code is unreleased while the project is pre-beta. The desktop scaffolding lifts files from [`github.com/pingdotgg/t3code`](https://github.com/pingdotgg/t3code) (MIT, Copyright 2026 T3 Tools Inc.); the MIT notice is preserved on every vendored file under `apps/desktop/src/vendored/t3code/` per `plan.md` Appendix B.
