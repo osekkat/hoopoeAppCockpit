@@ -1,0 +1,42 @@
+{
+  "success": true,
+  "timestamp": "2026-05-04T14:57:22Z",
+  "version": "1.0.0",
+  "output_format": "json",
+  "generated_at": "2026-05-04T14:57:22.734677179Z",
+  "safety_profile": "standard",
+  "system": {
+    "version": "1.8.0",
+    "commit": "384f91b06b5f7c5be27b8f63289f9432372b26c7",
+    "build_date": "2026-03-07T21:15:33Z",
+    "go_version": "go1.25.7",
+    "os": "linux",
+    "arch": "amd64",
+    "tmux_available": true
+  },
+  "sessions": [],
+  "summary": {
+    "total_sessions": 0,
+    "total_agents": 0,
+    "attached_count": 0,
+    "claude_count": 0,
+    "codex_count": 0,
+    "gemini_count": 0,
+    "cursor_count": 0,
+    "windsurf_count": 0,
+    "aider_count": 0
+  },
+  "beads": {
+    "available": false,
+    "reason": "no .beads/ directory in /home/admin"
+  },
+  "graph_metrics": {
+    "keystones_count": 0,
+    "health_status": "unknown",
+    "drift_message": "no .beads directory in /home/admin"
+  },
+  "agent_mail": {
+    "available": true,
+    "server_url": "http://127.0.0.1:8765/mcp/"
+  }
+}

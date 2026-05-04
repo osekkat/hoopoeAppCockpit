@@ -1,0 +1,79 @@
+{
+  "fixturesVersion": "phase0-ntm-2026-05-04",
+  "tool": "ntm",
+  "ntmVersion": "1.8.0",
+  "ntmCommit": "384f91b06b5f7c5be27b8f63289f9432372b26c7",
+  "ntmBuildDate": "2026-03-07T21:15:33Z",
+  "goVersion": "go1.25.7",
+  "vpsId": "research-spike-2026-05-04",
+  "vpsHost": "admin@45.85.250.216",
+  "capturedAt": "2026-05-04T14:57:00Z",
+  "capturedBy": "HoopoeCC3",
+  "capturedFrom": "real-vps",
+  "scenarioState": "fresh-no-sessions-no-beads",
+  "captures": [
+    {
+      "file": "robot-capabilities.json",
+      "argv": ["ntm", "--robot-capabilities"],
+      "purpose": "Discoverable robot API schema; primary contract for ntm adapter."
+    },
+    {
+      "file": "robot-snapshot.json",
+      "argv": ["ntm", "--robot-snapshot"],
+      "purpose": "Unified state: sessions + beads_summary + agent_mail + tools."
+    },
+    {
+      "file": "robot-snapshot.toon",
+      "argv": ["ntm", "--robot-snapshot", "--robot-format=toon"],
+      "purpose": "Token-efficient TOON projection of robot-snapshot for replay tests that compare both encodings."
+    },
+    {
+      "file": "robot-version.json",
+      "argv": ["ntm", "--robot-version"],
+      "purpose": "Build pedigree (version/commit/build_date/go_version/os/arch); pinned in adapter probe."
+    },
+    {
+      "file": "robot-status.json",
+      "argv": ["ntm", "--robot-status"],
+      "purpose": "Compact session/agent/alert summary surfaced in the daemon health endpoint."
+    },
+    {
+      "file": "robot-tools.json",
+      "argv": ["ntm", "--robot-tools"],
+      "purpose": "Tool inventory + per-tool health probe — feeds the daemon /v1/capabilities tool registry."
+    },
+    {
+      "file": "robot-mail.json",
+      "argv": ["ntm", "--robot-mail", "--mail-project=/home/admin"],
+      "purpose": "Agent Mail messages snapshot keyed by project."
+    },
+    {
+      "file": "robot-mail-check.json",
+      "argv": ["ntm", "--robot-mail-check", "--mail-project=/home/admin"],
+      "purpose": "Mail health/check probe; success=false in this scenario because no mail server is locally bound at capture time."
+    },
+    {
+      "file": "robot-alerts.json",
+      "argv": ["ntm", "--robot-alerts"],
+      "purpose": "Alert stream; closest equivalent to the user-listed --robot-attention which does not exist in ntm 1.8.0."
+    }
+  ],
+  "drift": {
+    "userListedFlags": [
+      "--robot-snapshot --robot-format=toon",
+      "--robot-capabilities",
+      "--robot-events --since-cursor=0",
+      "--robot-attention",
+      "--robot-mail-check"
+    ],
+    "absentFlags": [
+      "--robot-events",
+      "--robot-attention"
+    ],
+    "substitutions": {
+      "--robot-events": "no direct equivalent; --robot-history requires a session arg, --robot-replay also session-scoped — captured neither (defer until we have a session)",
+      "--robot-attention": "captured --robot-alerts which exposes the same alert-state surface used by attention/label-attention"
+    },
+    "notes": "Scenario captured against a fresh VPS (no ntm sessions, no .beads/ in /home/admin). active and failure scenarios are deferred until a session is provisioned (see follow-up bead in close note)."
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "success": true,
+  "timestamp": "2026-05-04T14:57:21Z",
+  "version": "1.0.0",
+  "output_format": "auto",
+  "system": {
+    "version": "1.8.0",
+    "commit": "384f91b06b5f7c5be27b8f63289f9432372b26c7",
+    "build_date": "2026-03-07T21:15:33Z",
+    "go_version": "go1.25.7",
+    "os": "linux",
+    "arch": "amd64",
+    "tmux_available": false
+  }
+}

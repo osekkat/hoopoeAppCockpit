@@ -1,0 +1,366 @@
+{
+  "success": true,
+  "timestamp": "2026-05-04T14:57:54Z",
+  "version": "1.0.0",
+  "output_format": "json",
+  "tools": [
+    {
+      "name": "acfs",
+      "installed": true,
+      "version": "0.7.0",
+      "path": "/home/admin/.local/bin/acfs",
+      "capabilities": [
+        "robot_mode",
+        "doctor",
+        "info",
+        "status",
+        "update",
+        "dashboard",
+        "session"
+      ],
+      "health": {
+        "healthy": true,
+        "message": "acfs is healthy",
+        "latency_ms": 328,
+        "last_checked": "2026-05-04T14:57:54Z"
+      }
+    },
+    {
+      "name": "am",
+      "installed": true,
+      "version": "mcp-agent-mail 0.2.51",
+      "path": "/home/admin/.local/bin/mcp-agent-mail",
+      "capabilities": [
+        "macros",
+        "server_available"
+      ],
+      "health": {
+        "healthy": true,
+        "message": "Agent Mail server is healthy",
+        "latency_ms": 1,
+        "last_checked": "2026-05-04T14:57:53Z"
+      }
+    },
+    {
+      "name": "bd",
+      "installed": true,
+      "version": "br 0.2.3",
+      "path": "/home/admin/.local/bin/br",
+      "capabilities": [
+        "robot_mode"
+      ],
+      "health": {
+        "healthy": true,
+        "message": "beads_rust is healthy",
+        "latency_ms": 20,
+        "last_checked": "2026-05-04T14:57:53Z"
+      }
+    },
+    {
+      "name": "bv",
+      "installed": true,
+      "version": "bv v0.16.0",
+      "path": "/home/admin/.local/bin/bv",
+      "capabilities": [
+        "robot_mode"
+      ],
+      "health": {
+        "healthy": true,
+        "message": "bv is healthy",
+        "latency_ms": 51,
+        "last_checked": "2026-05-04T14:57:53Z"
+      },
+      "required": true
+    },
+    {
+      "name": "caam",
+      "installed": true,
+      "version": "0.0.0",
+      "path": "/home/admin/.local/bin/caam",
+      "capabilities": [
+        "robot_mode"
+      ],
+      "health": {
+        "healthy": false,
+        "message": "caam at /home/admin/.local/bin/caam not responding",
+        "error": "failed to get caam version: exit status 1",
+        "latency_ms": 66,
+        "last_checked": "2026-05-04T14:57:53Z"
+      }
+    },
+    {
+      "name": "cass",
+      "installed": true,
+      "version": "cass 0.4.1",
+      "path": "/home/admin/.local/bin/cass",
+      "capabilities": [
+        "robot_mode",
+        "search"
+      ],
+      "health": {
+        "healthy": false,
+        "message": "cass at /home/admin/.local/bin/cass not responding",
+        "error": "exit status 1",
+        "latency_ms": 16,
+        "last_checked": "2026-05-04T14:57:53Z"
+      }
+    },
+    {
+      "name": "caut",
+      "installed": false,
+      "version": "0.0.0",
+      "capabilities": [],
+      "health": {
+        "healthy": false,
+        "message": "Tool not installed",
+        "last_checked": "2026-05-04T14:57:53Z"
+      }
+    },
+    {
+      "name": "cm",
+      "installed": true,
+      "version": "0.2.3",
+      "path": "/home/admin/.local/bin/cm",
+      "capabilities": [
+        "robot_mode"
+      ],
+      "health": {
+        "healthy": true,
+        "message": "cm is healthy (daemon not running)",
+        "latency_ms": 246,
+        "last_checked": "2026-05-04T14:57:54Z"
+      }
+    },
+    {
+      "name": "dcg",
+      "installed": true,
+      "version": "0.5.0",
+      "path": "/home/admin/.local/bin/dcg",
+      "capabilities": [],
+      "health": {
+        "healthy": true,
+        "message": "dcg is healthy",
+        "latency_ms": 6,
+        "last_checked": "2026-05-04T14:57:53Z"
+      }
+    },
+    {
+      "name": "giil",
+      "installed": true,
+      "version": "giil version 3.1.0 (Hybrid Edition)",
+      "path": "/home/admin/.local/bin/giil",
+      "capabilities": [
+        "robot_mode"
+      ],
+      "health": {
+        "healthy": true,
+        "message": "giil is healthy",
+        "latency_ms": 20,
+        "last_checked": "2026-05-04T14:57:53Z"
+      }
+    },
+    {
+      "name": "jfp",
+      "installed": true,
+      "version": "jfp/1.0.0 linux-x64 node-v24.3.0",
+      "path": "/home/admin/.local/bin/jfp",
+      "capabilities": [
+        "robot_mode",
+        "search",
+        "list",
+        "show",
+        "install",
+        "export",
+        "update",
+        "suggest",
+        "mcp_server"
+      ],
+      "health": {
+        "healthy": true,
+        "message": "jfp is healthy",
+        "latency_ms": 248,
+        "last_checked": "2026-05-04T14:57:54Z"
+      }
+    },
+    {
+      "name": "ms",
+      "installed": true,
+      "version": "0.1.0",
+      "path": "/home/admin/.local/bin/ms",
+      "capabilities": [
+        "robot_mode",
+        "search",
+        "suggest",
+        "list",
+        "show"
+      ],
+      "health": {
+        "healthy": true,
+        "message": "ms is healthy",
+        "latency_ms": 18,
+        "last_checked": "2026-05-04T14:57:53Z"
+      }
+    },
+    {
+      "name": "pt",
+      "installed": true,
+      "version": "pt 2.1.0",
+      "path": "/home/admin/.local/bin/pt",
+      "capabilities": [],
+      "health": {
+        "healthy": true,
+        "message": "pt is healthy (version check passed)",
+        "latency_ms": 33,
+        "last_checked": "2026-05-04T14:57:53Z"
+      }
+    },
+    {
+      "name": "rano",
+      "installed": true,
+      "version": "rano 0.1.0",
+      "path": "/home/admin/.local/bin/rano",
+      "capabilities": [],
+      "health": {
+        "healthy": false,
+        "message": "rano lacks required capabilities (CAP_NET_ADMIN)",
+        "latency_ms": 2,
+        "last_checked": "2026-05-04T14:57:53Z"
+      }
+    },
+    {
+      "name": "rch",
+      "installed": true,
+      "version": "rch 1.0.24",
+      "path": "/home/admin/.local/bin/rch",
+      "capabilities": [
+        "robot_mode"
+      ],
+      "health": {
+        "healthy": true,
+        "message": "rch is healthy",
+        "latency_ms": 13,
+        "last_checked": "2026-05-04T14:57:53Z"
+      }
+    },
+    {
+      "name": "ru",
+      "installed": true,
+      "version": "ru version 1.3.1",
+      "path": "/home/admin/.local/bin/ru",
+      "capabilities": [],
+      "health": {
+        "healthy": true,
+        "message": "ru is healthy",
+        "latency_ms": 78,
+        "last_checked": "2026-05-04T14:57:53Z"
+      }
+    },
+    {
+      "name": "rust_proxy",
+      "installed": false,
+      "version": "0.0.0",
+      "capabilities": [],
+      "health": {
+        "healthy": false,
+        "message": "Tool not installed",
+        "last_checked": "2026-05-04T14:57:53Z"
+      }
+    },
+    {
+      "name": "s2p",
+      "installed": true,
+      "version": "0.0.0",
+      "path": "/home/admin/.local/bin/s2p",
+      "capabilities": [
+        "context_pack"
+      ],
+      "health": {
+        "healthy": false,
+        "message": "s2p at /home/admin/.local/bin/s2p not responding",
+        "error": "failed to get s2p version: exit status 1",
+        "latency_ms": 390,
+        "last_checked": "2026-05-04T14:57:54Z"
+      }
+    },
+    {
+      "name": "slb",
+      "installed": true,
+      "version": "0.0.0",
+      "path": "/usr/bin/slb",
+      "capabilities": [
+        "robot_mode",
+        "daemon_mode",
+        "request",
+        "approve",
+        "deny",
+        "status",
+        "pending"
+      ],
+      "health": {
+        "healthy": false,
+        "message": "slb at /usr/bin/slb not responding",
+        "error": "failed to get slb version: exit status 1",
+        "latency_ms": 15,
+        "last_checked": "2026-05-04T14:57:53Z"
+      }
+    },
+    {
+      "name": "ubs",
+      "installed": true,
+      "version": "UBS Meta-Runner v5.2.42",
+      "path": "/home/admin/.local/bin/ubs",
+      "capabilities": [],
+      "health": {
+        "healthy": true,
+        "message": "ubs is healthy",
+        "latency_ms": 31,
+        "last_checked": "2026-05-04T14:57:53Z"
+      }
+    },
+    {
+      "name": "xf",
+      "installed": true,
+      "version": "xf 0.3.2\n  Built: 2026-04-28T00:31:32.031756740Z\n  Rustc: 1.97.0-nightly\n  Target: x86_64-unknown-linux-gnu",
+      "path": "/home/admin/.local/bin/xf",
+      "capabilities": [
+        "search",
+        "robot_mode"
+      ],
+      "health": {
+        "healthy": false,
+        "message": "xf xf 0.3.2\n  Built: 2026-04-28T00:31:32.031756740Z\n  Rustc: 1.97.0-nightly\n  Target: x86_64-unknown-linux-gnu version_ok=true archive=/home/admin/.xf/archive archive_ok=false(stat /home/admin/.xf/archive: no such file or directory) index_valid=false",
+        "latency_ms": 32,
+        "last_checked": "2026-05-04T14:57:53Z"
+      }
+    }
+  ],
+  "health_report": {
+    "total": 21,
+    "healthy": 13,
+    "unhealthy": 6,
+    "missing": 2,
+    "tools": {
+      "acfs": true,
+      "am": true,
+      "bd": true,
+      "bv": true,
+      "caam": false,
+      "cass": false,
+      "caut": false,
+      "cm": true,
+      "dcg": true,
+      "giil": true,
+      "jfp": true,
+      "ms": true,
+      "pt": true,
+      "rano": false,
+      "rch": true,
+      "ru": true,
+      "rust_proxy": false,
+      "s2p": false,
+      "slb": false,
+      "ubs": true,
+      "xf": false
+    }
+  }
+}

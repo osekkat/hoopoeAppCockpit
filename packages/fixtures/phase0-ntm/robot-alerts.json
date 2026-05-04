@@ -1,0 +1,11 @@
+{
+  "success": true,
+  "timestamp": "2026-05-04T14:57:25Z",
+  "version": "1.0.0",
+  "output_format": "json",
+  "count": 0,
+  "alerts": [],
+  "_agent_hints": {
+    "summary": "0 active alerts"
+  }
+}

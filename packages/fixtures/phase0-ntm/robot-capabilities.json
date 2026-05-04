@@ -1,0 +1,2583 @@
+{
+  "success": true,
+  "timestamp": "2026-05-04T14:56:16Z",
+  "output_format": "auto",
+  "version": "1.8.0",
+  "commands": [
+    {
+      "name": "activity",
+      "flag": "--robot-activity",
+      "category": "state",
+      "description": "Get agent activity state (idle/busy/error) for all agents in a session.",
+      "parameters": [
+        {
+          "name": "session",
+          "flag": "--robot-activity",
+          "type": "string",
+          "required": true,
+          "description": "Session name"
+        },
+        {
+          "name": "activity-type",
+          "flag": "--activity-type",
+          "type": "string",
+          "required": false,
+          "description": "Filter by agent type: claude, codex, gemini"
+        }
+      ],
+      "examples": [
+        "ntm --robot-activity=myproject --activity-type=claude"
+      ]
+    },
+    {
+      "name": "context",
+      "flag": "--robot-context",
+      "category": "state",
+      "description": "Get context window usage estimates for all agents in a session.",
+      "parameters": [
+        {
+          "name": "session",
+          "flag": "--robot-context",
+          "type": "string",
+          "required": true,
+          "description": "Session name to analyze"
+        }
+      ],
+      "examples": [
+        "ntm --robot-context=myproject"
+      ]
+    },
+    {
+      "name": "dashboard",
+      "flag": "--robot-dashboard",
+      "category": "state",
+      "description": "Dashboard summary as markdown or JSON.",
+      "parameters": [],
+      "examples": [
+        "ntm --robot-dashboard"
+      ]
+    },
+    {
+      "name": "diagnose",
+      "flag": "--robot-diagnose",
+      "category": "state",
+      "description": "Comprehensive health check with fix recommendations.",
+      "parameters": [
+        {
+          "name": "session",
+          "flag": "--robot-diagnose",
+          "type": "string",
+          "required": true,
+          "description": "Session name"
+        },
+        {
+          "name": "diagnose-fix",
+          "flag": "--diagnose-fix",
+          "type": "bool",
+          "required": false,
+          "description": "Attempt auto-fix for fixable issues"
+        },
+        {
+          "name": "diagnose-brief",
+          "flag": "--diagnose-brief",
+          "type": "bool",
+          "required": false,
+          "description": "Minimal output (summary only)"
+        },
+        {
+          "name": "diagnose-pane",
+          "flag": "--diagnose-pane",
+          "type": "int",
+          "required": false,
+          "description": "Diagnose specific pane only"
+        }
+      ],
+      "examples": [
+        "ntm --robot-diagnose=myproject --diagnose-fix"
+      ]
+    },
+    {
+      "name": "diff",
+      "flag": "--robot-diff",
+      "category": "state",
+      "description": "Compare agent activity and file changes over time.",
+      "parameters": [
+        {
+          "name": "session",
+          "flag": "--robot-diff",
+          "type": "string",
+          "required": true,
+          "description": "Session name"
+        },
+        {
+          "name": "diff-since",
+          "flag": "--diff-since",
+          "type": "string",
+          "required": false,
+          "default": "15m",
+          "description": "Duration to look back"
+        }
+      ],
+      "examples": [
+        "ntm --robot-diff=myproject --diff-since=10m"
+      ]
+    },
+    {
+      "name": "files",
+      "flag": "--robot-files",
+      "category": "state",
+      "description": "Get file changes with agent attribution and conflict detection.",
+      "parameters": [
+        {
+          "name": "session",
+          "flag": "--robot-files",
+          "type": "string",
+          "required": false,
+          "description": "Optional session filter"
+        },
+        {
+          "name": "files-window",
+          "flag": "--files-window",
+          "type": "string",
+          "required": false,
+          "default": "15m",
+          "description": "Time window: 5m, 15m, 1h, all"
+        },
+        {
+          "name": "files-limit",
+          "flag": "--files-limit",
+          "type": "int",
+          "required": false,
+          "default": "100",
+          "description": "Max changes to return"
+        }
+      ],
+      "examples": [
+        "ntm --robot-files=myproject --files-window=1h"
+      ]
+    },
+    {
+      "name": "health",
+      "flag": "--robot-health",
+      "category": "state",
+      "description": "Get session or project health status.",
+      "parameters": [
+        {
+          "name": "session",
+          "flag": "--robot-health",
+          "type": "string",
+          "required": false,
+          "description": "Session for per-agent health, empty for project health"
+        }
+      ],
+      "examples": [
+        "ntm --robot-health=myproject"
+      ]
+    },
+    {
+      "name": "health-restart-stuck",
+      "flag": "--robot-health-restart-stuck",
+      "category": "state",
+      "description": "Detect and restart agents stuck with no output for N minutes.",
+      "parameters": [
+        {
+          "name": "session",
+          "flag": "--robot-health-restart-stuck",
+          "type": "string",
+          "required": true,
+          "description": "Session name"
+        },
+        {
+          "name": "stuck-threshold",
+          "flag": "--stuck-threshold",
+          "type": "duration",
+          "required": false,
+          "default": "5m",
+          "description": "Duration before considering agent stuck (e.g. 5m, 10m, 300s)"
+        },
+        {
+          "name": "dry-run",
+          "flag": "--dry-run",
+          "type": "bool",
+          "required": false,
+          "description": "Report stuck panes without restarting"
+        }
+      ],
+      "examples": [
+        "ntm --robot-health-restart-stuck=myproject",
+        "ntm --robot-health-restart-stuck=myproject --stuck-threshold=10m --dry-run"
+      ]
+    },
+    {
+      "name": "inspect-pane",
+      "flag": "--robot-inspect-pane",
+      "category": "state",
+      "description": "Detailed pane inspection with state detection and optional code block parsing.",
+      "parameters": [
+        {
+          "name": "session",
+          "flag": "--robot-inspect-pane",
+          "type": "string",
+          "required": true,
+          "description": "Session name"
+        },
+        {
+          "name": "inspect-index",
+          "flag": "--inspect-index",
+          "type": "int",
+          "required": false,
+          "default": "0",
+          "description": "Pane index to inspect"
+        },
+        {
+          "name": "inspect-lines",
+          "flag": "--inspect-lines",
+          "type": "int",
+          "required": false,
+          "default": "100",
+          "description": "Lines to capture"
+        },
+        {
+          "name": "inspect-code",
+          "flag": "--inspect-code",
+          "type": "bool",
+          "required": false,
+          "description": "Parse code blocks from output"
+        }
+      ],
+      "examples": [
+        "ntm --robot-inspect-pane=myproject --inspect-index=1 --inspect-code"
+      ]
+    },
+    {
+      "name": "markdown",
+      "flag": "--robot-markdown",
+      "category": "state",
+      "description": "System state as markdown tables.",
+      "parameters": [
+        {
+          "name": "md-compact",
+          "flag": "--md-compact",
+          "type": "bool",
+          "required": false,
+          "description": "Ultra-compact markdown with abbreviations"
+        },
+        {
+          "name": "md-session",
+          "flag": "--md-session",
+          "type": "string",
+          "required": false,
+          "description": "Filter to one session"
+        },
+        {
+          "name": "md-max-beads",
+          "flag": "--md-max-beads",
+          "type": "int",
+          "required": false,
+          "description": "Max beads per category"
+        },
+        {
+          "name": "md-max-alerts",
+          "flag": "--md-max-alerts",
+          "type": "int",
+          "required": false,
+          "description": "Max alerts to show"
+        }
+      ],
+      "examples": [
+        "ntm --robot-markdown --md-compact --md-session=myproject"
+      ]
+    },
+    {
+      "name": "metrics",
+      "flag": "--robot-metrics",
+      "category": "state",
+      "description": "Session metrics export for analysis.",
+      "parameters": [
+        {
+          "name": "session",
+          "flag": "--robot-metrics",
+          "type": "string",
+          "required": false,
+          "description": "Optional session filter"
+        },
+        {
+          "name": "metrics-period",
+          "flag": "--metrics-period",
+          "type": "string",
+          "required": false,
+          "default": "24h",
+          "description": "Period: 1h, 24h, 7d, all"
+        }
+      ],
+      "examples": [
+        "ntm --robot-metrics=myproject --metrics-period=7d"
+      ]
+    },
+    {
+      "name": "probe",
+      "flag": "--robot-probe",
+      "category": "state",
+      "description": "Active pane responsiveness probe using keystroke or interrupt methods.",
+      "parameters": [
+        {
+          "name": "session",
+          "flag": "--robot-probe",
+          "type": "string",
+          "required": true,
+          "description": "Session name"
+        },
+        {
+          "name": "panes",
+          "flag": "--panes",
+          "type": "string",
+          "required": false,
+          "description": "Comma-separated pane indices to probe"
+        },
+        {
+          "name": "probe-method",
+          "flag": "--probe-method",
+          "type": "string",
+          "required": false,
+          "default": "keystroke_echo",
+          "description": "Probe method: keystroke_echo, interrupt_test"
+        },
+        {
+          "name": "probe-timeout",
+          "flag": "--probe-timeout",
+          "type": "int",
+          "required": false,
+          "default": "5000",
+          "description": "Probe timeout in milliseconds"
+        },
+        {
+          "name": "probe-aggressive",
+          "flag": "--probe-aggressive",
+          "type": "bool",
+          "required": false,
+          "description": "Fallback to interrupt_test if keystroke_echo fails"
+        }
+      ],
+      "examples": [
+        "ntm --robot-probe=myproject",
+        "ntm --robot-probe=myproject --panes=2 --probe-method=interrupt_test"
+      ]
+    },
+    {
+      "name": "snapshot",
+      "flag": "--robot-snapshot",
+      "category": "state",
+      "description": "Unified state query: sessions + beads + alerts + mail. Use --since for delta snapshots.",
+      "parameters": [
+        {
+          "name": "since",
+          "flag": "--since",
+          "type": "string",
+          "required": false,
+          "description": "RFC3339 timestamp for delta snapshot"
+        },
+        {
+          "name": "bead-limit",
+          "flag": "--bead-limit",
+          "type": "int",
+          "required": false,
+          "default": "5",
+          "description": "Max beads per category"
+        },
+        {
+          "name": "robot-limit",
+          "flag": "--robot-limit",
+          "type": "int",
+          "required": false,
+          "default": "0",
+          "description": "Max sessions to return (alias: --limit)"
+        },
+        {
+          "name": "robot-offset",
+          "flag": "--robot-offset",
+          "type": "int",
+          "required": false,
+          "default": "0",
+          "description": "Pagination offset for sessions (alias: --offset)"
+        }
+      ],
+      "examples": [
+        "ntm --robot-snapshot",
+        "ntm --robot-snapshot --since=2025-01-15T10:00:00Z"
+      ]
+    },
+    {
+      "name": "status",
+      "flag": "--robot-status",
+      "category": "state",
+      "description": "Get tmux sessions, panes, and agent states. The primary entry point for understanding current system state.",
+      "parameters": [
+        {
+          "name": "robot-limit",
+          "flag": "--robot-limit",
+          "type": "int",
+          "required": false,
+          "default": "0",
+          "description": "Max sessions to return (alias: --limit)"
+        },
+        {
+          "name": "robot-offset",
+          "flag": "--robot-offset",
+          "type": "int",
+          "required": false,
+          "default": "0",
+          "description": "Pagination offset for sessions (alias: --offset)"
+        }
+      ],
+      "examples": [
+        "ntm --robot-status"
+      ]
+    },
+    {
+      "name": "summary",
+      "flag": "--robot-summary",
+      "category": "state",
+      "description": "Get session activity summary with agent metrics.",
+      "parameters": [
+        {
+          "name": "session",
+          "flag": "--robot-summary",
+          "type": "string",
+          "required": true,
+          "description": "Session name"
+        },
+        {
+          "name": "summary-since",
+          "flag": "--summary-since",
+          "type": "string",
+          "required": false,
+          "default": "30m",
+          "description": "Duration to look back"
+        }
+      ],
+      "examples": [
+        "ntm --robot-summary=myproject --summary-since=1h"
+      ]
+    },
+    {
+      "name": "tail",
+      "flag": "--robot-tail",
+      "category": "state",
+      "description": "Capture recent output from panes. Useful for checking agent progress or errors.",
+      "parameters": [
+        {
+          "name": "session",
+          "flag": "--robot-tail",
+          "type": "string",
+          "required": true,
+          "description": "Session name"
+        },
+        {
+          "name": "lines",
+          "flag": "--lines",
+          "type": "int",
+          "required": false,
+          "default": "20",
+          "description": "Lines per pane"
+        },
+        {
+          "name": "panes",
+          "flag": "--panes",
+          "type": "string",
+          "required": false,
+          "description": "Comma-separated pane indices to filter"
+        }
+      ],
+      "examples": [
+        "ntm --robot-tail=myproject",
+        "ntm --robot-tail=myproject --lines=50 --panes=1,2"
+      ]
+    },
+    {
+      "name": "terse",
+      "flag": "--robot-terse",
+      "category": "state",
+      "description": "Single-line encoded state for minimal token usage.",
+      "parameters": [],
+      "examples": [
+        "ntm --robot-terse"
+      ]
+    },
+    {
+      "name": "watch-bead",
+      "flag": "--robot-watch-bead",
+      "category": "state",
+      "description": "Capture recent mentions of a bead across panes and report current bead status.",
+      "parameters": [
+        {
+          "name": "session",
+          "flag": "--robot-watch-bead",
+          "type": "string",
+          "required": true,
+          "description": "Session name"
+        },
+        {
+          "name": "bead",
+          "flag": "--bead",
+          "type": "string",
+          "required": true,
+          "description": "Bead ID to track"
+        },
+        {
+          "name": "panes",
+          "flag": "--panes",
+          "type": "string",
+          "required": false,
+          "description": "Comma-separated pane indices to filter"
+        },
+        {
+          "name": "lines",
+          "flag": "--lines",
+          "type": "int",
+          "required": false,
+          "default": "200",
+          "description": "Lines captured per pane"
+        },
+        {
+          "name": "interval",
+          "flag": "--interval",
+          "type": "string",
+          "required": false,
+          "default": "30s",
+          "description": "Status polling interval"
+        }
+      ],
+      "examples": [
+        "ntm --robot-watch-bead=myproject --bead=bd-abc123",
+        "ntm --robot-watch-bead=myproject --bead=bd-abc123 --panes=2,3 --lines=300 --interval=45s"
+      ]
+    },
+    {
+      "name": "ensemble",
+      "flag": "--robot-ensemble",
+      "category": "ensemble",
+      "description": "Get ensemble state for a session including modes, status, and synthesis readiness.",
+      "parameters": [
+        {
+          "name": "session",
+          "flag": "--robot-ensemble",
+          "type": "string",
+          "required": true,
+          "description": "Session name to inspect"
+        }
+      ],
+      "examples": [
+        "ntm --robot-ensemble=myproject"
+      ]
+    },
+    {
+      "name": "ensemble-modes",
+      "flag": "--robot-ensemble-modes",
+      "category": "ensemble",
+      "description": "List available reasoning modes with filtering by category and tier.",
+      "parameters": [
+        {
+          "name": "category",
+          "flag": "--category",
+          "type": "string",
+          "required": false,
+          "description": "Filter by category code (A-L) or name (Formal, Heuristic, etc.)"
+        },
+        {
+          "name": "tier",
+          "flag": "--tier",
+          "type": "string",
+          "required": false,
+          "default": "core",
+          "description": "Filter by tier: core, advanced, experimental, all"
+        },
+        {
+          "name": "limit",
+          "flag": "--limit",
+          "type": "int",
+          "required": false,
+          "default": "50",
+          "description": "Max modes to return"
+        },
+        {
+          "name": "offset",
+          "flag": "--offset",
+          "type": "int",
+          "required": false,
+          "default": "0",
+          "description": "Pagination offset"
+        }
+      ],
+      "examples": [
+        "ntm --robot-ensemble-modes",
+        "ntm --robot-ensemble-modes --tier=all",
+        "ntm --robot-ensemble-modes --category=Formal --tier=all",
+        "ntm --robot-ensemble-modes --limit=10 --offset=20"
+      ]
+    },
+    {
+      "name": "ensemble-presets",
+      "flag": "--robot-ensemble-presets",
+      "category": "ensemble",
+      "description": "List available ensemble presets with their mode configurations and budgets.",
+      "parameters": [],
+      "examples": [
+        "ntm --robot-ensemble-presets"
+      ]
+    },
+    {
+      "name": "ensemble-synthesize",
+      "flag": "--robot-ensemble-synthesize",
+      "category": "ensemble",
+      "description": "Trigger synthesis for an ensemble session, combining mode outputs into a unified report.",
+      "parameters": [
+        {
+          "name": "session",
+          "flag": "--robot-ensemble-synthesize",
+          "type": "string",
+          "required": true,
+          "description": "Session name with ensemble to synthesize"
+        },
+        {
+          "name": "strategy",
+          "flag": "--strategy",
+          "type": "string",
+          "required": false,
+          "default": "manual",
+          "description": "Synthesis strategy: manual, adversarial, consensus, creative, analytical, deliberative, prioritized, dialectical, meta-reasoning, voting, argumentation-graph"
+        },
+        {
+          "name": "format",
+          "flag": "--format",
+          "type": "string",
+          "required": false,
+          "default": "markdown",
+          "description": "Output format: markdown, json, yaml"
+        },
+        {
+          "name": "output",
+          "flag": "--output",
+          "type": "string",
+          "required": false,
+          "description": "Path to write the synthesis report"
+        },
+        {
+          "name": "force",
+          "flag": "--force",
+          "type": "bool",
+          "required": false,
+          "description": "Synthesize even if some outputs are incomplete"
+        }
+      ],
+      "examples": [
+        "ntm --robot-ensemble-synthesize=myproject",
+        "ntm --robot-ensemble-synthesize=myproject --strategy=adversarial --format=json",
+        "ntm --robot-ensemble-synthesize=myproject --output=/tmp/report.md --force"
+      ]
+    },
+    {
+      "name": "ensemble_spawn",
+      "flag": "--robot-ensemble-spawn",
+      "category": "ensemble",
+      "description": "Spawn a reasoning ensemble session with mode assignments.",
+      "parameters": [
+        {
+          "name": "session",
+          "flag": "--robot-ensemble-spawn",
+          "type": "string",
+          "required": true,
+          "description": "Session name to create"
+        },
+        {
+          "name": "preset",
+          "flag": "--preset",
+          "type": "string",
+          "required": false,
+          "description": "Ensemble preset name (required unless --modes is set)"
+        },
+        {
+          "name": "modes",
+          "flag": "--modes",
+          "type": "string",
+          "required": false,
+          "description": "Explicit mode IDs or codes (comma-separated)"
+        },
+        {
+          "name": "question",
+          "flag": "--question",
+          "type": "string",
+          "required": true,
+          "description": "Question for the ensemble to analyze"
+        },
+        {
+          "name": "agents",
+          "flag": "--agents",
+          "type": "string",
+          "required": false,
+          "description": "Agent mix (e.g., cc=2,cod=1,gmi=1)"
+        },
+        {
+          "name": "assignment",
+          "flag": "--assignment",
+          "type": "string",
+          "required": false,
+          "default": "affinity",
+          "description": "Assignment strategy: round-robin, affinity, category, explicit"
+        },
+        {
+          "name": "allow-advanced",
+          "flag": "--allow-advanced",
+          "type": "bool",
+          "required": false,
+          "description": "Allow advanced/experimental modes"
+        },
+        {
+          "name": "budget-total",
+          "flag": "--budget-total",
+          "type": "int",
+          "required": false,
+          "description": "Override total token budget"
+        },
+        {
+          "name": "budget-per-agent",
+          "flag": "--budget-per-agent",
+          "type": "int",
+          "required": false,
+          "description": "Override per-agent token cap"
+        },
+        {
+          "name": "no-cache",
+          "flag": "--no-cache",
+          "type": "bool",
+          "required": false,
+          "description": "Bypass context pack cache"
+        },
+        {
+          "name": "no-questions",
+          "flag": "--no-questions",
+          "type": "bool",
+          "required": false,
+          "description": "Skip targeted questions (future)"
+        },
+        {
+          "name": "project",
+          "flag": "--project",
+          "type": "string",
+          "required": false,
+          "description": "Project directory override"
+        }
+      ],
+      "examples": [
+        "ntm --robot-ensemble-spawn=myproject --preset=project-diagnosis --question='Review architecture'",
+        "ntm --robot-ensemble-spawn=myproject --modes=A1,B13 --allow-advanced --question='Analyze risks'"
+      ]
+    },
+    {
+      "name": "ack",
+      "flag": "--robot-ack",
+      "category": "control",
+      "description": "Watch for agent responses after sending a message.",
+      "parameters": [
+        {
+          "name": "session",
+          "flag": "--robot-ack",
+          "type": "string",
+          "required": true,
+          "description": "Session name"
+        },
+        {
+          "name": "ack-timeout",
+          "flag": "--ack-timeout",
+          "type": "string",
+          "required": false,
+          "default": "30s",
+          "description": "Max wait time (e.g., 30s, 5000ms, 1m)"
+        },
+        {
+          "name": "ack-poll",
+          "flag": "--ack-poll",
+          "type": "int",
+          "required": false,
+          "default": "500",
+          "description": "Poll interval in ms"
+        },
+        {
+          "name": "type",
+          "flag": "--type",
+          "type": "string",
+          "required": false,
+          "description": "Filter by agent type"
+        },
+        {
+          "name": "panes",
+          "flag": "--panes",
+          "type": "string",
+          "required": false,
+          "description": "Filter to specific pane indices"
+        }
+      ],
+      "examples": [
+        "ntm --robot-ack=proj --ack-timeout=60s --type=claude"
+      ]
+    },
+    {
+      "name": "assign",
+      "flag": "--robot-assign",
+      "category": "control",
+      "description": "Get work distribution recommendations for assigning beads to agents.",
+      "parameters": [
+        {
+          "name": "session",
+          "flag": "--robot-assign",
+          "type": "string",
+          "required": true,
+          "description": "Session name"
+        },
+        {
+          "name": "beads",
+          "flag": "--beads",
+          "type": "string",
+          "required": false,
+          "description": "Specific bead IDs to assign (comma-separated)"
+        },
+        {
+          "name": "strategy",
+          "flag": "--strategy",
+          "type": "string",
+          "required": false,
+          "default": "balanced",
+          "description": "Strategy: balanced, speed, quality, dependency"
+        }
+      ],
+      "examples": [
+        "ntm --robot-assign=proj --strategy=speed --beads=bd-abc,bd-xyz"
+      ]
+    },
+    {
+      "name": "interrupt",
+      "flag": "--robot-interrupt",
+      "category": "control",
+      "description": "Send Ctrl+C to stop agents, optionally send a new task.",
+      "parameters": [
+        {
+          "name": "session",
+          "flag": "--robot-interrupt",
+          "type": "string",
+          "required": true,
+          "description": "Session name"
+        },
+        {
+          "name": "interrupt-msg",
+          "flag": "--interrupt-msg",
+          "type": "string",
+          "required": false,
+          "description": "New task to send after Ctrl+C"
+        },
+        {
+          "name": "interrupt-all",
+          "flag": "--interrupt-all",
+          "type": "bool",
+          "required": false,
+          "description": "Interrupt all panes including user"
+        },
+        {
+          "name": "type",
+          "flag": "--type",
+          "type": "string",
+          "required": false,
+          "description": "Filter by agent type"
+        },
+        {
+          "name": "panes",
+          "flag": "--panes",
+          "type": "string",
+          "required": false,
+          "description": "Filter to specific pane indices"
+        },
+        {
+          "name": "dry-run",
+          "flag": "--dry-run",
+          "type": "bool",
+          "required": false,
+          "description": "Preview without executing"
+        }
+      ],
+      "examples": [
+        "ntm --robot-interrupt=proj --interrupt-msg='Stop and fix bug'"
+      ]
+    },
+    {
+      "name": "restart-pane",
+      "flag": "--robot-restart-pane",
+      "category": "control",
+      "description": "Restart pane process (kill and respawn agent).",
+      "parameters": [
+        {
+          "name": "session",
+          "flag": "--robot-restart-pane",
+          "type": "string",
+          "required": true,
+          "description": "Session name"
+        },
+        {
+          "name": "panes",
+          "flag": "--panes",
+          "type": "string",
+          "required": true,
+          "description": "Pane indices to restart"
+        }
+      ],
+      "examples": [
+        "ntm --robot-restart-pane=proj --panes=1,2"
+      ]
+    },
+    {
+      "name": "route",
+      "flag": "--robot-route",
+      "category": "control",
+      "description": "Get routing recommendation for work distribution.",
+      "parameters": [
+        {
+          "name": "session",
+          "flag": "--robot-route",
+          "type": "string",
+          "required": true,
+          "description": "Session name"
+        },
+        {
+          "name": "route-strategy",
+          "flag": "--route-strategy",
+          "type": "string",
+          "required": false,
+          "default": "least-loaded",
+          "description": "Strategy: least-loaded, first-available, round-robin, random, sticky, explicit"
+        },
+        {
+          "name": "route-type",
+          "flag": "--route-type",
+          "type": "string",
+          "required": false,
+          "description": "Filter by agent type"
+        },
+        {
+          "name": "route-exclude",
+          "flag": "--route-exclude",
+          "type": "string",
+          "required": false,
+          "description": "Exclude pane indices"
+        }
+      ],
+      "examples": [
+        "ntm --robot-route=proj --route-strategy=least-loaded --route-type=claude"
+      ]
+    },
+    {
+      "name": "send",
+      "flag": "--robot-send",
+      "category": "control",
+      "description": "Send message to panes atomically. Supports type filtering and tracking.",
+      "parameters": [
+        {
+          "name": "session",
+          "flag": "--robot-send",
+          "type": "string",
+          "required": true,
+          "description": "Session name"
+        },
+        {
+          "name": "msg",
+          "flag": "--msg",
+          "type": "string",
+          "required": true,
+          "description": "Message content to send (or use --msg-file)"
+        },
+        {
+          "name": "msg-file",
+          "flag": "--msg-file",
+          "type": "string",
+          "required": false,
+          "description": "Read message content from file"
+        },
+        {
+          "name": "enter",
+          "flag": "--enter",
+          "type": "bool",
+          "required": false,
+          "description": "Send Enter after paste (default true). Alias: --submit"
+        },
+        {
+          "name": "type",
+          "flag": "--type",
+          "type": "string",
+          "required": false,
+          "description": "Filter by agent type: claude|cc, codex|cod, gemini|gmi"
+        },
+        {
+          "name": "all",
+          "flag": "--all",
+          "type": "bool",
+          "required": false,
+          "description": "Include user pane (default: agents only)"
+        },
+        {
+          "name": "panes",
+          "flag": "--panes",
+          "type": "string",
+          "required": false,
+          "description": "Filter to specific pane indices"
+        },
+        {
+          "name": "exclude",
+          "flag": "--exclude",
+          "type": "string",
+          "required": false,
+          "description": "Exclude pane indices"
+        },
+        {
+          "name": "delay-ms",
+          "flag": "--delay-ms",
+          "type": "int",
+          "required": false,
+          "description": "Delay between sends (ms)"
+        },
+        {
+          "name": "track",
+          "flag": "--track",
+          "type": "bool",
+          "required": false,
+          "description": "Combined send+ack: wait for response"
+        },
+        {
+          "name": "dry-run",
+          "flag": "--dry-run",
+          "type": "bool",
+          "required": false,
+          "description": "Preview without executing"
+        }
+      ],
+      "examples": [
+        "ntm --robot-send=proj --msg='Fix auth' --type=claude",
+        "ntm --robot-send=proj --msg-file=/tmp/prompt.txt --type=codex",
+        "ntm --robot-send=proj --msg='draft' --enter=false",
+        "ntm --robot-send=proj --msg='hello' --track --ack-timeout=30s"
+      ]
+    },
+    {
+      "name": "wait",
+      "flag": "--robot-wait",
+      "category": "control",
+      "description": "Wait for agents to reach a specific state.",
+      "parameters": [
+        {
+          "name": "session",
+          "flag": "--robot-wait",
+          "type": "string",
+          "required": true,
+          "description": "Session name"
+        },
+        {
+          "name": "wait-until",
+          "flag": "--wait-until",
+          "type": "string",
+          "required": false,
+          "default": "idle",
+          "description": "Wait condition: idle, complete, generating, healthy"
+        },
+        {
+          "name": "wait-timeout",
+          "flag": "--wait-timeout",
+          "type": "string",
+          "required": false,
+          "default": "5m",
+          "description": "Maximum wait time"
+        },
+        {
+          "name": "wait-poll",
+          "flag": "--wait-poll",
+          "type": "string",
+          "required": false,
+          "default": "2s",
+          "description": "Polling interval"
+        },
+        {
+          "name": "wait-panes",
+          "flag": "--wait-panes",
+          "type": "string",
+          "required": false,
+          "description": "Filter to specific pane indices"
+        },
+        {
+          "name": "wait-type",
+          "flag": "--wait-type",
+          "type": "string",
+          "required": false,
+          "description": "Filter by agent type"
+        },
+        {
+          "name": "wait-any",
+          "flag": "--wait-any",
+          "type": "bool",
+          "required": false,
+          "description": "Wait for ANY agent instead of ALL"
+        },
+        {
+          "name": "wait-exit-on-error",
+          "flag": "--wait-exit-on-error",
+          "type": "bool",
+          "required": false,
+          "description": "Exit immediately if ERROR state detected"
+        },
+        {
+          "name": "wait-transition",
+          "flag": "--wait-transition",
+          "type": "bool",
+          "required": false,
+          "description": "Require state transition before returning"
+        }
+      ],
+      "examples": [
+        "ntm --robot-wait=proj --wait-until=idle",
+        "ntm --robot-wait=proj --wait-until=idle --wait-transition --wait-timeout=2m"
+      ]
+    },
+    {
+      "name": "recipes",
+      "flag": "--robot-recipes",
+      "category": "spawn",
+      "description": "List available spawn recipes/presets.",
+      "parameters": [],
+      "examples": [
+        "ntm --robot-recipes"
+      ]
+    },
+    {
+      "name": "spawn",
+      "flag": "--robot-spawn",
+      "category": "spawn",
+      "description": "Create session with agents.",
+      "parameters": [
+        {
+          "name": "session",
+          "flag": "--robot-spawn",
+          "type": "string",
+          "required": true,
+          "description": "Session name to create"
+        },
+        {
+          "name": "spawn-cc",
+          "flag": "--spawn-cc",
+          "type": "int",
+          "required": false,
+          "description": "Number of Claude agents"
+        },
+        {
+          "name": "spawn-cod",
+          "flag": "--spawn-cod",
+          "type": "int",
+          "required": false,
+          "description": "Number of Codex agents"
+        },
+        {
+          "name": "spawn-gmi",
+          "flag": "--spawn-gmi",
+          "type": "int",
+          "required": false,
+          "description": "Number of Gemini agents"
+        },
+        {
+          "name": "spawn-preset",
+          "flag": "--spawn-preset",
+          "type": "string",
+          "required": false,
+          "description": "Use recipe preset instead of counts"
+        },
+        {
+          "name": "spawn-no-user",
+          "flag": "--spawn-no-user",
+          "type": "bool",
+          "required": false,
+          "description": "Skip user pane creation"
+        },
+        {
+          "name": "spawn-dir",
+          "flag": "--spawn-dir",
+          "type": "string",
+          "required": false,
+          "description": "Working directory for session"
+        },
+        {
+          "name": "spawn-label",
+          "flag": "--spawn-label",
+          "type": "string",
+          "required": false,
+          "description": "Goal label for multi-session support (creates SESSION--LABEL)"
+        },
+        {
+          "name": "dry-run",
+          "flag": "--dry-run",
+          "type": "bool",
+          "required": false,
+          "description": "Preview without executing"
+        }
+      ],
+      "examples": [
+        "ntm --robot-spawn=myproject --spawn-cc=2 --spawn-cod=1",
+        "ntm --robot-spawn=myproject --spawn-preset=standard",
+        "ntm --robot-spawn=myproject --spawn-label=frontend --spawn-cc=3"
+      ]
+    },
+    {
+      "name": "bead-claim",
+      "flag": "--robot-bead-claim",
+      "category": "beads",
+      "description": "Claim a bead for work.",
+      "parameters": [
+        {
+          "name": "bead-id",
+          "flag": "--robot-bead-claim",
+          "type": "string",
+          "required": true,
+          "description": "Bead ID to claim"
+        },
+        {
+          "name": "bead-assignee",
+          "flag": "--bead-assignee",
+          "type": "string",
+          "required": false,
+          "description": "Assignee name"
+        }
+      ],
+      "examples": [
+        "ntm --robot-bead-claim=bd-abc123 --bead-assignee=agent1"
+      ]
+    },
+    {
+      "name": "bead-close",
+      "flag": "--robot-bead-close",
+      "category": "beads",
+      "description": "Close a bead.",
+      "parameters": [
+        {
+          "name": "bead-id",
+          "flag": "--robot-bead-close",
+          "type": "string",
+          "required": true,
+          "description": "Bead ID to close"
+        },
+        {
+          "name": "bead-close-reason",
+          "flag": "--bead-close-reason",
+          "type": "string",
+          "required": false,
+          "description": "Reason for closing"
+        }
+      ],
+      "examples": [
+        "ntm --robot-bead-close=bd-abc123 --bead-close-reason='Completed'"
+      ]
+    },
+    {
+      "name": "bead-create",
+      "flag": "--robot-bead-create",
+      "category": "beads",
+      "description": "Create a new bead.",
+      "parameters": [
+        {
+          "name": "bead-title",
+          "flag": "--bead-title",
+          "type": "string",
+          "required": true,
+          "description": "Title for new bead"
+        },
+        {
+          "name": "bead-type",
+          "flag": "--bead-type",
+          "type": "string",
+          "required": false,
+          "default": "task",
+          "description": "Type: task, bug, feature, epic, chore"
+        },
+        {
+          "name": "bead-priority",
+          "flag": "--bead-priority",
+          "type": "int",
+          "required": false,
+          "default": "2",
+          "description": "Priority 0-4 (0=critical, 4=backlog)"
+        },
+        {
+          "name": "bead-description",
+          "flag": "--bead-description",
+          "type": "string",
+          "required": false,
+          "description": "Description"
+        },
+        {
+          "name": "bead-labels",
+          "flag": "--bead-labels",
+          "type": "string",
+          "required": false,
+          "description": "Comma-separated labels"
+        },
+        {
+          "name": "bead-depends-on",
+          "flag": "--bead-depends-on",
+          "type": "string",
+          "required": false,
+          "description": "Comma-separated dependency bead IDs"
+        }
+      ],
+      "examples": [
+        "ntm --robot-bead-create --bead-title='Fix auth bug' --bead-type=bug --bead-priority=1"
+      ]
+    },
+    {
+      "name": "bead-show",
+      "flag": "--robot-bead-show",
+      "category": "beads",
+      "description": "Show bead details.",
+      "parameters": [
+        {
+          "name": "bead-id",
+          "flag": "--robot-bead-show",
+          "type": "string",
+          "required": true,
+          "description": "Bead ID to show"
+        }
+      ],
+      "examples": [
+        "ntm --robot-bead-show=bd-abc123"
+      ]
+    },
+    {
+      "name": "beads-list",
+      "flag": "--robot-beads-list",
+      "category": "beads",
+      "description": "List beads with filtering options.",
+      "parameters": [
+        {
+          "name": "beads-status",
+          "flag": "--beads-status",
+          "type": "string",
+          "required": false,
+          "description": "Filter by status: open, in_progress, closed, blocked"
+        },
+        {
+          "name": "beads-priority",
+          "flag": "--beads-priority",
+          "type": "string",
+          "required": false,
+          "description": "Filter by priority: 0-4 or P0-P4"
+        },
+        {
+          "name": "beads-assignee",
+          "flag": "--beads-assignee",
+          "type": "string",
+          "required": false,
+          "description": "Filter by assignee"
+        },
+        {
+          "name": "beads-type",
+          "flag": "--beads-type",
+          "type": "string",
+          "required": false,
+          "description": "Filter by type: task, bug, feature, epic, chore"
+        },
+        {
+          "name": "beads-limit",
+          "flag": "--beads-limit",
+          "type": "int",
+          "required": false,
+          "default": "20",
+          "description": "Max beads to return"
+        }
+      ],
+      "examples": [
+        "ntm --robot-beads-list --beads-status=open --beads-priority=1"
+      ]
+    },
+    {
+      "name": "file-beads",
+      "flag": "--robot-file-beads",
+      "category": "bv",
+      "description": "Get bead mappings for a file from bv.",
+      "parameters": [
+        {
+          "name": "file",
+          "flag": "--robot-file-beads",
+          "type": "string",
+          "required": true,
+          "description": "File path to analyze"
+        },
+        {
+          "name": "limit",
+          "flag": "--limit",
+          "type": "int",
+          "required": false,
+          "default": "10",
+          "description": "Max bead mappings"
+        }
+      ],
+      "examples": [
+        "ntm --robot-file-beads=internal/cli/root.go --limit=10"
+      ]
+    },
+    {
+      "name": "file-hotspots",
+      "flag": "--robot-file-hotspots",
+      "category": "bv",
+      "description": "Get file hotspot analysis from bv.",
+      "parameters": [
+        {
+          "name": "limit",
+          "flag": "--limit",
+          "type": "int",
+          "required": false,
+          "default": "10",
+          "description": "Max hotspots"
+        }
+      ],
+      "examples": [
+        "ntm --robot-file-hotspots --limit=10"
+      ]
+    },
+    {
+      "name": "file-relations",
+      "flag": "--robot-file-relations",
+      "category": "bv",
+      "description": "Get file co-change relations from bv.",
+      "parameters": [
+        {
+          "name": "file",
+          "flag": "--robot-file-relations",
+          "type": "string",
+          "required": true,
+          "description": "File path to analyze"
+        },
+        {
+          "name": "limit",
+          "flag": "--limit",
+          "type": "int",
+          "required": false,
+          "default": "10",
+          "description": "Max relations"
+        },
+        {
+          "name": "threshold",
+          "flag": "--threshold",
+          "type": "float",
+          "required": false,
+          "default": "0.0",
+          "description": "Minimum relation weight"
+        }
+      ],
+      "examples": [
+        "ntm --robot-file-relations=internal/cli/root.go --limit=10"
+      ]
+    },
+    {
+      "name": "forecast",
+      "flag": "--robot-forecast",
+      "category": "bv",
+      "description": "Get ETA predictions from bv.",
+      "parameters": [
+        {
+          "name": "target",
+          "flag": "--robot-forecast",
+          "type": "string",
+          "required": true,
+          "description": "Issue ID or 'all'"
+        }
+      ],
+      "examples": [
+        "ntm --robot-forecast=bd-123",
+        "ntm --robot-forecast=all"
+      ]
+    },
+    {
+      "name": "graph",
+      "flag": "--robot-graph",
+      "category": "bv",
+      "description": "Get dependency graph insights.",
+      "parameters": [],
+      "examples": [
+        "ntm --robot-graph"
+      ]
+    },
+    {
+      "name": "impact",
+      "flag": "--robot-impact",
+      "category": "bv",
+      "description": "Get file impact analysis from bv.",
+      "parameters": [
+        {
+          "name": "file",
+          "flag": "--robot-impact",
+          "type": "string",
+          "required": true,
+          "description": "File path to analyze"
+        }
+      ],
+      "examples": [
+        "ntm --robot-impact=internal/cli/root.go"
+      ]
+    },
+    {
+      "name": "label-attention",
+      "flag": "--robot-label-attention",
+      "category": "bv",
+      "description": "Get attention-ranked labels from bv.",
+      "parameters": [
+        {
+          "name": "limit",
+          "flag": "--limit",
+          "type": "int",
+          "required": false,
+          "default": "10",
+          "description": "Max labels to return"
+        }
+      ],
+      "examples": [
+        "ntm --robot-label-attention --limit=20"
+      ]
+    },
+    {
+      "name": "label-flow",
+      "flag": "--robot-label-flow",
+      "category": "bv",
+      "description": "Get cross-label dependency flow from bv.",
+      "parameters": [],
+      "examples": [
+        "ntm --robot-label-flow"
+      ]
+    },
+    {
+      "name": "label-health",
+      "flag": "--robot-label-health",
+      "category": "bv",
+      "description": "Get per-label health metrics from bv.",
+      "parameters": [],
+      "examples": [
+        "ntm --robot-label-health"
+      ]
+    },
+    {
+      "name": "plan",
+      "flag": "--robot-plan",
+      "category": "bv",
+      "description": "Get bv execution plan with parallelizable tracks.",
+      "parameters": [],
+      "examples": [
+        "ntm --robot-plan"
+      ]
+    },
+    {
+      "name": "search",
+      "flag": "--robot-search",
+      "category": "bv",
+      "description": "Run semantic search against beads via bv.",
+      "parameters": [
+        {
+          "name": "query",
+          "flag": "--robot-search",
+          "type": "string",
+          "required": true,
+          "description": "Search query"
+        },
+        {
+          "name": "limit",
+          "flag": "--limit",
+          "type": "int",
+          "required": false,
+          "default": "20",
+          "description": "Max results"
+        }
+      ],
+      "examples": [
+        "ntm --robot-search='auth error' --limit=10"
+      ]
+    },
+    {
+      "name": "suggest",
+      "flag": "--robot-suggest",
+      "category": "bv",
+      "description": "Get hygiene suggestions from bv.",
+      "parameters": [],
+      "examples": [
+        "ntm --robot-suggest"
+      ]
+    },
+    {
+      "name": "triage",
+      "flag": "--robot-triage",
+      "category": "bv",
+      "description": "Get bv triage analysis with recommendations, quick wins, and blockers.",
+      "parameters": [
+        {
+          "name": "triage-limit",
+          "flag": "--triage-limit",
+          "type": "int",
+          "required": false,
+          "default": "10",
+          "description": "Max recommendations per category"
+        }
+      ],
+      "examples": [
+        "ntm --robot-triage --triage-limit=20"
+      ]
+    },
+    {
+      "name": "cass-context",
+      "flag": "--robot-cass-context",
+      "category": "cass",
+      "description": "Get relevant past context for a task.",
+      "parameters": [
+        {
+          "name": "query",
+          "flag": "--robot-cass-context",
+          "type": "string",
+          "required": true,
+          "description": "Task description"
+        }
+      ],
+      "examples": [
+        "ntm --robot-cass-context='how to implement auth'"
+      ]
+    },
+    {
+      "name": "cass-search",
+      "flag": "--robot-cass-search",
+      "category": "cass",
+      "description": "Search past agent conversations.",
+      "parameters": [
+        {
+          "name": "query",
+          "flag": "--robot-cass-search",
+          "type": "string",
+          "required": true,
+          "description": "Search query"
+        }
+      ],
+      "examples": [
+        "ntm --robot-cass-search='authentication error'"
+      ]
+    },
+    {
+      "name": "cass-status",
+      "flag": "--robot-cass-status",
+      "category": "cass",
+      "description": "Get CASS health and statistics.",
+      "parameters": [],
+      "examples": [
+        "ntm --robot-cass-status"
+      ]
+    },
+    {
+      "name": "pipeline-cancel",
+      "flag": "--robot-pipeline-cancel",
+      "category": "pipeline",
+      "description": "Cancel a running pipeline.",
+      "parameters": [
+        {
+          "name": "run-id",
+          "flag": "--robot-pipeline-cancel",
+          "type": "string",
+          "required": true,
+          "description": "Pipeline run ID to cancel"
+        }
+      ],
+      "examples": [
+        "ntm --robot-pipeline-cancel=run-20241230-123456-abcd"
+      ]
+    },
+    {
+      "name": "pipeline-list",
+      "flag": "--robot-pipeline-list",
+      "category": "pipeline",
+      "description": "List all tracked pipelines.",
+      "parameters": [],
+      "examples": [
+        "ntm --robot-pipeline-list"
+      ]
+    },
+    {
+      "name": "pipeline-run",
+      "flag": "--robot-pipeline-run",
+      "category": "pipeline",
+      "description": "Run a workflow pipeline.",
+      "parameters": [
+        {
+          "name": "workflow",
+          "flag": "--robot-pipeline-run",
+          "type": "string",
+          "required": true,
+          "description": "Workflow file path"
+        },
+        {
+          "name": "pipeline-session",
+          "flag": "--pipeline-session",
+          "type": "string",
+          "required": true,
+          "description": "Tmux session for execution"
+        },
+        {
+          "name": "pipeline-vars",
+          "flag": "--pipeline-vars",
+          "type": "string",
+          "required": false,
+          "description": "JSON variables for pipeline"
+        },
+        {
+          "name": "pipeline-dry-run",
+          "flag": "--pipeline-dry-run",
+          "type": "bool",
+          "required": false,
+          "description": "Validate without executing"
+        },
+        {
+          "name": "pipeline-background",
+          "flag": "--pipeline-background",
+          "type": "bool",
+          "required": false,
+          "description": "Run in background"
+        }
+      ],
+      "examples": [
+        "ntm --robot-pipeline-run=workflow.yaml --pipeline-session=proj"
+      ]
+    },
+    {
+      "name": "pipeline-status",
+      "flag": "--robot-pipeline",
+      "category": "pipeline",
+      "description": "Get pipeline status.",
+      "parameters": [
+        {
+          "name": "run-id",
+          "flag": "--robot-pipeline",
+          "type": "string",
+          "required": true,
+          "description": "Pipeline run ID"
+        }
+      ],
+      "examples": [
+        "ntm --robot-pipeline=run-20241230-123456-abcd"
+      ]
+    },
+    {
+      "name": "acfs-status",
+      "flag": "--robot-acfs-status",
+      "category": "utility",
+      "description": "Get setup status via ACFS (core tool availability).",
+      "parameters": [],
+      "examples": [
+        "ntm --robot-acfs-status"
+      ]
+    },
+    {
+      "name": "alerts",
+      "flag": "--robot-alerts",
+      "category": "utility",
+      "description": "List active alerts with filtering.",
+      "parameters": [
+        {
+          "name": "alerts-severity",
+          "flag": "--alerts-severity",
+          "type": "string",
+          "required": false,
+          "description": "Filter by severity: info, warning, error, critical"
+        },
+        {
+          "name": "alerts-type",
+          "flag": "--alerts-type",
+          "type": "string",
+          "required": false,
+          "description": "Filter by alert type"
+        },
+        {
+          "name": "alerts-session",
+          "flag": "--alerts-session",
+          "type": "string",
+          "required": false,
+          "description": "Filter by session"
+        }
+      ],
+      "examples": [
+        "ntm --robot-alerts --alerts-severity=critical"
+      ]
+    },
+    {
+      "name": "capabilities",
+      "flag": "--robot-capabilities",
+      "category": "utility",
+      "description": "Get complete list of robot mode commands and their parameters (this command).",
+      "parameters": [],
+      "examples": [
+        "ntm --robot-capabilities"
+      ]
+    },
+    {
+      "name": "dcg-check",
+      "flag": "--robot-dcg-check",
+      "category": "utility",
+      "description": "Preflight a shell command via DCG (no execution). Aliases: --robot-guard, --cmd.",
+      "parameters": [
+        {
+          "name": "command",
+          "flag": "--command",
+          "type": "string",
+          "required": true,
+          "description": "Shell command to preflight"
+        }
+      ],
+      "examples": [
+        "ntm --robot-dcg-check --command='rm -rf /tmp'"
+      ]
+    },
+    {
+      "name": "dcg-status",
+      "flag": "--robot-dcg-status",
+      "category": "utility",
+      "description": "Show DCG status and configuration.",
+      "parameters": [],
+      "examples": [
+        "ntm --robot-dcg-status"
+      ]
+    },
+    {
+      "name": "dismiss-alert",
+      "flag": "--robot-dismiss-alert",
+      "category": "utility",
+      "description": "Dismiss an alert.",
+      "parameters": [
+        {
+          "name": "alert-id",
+          "flag": "--robot-dismiss-alert",
+          "type": "string",
+          "required": true,
+          "description": "Alert ID to dismiss"
+        },
+        {
+          "name": "dismiss-session",
+          "flag": "--dismiss-session",
+          "type": "string",
+          "required": false,
+          "description": "Scope dismissal to session"
+        },
+        {
+          "name": "dismiss-all",
+          "flag": "--dismiss-all",
+          "type": "bool",
+          "required": false,
+          "description": "Dismiss all matching alerts"
+        }
+      ],
+      "examples": [
+        "ntm --robot-dismiss-alert=alert-abc123"
+      ]
+    },
+    {
+      "name": "docs",
+      "flag": "--robot-docs",
+      "category": "utility",
+      "description": "Get documentation for a topic in JSON format. Topics: quickstart, commands, examples, exit-codes.",
+      "parameters": [
+        {
+          "name": "topic",
+          "flag": "--robot-docs",
+          "type": "string",
+          "required": false,
+          "description": "Documentation topic. Empty returns topic index."
+        }
+      ],
+      "examples": [
+        "ntm --robot-docs=\"\"",
+        "ntm --robot-docs=quickstart",
+        "ntm --robot-docs=exit-codes"
+      ]
+    },
+    {
+      "name": "giil-fetch",
+      "flag": "--robot-giil-fetch",
+      "category": "utility",
+      "description": "Download image from share URL via giil and return JSON metadata.",
+      "parameters": [
+        {
+          "name": "url",
+          "flag": "--robot-giil-fetch",
+          "type": "string",
+          "required": true,
+          "description": "Share URL (iCloud, Dropbox, Google Photos, Google Drive)"
+        }
+      ],
+      "examples": [
+        "ntm --robot-giil-fetch=https://share.icloud.com/photos/abc123"
+      ]
+    },
+    {
+      "name": "help",
+      "flag": "--robot-help",
+      "category": "utility",
+      "description": "Get AI agent help documentation.",
+      "parameters": [],
+      "examples": [
+        "ntm --robot-help"
+      ]
+    },
+    {
+      "name": "history",
+      "flag": "--robot-history",
+      "category": "utility",
+      "description": "Get command history for a session.",
+      "parameters": [
+        {
+          "name": "session",
+          "flag": "--robot-history",
+          "type": "string",
+          "required": true,
+          "description": "Session name"
+        },
+        {
+          "name": "history-pane",
+          "flag": "--history-pane",
+          "type": "string",
+          "required": false,
+          "description": "Filter by pane ID"
+        },
+        {
+          "name": "history-type",
+          "flag": "--history-type",
+          "type": "string",
+          "required": false,
+          "description": "Filter by agent type"
+        },
+        {
+          "name": "history-last",
+          "flag": "--history-last",
+          "type": "int",
+          "required": false,
+          "description": "Show last N entries"
+        },
+        {
+          "name": "history-since",
+          "flag": "--history-since",
+          "type": "string",
+          "required": false,
+          "description": "Show entries since time"
+        },
+        {
+          "name": "history-stats",
+          "flag": "--history-stats",
+          "type": "bool",
+          "required": false,
+          "description": "Show statistics instead of entries"
+        },
+        {
+          "name": "robot-limit",
+          "flag": "--robot-limit",
+          "type": "int",
+          "required": false,
+          "default": "0",
+          "description": "Max history entries to return (alias: --limit)"
+        },
+        {
+          "name": "robot-offset",
+          "flag": "--robot-offset",
+          "type": "int",
+          "required": false,
+          "default": "0",
+          "description": "Pagination offset for history entries (alias: --offset)"
+        }
+      ],
+      "examples": [
+        "ntm --robot-history=myproject --history-last=10"
+      ]
+    },
+    {
+      "name": "jfp-bundles",
+      "flag": "--robot-jfp-bundles",
+      "category": "utility",
+      "description": "List JFP bundles.",
+      "parameters": [],
+      "examples": [
+        "ntm --robot-jfp-bundles"
+      ]
+    },
+    {
+      "name": "jfp-categories",
+      "flag": "--robot-jfp-categories",
+      "category": "utility",
+      "description": "List JFP categories with counts.",
+      "parameters": [],
+      "examples": [
+        "ntm --robot-jfp-categories"
+      ]
+    },
+    {
+      "name": "jfp-export",
+      "flag": "--robot-jfp-export",
+      "category": "utility",
+      "description": "Export JFP prompt(s) by ID.",
+      "parameters": [
+        {
+          "name": "ids",
+          "flag": "--robot-jfp-export",
+          "type": "string",
+          "required": true,
+          "description": "Prompt ID(s), comma-separated"
+        },
+        {
+          "name": "format",
+          "flag": "--jfp-format",
+          "type": "string",
+          "required": false,
+          "description": "Export format (skill or md)"
+        }
+      ],
+      "examples": [
+        "ntm --robot-jfp-export=prompt-123",
+        "ntm --robot-jfp-export=prompt-123 --jfp-format=md"
+      ]
+    },
+    {
+      "name": "jfp-install",
+      "flag": "--robot-jfp-install",
+      "category": "utility",
+      "description": "Install JFP prompt(s) by ID.",
+      "parameters": [
+        {
+          "name": "ids",
+          "flag": "--robot-jfp-install",
+          "type": "string",
+          "required": true,
+          "description": "Prompt ID(s), comma-separated"
+        },
+        {
+          "name": "project",
+          "flag": "--project",
+          "type": "string",
+          "required": false,
+          "description": "Project directory override (alias: --jfp-project)"
+        },
+        {
+          "name": "jfp-project",
+          "flag": "--jfp-project",
+          "type": "string",
+          "required": false,
+          "description": "Optional project directory for installs"
+        }
+      ],
+      "examples": [
+        "ntm --robot-jfp-install=prompt-123",
+        "ntm --robot-jfp-install=prompt-1,prompt-2 --jfp-project=/path/to/project"
+      ]
+    },
+    {
+      "name": "jfp-installed",
+      "flag": "--robot-jfp-installed",
+      "category": "utility",
+      "description": "List installed Claude Code skills from JFP.",
+      "parameters": [],
+      "examples": [
+        "ntm --robot-jfp-installed"
+      ]
+    },
+    {
+      "name": "jfp-list",
+      "flag": "--robot-jfp-list",
+      "category": "utility",
+      "description": "List JFP prompts (optionally filtered by category/tag).",
+      "parameters": [
+        {
+          "name": "category",
+          "flag": "--category",
+          "type": "string",
+          "required": false,
+          "description": "Filter by category"
+        },
+        {
+          "name": "tag",
+          "flag": "--tag",
+          "type": "string",
+          "required": false,
+          "description": "Filter by tag"
+        }
+      ],
+      "examples": [
+        "ntm --robot-jfp-list",
+        "ntm --robot-jfp-list --category=debugging"
+      ]
+    },
+    {
+      "name": "jfp-search",
+      "flag": "--robot-jfp-search",
+      "category": "utility",
+      "description": "Search JFP prompts by query.",
+      "parameters": [
+        {
+          "name": "query",
+          "flag": "--robot-jfp-search",
+          "type": "string",
+          "required": true,
+          "description": "Search query"
+        }
+      ],
+      "examples": [
+        "ntm --robot-jfp-search='debugging'"
+      ]
+    },
+    {
+      "name": "jfp-show",
+      "flag": "--robot-jfp-show",
+      "category": "utility",
+      "description": "Show a JFP prompt by ID.",
+      "parameters": [
+        {
+          "name": "id",
+          "flag": "--robot-jfp-show",
+          "type": "string",
+          "required": true,
+          "description": "Prompt ID"
+        }
+      ],
+      "examples": [
+        "ntm --robot-jfp-show=prompt-123"
+      ]
+    },
+    {
+      "name": "jfp-status",
+      "flag": "--robot-jfp-status",
+      "category": "utility",
+      "description": "Get JeffreysPrompts (JFP) health status.",
+      "parameters": [],
+      "examples": [
+        "ntm --robot-jfp-status"
+      ]
+    },
+    {
+      "name": "jfp-suggest",
+      "flag": "--robot-jfp-suggest",
+      "category": "utility",
+      "description": "Get JFP prompt suggestions for a task.",
+      "parameters": [
+        {
+          "name": "task",
+          "flag": "--robot-jfp-suggest",
+          "type": "string",
+          "required": true,
+          "description": "Task description"
+        }
+      ],
+      "examples": [
+        "ntm --robot-jfp-suggest='build a REST API'"
+      ]
+    },
+    {
+      "name": "jfp-tags",
+      "flag": "--robot-jfp-tags",
+      "category": "utility",
+      "description": "List JFP tags with counts.",
+      "parameters": [],
+      "examples": [
+        "ntm --robot-jfp-tags"
+      ]
+    },
+    {
+      "name": "jfp-update",
+      "flag": "--robot-jfp-update",
+      "category": "utility",
+      "description": "Update JFP registry cache.",
+      "parameters": [],
+      "examples": [
+        "ntm --robot-jfp-update"
+      ]
+    },
+    {
+      "name": "mail",
+      "flag": "--robot-mail",
+      "category": "utility",
+      "description": "Get Agent Mail state.",
+      "parameters": [],
+      "examples": [
+        "ntm --robot-mail"
+      ]
+    },
+    {
+      "name": "ms-search",
+      "flag": "--robot-ms-search",
+      "category": "utility",
+      "description": "Search Meta Skill catalog.",
+      "parameters": [
+        {
+          "name": "query",
+          "flag": "--robot-ms-search",
+          "type": "string",
+          "required": true,
+          "description": "Search query"
+        }
+      ],
+      "examples": [
+        "ntm --robot-ms-search='commit workflow'"
+      ]
+    },
+    {
+      "name": "ms-show",
+      "flag": "--robot-ms-show",
+      "category": "utility",
+      "description": "Show Meta Skill details by ID.",
+      "parameters": [
+        {
+          "name": "id",
+          "flag": "--robot-ms-show",
+          "type": "string",
+          "required": true,
+          "description": "Skill ID"
+        }
+      ],
+      "examples": [
+        "ntm --robot-ms-show=commit-and-release"
+      ]
+    },
+    {
+      "name": "palette",
+      "flag": "--robot-palette",
+      "category": "utility",
+      "description": "Query palette commands.",
+      "parameters": [
+        {
+          "name": "palette-session",
+          "flag": "--palette-session",
+          "type": "string",
+          "required": false,
+          "description": "Filter recents to session"
+        },
+        {
+          "name": "palette-category",
+          "flag": "--palette-category",
+          "type": "string",
+          "required": false,
+          "description": "Filter by category"
+        },
+        {
+          "name": "palette-search",
+          "flag": "--palette-search",
+          "type": "string",
+          "required": false,
+          "description": "Search commands"
+        }
+      ],
+      "examples": [
+        "ntm --robot-palette --palette-category=quick"
+      ]
+    },
+    {
+      "name": "proxy-status",
+      "flag": "--robot-proxy-status",
+      "category": "utility",
+      "description": "Get rust_proxy daemon status, route metrics, and failover history.",
+      "parameters": [],
+      "examples": [
+        "ntm --robot-proxy-status"
+      ]
+    },
+    {
+      "name": "rano-stats",
+      "flag": "--robot-rano-stats",
+      "category": "utility",
+      "description": "Get per-agent network stats via rano.",
+      "parameters": [
+        {
+          "name": "panes",
+          "flag": "--panes",
+          "type": "string",
+          "required": false,
+          "description": "Comma-separated pane indices to filter (applies across sessions)"
+        },
+        {
+          "name": "rano-window",
+          "flag": "--rano-window",
+          "type": "duration",
+          "required": false,
+          "default": "5m",
+          "description": "Time window for stats (e.g., 5m, 1h)"
+        }
+      ],
+      "examples": [
+        "ntm --robot-rano-stats",
+        "ntm --robot-rano-stats --panes=2,3 --rano-window=10m"
+      ]
+    },
+    {
+      "name": "rch-status",
+      "flag": "--robot-rch-status",
+      "category": "utility",
+      "description": "Get RCH status summary including worker counts.",
+      "parameters": [],
+      "examples": [
+        "ntm --robot-rch-status"
+      ]
+    },
+    {
+      "name": "rch-workers",
+      "flag": "--robot-rch-workers",
+      "category": "utility",
+      "description": "List RCH workers with status details.",
+      "parameters": [
+        {
+          "name": "worker",
+          "flag": "--worker",
+          "type": "string",
+          "required": false,
+          "description": "Filter to a specific worker name"
+        }
+      ],
+      "examples": [
+        "ntm --robot-rch-workers",
+        "ntm --robot-rch-workers --worker=builder-1"
+      ]
+    },
+    {
+      "name": "replay",
+      "flag": "--robot-replay",
+      "category": "utility",
+      "description": "Replay command from history.",
+      "parameters": [
+        {
+          "name": "session",
+          "flag": "--robot-replay",
+          "type": "string",
+          "required": true,
+          "description": "Session name"
+        },
+        {
+          "name": "replay-id",
+          "flag": "--replay-id",
+          "type": "string",
+          "required": true,
+          "description": "History entry ID to replay"
+        },
+        {
+          "name": "replay-dry-run",
+          "flag": "--replay-dry-run",
+          "type": "bool",
+          "required": false,
+          "description": "Preview without executing"
+        }
+      ],
+      "examples": [
+        "ntm --robot-replay=myproject --replay-id=1735830245123-a1b2c3d4"
+      ]
+    },
+    {
+      "name": "restore",
+      "flag": "--robot-restore",
+      "category": "utility",
+      "description": "Restore session from saved state.",
+      "parameters": [
+        {
+          "name": "path",
+          "flag": "--robot-restore",
+          "type": "string",
+          "required": true,
+          "description": "Path to save file"
+        },
+        {
+          "name": "dry-run",
+          "flag": "--dry-run",
+          "type": "bool",
+          "required": false,
+          "description": "Preview without executing"
+        }
+      ],
+      "examples": [
+        "ntm --robot-restore=backup.json --dry-run"
+      ]
+    },
+    {
+      "name": "ru-sync",
+      "flag": "--robot-ru-sync",
+      "category": "utility",
+      "description": "Run ru sync and return JSON summary.",
+      "parameters": [
+        {
+          "name": "dry-run",
+          "flag": "--dry-run",
+          "type": "bool",
+          "required": false,
+          "description": "Preview without executing"
+        }
+      ],
+      "examples": [
+        "ntm --robot-ru-sync",
+        "ntm --robot-ru-sync --dry-run"
+      ]
+    },
+    {
+      "name": "save",
+      "flag": "--robot-save",
+      "category": "utility",
+      "description": "Save session state for later restore.",
+      "parameters": [
+        {
+          "name": "session",
+          "flag": "--robot-save",
+          "type": "string",
+          "required": true,
+          "description": "Session name"
+        },
+        {
+          "name": "save-output",
+          "flag": "--save-output",
+          "type": "string",
+          "required": false,
+          "description": "Output file path"
+        }
+      ],
+      "examples": [
+        "ntm --robot-save=proj --save-output=backup.json"
+      ]
+    },
+    {
+      "name": "setup-status",
+      "flag": "--robot-setup",
+      "category": "utility",
+      "description": "Alias for --robot-acfs-status.",
+      "parameters": [],
+      "examples": [
+        "ntm --robot-setup"
+      ]
+    },
+    {
+      "name": "slb-approve",
+      "flag": "--robot-slb-approve",
+      "category": "utility",
+      "description": "Approve an SLB request by ID.",
+      "parameters": [
+        {
+          "name": "id",
+          "flag": "--robot-slb-approve",
+          "type": "string",
+          "required": true,
+          "description": "Request ID"
+        }
+      ],
+      "examples": [
+        "ntm --robot-slb-approve=req-123"
+      ]
+    },
+    {
+      "name": "slb-deny",
+      "flag": "--robot-slb-deny",
+      "category": "utility",
+      "description": "Deny an SLB request by ID.",
+      "parameters": [
+        {
+          "name": "id",
+          "flag": "--robot-slb-deny",
+          "type": "string",
+          "required": true,
+          "description": "Request ID"
+        },
+        {
+          "name": "reason",
+          "flag": "--reason",
+          "type": "string",
+          "required": false,
+          "description": "Optional denial reason"
+        }
+      ],
+      "examples": [
+        "ntm --robot-slb-deny=req-123 --reason='Too risky'"
+      ]
+    },
+    {
+      "name": "slb-pending",
+      "flag": "--robot-slb-pending",
+      "category": "utility",
+      "description": "List pending SLB approval requests.",
+      "parameters": [],
+      "examples": [
+        "ntm --robot-slb-pending"
+      ]
+    },
+    {
+      "name": "tokens",
+      "flag": "--robot-tokens",
+      "category": "utility",
+      "description": "Get token usage analytics.",
+      "parameters": [
+        {
+          "name": "tokens-days",
+          "flag": "--tokens-days",
+          "type": "int",
+          "required": false,
+          "default": "30",
+          "description": "Days to analyze"
+        },
+        {
+          "name": "tokens-since",
+          "flag": "--tokens-since",
+          "type": "string",
+          "required": false,
+          "description": "Analyze since date"
+        },
+        {
+          "name": "tokens-group-by",
+          "flag": "--tokens-group-by",
+          "type": "string",
+          "required": false,
+          "default": "agent",
+          "description": "Grouping: agent, model, day, week, month"
+        },
+        {
+          "name": "tokens-session",
+          "flag": "--tokens-session",
+          "type": "string",
+          "required": false,
+          "description": "Filter to session"
+        },
+        {
+          "name": "tokens-agent",
+          "flag": "--tokens-agent",
+          "type": "string",
+          "required": false,
+          "description": "Filter to agent type"
+        }
+      ],
+      "examples": [
+        "ntm --robot-tokens --tokens-days=7 --tokens-group-by=model"
+      ]
+    },
+    {
+      "name": "tools",
+      "flag": "--robot-tools",
+      "category": "utility",
+      "description": "Get tool inventory and health status.",
+      "parameters": [],
+      "examples": [
+        "ntm --robot-tools"
+      ]
+    },
+    {
+      "name": "version",
+      "flag": "--robot-version",
+      "category": "utility",
+      "description": "Get ntm version, commit, and build info.",
+      "parameters": [],
+      "examples": [
+        "ntm --robot-version"
+      ]
+    }
+  ],
+  "categories": [
+    "state",
+    "ensemble",
+    "control",
+    "spawn",
+    "beads",
+    "bv",
+    "cass",
+    "pipeline",
+    "utility"
+  ]
+}

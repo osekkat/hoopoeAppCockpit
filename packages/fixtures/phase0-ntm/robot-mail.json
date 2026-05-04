@@ -1,0 +1,16 @@
+{
+  "success": true,
+  "timestamp": "2026-05-04T14:57:18Z",
+  "version": "1.0.0",
+  "output_format": "json",
+  "generated_at": "2026-05-04T14:57:18.391468091Z",
+  "project_key": "/home/admin",
+  "available": true,
+  "server_url": "http://127.0.0.1:8765/mcp/",
+  "messages": {
+    "total": 0,
+    "unread": 0,
+    "urgent": 0,
+    "pending_ack": 0
+  }
+}
