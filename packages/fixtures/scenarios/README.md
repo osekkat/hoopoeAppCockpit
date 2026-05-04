@@ -20,7 +20,10 @@ Volatile fields are scrubbed before comparison:
 
 - `rootPath` values under the fixture package become `<fixtures-root>/...`.
 - fixture metadata `capturedAt` becomes `<scrubbed-captured-at>`.
-- runtime health response `time` becomes `<scrubbed-runtime-time>`.
+- runtime health response `time` is asserted to equal the deterministic
+  `MOCK_FLYWHEEL_HEALTH_TIME` constant (hp-2szb); any other ISO at key
+  `time` falls back to `<scrubbed-runtime-time>` as a safety net but is
+  no longer the expected case for `health()`.
 - `Uint8Array` pane logs become base64 envelopes.
 
 Scenario event timestamps are not scrubbed. They are part of the scenario timeline and should fail the golden test when they change.

@@ -110,6 +110,19 @@ export const MOCK_PAIRING_TOKEN = [...MOCK_AUTH_PARTS, "pairing"].join(":");
 export const MOCK_BEARER_TOKEN = [...MOCK_AUTH_PARTS, "bearer"].join(":");
 export const MOCK_WS_TOKEN = [...MOCK_AUTH_PARTS, "ws"].join(":");
 
+/** Fixed fallback timestamp for mock-flywheel health responses (hp-2szb).
+ *  Mock Flywheel Mode is supposed to be deterministic enough for CI,
+ *  support reproductions, and stable release smoke. Returning
+ *  `new Date().toISOString()` from `health()` leaked wall-clock
+ *  nondeterminism every time a UI/snapshot test or fixture consumer
+ *  hit /v1/health directly. The golden-replay scrubber masked it for
+ *  the committed golden but couldn't help any other consumer.
+ *
+ *  Callers wanting a different anchor pass `options.now` to
+ *  createMockDaemonClient — the client converts that epoch-ms value
+ *  to ISO. With `options.now` unset, this fixed value is returned. */
+export const MOCK_FLYWHEEL_HEALTH_TIME = "2026-05-04T00:00:00.000Z";
+
 export function createMockDaemonClient(options: MockDaemonClientOptions): MockDaemonClient {
   let scenario: LoadedScenario = loadTendingScenario(
     options.scenarioId,
@@ -121,11 +134,18 @@ export function createMockDaemonClient(options: MockDaemonClientOptions): MockDa
   // logic can resume from where it left off.
   const cursors: Record<string, number> = {};
 
+  const healthTime = (): string => {
+    if (options.now !== undefined) {
+      return new Date(options.now()).toISOString();
+    }
+    return MOCK_FLYWHEEL_HEALTH_TIME;
+  };
+
   return {
     health: () => ({
       status: "ok" as const,
       environment: "mock-flywheel" as const,
-      time: new Date().toISOString(),
+      time: healthTime(),
     }),
     version: () => ({ api: "v1.0.0-mock", daemon: "mock-flywheel" }),
     capabilities: () => scenario.capabilities,

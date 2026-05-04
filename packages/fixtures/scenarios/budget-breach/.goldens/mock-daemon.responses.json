@@ -456,7 +456,7 @@
   "system.health": {
     "environment": "mock-flywheel",
     "status": "ok",
-    "time": "<scrubbed-runtime-time>"
+    "time": "2026-05-04T00:00:00.000Z"
   },
   "system.version": {
     "api": "v1.0.0-mock",

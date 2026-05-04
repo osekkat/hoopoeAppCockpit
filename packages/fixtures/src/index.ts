@@ -70,6 +70,7 @@ export {
   MOCK_PAIRING_TOKEN,
   MOCK_BEARER_TOKEN,
   MOCK_WS_TOKEN,
+  MOCK_FLYWHEEL_HEALTH_TIME,
   type LoadedScenario,
   type ReplayEvent,
   type PaneLog,

@@ -8,6 +8,7 @@ import {
   fixturesRoot,
   loadTendingScenario,
   MOCK_BEARER_TOKEN,
+  MOCK_FLYWHEEL_HEALTH_TIME,
   MOCK_PAIRING_TOKEN,
   startReplay,
   type LoadedScenario,
@@ -257,8 +258,19 @@ function normalizeField(key: string, value: unknown): unknown {
   if (key === "capturedAt" && typeof value === "string") {
     return "<scrubbed-captured-at>";
   }
-  if (key === "time" && typeof value === "string" && isIsoTimestamp(value)) {
-    return "<scrubbed-runtime-time>";
+  // hp-2szb: the mock-flywheel health response now uses an injectable
+  // clock that defaults to MOCK_FLYWHEEL_HEALTH_TIME. We pass the fixed
+  // value through so the committed golden contains the literal — proving
+  // the deterministic-clock contract — but we still scrub anything else
+  // under `time` as a safety net for any future surface that accidentally
+  // leaks runtime state.
+  if (key === "time" && typeof value === "string") {
+    if (value === MOCK_FLYWHEEL_HEALTH_TIME) {
+      return value;
+    }
+    if (isIsoTimestamp(value)) {
+      return "<scrubbed-runtime-time>";
+    }
   }
   return normalizeForGolden(value);
 }
