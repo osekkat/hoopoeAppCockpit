@@ -142,6 +142,19 @@ privileged commands therefore appear in:
 `IpcRegistry.security.test.ts` pins all four rejection paths plus the
 sink-throws-don't-block-the-registry-throw safety property.
 
+### §5.4 Security Checklist
+
+| §5.4 requirement | Bead / enforcement |
+| --- | --- |
+| Renderer `contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`, strict CSP | hp-rflj; `apps/desktop/src/main/window-policy.ts`; `apps/desktop/electron/security` policy verifier |
+| Preload exposes a small typed API only | hp-rflj; `apps/desktop/electron/preload.ts`; `apps/desktop/electron/preload.*.test.ts` |
+| Bearer tokens and SSH passphrases never enter desktop cache | hp-spx plus hp-llpe cache validator in `apps/desktop/electron/security` |
+| Daemon logs and audits pass through redaction before persistence/streaming | hp-je1p; `apps/daemon/internal/redact` and structured logger call sites |
+| Direct/tailnet TLS fingerprints use TOFU only from authenticated SSH bootstrap | hp-llpe; `apps/daemon/internal/transport/security` |
+| Public daemon bind requires config flag plus runtime confirmation | hp-dmoj; `apps/daemon/internal/security` bind policy and Diagnostics warning |
+| Local clone content is untrusted; code/Markdown rendering escapes unsafe input | hp-mov4; `apps/desktop/electron/markdown-sanitize` and `apps/daemon/internal/clone/sandbox` |
+| Provider SDK/API-key imports are forbidden | hp-ara; `scripts/providerlint/check-provider-sdks.ts` |
+
 ### Threat model summary
 
 | Threat | Defense |
