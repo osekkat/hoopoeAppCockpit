@@ -1,0 +1,10 @@
+{
+  "argv": ["bv", "--robot-snapshot"],
+  "exit": 1,
+  "capturedFrom": "real-vps",
+  "host": "admin@45.85.250.216",
+  "projectPath": "/home/admin/Projects/nexusAudio",
+  "stdout": "",
+  "stderr": "Error: unknown flag: --robot-snapshot\nunknown flag: --robot-snapshot\n",
+  "note": "`bv --robot-snapshot` was requested for hp-kmrc, but bv v0.16.0 does not implement that flag. `bv --robot-triage` is the supported unified snapshot-style command."
+}

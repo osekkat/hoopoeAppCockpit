@@ -1,19 +1,19 @@
-# Phase 0 fixture pack — `bv` (local stand-in)
+# Phase 0 fixture pack — `bv` (real VPS)
 
-Real `bv --robot-*` output captured against the local `hoopoeAppCockpit/.beads/` for adapter contract tests (plan.md §16 / §18.3 / hp-ge0).
+Real `bv --robot-*` output captured over SSH from the ACFS VPS for adapter contract tests (plan.md §16 / §18.3 / hp-ge0 / hp-kmrc).
 
 ## Why this pack exists
 
-The Phase 0 fixture pack at `packages/fixtures/phase0-2026-05-02/scenarios/{fresh,active,failure}/adapters/bv.json` correctly recorded `present: false, skipReason: "missing binary on PATH: bv", captures: {}` because the test VPS (`admin@45.85.250.216`) does not have `bv` installed:
+The original Phase 0 fixture pack at `packages/fixtures/phase0-2026-05-02/scenarios/{fresh,active,failure}/adapters/bv.json` correctly recorded `present: false, skipReason: "missing binary on PATH: bv", captures: {}` because the test VPS (`admin@45.85.250.216`) did not expose `bv` on the default PATH at that time:
 
 ```bash
 $ ssh admin@45.85.250.216 'which bv'
 zsh:1: command not found: bv
 ```
 
-This satisfies the original real-VPS pedigree (the snapshot tool faithfully reported what was true on the box) but leaves the `bv` adapter without a real-shape fixture for §18.3 conformance tests. This pack fills that gap with a **local stand-in** capture: real `bv` output against a real `.beads/` database (the live hoopoe project, 261 issues / 88 open / 3 in-progress at capture time).
+hp-kmrc found that `bv v0.16.0` is installed at `/home/admin/.local/bin/bv`. The capture command prepends `/home/admin/.local/bin` and records output from the real VPS project `/home/admin/Projects/nexusAudio` (`https://github.com/osekkat/nexusAudio`, git HEAD `82367437c261a52958e442dbc1202e3aaa22e684`, 167 beads / 4 open / 0 in-progress at capture time).
 
-The capture covers every `--robot-*` flag that bv v0.16.0 exposes, plus `--export-md`. Conformance tests can assert against the JSON shapes here while the same shapes will eventually be re-captured against a real ACFS VPS once `bv` is installed there (sub-bead filed alongside hp-ge0).
+The capture covers every `--robot-*` flag that bv v0.16.0 exposes, plus `--export-md`. It also records the requested `bv --robot-snapshot` attempt as unsupported, because that flag does not exist in bv v0.16.0.
 
 ## Layout
 
@@ -24,6 +24,7 @@ packages/fixtures/phase0-bv/
 ├── replay.test.ts     ← golden-replay test (validates shape invariants)
 └── captures/
     ├── robot-triage.json        — `bv --robot-triage` (unified mega-command)
+    ├── robot-snapshot.unsupported.json — `bv --robot-snapshot` unsupported flag envelope
     ├── robot-plan.json          — `bv --robot-plan`
     ├── robot-priority.json      — `bv --robot-priority`
     ├── robot-insights.json      — `bv --robot-insights`
@@ -33,13 +34,13 @@ packages/fixtures/phase0-bv/
     └── export.head.md           — first 200 lines of `bv --export-md`
 ```
 
-## Substitutions vs the original capture list
+## Unsupported requested flag
 
-The hp-ge0 prompt named two flags that don't exist in `bv` v0.16.0; this pack substitutes the closest real flag and documents the substitution in `manifest.json`:
+The hp-kmrc prompt requested `bv --robot-snapshot`. The real VPS tool is `bv v0.16.0`, whose `bv --robot-help` output advertises `--robot-triage`, `--robot-next`, `--robot-plan`, and `--robot-insights`; `--robot-snapshot` exits 1 with `unknown flag: --robot-snapshot`.
 
 | Prompt name           | Reality (v0.16.0)                                       |
 | --------------------- | ------------------------------------------------------- |
-| `--robot-snapshot`    | Doesn't exist — `--robot-triage` is the unified command |
+| `--robot-snapshot`    | Doesn't exist — captured as `robot-snapshot.unsupported.json`; `--robot-triage` is the unified command |
 | `--robot-export-md`   | Doesn't exist — `--export-md <path>` writes Markdown    |
 
 ## Replay test
@@ -58,14 +59,14 @@ Run via:
 rch exec -- bun test packages/fixtures/phase0-bv/replay.test.ts
 ```
 
-## Re-capture against a real ACFS VPS
-
-When `bv` lands on the VPS:
+## Re-capture
 
 ```bash
 ssh admin@45.85.250.216
-cd ~/Projects/<some-real-project>
+export PATH=/home/admin/.local/bin:$PATH
+cd /home/admin/Projects/nexusAudio
 bv --robot-triage      > /tmp/robot-triage.json
+bv --robot-snapshot    > /tmp/robot-snapshot.json  # expected unsupported in bv v0.16.0
 bv --robot-plan        > /tmp/robot-plan.json
 bv --robot-priority    > /tmp/robot-priority.json
 bv --robot-insights    > /tmp/robot-insights.json
@@ -74,8 +75,7 @@ bv --robot-next        > /tmp/robot-next.json
 bv --robot-forecast all> /tmp/robot-forecast-all.json
 bv --export-md /tmp/export.md
 # scp the files back, head -200 export.md > export.head.md, swap them
-# in here, flip manifest.json's `mode` to "real-vps" + set
-# `realVpsAcceptance: true` + record VPS host / project / capturedAt.
+# in here, and update manifest.json's captureSource + topLevelKeys.
 ```
 
 ## Cross-references

@@ -1,14 +1,12 @@
-// hp-ge0 — Phase 0 `bv` fixture replay test.
+// hp-ge0 / hp-kmrc — Phase 0 `bv` fixture replay test.
 //
 // Validates the captures in `captures/` against the shape declarations
 // in `manifest.json`. Catches drift if `bv` ships a new robot output
 // shape that the adapter parser hasn't been updated for, or if a peer
 // agent partially overwrites this pack.
 //
-// The captures are real `bv` v0.16.0 output against the local
-// hoopoeAppCockpit `.beads/`; see README.md for the local-stand-in
-// pedigree and the planned re-capture against a real ACFS VPS once
-// `bv` is installed there.
+// The captures are real `bv` v0.16.0 output from the ACFS VPS
+// admin@45.85.250.216 against /home/admin/Projects/nexusAudio/.beads/.
 
 import { describe, expect, test } from "bun:test";
 import { readFileSync, existsSync } from "node:fs";
@@ -24,7 +22,12 @@ interface Manifest {
   readonly realVpsAcceptance: boolean;
   readonly captures: Record<
     string,
-    { readonly argv: readonly string[]; readonly exit: number; readonly topLevelKeys?: readonly string[] }
+    {
+      readonly argv: readonly string[];
+      readonly exit: number;
+      readonly capturedFrom?: string;
+      readonly topLevelKeys?: readonly string[];
+    }
   >;
 }
 
@@ -40,16 +43,26 @@ function readCapture(name: string): unknown {
 describe("phase0-bv: manifest", () => {
   test("manifest is well-formed and pinned to schemaVersion-equivalent fields", () => {
     const manifest = readManifest();
-    expect(manifest.packVersion).toBe("0.1.0");
-    expect(manifest.mode).toBe("local-stand-in");
-    expect(manifest.realVpsAcceptance).toBe(false);
-    expect(Object.keys(manifest.captures).length).toBeGreaterThanOrEqual(8);
+    expect(manifest.packVersion).toBe("0.2.0");
+    expect(manifest.mode).toBe("real-vps");
+    expect(manifest.realVpsAcceptance).toBe(true);
+    expect(Object.keys(manifest.captures).length).toBeGreaterThanOrEqual(9);
   });
 
   test("every declared capture file actually exists on disk", () => {
     const manifest = readManifest();
     for (const name of Object.keys(manifest.captures)) {
       expect(existsSync(join(CAPTURES, name))).toBe(true);
+    }
+  });
+
+  test("captures declare their real-VPS pedigree", () => {
+    const manifest = readManifest();
+    for (const [name, capture] of Object.entries(manifest.captures)) {
+      expect({ name, capturedFrom: capture.capturedFrom }).toEqual({
+        name,
+        capturedFrom: "real-vps",
+      });
     }
   });
 });
@@ -66,6 +79,19 @@ describe("phase0-bv: JSON-shape invariants per robot command", () => {
       const expectedSorted = [...expected.topLevelKeys].sort();
       expect({ name, actual }).toEqual({ name, actual: expectedSorted });
     }
+  });
+
+  test("robot-snapshot: requested flag is captured as unsupported in bv v0.16.0", () => {
+    const snapshot = readCapture("robot-snapshot.unsupported.json") as {
+      readonly argv: readonly string[];
+      readonly exit: number;
+      readonly capturedFrom: string;
+      readonly stderr: string;
+    };
+    expect(snapshot.argv).toEqual(["bv", "--robot-snapshot"]);
+    expect(snapshot.exit).toBe(1);
+    expect(snapshot.capturedFrom).toBe("real-vps");
+    expect(snapshot.stderr).toContain("unknown flag: --robot-snapshot");
   });
 
   test("robot-triage: triage.quick_ref + recommendations + project_health shape", () => {
