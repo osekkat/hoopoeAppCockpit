@@ -10,7 +10,7 @@ import { RootLayout } from "./shell/RootLayout.tsx";
 import { ProjectPickerRoute, StageRoute } from "./shell/routes.tsx";
 import { useShellUiStore, resolveShellLaunchTarget } from "./store.ts";
 import { routeForStage } from "./topbar/project-switcher-model.ts";
-import { WizardShell } from "./wizard/index.ts";
+import { PersistentWizardShell } from "./wizard/index.ts";
 
 const rootRoute = createRootRoute({
   component: RootLayout,
@@ -20,7 +20,11 @@ const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
   beforeLoad: () => {
-    const launchTarget = resolveShellLaunchTarget(useShellUiStore.getState());
+    const state = useShellUiStore.getState();
+    if (shouldRedirectToFirstRun(state)) {
+      throw redirect({ to: "/first-run" });
+    }
+    const launchTarget = resolveShellLaunchTarget(state);
     if (!launchTarget) return;
     throw redirect({
       to: routeForStage(launchTarget.stageId),
@@ -39,8 +43,9 @@ const firstRunRoute = createRoute({
 function FirstRunRoute() {
   const navigate = useNavigate();
   return (
-    <WizardShell
+    <PersistentWizardShell
       onComplete={() => {
+        useShellUiStore.getState().markFirstRunCompleted();
         void navigate({ to: "/" });
       }}
     />
@@ -52,6 +57,16 @@ const projectRoute = createRoute({
   path: "$projectId",
   component: Outlet,
 });
+
+export function shouldRedirectToFirstRun(state: {
+  readonly activeProjectId: string | null;
+  readonly lastProjectId: string | null;
+  readonly firstRunCompletedAt?: string | null;
+}): boolean {
+  const firstRunIncomplete =
+    state.firstRunCompletedAt === null || state.firstRunCompletedAt === undefined;
+  return state.activeProjectId === null && state.lastProjectId === null && firstRunIncomplete;
+}
 
 const projectIndexRoute = createRoute({
   getParentRoute: () => projectRoute,

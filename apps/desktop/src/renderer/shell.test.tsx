@@ -18,6 +18,7 @@ import {
   useShellUiStore,
   type ShellProjectSummary,
 } from "./store.ts";
+import { shouldRedirectToFirstRun } from "./routes.tsx";
 import {
   projectMatchesSearch,
   routeForStage,
@@ -58,6 +59,25 @@ test("Swarm empty state exposes bead board and agent grid without terminal panes
   expect(markup.toLowerCase()).not.toContain("terminal");
 });
 
+test("Diagnostics empty state links back to the first-run wizard", () => {
+  const markup = renderToStaticMarkup(<EmptyStage stageId="diag" />);
+  expect(markup).toContain('data-testid="diagnostics-reconnect-wizard"');
+  expect(markup).toContain('href="/first-run"');
+});
+
+test("shouldRedirectToFirstRun: only fresh installs go to the wizard", () => {
+  expect(shouldRedirectToFirstRun({ activeProjectId: null, lastProjectId: null })).toBe(true);
+  expect(
+    shouldRedirectToFirstRun({
+      activeProjectId: null,
+      lastProjectId: null,
+      firstRunCompletedAt: "2026-05-04T07:00:00Z",
+    }),
+  ).toBe(false);
+  expect(shouldRedirectToFirstRun({ activeProjectId: "local-demo", lastProjectId: null })).toBe(false);
+  expect(shouldRedirectToFirstRun({ activeProjectId: null, lastProjectId: "local-demo" })).toBe(false);
+});
+
 test("Activity panel can render open and closed states", () => {
   const openMarkup = renderToStaticMarkup(
     <ActivityPanel open={true} onClose={() => undefined} />,
@@ -74,6 +94,7 @@ test("shell UI store persists activity drawer and route memory state", () => {
   useShellUiStore.setState({
     activeProjectId: null,
     activityPanelOpen: false,
+    firstRunCompletedAt: null,
     lastProjectId: null,
     lastStageId: "plan",
     pendingSwitchProjectId: null,
@@ -87,6 +108,8 @@ test("shell UI store persists activity drawer and route memory state", () => {
   expect(useShellUiStore.getState().activityPanelOpen).toBe(true);
   expect(useShellUiStore.getState().lastProjectId).toBe("local-demo");
   expect(useShellUiStore.getState().lastStageId).toBe("bead");
+  useShellUiStore.getState().markFirstRunCompleted("2026-05-04T07:00:00Z");
+  expect(useShellUiStore.getState().firstRunCompletedAt).toBe("2026-05-04T07:00:00Z");
   expect(
     useShellUiStore.getState().projectViewStateById["local-demo"]?.activityPanelOpen,
   ).toBe(true);
@@ -154,6 +177,7 @@ test("shell UI store confirms project switches without halting a running swarm",
   useShellUiStore.setState({
     activeProjectId: null,
     activityPanelOpen: false,
+    firstRunCompletedAt: null,
     lastProjectId: null,
     lastStageId: "plan",
     pendingSwitchProjectId: null,

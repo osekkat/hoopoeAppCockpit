@@ -88,6 +88,15 @@ export function EmptyStage({ stageId }: { readonly stageId: ShellRouteId }) {
           </article>
         ))}
       </section>
+      {stageId === "diag" ? (
+        <a
+          className="hh-wizard-secondary"
+          data-testid="diagnostics-reconnect-wizard"
+          href="/first-run"
+        >
+          Reconnect VPS
+        </a>
+      ) : null}
     </div>
   );
 }

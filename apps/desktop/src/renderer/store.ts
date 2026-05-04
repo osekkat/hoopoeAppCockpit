@@ -64,6 +64,7 @@ export interface ShellUiState {
   readonly recentCommandIds: readonly string[];
   readonly lastProjectId: string | null;
   readonly lastStageId: ShellRouteId;
+  readonly firstRunCompletedAt: string | null;
   readonly projectSwitcherOpen: boolean;
   readonly projectSearch: string;
   readonly pendingSwitchProjectId: string | null;
@@ -87,6 +88,7 @@ export interface ShellUiState {
   readonly toggleProjectPin: (projectId: string) => void;
   readonly rememberProject: (projectId: string) => void;
   readonly rememberStage: (stageId: ShellRouteId) => void;
+  readonly markFirstRunCompleted: (completedAt?: string) => void;
   readonly rememberStageScroll: (
     projectId: string,
     stageId: ShellRouteId,
@@ -267,6 +269,7 @@ export const useShellUiStore = create<ShellUiState>()(
       recentCommandIds: [],
       lastProjectId: null,
       lastStageId: "plan",
+      firstRunCompletedAt: null,
       projectSwitcherOpen: false,
       projectSearch: "",
       pendingSwitchProjectId: null,
@@ -414,6 +417,9 @@ export const useShellUiStore = create<ShellUiState>()(
             : state.projectViewStateById,
         }));
       },
+      markFirstRunCompleted: (completedAt) => {
+        set({ firstRunCompletedAt: completedAt ?? new Date().toISOString() });
+      },
       rememberStageScroll: (projectId, stageId, scrollY) => {
         set((state) => ({
           projectViewStateById: updateProjectViewState(
@@ -488,6 +494,7 @@ export const useShellUiStore = create<ShellUiState>()(
         activityPanelOpen: state.activityPanelOpen,
         lastProjectId: state.lastProjectId,
         lastStageId: state.lastStageId,
+        firstRunCompletedAt: state.firstRunCompletedAt,
         activeProjectId: state.activeProjectId,
         projects: state.projects,
         projectViewStateById: state.projectViewStateById,

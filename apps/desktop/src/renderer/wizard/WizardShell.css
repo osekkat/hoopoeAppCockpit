@@ -595,3 +595,113 @@
   color: var(--text-muted);
   font-size: 12px;
 }
+
+/* hp-zsp1 - status, extensions, and settings-backed persistence */
+
+.hh-wizard-status-step,
+.hh-wizard-extensions-step {
+  gap: 16px;
+}
+
+.hh-wizard-status-summary {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 13px 14px;
+  border: 1px solid var(--surface-border-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface-panel-alt);
+}
+
+.hh-wizard-status-summary[data-status="ready"] {
+  border-color: rgba(123, 198, 138, 0.45);
+  background: rgba(123, 198, 138, 0.10);
+}
+
+.hh-wizard-status-summary[data-status="warning"] {
+  border-color: rgba(229, 196, 100, 0.45);
+  background: rgba(229, 196, 100, 0.10);
+}
+
+.hh-wizard-status-summary[data-status="missing"] {
+  border-color: rgba(255, 142, 142, 0.55);
+  background: rgba(255, 142, 142, 0.08);
+}
+
+.hh-wizard-status-summary strong,
+.hh-wizard-status-row strong,
+.hh-wizard-persisted-state strong,
+.hh-wizard-persisted-warning strong {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.hh-wizard-status-summary p,
+.hh-wizard-status-row p,
+.hh-wizard-persisted-state p,
+.hh-wizard-persisted-warning p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.hh-wizard-status-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.hh-wizard-status-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--surface-panel-alt);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.hh-wizard-status-row[data-status="ready"] {
+  color: rgba(123, 198, 138, 0.95);
+}
+
+.hh-wizard-status-row[data-status="warning"] {
+  color: rgba(229, 196, 100, 0.95);
+}
+
+.hh-wizard-status-row[data-status="missing"] {
+  color: rgba(255, 142, 142, 0.95);
+}
+
+.hh-wizard-status-row small {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+
+.hh-wizard-persisted-state,
+.hh-wizard-persisted-warning {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 13px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--surface-border-soft);
+  background: var(--surface-panel-alt);
+}
+
+.hh-wizard-persisted-warning {
+  max-width: 1080px;
+  margin: -10px auto 24px;
+  border-color: rgba(229, 196, 100, 0.45);
+  background: rgba(229, 196, 100, 0.12);
+}

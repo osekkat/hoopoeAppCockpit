@@ -184,6 +184,34 @@ test("WizardShell: hp-9z45 steps render streaming bootstrap components instead o
   }
 });
 
+test("WizardShell: hp-zsp1 status and extensions steps render real components", () => {
+  const steps = ["status_check", "extensions"] as const;
+  for (const stepId of steps) {
+    const sink = new WizardReplaySink();
+    sink.beginRun({ runId: `test-${stepId}` });
+    sink.recordActivePath("existing_vps");
+    for (const completed of [
+      "path",
+      "ssh_key",
+      "rent_vps",
+      "vps_connect",
+      "preflight",
+      "acfs_install",
+      "reconnect",
+      "verify_key",
+    ] as const) {
+      sink.recordCheckpoint({ stepId: completed, outcome: "completed" });
+    }
+    if (stepId === "extensions") {
+      sink.recordCheckpoint({ stepId: "status_check", outcome: "completed" });
+    }
+    const markup = renderToStaticMarkup(<WizardShell sink={sink} />);
+    expect(markup).toContain(`data-current-step="${stepId}"`);
+    expect(markup).toContain(`data-testid="wizard-step-${stepId}"`);
+    expect(markup).not.toContain("The body of this step ships in a follow-up bead");
+  }
+});
+
 // hp-sgzb: STEP_FOLLOWUPS must point at real beads (not the placeholder
 // `hp-o6q-...` shape that was filed at hp-o6q close). The shape regex
 // pins the canonical id form (`hp-` + 3-5 lowercase alphanumeric chars).

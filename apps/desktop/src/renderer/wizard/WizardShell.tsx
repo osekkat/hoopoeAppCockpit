@@ -20,8 +20,18 @@ import {
   type BootstrapStepFailure,
   type BootstrapStepSelection,
 } from "./StepBootstrapStream.tsx";
+import {
+  StepExtensions,
+  buildExtensionsCheckpointData,
+  type ExtensionsSelection,
+} from "./StepExtensions.tsx";
 import { StepSshKey, type SshKeySelection } from "./StepSshKey.tsx";
 import { StepStub } from "./StepStub.tsx";
+import {
+  StepStatusCheck,
+  buildStatusCheckCheckpointData,
+  type StatusCheckSelection,
+} from "./StepStatusCheck.tsx";
 import {
   StepVpsConnect,
   buildVpsConnectCheckpointData,
@@ -220,6 +230,45 @@ export function WizardShell({ initialRunId, onComplete, persist, sink: providedS
     [persist, refreshUi, sink],
   );
 
+  const recordStatusCheckComplete = useCallback(
+    (selection: StatusCheckSelection) => {
+      const next = sink.recordCheckpoint({
+        stepId: "status_check",
+        outcome: "completed",
+        data: buildStatusCheckCheckpointData(selection),
+      });
+      persist?.(next);
+      refreshUi();
+    },
+    [persist, refreshUi, sink],
+  );
+
+  const recordExtensionsComplete = useCallback(
+    (selection: ExtensionsSelection) => {
+      const next = sink.recordCheckpoint({
+        stepId: "extensions",
+        outcome: "completed",
+        data: buildExtensionsCheckpointData(selection),
+      });
+      persist?.(next);
+      refreshUi();
+    },
+    [persist, refreshUi, sink],
+  );
+
+  const recordStepFailure = useCallback(
+    (stepId: WizardStepId, failure: { readonly code: string; readonly message: string }) => {
+      const next = sink.recordCheckpoint({
+        stepId,
+        outcome: "failed",
+        failure,
+      });
+      persist?.(next);
+      refreshUi();
+    },
+    [persist, refreshUi, sink],
+  );
+
   // Pull the SSH key step's persisted private-key path so the connect
   // step can pre-fill the field — saves the user from re-typing.
   const sshKeyData = run.checkpoints.findLast(
@@ -276,6 +325,16 @@ export function WizardShell({ initialRunId, onComplete, persist, sink: providedS
               stepId={bootstrapStep}
               onComplete={recordBootstrapComplete}
               onFailed={(failure) => recordBootstrapFailure(bootstrapStep, failure)}
+            />
+          ) : computed.currentStep === "status_check" ? (
+            <StepStatusCheck
+              onComplete={recordStatusCheckComplete}
+              onFailed={(failure) => recordStepFailure("status_check", failure)}
+            />
+          ) : computed.currentStep === "extensions" ? (
+            <StepExtensions
+              onComplete={recordExtensionsComplete}
+              onFailed={(failure) => recordStepFailure("extensions", failure)}
             />
           ) : (
             <StubStep

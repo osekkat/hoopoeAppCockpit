@@ -41,6 +41,24 @@ export { Step1PathPicker, type Step1PathPickerProps } from "./Step1PathPicker.ts
 export { Step11Success, type Step11SuccessProps } from "./Step11Success.tsx";
 export { StepStub, type StepStubProps } from "./StepStub.tsx";
 export {
+  PersistentWizardShell,
+  buildWizardSettingsPatch,
+  wizardRunsFromSettings,
+  type PersistentWizardShellProps,
+  type WizardSettingsBridge,
+} from "./PersistentWizardShell.tsx";
+export {
+  StepExtensions,
+  buildExtensionsCheckpointData,
+  deriveExtensionsResult,
+  type ExtensionStepStatus,
+  type ExtensionSubstep,
+  type ExtensionsBridge,
+  type ExtensionsCheckpointData,
+  type ExtensionsResult,
+  type ExtensionsSelection,
+} from "./StepExtensions.tsx";
+export {
   StepAcfsInstall,
   StepBootstrapStream,
   StepPreflight,
@@ -63,6 +81,18 @@ export {
   type BootstrapStepSelection,
   type BootstrapStreamEvent,
 } from "./StepBootstrapStream.tsx";
+export {
+  StepStatusCheck,
+  buildStatusCheckCheckpointData,
+  deriveStatusCheckResult,
+  type StatusCheckBridge,
+  type StatusCheckCheckpointData,
+  type StatusCheckResult,
+  type StatusCheckSelection,
+  type StatusCheckSeverity,
+  type StatusCheckSubscriptionSummary,
+  type StatusCheckToolRow,
+} from "./StepStatusCheck.tsx";
 export {
   StepVpsConnect,
   type StepVpsConnectProps,
