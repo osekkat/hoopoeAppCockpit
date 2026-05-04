@@ -58,3 +58,20 @@ test("audit explorer export preview tracks filtered entry count", () => {
   expect(approvals.exportPreview.fileName).toBe("audit-slice-20260504T080000Z.json");
   expect(approvals.exportPreview.sha256).toHaveLength(64);
 });
+
+test("audit explorer model default clock follows the current wall clock", () => {
+  const fixture = createFixtureAuditEntries("local-demo")[0];
+  if (!fixture) throw new Error("fixture audit entry missing");
+  const recentEntry = {
+    ...fixture,
+    id: "audit-recent",
+    seq: 99,
+    timestamp: new Date(Date.now() - 60_000).toISOString(),
+    summary: "Recent production audit event",
+  };
+
+  const model = buildAuditExplorerModel([recentEntry], defaultAuditFilters);
+
+  expect(model.filteredEntries.map((entry) => entry.id)).toEqual(["audit-recent"]);
+  expect(model.emptyReason).toBeNull();
+});

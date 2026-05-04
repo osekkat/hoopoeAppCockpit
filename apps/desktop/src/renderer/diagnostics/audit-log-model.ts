@@ -165,7 +165,7 @@ export const auditOutcomes: readonly AuditOutcome[] = [
 export function buildAuditExplorerModel(
   entries: readonly AuditLogEntry[],
   filters: AuditFilterState,
-  now: Date = new Date("2026-05-04T08:00:00.000Z"),
+  now: Date = new Date(),
 ): AuditExplorerModel {
   const sortedEntries = [...entries].sort(compareAuditEntriesDesc);
   const filteredEntries = sortedEntries.filter((entry) => auditEntryMatches(entry, filters, now));

@@ -47,14 +47,16 @@ const emptyAuditEntries: readonly AuditLogEntry[] = [];
 
 export function AuditLogExplorer({
   entries,
+  now,
 }: {
   readonly entries?: readonly AuditLogEntry[];
+  readonly now?: Date;
 }) {
   const [filters, setFilters] = useState<AuditFilterState>(defaultAuditFilters);
   const auditEntries = entries ?? emptyAuditEntries;
   const model = useMemo(
-    () => buildAuditExplorerModel(auditEntries, filters),
-    [auditEntries, filters],
+    () => buildAuditExplorerModel(auditEntries, filters, now),
+    [auditEntries, filters, now],
   );
   const selectedEntry = model.selectedEntry;
   const correlationEntries = selectedEntry

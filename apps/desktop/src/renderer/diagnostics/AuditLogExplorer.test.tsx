@@ -4,11 +4,14 @@ import { AuditLogExplorer } from "./AuditLogExplorer.tsx";
 import { DiagnosticsStage } from "./DiagnosticsStage.tsx";
 import { createFixtureAuditEntries } from "./audit-log-model.ts";
 
+const fixedNow = new Date("2026-05-04T08:00:00.000Z");
+
 test("AuditLogExplorer renders filters, timeline, detail, and redaction markers", () => {
   const entries = createFixtureAuditEntries("local-demo").filter((entry) => entry.id === "audit-006");
   const markup = renderToStaticMarkup(
     <AuditLogExplorer
       entries={entries}
+      now={fixedNow}
     />,
   );
 
