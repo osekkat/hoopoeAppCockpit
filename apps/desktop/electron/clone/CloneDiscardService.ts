@@ -1,19 +1,18 @@
 // hp-58wp — Main-process service that backs the
 // `hoopoe.clone.discard-local-changes` preload channel.
 //
-// The channel runs `git reset --hard @{u} && git clean -fd` against a
-// project's local clone (§7.7 destructive action). The renderer never
-// supplies a path or argv — the service resolves everything from a
-// projectId via an injected resolver. Audit fires on every invocation
-// regardless of outcome (Guardrail 10).
+// hp-hde4 retires the destructive behavior behind this legacy channel:
+// the desktop local clone is a read-only sync mirror, and Guardrail 3 has
+// no reset/clean exception. The service still validates projectId +
+// clone-state and emits audit, then refuses with an explicit read-only
+// error before any engine-side mutation can run.
 //
 // Architecture (per memory note "Engine-first slices for large beads"):
-//   1. The git work itself lives in the engine layer
-//      (`apps/desktop/electron/clone/discard.ts`) so it stays runnable
-//      from unit tests without an Electron host.
-//   2. THIS file is the Electron-host shim: project-id resolution,
-//      audit-event emission, dirty-state refresh hook. The IpcRegistry
-//      registration in BackendLifecycle calls into this service.
+//   1. The engine layer (`apps/desktop/electron/clone/discard.ts`) keeps
+//      the same refusal for direct imports.
+//   2. THIS file is the Electron-host shim: project-id resolution and
+//      audit-event emission. The IpcRegistry registration in
+//      BackendLifecycle calls into this service.
 //
 // Lives in `electron/clone/` (alongside the engine) rather than
 // `src/main/` because the desktop tsconfig only includes `src/`; reaching
@@ -23,9 +22,6 @@
 // the same way it imports from `electron/clone/index.ts`.
 
 import {
-  type DiscardLocalChangesResult,
-  CloneGitError,
-  discardLocalChanges as engineDiscard,
   readCloneState,
   type CloneState,
   type CloneStorageLayout,
@@ -56,31 +52,22 @@ export type CloneDiscardServiceErrorCode =
   | "discard.clone-not-cloned"
   // CloneState exists but reports an empty / never-cloned repo.
   | "discard.clone-empty"
-  // engineDiscard threw a CloneGitError (passed through with the
-  // engine-side code preserved in `details.engineCode`).
-  | "discard.git-failed";
+  // Valid desktop mirror, but the requested operation would mutate it.
+  | "discard.read-only-mirror";
 
 /** Audit event payload. The audit sink is responsible for shape-stable
- *  serialization — this service emits the same fields on success and
- *  failure so audit traces are uniformly queryable. Per Guardrail 10:
- *  audit fires whether the discard succeeds, refuses to start, or
- *  throws. */
+ *  serialization. Per Guardrail 10, audit fires even though the legacy
+ *  discard action is now always refused. */
 export interface CloneDiscardAuditEvent {
   readonly kind: "clone.discard-local-changes";
   readonly projectId: string;
   readonly cloneRepoPath: string;
-  readonly outcome: "ok" | "refused" | "failed";
-  /** Reason code: matches CloneDiscardServiceErrorCode for refused/failed,
-   *  `"ok"` for success. */
+  readonly outcome: "refused";
+  /** Reason code: matches CloneDiscardServiceErrorCode for refused paths. */
   readonly reasonCode: string;
   /** Free-form message — never carries paths the renderer didn't already
    *  know about; safe to surface in Diagnostics. */
   readonly message?: string;
-  /** Populated on success: SHA the working tree now matches. */
-  readonly resetToSha?: string;
-  /** Populated on success: number of paths `git clean -fd` removed. -1
-   *  when clean reported nothing. */
-  readonly removedPathCount?: number;
   /** Wall-clock timestamp from the service's clock injection. */
   readonly at: string;
 }
@@ -109,9 +96,6 @@ export interface CloneDiscardServiceOptions {
   /** Audit sink. Called on every invocation regardless of outcome
    *  (Guardrail 10). Required — no silent default; tests inject a spy. */
   readonly audit: CloneDiscardAuditSink;
-  /** Engine-layer git invoker injection (tests). Defaults to
-   *  `engineDiscard`. */
-  readonly engine?: typeof engineDiscard;
   /** Wall-clock injection (tests). Defaults to `() => new Date()`. */
   readonly now?: () => Date;
 }
@@ -122,20 +106,18 @@ export class CloneDiscardService {
   readonly #resolveCloneRepoPath: CloneRepoResolver;
   readonly #readCloneState: CloneStateReader;
   readonly #audit: CloneDiscardAuditSink;
-  readonly #engine: typeof engineDiscard;
   readonly #now: () => Date;
 
   constructor(options: CloneDiscardServiceOptions) {
     this.#resolveCloneRepoPath = options.resolveCloneRepoPath;
     this.#readCloneState = options.readCloneState;
     this.#audit = options.audit;
-    this.#engine = options.engine ?? engineDiscard;
     this.#now = options.now ?? (() => new Date());
   }
 
-  /** Run discard against `projectId`. Throws CloneDiscardServiceError on
-   *  any failure (refused or git-failed); the audit event always fires. */
-  discardLocalChanges(input: { readonly projectId: string }): DiscardLocalChangesResult {
+  /** Refuse discard against `projectId`. Throws CloneDiscardServiceError;
+   *  the audit event always fires. */
+  discardLocalChanges(input: { readonly projectId: string }): never {
     const projectId = input.projectId;
     if (typeof projectId !== "string" || !PROJECT_ID_RE.test(projectId)) {
       this.#emit({
@@ -184,35 +166,18 @@ export class CloneDiscardService {
       );
     }
 
-    let result: DiscardLocalChangesResult;
-    try {
-      result = this.#engine({ cloneRepoPath });
-    } catch (err) {
-      const engineCode = err instanceof CloneGitError ? err.code : "unknown";
-      const message = err instanceof Error ? err.message : String(err);
-      this.#emit({
-        projectId,
-        cloneRepoPath,
-        outcome: "failed",
-        reasonCode: "discard.git-failed",
-        message,
-      });
-      throw new CloneDiscardServiceError("discard.git-failed", message, {
-        projectId,
-        cloneRepoPath,
-        engineCode,
-      });
-    }
-
     this.#emit({
       projectId,
       cloneRepoPath,
-      outcome: "ok",
-      reasonCode: "ok",
-      ...(result.resetToSha ? { resetToSha: result.resetToSha } : {}),
-      removedPathCount: result.removedPathCount,
+      outcome: "refused",
+      reasonCode: "discard.read-only-mirror",
+      message: "desktop local clone is read-only; git writes must run on the VPS clone",
     });
-    return result;
+    throw new CloneDiscardServiceError(
+      "discard.read-only-mirror",
+      "desktop local clone is read-only; Hoopoe refuses to reset or clean the mirror",
+      { projectId, cloneRepoPath },
+    );
   }
 
   #emit(event: Omit<CloneDiscardAuditEvent, "kind" | "at">): void {
@@ -235,8 +200,8 @@ function isCloneEmpty(state: CloneState): boolean {
   // CloneState reports "never cloned" via syncStatus === "uncloned" with
   // no lastFetchedSha and zero sizeBytes. We treat anything that claims
   // a real on-disk clone (non-zero size OR a recorded last-fetched SHA)
-  // as eligible for discard. The state file's existence is necessary but
-  // not sufficient — engineDiscard re-validates the actual filesystem.
+  // as far enough along for the read-only guard to return the explicit
+  // hp-hde4 error instead of a "not cloned yet" setup error.
   if (state.lastFetchedSha) return false;
   if (state.sizeBytes > 0) return false;
   return true;

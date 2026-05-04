@@ -2,14 +2,15 @@
 //
 // Per plan.md §7.7 'DISK HYGIENE' + 'AUTHENTICATION':
 //   - Total cache view: list of clones with size, last-fetched,
-//     last-accessed; sortable; multi-select clear.
-//   - Per-project actions: Clear local clone, Reveal in Finder, Open in
-//     terminal.
+//     last-accessed; sortable.
+//   - Per-project actions: Reveal in Finder, Open in terminal, caps
+//     override. The legacy Clear action now returns a read-only error
+//     rather than mutating the desktop mirror.
 //   - Per-project cap override editor (soft/hard, validated).
 //   - Auth-fallback warning when initial clone fails with auth_missing.
 //
-// The card is presentation-only. The destructive actions (Clear / cap
-// override save) flow through the CloneActionsBridge contract. Production
+// The card is presentation-only. Side effects flow through the
+// CloneActionsBridge contract. Production
 // resolves the bridge from `window.hoopoe.clone.*`; tests may inject a
 // custom bridge or fall back to the typed unavailable stub.
 
@@ -25,7 +26,6 @@ import {
   Loader2,
   Settings,
   Terminal,
-  Trash2,
 } from "lucide-react";
 import {
   CAP_HARD_MAX_BYTES,
@@ -74,16 +74,11 @@ export function CloneSettingsCard({
   rows,
 }: CloneSettingsCardProps) {
   const [sort, setSort] = useState<CloneCacheSort>(initialSort);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [actionState, setActionState] = useState<ActionState>(EMPTY_ACTION_STATE);
   const [editingCapsId, setEditingCapsId] = useState<string | null>(null);
 
   const sortedRows = useMemo(() => sortCacheRows(rows, sort), [rows, sort]);
   const total = useMemo(() => totalCacheBytes(rows), [rows]);
-  const selectedSize = useMemo(
-    () => totalCacheBytes(rows.filter((r) => selected.has(r.projectId))),
-    [rows, selected],
-  );
 
   function flipSort(key: CloneCacheSortKey): void {
     if (sort.key === key) {
@@ -93,26 +88,9 @@ export function CloneSettingsCard({
     }
   }
 
-  function toggleSelected(projectId: string): void {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(projectId)) next.delete(projectId);
-      else next.add(projectId);
-      return next;
-    });
-  }
-
-  function selectAll(): void {
-    setSelected(new Set(rows.map((r) => r.projectId)));
-  }
-
-  function deselectAll(): void {
-    setSelected(new Set());
-  }
-
   async function runAction(
     projectId: string,
-    action: "clear" | "reveal" | "terminal",
+    action: "reveal" | "terminal",
   ): Promise<void> {
     const actionId = `${projectId}:${action}`;
     setActionState((prev) => ({
@@ -120,8 +98,7 @@ export function CloneSettingsCard({
       error: { ...prev.error, [actionId]: "" },
     }));
     try {
-      if (action === "clear") await actions.clearLocalClone({ projectId });
-      else if (action === "reveal") await actions.revealInFinder({ projectId });
+      if (action === "reveal") await actions.revealInFinder({ projectId });
       else await actions.openInTerminal({ projectId });
       setActionState((prev) => {
         const busy = new Set(prev.busy);
@@ -130,29 +107,12 @@ export function CloneSettingsCard({
         delete error[actionId];
         return { busy, error };
       });
-      if (action === "clear") {
-        setSelected((prev) => {
-          const next = new Set(prev);
-          next.delete(projectId);
-          return next;
-        });
-      }
     } catch (err) {
       setActionState((prev) => {
         const busy = new Set(prev.busy);
         busy.delete(actionId);
         return { busy, error: { ...prev.error, [actionId]: (err as Error).message } };
       });
-    }
-  }
-
-  async function clearMultiple(): Promise<void> {
-    const ids = Array.from(selected);
-    for (const id of ids) {
-      // Run sequentially so the user sees per-row feedback. A concurrent
-      // version would obscure which clone failed.
-      // eslint-disable-next-line no-await-in-loop
-      await runAction(id, "clear");
     }
   }
 
@@ -183,8 +143,9 @@ export function CloneSettingsCard({
           <h2 id="hh-clone-settings-title">Local clone cache</h2>
           <p>
             Hoopoe maintains a sync-driven Git mirror of every project under
-            <code> ~/Library/Application Support/Hoopoe/projects/</code>. Clear a
-            project's clone to free disk space; the next access re-clones.
+            <code> ~/Library/Application Support/Hoopoe/projects/</code>. The
+            mirror is read-only; inspect it in Finder and make code changes
+            through the VPS.
           </p>
         </div>
       </header>
@@ -196,36 +157,6 @@ export function CloneSettingsCard({
         <strong>{formatBytes(defaultCaps.hardCapBytes)}</strong>
       </div>
 
-      {selected.size > 0 ? (
-        <div
-          aria-live="polite"
-          className="hh-clone-settings-bulk"
-          data-testid="clone-settings-bulk"
-        >
-          <span>
-            {selected.size} selected · {formatBytes(selectedSize)} would be cleared
-          </span>
-          <div className="hh-clone-settings-bulk-actions">
-            <button
-              data-testid="clone-settings-bulk-deselect"
-              onClick={deselectAll}
-              type="button"
-            >
-              Deselect all
-            </button>
-            <button
-              className="hh-clone-settings-danger"
-              data-testid="clone-settings-bulk-clear"
-              onClick={() => void clearMultiple()}
-              type="button"
-            >
-              <Trash2 size={13} strokeWidth={2.1} aria-hidden="true" />
-              Clear selected
-            </button>
-          </div>
-        </div>
-      ) : null}
-
       {rows.length === 0 ? (
         <div className="hh-clone-settings-empty" data-testid="clone-settings-empty">
           No projects have a local clone yet. Import a project to start the cache.
@@ -235,15 +166,6 @@ export function CloneSettingsCard({
           <table className="hh-clone-settings-table">
             <thead>
               <tr>
-                <th aria-label="Select">
-                  <input
-                    aria-label="Select all clones"
-                    checked={selected.size === rows.length && rows.length > 0}
-                    data-testid="clone-settings-select-all"
-                    onChange={(event) => (event.target.checked ? selectAll() : deselectAll())}
-                    type="checkbox"
-                  />
-                </th>
                 <SortHeader sort={sort} sortKey="name" label="Project" onClick={flipSort} testId="clone-settings-th-name" />
                 <SortHeader sort={sort} sortKey="status" label="Status" onClick={flipSort} testId="clone-settings-th-status" />
                 <SortHeader sort={sort} sortKey="size" label="Size" onClick={flipSort} testId="clone-settings-th-size" />
@@ -264,9 +186,7 @@ export function CloneSettingsCard({
                   onEditCaps={() => setEditingCapsId(row.projectId)}
                   onCapsClose={() => setEditingCapsId(null)}
                   onCapsSave={(caps) => saveCapOverride(row.projectId, caps)}
-                  onSelectionToggle={() => toggleSelected(row.projectId)}
                   row={row}
-                  selected={selected.has(row.projectId)}
                 />
               ))}
             </tbody>
@@ -312,13 +232,11 @@ function SortHeader({ label, onClick, sort, sortKey, testId }: SortHeaderProps) 
 
 interface CacheRowProps {
   readonly row: CloneCacheRow;
-  readonly selected: boolean;
   readonly editingCaps: boolean;
   readonly defaultCaps: { readonly softCapBytes: number; readonly hardCapBytes: number };
   readonly actionState: ActionState;
   readonly now?: () => Date;
-  readonly onSelectionToggle: () => void;
-  readonly onAction: (action: "clear" | "reveal" | "terminal") => void;
+  readonly onAction: (action: "reveal" | "terminal") => void;
   readonly onEditCaps: () => void;
   readonly onCapsClose: () => void;
   readonly onCapsSave: (caps: CapOverrideForm | null) => Promise<void>;
@@ -333,9 +251,7 @@ function CacheRow({
   onCapsClose,
   onCapsSave,
   onEditCaps,
-  onSelectionToggle,
   row,
-  selected,
 }: CacheRowProps) {
   const busy = (action: string): boolean => actionState.busy.has(`${row.projectId}:${action}`);
   const error = (action: string): string | undefined => actionState.error[`${row.projectId}:${action}`];
@@ -347,15 +263,6 @@ function CacheRow({
         data-status={row.syncStatus}
         data-testid={`clone-settings-row-${row.projectId}`}
       >
-        <td>
-          <input
-            aria-label={`Select ${row.displayName}`}
-            checked={selected}
-            data-testid={`clone-settings-select-${row.projectId}`}
-            onChange={onSelectionToggle}
-            type="checkbox"
-          />
-        </td>
         <td className="hh-clone-settings-name">
           <div>
             <strong>{row.displayName}</strong>
@@ -394,15 +301,6 @@ function CacheRow({
               testId={`clone-settings-action-terminal-${row.projectId}`}
             />
             <ActionButton
-              busy={busy("clear")}
-              danger
-              {...(error("clear") !== undefined ? { error: error("clear")! } : {})}
-              icon={<Trash2 size={13} strokeWidth={2.1} />}
-              label="Clear"
-              onClick={() => onAction("clear")}
-              testId={`clone-settings-action-clear-${row.projectId}`}
-            />
-            <ActionButton
               busy={false}
               icon={<Settings size={13} strokeWidth={2.1} />}
               label="Caps"
@@ -414,7 +312,7 @@ function CacheRow({
       </tr>
       {editingCaps ? (
         <tr data-testid={`clone-settings-caps-row-${row.projectId}`}>
-          <td colSpan={7}>
+          <td colSpan={6}>
             <CapEditor
               defaults={defaultCaps}
               {...(row.capsOverride !== null ? { initial: row.capsOverride } : {})}

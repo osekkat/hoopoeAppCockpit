@@ -153,12 +153,10 @@ export const PRELOAD_IPC_CHANNELS = {
   // ssh-keygen flags.
   sshListKeys: "hoopoe.ssh.listKeys",
   sshGenerateKey: "hoopoe.ssh.generateKey",
-  // hp-58wp: Local-clone destructive action. Runs `git reset --hard @{u}`
-  // followed by `git clean -fd` against the project's local clone in the
-  // main process. The renderer NEVER supplies the clone path or argv —
-  // main resolves the path from the project registry and invokes git
-  // with explicit, non-interpolated argv (Guardrail 2). Audit fires on
-  // every invocation regardless of outcome (Guardrail 10).
+  // hp-58wp/hp-hde4: Legacy local-clone discard channel. Guardrail 3
+  // forbids mutating the desktop read-only mirror, so main now validates
+  // projectId/clone-state, emits audit, and refuses with an explicit
+  // read-only error. Git writes must run on the VPS clone via daemon RPCs.
   cloneDiscardLocalChanges: "hoopoe.clone.discard-local-changes",
   // hp-5bhy: Three more clone-action channels backing CloneSettingsCard
   // (hp-1fd1). Same safety posture as cloneDiscardLocalChanges — the

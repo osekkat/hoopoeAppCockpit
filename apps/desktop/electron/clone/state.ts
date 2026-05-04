@@ -2,9 +2,9 @@
 //
 // The state file lives next to the clone directory at
 // `<HoopoeAppDataRoot>/projects/<projectId>/clone-state.json` (NOT inside
-// the clone dir, so a `git clean -fd` against the clone can never wipe
-// the cached state). Writes are atomic (write-tmp + rename) so a crash
-// in the middle of an update never leaves a half-written JSON file.
+// the clone dir, so mirror operations cannot wipe the cached state).
+// Writes are atomic (write-tmp + rename) so a crash in the middle of an
+// update never leaves a half-written JSON file.
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -43,8 +43,8 @@ export function cloneStateFilePath(layout: CloneStorageLayout, projectId: string
 }
 
 /** Returns `<projectsRoot>/<projectId>/repo/` — where the actual git
- *  clone lives. Sibling of `clone-state.json` so a destructive `git
- *  clean -fd` against `repo/` cannot touch the state file. */
+ *  clone lives. Sibling of `clone-state.json` so mirror/cache operations
+ *  cannot touch the state file. */
 export function cloneRepoPath(layout: CloneStorageLayout, projectId: string): string {
   return join(projectDir(layout, projectId), "repo");
 }

@@ -76,9 +76,9 @@ test("CloneSettingsCard: every project row renders with its actions", () => {
     expect(html).toContain(`data-testid="clone-settings-row-${id}"`);
     expect(html).toContain(`data-testid="clone-settings-action-reveal-${id}"`);
     expect(html).toContain(`data-testid="clone-settings-action-terminal-${id}"`);
-    expect(html).toContain(`data-testid="clone-settings-action-clear-${id}"`);
+    expect(html).not.toContain(`data-testid="clone-settings-action-clear-${id}"`);
     expect(html).toContain(`data-testid="clone-settings-action-caps-${id}"`);
-    expect(html).toContain(`data-testid="clone-settings-select-${id}"`);
+    expect(html).not.toContain(`data-testid="clone-settings-select-${id}"`);
   }
   expect(html).toContain("Alpha Service");
   expect(html).toContain("Beta UI");
@@ -120,11 +120,13 @@ test("CloneSettingsCard: auth-missing flag surfaces the credentials banner", () 
   expect(html).toContain("SSH or PAT credentials missing");
 });
 
-test("CloneSettingsCard: bulk-clear bar is hidden when nothing selected", () => {
+test("CloneSettingsCard: bulk-clear controls are not part of the read-only mirror UI", () => {
   const html = renderToStaticMarkup(
     <CloneSettingsCard defaultCaps={DEFAULT_CAPS} now={FIXED_NOW} rows={[row({ projectId: "p" })]} />,
   );
   expect(html).not.toContain("data-testid=\"clone-settings-bulk\"");
+  expect(html).not.toContain("data-testid=\"clone-settings-bulk-clear\"");
+  expect(html).not.toContain("data-testid=\"clone-settings-select-all\"");
 });
 
 test("CloneSettingsCard: sort headers carry stable test-ids and accessible labels", () => {

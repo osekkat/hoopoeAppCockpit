@@ -57,8 +57,7 @@ test("DirtyBannerView: renders when project is dirty + surfaces counts + actions
   expect(html).toContain("3 modified");
   expect(html).toContain("2 untracked");
   expect(html).toContain("ahead 1");
-  // Both action buttons present.
-  expect(html).toContain("data-testid=\"dirty-banner-discard\"");
+  expect(html).not.toContain("data-testid=\"dirty-banner-discard\"");
   expect(html).toContain("data-testid=\"dirty-banner-reveal\"");
 });
 
@@ -76,11 +75,11 @@ test("DirtyBannerView: hides Reveal button when no cloneRepoPath supplied", () =
     />,
   );
   expect(html).toContain("data-testid=\"dirty-banner\"");
-  expect(html).toContain("data-testid=\"dirty-banner-discard\"");
+  expect(html).not.toContain("data-testid=\"dirty-banner-discard\"");
   expect(html).not.toContain("data-testid=\"dirty-banner-reveal\"");
 });
 
-test("DirtyBannerView: confirmation dialog is NOT rendered until Discard is clicked", () => {
+test("DirtyBannerView: destructive discard dialog is not part of the default UI", () => {
   const html = renderToStaticMarkup(
     <DirtyBannerView
       dirtyState={{
@@ -93,6 +92,8 @@ test("DirtyBannerView: confirmation dialog is NOT rendered until Discard is clic
       projectId="p1"
     />,
   );
+  expect(html).not.toContain("git reset --hard");
+  expect(html).not.toContain("git clean -fd");
   expect(html).not.toContain("data-testid=\"dirty-banner-confirm\"");
 });
 

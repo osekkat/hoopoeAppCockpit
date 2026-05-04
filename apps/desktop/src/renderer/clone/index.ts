@@ -30,6 +30,7 @@ export {
   CAP_HARD_MAX_BYTES,
   CloneActionsBridgeUnavailableError,
   DEFAULT_CACHE_SORT,
+  ReadOnlyCloneMirrorError,
   STUB_CLONE_ACTIONS_BRIDGE,
   formatBytes,
   formatRelativeTime,

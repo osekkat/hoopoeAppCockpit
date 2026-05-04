@@ -5,12 +5,15 @@ import { mkdtempSync, rmSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  assertDesktopMirrorGitReadOnlyCommand,
   classifyGitFailure,
   CloneGitError,
+  DESKTOP_MIRROR_READ_ONLY_ERROR_CODE,
   fetchAll,
   initialClone,
   readCurrentBranch,
   readHeadSha,
+  runDesktopMirrorGit,
   type CommandRunner,
 } from "./index.ts";
 
@@ -150,6 +153,53 @@ test("readHeadSha: rejects malformed SHAs", () => {
   mkdirSync(join(tempRoot, "repo"));
   const { run } = recordingRunner({ "rev-parse": { stdout: "not-a-sha" } });
   expect(readHeadSha(join(tempRoot, "repo"), run)).toBeNull();
+});
+
+test("desktop mirror guard: rejects mutating commit/push/branch operations", () => {
+  const mutatingCommands: readonly (readonly string[])[] = [
+    ["add", "."],
+    ["commit", "-m", "[hp] message"],
+    ["push", "origin", "HEAD"],
+    ["branch", "feature/local"],
+    ["checkout", "main"],
+    ["switch", "-c", "feature/local"],
+    ["merge", "origin/main"],
+    ["rebase", "origin/main"],
+    ["reset", "--hard", "@{u}"],
+    ["clean", "-fd"],
+    ["stash", "push"],
+    ["worktree", "add", "/tmp/health", "HEAD"],
+  ];
+
+  for (const args of mutatingCommands) {
+    try {
+      assertDesktopMirrorGitReadOnlyCommand(args);
+      throw new Error(`expected ${args.join(" ")} to be rejected`);
+    } catch (err) {
+      expect(err).toBeInstanceOf(CloneGitError);
+      expect((err as CloneGitError).code).toBe(DESKTOP_MIRROR_READ_ONLY_ERROR_CODE);
+      expect((err as CloneGitError).message).toContain("read-only");
+    }
+  }
+});
+
+test("desktop mirror guard: rejects before the command runner is called", () => {
+  let calls = 0;
+  const run: CommandRunner = () => {
+    calls += 1;
+    return { stdout: "", stderr: "", exitCode: 0 };
+  };
+  expect(() =>
+    runDesktopMirrorGit(run, ["commit", "-m", "bad"], { cwd: join(tempRoot, "repo") }),
+  ).toThrow(/desktop_mirror_read_only/);
+  expect(calls).toBe(0);
+});
+
+test("desktop mirror guard: allows read and sync commands used by the mirror", () => {
+  expect(() => assertDesktopMirrorGitReadOnlyCommand(["fetch", "--all", "--tags", "--prune"])).not.toThrow();
+  expect(() => assertDesktopMirrorGitReadOnlyCommand(["branch", "--show-current"])).not.toThrow();
+  expect(() => assertDesktopMirrorGitReadOnlyCommand(["rev-parse", "HEAD"])).not.toThrow();
+  expect(() => assertDesktopMirrorGitReadOnlyCommand(["status", "--porcelain=v2", "--branch"])).not.toThrow();
 });
 
 test("classifyGitFailure: covers disk_full and repo-not-found", () => {

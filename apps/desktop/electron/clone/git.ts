@@ -3,8 +3,9 @@
 // All git invocations route through `runCommand` so tests can replay
 // canned outputs without shelling out. The wrapper is read-only from
 // Hoopoe's perspective: it clones, fetches, queries — never commits,
-// pushes, or merges. Mutating the local clone is strictly the user's
-// prerogative (Reveal in Finder + open in their own editor).
+// pushes, branches, resets, cleans, or merges. Mutating the desktop
+// local clone is forbidden by Guardrail 3; canonical Git writes run on
+// the VPS clone through daemon RPCs.
 //
 // Subprocess error handling intentionally captures stderr so the renderer
 // can surface "Repository not found" / "Permission denied (publickey)"
@@ -21,12 +22,92 @@ export interface CommandResult {
   readonly exitCode: number;
 }
 
+export interface CommandOptions {
+  readonly cwd?: string;
+  readonly timeoutMs?: number;
+  readonly env?: NodeJS.ProcessEnv;
+}
+
 export interface CommandRunner {
   (
     cmd: string,
     args: readonly string[],
-    options?: { readonly cwd?: string; readonly timeoutMs?: number; readonly env?: NodeJS.ProcessEnv },
+    options?: CommandOptions,
   ): CommandResult;
+}
+
+export const DESKTOP_MIRROR_READ_ONLY_ERROR_CODE = "desktop_mirror_read_only";
+
+const DESKTOP_MIRROR_MUTATING_GIT_SUBCOMMANDS: ReadonlySet<string> = new Set([
+  "add",
+  "am",
+  "apply",
+  "bisect",
+  "branch",
+  "checkout",
+  "cherry-pick",
+  "clean",
+  "commit",
+  "merge",
+  "mv",
+  "pull",
+  "push",
+  "rebase",
+  "reset",
+  "restore",
+  "revert",
+  "rm",
+  "stash",
+  "switch",
+  "tag",
+  "worktree",
+]);
+
+export function assertDesktopMirrorGitReadOnlyCommand(args: readonly string[]): void {
+  const subcommand = firstGitSubcommand(args);
+  if (subcommand === null) return;
+  if (isReadOnlyBranchQuery(args)) return;
+  if (!DESKTOP_MIRROR_MUTATING_GIT_SUBCOMMANDS.has(subcommand)) return;
+
+  throw new CloneGitError(
+    DESKTOP_MIRROR_READ_ONLY_ERROR_CODE,
+    `desktop local clone is read-only; git ${subcommand} must run on the VPS clone through daemon RPCs`,
+    "",
+  );
+}
+
+export function runDesktopMirrorGit(
+  run: CommandRunner,
+  args: readonly string[],
+  options?: CommandOptions,
+): CommandResult {
+  assertDesktopMirrorGitReadOnlyCommand(args);
+  return run("git", args, options);
+}
+
+function firstGitSubcommand(args: readonly string[]): string | null {
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i] ?? "";
+    if (arg.length === 0) continue;
+    if (arg === "-C" || arg === "-c" || arg === "--git-dir" || arg === "--work-tree" || arg === "--namespace") {
+      i += 1;
+      continue;
+    }
+    if (
+      arg.startsWith("--git-dir=") ||
+      arg.startsWith("--work-tree=") ||
+      arg.startsWith("--namespace=")
+    ) {
+      continue;
+    }
+    if (arg.startsWith("-")) continue;
+    return arg;
+  }
+  return null;
+}
+
+function isReadOnlyBranchQuery(args: readonly string[]): boolean {
+  return args.length === 2 && args[0] === "branch" && args[1] === "--show-current";
 }
 
 export const defaultRunCommand: CommandRunner = (cmd, args, options) => {
@@ -142,8 +223,8 @@ export function fetchAll(input: FetchAllInput): FetchAllResult {
       "",
     );
   }
-  const result = run(
-    "git",
+  const result = runDesktopMirrorGit(
+    run,
     ["fetch", "--all", "--tags", "--prune"],
     {
       cwd: input.cloneRepoPath,
@@ -161,13 +242,13 @@ export function fetchAll(input: FetchAllInput): FetchAllResult {
 }
 
 export function readCurrentBranch(cloneRepoPath: string, runCommand: CommandRunner = defaultRunCommand): string | null {
-  const result = runCommand("git", ["branch", "--show-current"], { cwd: cloneRepoPath });
+  const result = runDesktopMirrorGit(runCommand, ["branch", "--show-current"], { cwd: cloneRepoPath });
   if (result.exitCode !== 0) return null;
   return result.stdout.length > 0 ? result.stdout : null;
 }
 
 export function readHeadSha(cloneRepoPath: string, runCommand: CommandRunner = defaultRunCommand): string | null {
-  const result = runCommand("git", ["rev-parse", "HEAD"], { cwd: cloneRepoPath });
+  const result = runDesktopMirrorGit(runCommand, ["rev-parse", "HEAD"], { cwd: cloneRepoPath });
   if (result.exitCode !== 0) return null;
   return result.stdout.length === 40 ? result.stdout : null;
 }

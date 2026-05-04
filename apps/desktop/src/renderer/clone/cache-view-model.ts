@@ -1,8 +1,8 @@
 // hp-1fd1 — Pure model for the local-clone settings/cache view.
 //
 // The Settings card consumes a list of CloneCacheRow entries (one per
-// project) + the global cap config + a bridge for the destructive
-// actions (Clear / Reveal / Open in terminal). The production bridge is
+// project) + the global cap config + a bridge for local-clone actions
+// (Reveal / Open in terminal / cap override). The production bridge is
 // resolved from the typed `window.hoopoe.clone.*` preload channels; the
 // fallback stub keeps tests and non-Electron renders deterministic.
 //
@@ -165,10 +165,11 @@ export function validateCapOverride(form: CapOverrideForm): CapOverrideError | n
   return null;
 }
 
-// ── Bridge contract for the destructive actions ───────────────────────────
+// ── Bridge contract for clone actions ─────────────────────────────────────
 
 export interface CloneActionsBridge {
-  /** Delete the local-clone directory; on next access Hoopoe re-clones. */
+  /** Legacy cache-clear action. Guardrail 3 keeps the desktop mirror
+   *  read-only, so production resolves this to an explicit rejection. */
   readonly clearLocalClone: (input: { readonly projectId: string }) => Promise<void>;
   /** macOS Reveal-in-Finder. */
   readonly revealInFinder: (input: { readonly projectId: string }) => Promise<void>;
@@ -193,6 +194,15 @@ export class CloneActionsBridgeUnavailableError extends Error {
   }
 }
 
+export class ReadOnlyCloneMirrorError extends Error {
+  override readonly name = "ReadOnlyCloneMirrorError";
+  constructor() {
+    super(
+      "Desktop local clones are read-only mirrors; Hoopoe does not clear or mutate them from the renderer.",
+    );
+  }
+}
+
 export const STUB_CLONE_ACTIONS_BRIDGE: CloneActionsBridge = {
   clearLocalClone: () => Promise.reject(new CloneActionsBridgeUnavailableError("clearLocalClone")),
   revealInFinder: () => Promise.reject(new CloneActionsBridgeUnavailableError("revealInFinder")),
@@ -201,7 +211,6 @@ export const STUB_CLONE_ACTIONS_BRIDGE: CloneActionsBridge = {
 };
 
 interface ClonePreloadBridge {
-  readonly discardLocalChanges?: (input: { readonly projectId: string }) => Promise<unknown>;
   readonly revealInFinder?: (input: { readonly projectId: string }) => Promise<void>;
   readonly openInTerminal?: (input: { readonly projectId: string }) => Promise<void>;
   readonly setCapOverride?: (input: {
@@ -222,13 +231,11 @@ export function resolveCloneActionsBridge(
   scope: CloneActionsBridgeScope = globalThis,
 ): CloneActionsBridge {
   const clone = scope.window?.hoopoe?.clone;
-  const discardLocalChanges = clone?.discardLocalChanges;
   const revealInFinder = clone?.revealInFinder;
   const openInTerminal = clone?.openInTerminal;
   const setCapOverride = clone?.setCapOverride;
 
   if (
-    typeof discardLocalChanges !== "function" ||
     typeof revealInFinder !== "function" ||
     typeof openInTerminal !== "function" ||
     typeof setCapOverride !== "function"
@@ -237,7 +244,7 @@ export function resolveCloneActionsBridge(
   }
 
   return {
-    clearLocalClone: (input) => discardLocalChanges(input).then(() => undefined),
+    clearLocalClone: () => Promise.reject(new ReadOnlyCloneMirrorError()),
     revealInFinder,
     openInTerminal,
     setCapOverride: (input) => setCapOverride(input).then(() => undefined),

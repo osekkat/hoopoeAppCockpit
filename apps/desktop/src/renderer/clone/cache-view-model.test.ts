@@ -5,6 +5,7 @@ import {
   CAP_HARD_MAX_BYTES,
   CloneActionsBridgeUnavailableError,
   STUB_CLONE_ACTIONS_BRIDGE,
+  ReadOnlyCloneMirrorError,
   formatBytes,
   formatRelativeTime,
   resolveCloneActionsBridge,
@@ -176,9 +177,6 @@ test("resolveCloneActionsBridge: adapts window.hoopoe.clone preload channels", a
     window: {
       hoopoe: {
         clone: {
-          discardLocalChanges: async ({ projectId }) => {
-            calls.push(`clear:${projectId}`);
-          },
           revealInFinder: async ({ projectId }) => {
             calls.push(`reveal:${projectId}`);
           },
@@ -193,7 +191,13 @@ test("resolveCloneActionsBridge: adapts window.hoopoe.clone preload channels", a
     },
   });
 
-  await bridge.clearLocalClone({ projectId: "alpha" });
+  let clearError: Error | null = null;
+  try {
+    await bridge.clearLocalClone({ projectId: "alpha" });
+  } catch (err) {
+    clearError = err as Error;
+  }
+  expect(clearError).toBeInstanceOf(ReadOnlyCloneMirrorError);
   await bridge.revealInFinder({ projectId: "beta" });
   await bridge.openInTerminal({ projectId: "gamma" });
   await bridge.setCapOverride({
@@ -203,7 +207,6 @@ test("resolveCloneActionsBridge: adapts window.hoopoe.clone preload channels", a
   await bridge.setCapOverride({ projectId: "epsilon", capsOverride: null });
 
   expect(calls).toEqual([
-    "clear:alpha",
     "reveal:beta",
     "terminal:gamma",
     "caps:delta:1024",

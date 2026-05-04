@@ -106,10 +106,9 @@ export interface HoopoeBridge {
     readonly generateKey: (input: unknown) => Promise<unknown>;
   };
   readonly clone: {
-    /** hp-58wp: Discard local changes against a project's local clone.
-     *  Runs `git reset --hard @{u}` + `git clean -fd` in main with safe
-     *  argv. The renderer never supplies a path; only the projectId is
-     *  carried across the IPC boundary. */
+    /** hp-58wp/hp-hde4: Legacy discard channel. Main validates the
+     *  projectId/clone-state, emits audit, and refuses because the
+     *  desktop local clone is a read-only mirror. */
     readonly discardLocalChanges: (input: { projectId: string }) => Promise<unknown>;
     /** hp-5bhy: Reveal the project's local clone in Finder. Main
      *  resolves the path from the project registry; renderer carries

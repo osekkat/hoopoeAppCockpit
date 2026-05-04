@@ -41,12 +41,16 @@ export {
 
 export {
   CloneGitError,
+  DESKTOP_MIRROR_READ_ONLY_ERROR_CODE,
+  assertDesktopMirrorGitReadOnlyCommand,
   classifyGitFailure,
   defaultRunCommand,
   fetchAll,
   initialClone,
   readCurrentBranch,
   readHeadSha,
+  runDesktopMirrorGit,
+  type CommandOptions,
   type CommandResult,
   type CommandRunner,
   type FetchAllInput,

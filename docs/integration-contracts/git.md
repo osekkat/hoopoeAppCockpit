@@ -1,6 +1,6 @@
 # `git` integration contract
 
-> Canonical source of truth for code (`plan.md` §1.1). The desktop reads its local sync-mirror clone (`§7.7`); all writes go through the daemon's GitAdapter (`§5.3`). The local clone is **never** a write target for canonical operations — staging, committing, branching, merging, and pushing are daemon-only (Guardrail 3). One narrow exception lives on the desktop side: a user-confirmed, audited *repair* action ("Discard local changes") may run `git reset --hard @{u}` and `git clean -fd` against the mirror to resync it with origin (`§7.7`); see the "Audited local-clone repair (Guardrail 3 exception)" row below.
+> Canonical source of truth for code (`plan.md` §1.1). The desktop reads its local sync-mirror clone (`§7.7`); all writes go through the daemon's GitAdapter (`§5.3`). The local clone is **never** a write target — staging, committing, branching, merging, pushing, resetting, cleaning, and other mutating Git operations are rejected for the desktop mirror (Guardrail 3).
 
 ## Source of truth
 
@@ -15,7 +15,7 @@
 ## Adapter precedence (per `plan.md` §2.3)
 
 1. **Daemon-side, libgit2-or-shell** for status/diff/push/log/worktree on the VPS clones at `/data/projects/<project>/`. Hoopoe ships shell-out by default; libgit2 is post-v1 if perf demands.
-2. **Desktop-side, shell** for the read-only sync mirror at `~/Library/Application Support/Hoopoe/projects/<project-id>/repo/`. Reads only for canonical operations — never `git add`, `git commit`, `git push`, `git branch`, or `git merge` from here (Guardrail 3). The single allowed *repair* path is the user-confirmed audited "Discard local changes" action (`hp-58wp`), implemented in `apps/desktop/electron/clone/discard.ts` + `CloneDiscardService.ts`; it runs `git reset --hard @{u}` and `git clean -fd` against the mirror with safe argv to resync it with origin and emits an audit entry on every invocation regardless of outcome (Guardrail 10).
+2. **Desktop-side, shell** for the read-only sync mirror at `~/Library/Application Support/Hoopoe/projects/<project-id>/repo/`. Reads and origin sync only — never `git add`, `git commit`, `git push`, mutating `git branch`, `git checkout`, `git switch`, `git merge`, `git rebase`, `git reset`, `git clean`, or similar write operations from here (Guardrail 3). The retired "Discard local changes" channel (`hp-58wp`) now validates project state, emits audit, and refuses with `discard.read-only-mirror` / `desktop_mirror_read_only` (`hp-hde4`).
 3. **Origin** is canonical (`§1.1`): GitHub / GitLab / etc. The desktop's local clone fetches from origin, **not** from the VPS clone.
 
 ## Capability IDs (per `plan.md` §2.8)
@@ -57,16 +57,16 @@
 | `worktree_remove`      | `git worktree remove --force <path>`                              | 0    | Idempotent if `prune` first.                                           |
 | `fetch`                | `git fetch origin --prune`                                        | 0    | Used by clone-sync subsystem (`hp-ind`).                               |
 
-### Audited local-clone repair (Guardrail 3 exception, desktop-side)
+### Desktop mirror write guard (desktop-side)
 
-This is the **only** path that mutates the desktop's read-only sync mirror, and it is intentionally a *repair* — not a staging/commit/branch/push path. It exists to resync the mirror with origin after a user has accidentally edited the local clone (file watcher detects it; the renderer surfaces a yellow banner with this option). User confirmation is mandatory; an audit entry fires on every invocation regardless of outcome (Guardrail 10).
+There is no Guardrail 3 exception for the desktop mirror. The dirty-state watcher may surface that the mirror has local edits, but Hoopoe does not repair that state with `git reset`, `git clean`, branch checkout, or any other mutating Git command. Users inspect the mirror via Finder and perform any manual repair outside Hoopoe; canonical project writes still go to the VPS clone through daemon RPCs.
 
-| Label                  | argv                                                              | Exit | Notes                                                                                                                                       |
-| ---------------------- | ----------------------------------------------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `discard_local_reset`  | `git reset --hard @{u}`                                           | 0    | First step of the audited repair. Argv is fixed (no user-controlled tokens). Runs against the desktop mirror only.                          |
-| `discard_local_clean`  | `git clean -fd`                                                   | 0    | Second step. Argv is fixed. Runs immediately after the reset succeeds.                                                                      |
+| Label                  | Trigger                                                           | Response |
+| ---------------------- | ----------------------------------------------------------------- | -------- |
+| `desktop_mirror_write` | `git commit`, `git push`, mutating `git branch`, `git reset`, `git clean`, `git checkout`, etc. against the desktop mirror | Reject before subprocess execution with `desktop_mirror_read_only`. |
+| `discard_local_legacy` | `hoopoe.clone.discard-local-changes`                              | Validate projectId/clone-state, audit, then reject with `discard.read-only-mirror`. |
 
-Implementation: `apps/desktop/electron/clone/discard.ts` and `apps/desktop/src/main/CloneDiscardService.ts`. Renderer surface: `DirtyBanner.tsx` confirmation dialog (`hp-58wp`). The renderer never supplies the path or argv — main resolves the clone path from the project registry, invokes `git` with the explicit fixed argv above, and audits both steps regardless of outcome.
+Implementation: `apps/desktop/electron/clone/git.ts`, `apps/desktop/electron/clone/discard.ts`, and `apps/desktop/electron/clone/CloneDiscardService.ts`. Renderer surface: `DirtyBanner.tsx` shows an inspect-only Finder action; it does not offer a destructive discard button in the default UI.
 
 ## Failure modes & recovery
 
@@ -78,6 +78,7 @@ Implementation: `apps/desktop/electron/clone/discard.ts` and `apps/desktop/src/m
 | `Pre-commit hook failed`                                 | Local hook rejection (e.g. lint)                    | Leave WIP. Surface to Activity panel + bead drawer; wake the orchestrator-chat agent.   |
 | `index.lock` exists                                      | Concurrent git operation                            | Wait + retry up to 5s; if still locked, surface diagnostic.                             |
 | Diff > 10 MB                                             | Massive WIP (binary, generated)                     | Truncate at the daemon; offer "open in editor" deep-link instead.                       |
+| `desktop_mirror_read_only` / `discard.read-only-mirror`  | Attempted write against the desktop sync mirror      | Refuse, audit if routed through main, and direct the write to the VPS daemon contract.   |
 
 ## Authentication / credentials
 

@@ -1149,15 +1149,15 @@ The desktop maintains a local Git clone of every project, used purely as a sync-
 - **On-demand:** "Refresh" action in the project header forces a fetch immediately.
 - **Reconcile on reconnect:** when the WebSocket reconnects after a gap (§10), the desktop fetches once and reconciles its sync cursor.
 
-**What if the user edits files locally anyway.** Hoopoe does not chmod the working tree. Instead, a file watcher on the local clone detects modifications, untracked files, or local commits. When detected, the project header shows a yellow banner: *"Local clone has unsaved changes — Hoopoe ignores local edits. Make changes via the VPS (`ssh` or Cursor/VS Code Remote). [Discard local changes] [Open clone in Finder]"*. The "Discard" action runs `git reset --hard @{u} && git clean -fd` after a confirmation dialog. Hoopoe never auto-discards.
+**What if the user edits files locally anyway.** Hoopoe does not chmod the working tree. Instead, a file watcher on the local clone detects modifications, untracked files, or local commits. When detected, the project header shows a yellow banner: *"Local clone has unsaved changes — Hoopoe ignores local edits. Make changes via the VPS (`ssh` or Cursor/VS Code Remote). [Open clone in Finder]"*. Hoopoe does not reset, clean, branch, commit, push, or otherwise mutate the desktop mirror; any repair is manual outside Hoopoe or flows through the VPS clone/origin sync contract.
 
 **Disk hygiene.**
 
-- **Soft cap:** 2 GB per project clone. Crossing it shows a warning in the project's settings card with the option to clear blobs older than N days.
-- **Hard cap:** 5 GB per project clone. Crossing it blocks further fetches until the user either clears the clone or raises the cap in settings.
+- **Soft cap:** 2 GB per project clone. Crossing it shows a warning in the project's settings card with options to reveal the mirror in Finder or raise the cap.
+- **Hard cap:** 5 GB per project clone. Crossing it blocks further fetches until the user raises the cap or performs manual cache cleanup outside Hoopoe.
 - **Both caps configurable** in `~/.hoopoe/userdata/desktop-settings.json` per-project and globally.
-- **Per-project actions** in settings: "Clear local clone" (deletes the directory; next access re-clones), "Reveal in Finder," "Open in terminal."
-- **Project removal:** deleting a project from Hoopoe deletes its local clone. Confirmation dialog spells this out.
+- **Per-project actions** in settings: "Reveal in Finder," "Open in terminal," and cap override. Hoopoe does not delete or mutate the desktop mirror as an automated repair action.
+- **Project removal:** removing a project unregisters it from Hoopoe. Local mirror deletion, if offered in a future disk-cleanup flow, requires a separate explicit destructive-approval design.
 - **Total cache view** in global settings: list of clones with size, last-fetched, last-accessed; sortable; multi-select clear.
 
 **Authentication.** The desktop uses the user's existing Git credentials — typically SSH keys in `~/.ssh/` already used to talk to the VPS, or GitHub/GitLab personal access tokens already in the system credential helper. Hoopoe does not introduce its own Git auth flow. If a clone fails because credentials aren't set up, the project header shows a clear error with a link to docs.
