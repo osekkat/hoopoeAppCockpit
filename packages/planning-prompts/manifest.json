@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "prompts": [
+    {
+      "id": "clarifying-questions",
+      "version": 1,
+      "path": "prompts/clarifying-questions.md",
+      "hash": "sha256:10354830f5ae38b3fcdb04f18a308c5b3b610d47c2563d60b086420121ddfe35",
+      "owner": "planning-pipeline",
+      "appliesToPipelineVersions": ["phase5.v1"]
+    },
+    {
+      "id": "take-first-shot",
+      "version": 1,
+      "path": "prompts/take-first-shot.md",
+      "hash": "sha256:a8efa7c6dd9835af3c61ad11122b01cf40d68888df5ddc46ba25fc73afee7204",
+      "owner": "planning-pipeline",
+      "appliesToPipelineVersions": ["phase5.v1"]
+    },
+    {
+      "id": "candidate-draft",
+      "version": 1,
+      "path": "prompts/candidate-draft.md",
+      "hash": "sha256:02fc5f8968c4ffba0ae08073d55900ed88f5f18bb68595e9016c36650dd9e641",
+      "owner": "planning-pipeline",
+      "appliesToPipelineVersions": ["phase5.v1"]
+    },
+    {
+      "id": "comparative-matrix",
+      "version": 1,
+      "path": "prompts/comparative-matrix.md",
+      "hash": "sha256:13f6c17fbc33dc9a9de867bef7753e4775e05cc875bc3f2f2e335cb850737763",
+      "owner": "planning-pipeline",
+      "appliesToPipelineVersions": ["phase5.v1"]
+    },
+    {
+      "id": "synthesis-best-of-all-worlds",
+      "version": 1,
+      "path": "prompts/synthesis-best-of-all-worlds.md",
+      "hash": "sha256:9a9ad3e4274adee88c3b643328067fa03794ad3981b01024fad45637250b6c0c",
+      "owner": "planning-pipeline",
+      "appliesToPipelineVersions": ["phase5.v1"]
+    },
+    {
+      "id": "fresh-eyes-critique",
+      "version": 1,
+      "path": "prompts/fresh-eyes-critique.md",
+      "hash": "sha256:013bea53d370969a35bf357995c947df978052d0450d2eec44cd0f12782be723",
+      "owner": "planning-pipeline",
+      "appliesToPipelineVersions": ["phase5.v1"]
+    },
+    {
+      "id": "refinement-round-N",
+      "version": 1,
+      "path": "prompts/refinement-round-N.md",
+      "hash": "sha256:2769efd0ec722e4b2b7b7b4c8a05cff48c6f192b92e9698ecd4ff5b358d3defe",
+      "owner": "planning-pipeline",
+      "appliesToPipelineVersions": ["phase5.v1"]
+    },
+    {
+      "id": "quality-evaluator",
+      "version": 1,
+      "path": "prompts/quality-evaluator.md",
+      "hash": "sha256:b4e6fb765056ee94442ae626d95f3e37b9dde3222ff5c2512d84a3edb6578edb",
+      "owner": "planning-pipeline",
+      "appliesToPipelineVersions": ["phase5.v1"]
+    },
+    {
+      "id": "lock-readiness",
+      "version": 1,
+      "path": "prompts/lock-readiness.md",
+      "hash": "sha256:c947d727588df35569a383c406b64082d696e88a67f4e2357c90f9197bb11593",
+      "owner": "planning-pipeline",
+      "appliesToPipelineVersions": ["phase5.v1"]
+    }
+  ]
+}

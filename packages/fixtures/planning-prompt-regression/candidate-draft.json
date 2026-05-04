@@ -1,0 +1,22 @@
+{
+  "promptId": "candidate-draft",
+  "pipelineVersion": "phase5.v1",
+  "inputShape": {
+    "projectName": "string",
+    "roughIdea": "markdown",
+    "clarifications": "object",
+    "existingCodebaseBundle": "object",
+    "userConstraints": "object"
+  },
+  "expectedOutputSchema": {
+    "strategy": "string",
+    "phasePlan": "array",
+    "beadSketch": "array",
+    "verification": "object",
+    "risks": "array",
+    "tradeoffs": "array"
+  },
+  "sampleAcceptableOutputs": [
+    "strategy: Keep OpenAPI as source of truth, phasePlan: [...], beadSketch: [{title, acceptanceChecks}], verification: {...}"
+  ]
+}

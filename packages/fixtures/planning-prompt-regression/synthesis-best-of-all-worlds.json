@@ -1,0 +1,22 @@
+{
+  "promptId": "synthesis-best-of-all-worlds",
+  "pipelineVersion": "phase5.v1",
+  "inputShape": {
+    "projectName": "string",
+    "candidatePlans": "array",
+    "comparativeMatrix": "object"
+  },
+  "expectedOutputSchema": {
+    "executiveThesis": "string",
+    "nonNegotiableInvariants": "array",
+    "architecture": "object",
+    "phases": "array",
+    "beadGraph": "array",
+    "verificationMatrix": "array",
+    "riskRegister": "array",
+    "unresolvedDecisions": "array"
+  },
+  "sampleAcceptableOutputs": [
+    "executiveThesis: ..., phases: [{exitCondition}], beadGraph: [{id, dependsOn}], verificationMatrix: [...]"
+  ]
+}

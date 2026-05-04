@@ -1,0 +1,18 @@
+{
+  "promptId": "comparative-matrix",
+  "pipelineVersion": "phase5.v1",
+  "inputShape": {
+    "projectName": "string",
+    "candidatePlans": "array"
+  },
+  "expectedOutputSchema": {
+    "matrix": "array",
+    "bestIdeasByCandidate": "object",
+    "weaknessesByCandidate": "object",
+    "conflicts": "array",
+    "recommendedSynthesisBias": "object"
+  },
+  "sampleAcceptableOutputs": [
+    "matrix: [{criterion, candidateA, candidateB}], conflicts: [\"candidate A uses cache as truth; reject\"], recommendedSynthesisBias: {...}"
+  ]
+}

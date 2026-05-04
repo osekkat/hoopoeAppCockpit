@@ -1,0 +1,21 @@
+{
+  "promptId": "lock-readiness",
+  "pipelineVersion": "phase5.v1",
+  "inputShape": {
+    "projectName": "string",
+    "currentPlan": "markdown",
+    "unresolvedDecisions": "array",
+    "qualityScores": "object",
+    "riskRegister": "array",
+    "beadGraph": "array"
+  },
+  "expectedOutputSchema": {
+    "ready": "boolean",
+    "blockingReasons": "array",
+    "requiredBeforeLock": "array",
+    "lockAuditSummary": "string"
+  },
+  "sampleAcceptableOutputs": [
+    "ready: false, blockingReasons: [\"unresolvedDecisions is not empty\"], requiredBeforeLock: [...]"
+  ]
+}

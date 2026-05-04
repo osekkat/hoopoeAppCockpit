@@ -1,0 +1,20 @@
+{
+  "promptId": "fresh-eyes-critique",
+  "pipelineVersion": "phase5.v1",
+  "inputShape": {
+    "projectName": "string",
+    "synthesizedPlan": "markdown",
+    "existingCodebaseBundle": "object",
+    "userConstraints": "object"
+  },
+  "expectedOutputSchema": {
+    "blockingIssues": "array",
+    "importantIssues": "array",
+    "questionsForAuthor": "array",
+    "suggestedEdits": "array",
+    "confidence": "string"
+  },
+  "sampleAcceptableOutputs": [
+    "blockingIssues: [], importantIssues: [\"Add restartability tests\"], suggestedEdits: [{section, change}], confidence: medium"
+  ]
+}

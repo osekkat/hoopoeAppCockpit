@@ -1,0 +1,21 @@
+{
+  "promptId": "take-first-shot",
+  "pipelineVersion": "phase5.v1",
+  "inputShape": {
+    "projectName": "string",
+    "roughIdea": "markdown",
+    "existingCodebaseBundle": "object",
+    "userConstraints": "object"
+  },
+  "expectedOutputSchema": {
+    "workingTitle": "string",
+    "executiveThesis": "string",
+    "phases": "array",
+    "risksAndMitigations": "array",
+    "openQuestions": "array",
+    "acceptanceTests": "array"
+  },
+  "sampleAcceptableOutputs": [
+    "workingTitle: Planning Workspace, executiveThesis: Build a restartable plan pipeline, phases: [...], acceptanceTests: [...]"
+  ]
+}

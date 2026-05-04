@@ -1,0 +1,18 @@
+{
+  "promptId": "clarifying-questions",
+  "pipelineVersion": "phase5.v1",
+  "inputShape": {
+    "projectName": "string",
+    "roughIdea": "markdown",
+    "existingCodebaseBundle": "object",
+    "userConstraints": "object"
+  },
+  "expectedOutputSchema": {
+    "questions": "string[]",
+    "assumptionsIfUnanswered": "string[]",
+    "blockedUntilAnswered": "boolean"
+  },
+  "sampleAcceptableOutputs": [
+    "questions: [\"What is the deployment target?\"], assumptionsIfUnanswered: [\"Use the existing daemon API boundary.\"], blockedUntilAnswered: false"
+  ]
+}

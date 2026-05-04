@@ -1,0 +1,20 @@
+{
+  "promptId": "quality-evaluator",
+  "pipelineVersion": "phase5.v1",
+  "inputShape": {
+    "projectName": "string",
+    "currentPlan": "markdown",
+    "qualityRubric": "object",
+    "existingCodebaseBundle": "object",
+    "userConstraints": "object"
+  },
+  "expectedOutputSchema": {
+    "scores": "object",
+    "evidence": "object",
+    "requiredImprovements": "array",
+    "lockRecommendation": "string"
+  },
+  "sampleAcceptableOutputs": [
+    "scores: {correctness: 4, feasibility: 3}, evidence: {...}, lockRecommendation: refine"
+  ]
+}

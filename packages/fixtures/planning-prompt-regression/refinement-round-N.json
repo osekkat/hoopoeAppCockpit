@@ -1,0 +1,23 @@
+{
+  "promptId": "refinement-round-N",
+  "pipelineVersion": "phase5.v1",
+  "inputShape": {
+    "projectName": "string",
+    "currentPlan": "markdown",
+    "roundNumber": "number",
+    "freshEyesCritique": "object",
+    "previousRoundNotes": "array",
+    "unresolvedDecisions": "array"
+  },
+  "expectedOutputSchema": {
+    "updatedPlan": "markdown",
+    "changeLog": "array",
+    "resolvedDecisions": "array",
+    "remainingUnresolvedDecisions": "array",
+    "newBeadAdjustments": "array",
+    "regressionRisks": "array"
+  },
+  "sampleAcceptableOutputs": [
+    "updatedPlan: ..., changeLog: [{section, reason}], resolvedDecisions: [...], remainingUnresolvedDecisions: []"
+  ]
+}
