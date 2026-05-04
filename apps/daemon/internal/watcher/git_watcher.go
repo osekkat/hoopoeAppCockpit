@@ -187,60 +187,63 @@ func (w *GitWatcher) PollLocal(ctx context.Context) ([]Event, error) {
 	if err := w.validate(true); err != nil {
 		return nil, err
 	}
-	commit, branch, err := w.currentHead(ctx)
+	head, branch, err := w.currentHead(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if commit.SHA == "" {
+	if head.SHA == "" {
 		return nil, nil
 	}
 	if w.lastLocalHead == "" {
-		w.lastLocalHead = commit.SHA
+		w.lastLocalHead = head.SHA
 		return nil, nil
 	}
-	if commit.SHA == w.lastLocalHead {
+	if head.SHA == w.lastLocalHead {
 		return nil, nil
 	}
-	unpushed, err := w.isUnpushed(ctx, branch, commit.SHA)
+	commits, err := w.newUnpushedCommits(ctx, branch, head)
 	if err != nil {
 		return nil, err
 	}
-	if !unpushed {
-		w.lastLocalHead = commit.SHA
+	if len(commits) == 0 {
+		w.lastLocalHead = head.SHA
 		return nil, nil
 	}
 
-	filesChanged := 0
-	if counter, ok := w.Git.(CommitFileCounter); ok {
-		count, err := counter.FilesChanged(ctx, commit.SHA)
-		if err != nil {
+	out := make([]Event, 0, len(commits))
+	for _, commit := range commits {
+		filesChanged := 0
+		if counter, ok := w.Git.(CommitFileCounter); ok {
+			count, err := counter.FilesChanged(ctx, commit.SHA)
+			if err != nil {
+				return nil, err
+			}
+			filesChanged = count
+		}
+		payload := gitevents.CommitCreatedPayload{
+			ProjectID:    w.ProjectID,
+			CommitSHA:    commit.SHA,
+			Branch:       branch,
+			ParentSHA:    firstParent(commit),
+			AuthorName:   commit.AuthorName,
+			AuthorEmail:  commit.AuthorEmail,
+			Message:      gitevents.TruncateCommitMessage(commit.Subject),
+			FilesChanged: filesChanged,
+			Time:         w.now(),
+		}
+		event := w.gitEvent(gitevents.EventVPSCommitCreated, payload)
+		key := eventKey(event.Type, payload.ProjectID, payload.CommitSHA)
+		if w.hasSeenEvent(key) {
+			continue
+		}
+		if err := w.Publisher.Publish(ctx, event); err != nil {
 			return nil, err
 		}
-		filesChanged = count
+		w.markSeenEvent(key)
+		out = append(out, event)
 	}
-	payload := gitevents.CommitCreatedPayload{
-		ProjectID:    w.ProjectID,
-		CommitSHA:    commit.SHA,
-		Branch:       branch,
-		ParentSHA:    firstParent(commit),
-		AuthorName:   commit.AuthorName,
-		AuthorEmail:  commit.AuthorEmail,
-		Message:      gitevents.TruncateCommitMessage(commit.Subject),
-		FilesChanged: filesChanged,
-		Time:         w.now(),
-	}
-	event := w.gitEvent(gitevents.EventVPSCommitCreated, payload)
-	key := eventKey(event.Type, payload.ProjectID, payload.CommitSHA)
-	if w.hasSeenEvent(key) {
-		w.lastLocalHead = commit.SHA
-		return nil, nil
-	}
-	if err := w.Publisher.Publish(ctx, event); err != nil {
-		return nil, err
-	}
-	w.markSeenEvent(key)
-	w.lastLocalHead = commit.SHA
-	return []Event{event}, nil
+	w.lastLocalHead = head.SHA
+	return out, nil
 }
 
 func (w *GitWatcher) RecordPushCompleted(ctx context.Context, push PushCompleted) ([]Event, error) {
@@ -373,17 +376,95 @@ func (w *GitWatcher) currentHead(ctx context.Context) (gitadapter.Commit, string
 	return commits[0], branch, nil
 }
 
-func (w *GitWatcher) isUnpushed(ctx context.Context, branch, sha string) (bool, error) {
+func (w *GitWatcher) newUnpushedCommits(ctx context.Context, branch string, head gitadapter.Commit) ([]gitadapter.Commit, error) {
 	delta, err := w.Git.UnpushedCommits(ctx, branch)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
-	for _, commit := range delta.Commits {
-		if commit.SHA == sha {
-			return true, nil
+	if delta == nil {
+		return nil, nil
+	}
+	if !commitDeltaContains(delta.Commits, head.SHA) {
+		return nil, nil
+	}
+	recent, err := w.Git.Log(ctx, gitadapter.LogOpts{Ref: "HEAD", Limit: len(delta.Commits)})
+	if err != nil {
+		return nil, err
+	}
+	details := commitDetails(recent, head)
+	commits := make([]gitadapter.Commit, 0, len(delta.Commits))
+	for i := len(delta.Commits) - 1; i >= 0; i-- {
+		commit := mergeCommitDetails(delta.Commits[i], details[delta.Commits[i].SHA])
+		if strings.TrimSpace(commit.SHA) == "" {
+			continue
+		}
+		key := eventKey(gitevents.EventVPSCommitCreated, w.ProjectID, commit.SHA)
+		if w.hasSeenEvent(key) {
+			continue
+		}
+		commits = append(commits, commit)
+	}
+	return commits, nil
+}
+
+func commitDeltaContains(commits []gitadapter.Commit, sha string) bool {
+	for _, commit := range commits {
+		if strings.TrimSpace(commit.SHA) == sha {
+			return true
 		}
 	}
-	return false, nil
+	return false
+}
+
+func commitDetails(commits []gitadapter.Commit, head gitadapter.Commit) map[string]gitadapter.Commit {
+	out := map[string]gitadapter.Commit{}
+	for _, commit := range commits {
+		if strings.TrimSpace(commit.SHA) != "" {
+			out[commit.SHA] = commit
+		}
+	}
+	if strings.TrimSpace(head.SHA) != "" {
+		out[head.SHA] = head
+	}
+	return out
+}
+
+func mergeCommitDetails(base, detail gitadapter.Commit) gitadapter.Commit {
+	if strings.TrimSpace(base.SHA) == "" {
+		return detail
+	}
+	out := base
+	if out.ShortSHA == "" {
+		out.ShortSHA = detail.ShortSHA
+	}
+	if out.AuthorName == "" {
+		out.AuthorName = detail.AuthorName
+	}
+	if out.AuthorEmail == "" {
+		out.AuthorEmail = detail.AuthorEmail
+	}
+	if out.AuthoredAt.IsZero() {
+		out.AuthoredAt = detail.AuthoredAt
+	}
+	if out.CommitterName == "" {
+		out.CommitterName = detail.CommitterName
+	}
+	if out.CommitterEmail == "" {
+		out.CommitterEmail = detail.CommitterEmail
+	}
+	if out.CommittedAt.IsZero() {
+		out.CommittedAt = detail.CommittedAt
+	}
+	if out.Subject == "" {
+		out.Subject = detail.Subject
+	}
+	if out.Body == "" {
+		out.Body = detail.Body
+	}
+	if len(out.ParentSHAs) == 0 {
+		out.ParentSHAs = append([]string(nil), detail.ParentSHAs...)
+	}
+	return out
 }
 
 func (w *GitWatcher) gitEvent(eventType string, data any) Event {

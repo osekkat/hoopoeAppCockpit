@@ -3,6 +3,7 @@ package watcher
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -108,6 +109,73 @@ func TestPollLocalRetriesAfterPublishFailure(t *testing.T) {
 	}
 	if len(events) != 1 || events[0].Type != gitevents.EventVPSCommitCreated {
 		t.Fatalf("retry events = %+v", events)
+	}
+
+	again, err := w.PollLocal(ctx)
+	if err != nil {
+		t.Fatalf("PollLocal duplicate: %v", err)
+	}
+	if len(again) != 0 {
+		t.Fatalf("duplicate events = %+v", again)
+	}
+}
+
+func TestPollLocalEmitsEveryNewUnpushedCommitInOrder(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	client := &fakeGitClient{
+		status: &gitadapter.Status{Branch: "main"},
+		head: gitadapter.Commit{
+			SHA:     watcherTestSHA(0),
+			Subject: "baseline",
+		},
+		filesChanged: 1,
+	}
+	publisher := &recordingPublisher{}
+	w := NewGitWatcher("proj_01", client, publisher)
+	w.Now = fixedWatcherNow
+	if err := w.Seed(ctx); err != nil {
+		t.Fatalf("Seed: %v", err)
+	}
+
+	chronological := make([]gitadapter.Commit, 0, 50)
+	for i := 1; i <= 50; i++ {
+		sha := watcherTestSHA(i)
+		chronological = append(chronological, gitadapter.Commit{
+			SHA:         sha,
+			ShortSHA:    sha[:7],
+			Subject:     fmt.Sprintf("commit %02d", i),
+			AuthorName:  "Agent",
+			AuthorEmail: "agent@example.invalid",
+			ParentSHAs:  []string{watcherTestSHA(i - 1)},
+		})
+	}
+	client.head = chronological[len(chronological)-1]
+	client.log = newestFirstCommits(chronological)
+	client.unpushed = newestFirstCommits(chronological)
+
+	events, err := w.PollLocal(ctx)
+	if err != nil {
+		t.Fatalf("PollLocal: %v", err)
+	}
+	if len(events) != 50 {
+		t.Fatalf("events = %d, want 50", len(events))
+	}
+	if len(publisher.events) != 50 {
+		t.Fatalf("publisher events = %d, want 50", len(publisher.events))
+	}
+	for i, event := range events {
+		payload, ok := event.Data.(gitevents.CommitCreatedPayload)
+		if !ok {
+			t.Fatalf("event %d payload type = %T", i, event.Data)
+		}
+		want := chronological[i]
+		if payload.CommitSHA != want.SHA || payload.ParentSHA != want.ParentSHAs[0] {
+			t.Fatalf("event %d payload shas = %+v, want %s parent %s", i, payload, want.SHA, want.ParentSHAs[0])
+		}
+		if payload.Message != want.Subject || payload.AuthorEmail != want.AuthorEmail {
+			t.Fatalf("event %d metadata = %+v", i, payload)
+		}
 	}
 
 	again, err := w.PollLocal(ctx)
@@ -288,6 +356,7 @@ func TestCountFilesChangedFromShowCountsDiffHeaders(t *testing.T) {
 type fakeGitClient struct {
 	status       *gitadapter.Status
 	head         gitadapter.Commit
+	log          []gitadapter.Commit
 	unpushed     []gitadapter.Commit
 	filesChanged int
 }
@@ -299,7 +368,18 @@ func (f *fakeGitClient) Status(context.Context) (*gitadapter.Status, error) {
 	return f.status, nil
 }
 
-func (f *fakeGitClient) Log(context.Context, gitadapter.LogOpts) ([]gitadapter.Commit, error) {
+func (f *fakeGitClient) Log(_ context.Context, opts gitadapter.LogOpts) ([]gitadapter.Commit, error) {
+	if f.log != nil {
+		limit := opts.Limit
+		if limit <= 0 {
+			limit = len(f.log)
+		}
+		out := append([]gitadapter.Commit(nil), f.log...)
+		if limit < len(out) {
+			out = out[:limit]
+		}
+		return out, nil
+	}
 	if f.head.SHA == "" {
 		return nil, nil
 	}
@@ -345,6 +425,18 @@ func (p *recordingPublisher) Publish(_ context.Context, event Event) error {
 
 func fixedWatcherNow() time.Time {
 	return time.Date(2026, 5, 4, 12, 0, 0, 0, time.UTC)
+}
+
+func watcherTestSHA(n int) string {
+	return fmt.Sprintf("%040d", n)
+}
+
+func newestFirstCommits(commits []gitadapter.Commit) []gitadapter.Commit {
+	out := make([]gitadapter.Commit, 0, len(commits))
+	for i := len(commits) - 1; i >= 0; i-- {
+		out = append(out, commits[i])
+	}
+	return out
 }
 
 type fakeRemoteGit struct {
