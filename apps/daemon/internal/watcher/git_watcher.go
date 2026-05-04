@@ -138,7 +138,7 @@ type GitWatcher struct {
 	Actor      map[string]any
 	Now        func() time.Time
 
-	// mu guards lastLocalHead, lastRemote, and seen. PollLocal,
+	// mu guards lastLocalHead, lastRemote, and seen state. PollLocal,
 	// PollOrigin, and RecordPushCompleted can race in production:
 	// PollLocal/PollOrigin run on a polling timer, RecordPushCompleted
 	// is HTTP-driven from the post-receive hook. The lock is never held
@@ -147,8 +147,27 @@ type GitWatcher struct {
 	mu            sync.Mutex
 	lastLocalHead string
 	lastRemote    map[string]string
-	seen          map[string]bool
+	// seenSet + seenRing form a FIFO-bounded set with per-entry TTL so
+	// dedup memory stays capped over the daemon's lifetime. The
+	// unbounded map[string]bool version grew O(commits + pushes +
+	// origin updates) forever — small per entry, unbounded across
+	// months of operation. Capacity bounds memory; TTL ensures stale
+	// entries don't linger past the dedup window even when traffic is
+	// quiet.
+	seenSet  map[string]int
+	seenRing []seenEntry
+	seenNext int
 }
+
+type seenEntry struct {
+	key string
+	ts  time.Time
+}
+
+const (
+	seenCapacity = 1024
+	seenTTL      = 24 * time.Hour
+)
 
 type PushCompleted struct {
 	Branch        string
@@ -529,19 +548,45 @@ func eventKey(parts ...string) string {
 func (w *GitWatcher) hasSeenEvent(key string) bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if w.seen == nil {
-		w.seen = map[string]bool{}
+	pos, ok := w.seenSet[key]
+	if !ok {
+		return false
 	}
-	return w.seen[key]
+	entry := w.seenRing[pos]
+	if entry.key != key {
+		// Defensive: the ring slot was evicted by a wrap-around but the
+		// map still pointed here. Drop the stale map entry.
+		delete(w.seenSet, key)
+		return false
+	}
+	if w.now().Sub(entry.ts) > seenTTL {
+		w.seenRing[pos] = seenEntry{}
+		delete(w.seenSet, key)
+		return false
+	}
+	return true
 }
 
 func (w *GitWatcher) markSeenEvent(key string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if w.seen == nil {
-		w.seen = map[string]bool{}
+	if w.seenSet == nil {
+		w.seenSet = make(map[string]int, seenCapacity)
+		w.seenRing = make([]seenEntry, seenCapacity)
 	}
-	w.seen[key] = true
+	if _, ok := w.seenSet[key]; ok {
+		return
+	}
+	pos := w.seenNext % seenCapacity
+	// Evict the oldest entry once the ring has wrapped. While the ring
+	// is still filling, the slot holds the zero value and there is
+	// nothing to evict.
+	if old := w.seenRing[pos]; old.key != "" {
+		delete(w.seenSet, old.key)
+	}
+	w.seenRing[pos] = seenEntry{key: key, ts: w.now()}
+	w.seenSet[key] = pos
+	w.seenNext++
 }
 
 func originUpdateKey(payload gitevents.OriginUpdatedPayload) string {

@@ -478,6 +478,52 @@ func TestGitWatcherConcurrentMethodsRaceFree(t *testing.T) {
 	wg.Wait()
 }
 
+// TestGitWatcherSeenSetBoundedAndTTLEvicts guards hp-bxyc: the seen
+// dedup map used to grow O(commits + pushes + origin updates) over the
+// daemon's lifetime. After the bound, len(seenSet) must never exceed
+// seenCapacity, and entries older than seenTTL are treated as not
+// present (so a long-quiet watcher doesn't hold yesterday's keys
+// indefinitely).
+func TestGitWatcherSeenSetBoundedAndTTLEvicts(t *testing.T) {
+	t.Parallel()
+	w := &GitWatcher{ProjectID: "proj_bound"}
+	now := time.Date(2026, 5, 4, 0, 0, 0, 0, time.UTC)
+	w.Now = func() time.Time { return now }
+
+	// Insert 4× capacity unique events; the bound must keep len(seenSet)
+	// at exactly seenCapacity once the ring has wrapped.
+	for i := 0; i < seenCapacity*4; i++ {
+		key := fmt.Sprintf("evt-%07d", i)
+		w.markSeenEvent(key)
+	}
+	w.mu.Lock()
+	gotLen := len(w.seenSet)
+	w.mu.Unlock()
+	if gotLen != seenCapacity {
+		t.Fatalf("len(seenSet) = %d, want %d (cap)", gotLen, seenCapacity)
+	}
+
+	// Earliest 3× capacity entries must have been evicted.
+	earlyKey := "evt-0000000"
+	if w.hasSeenEvent(earlyKey) {
+		t.Fatalf("earliest event %q still resident; FIFO bound did not evict", earlyKey)
+	}
+	// Most recent capacity-worth of entries must still be resident
+	// (and not yet TTL-expired since wall clock hasn't moved).
+	recentKey := fmt.Sprintf("evt-%07d", seenCapacity*4-1)
+	if !w.hasSeenEvent(recentKey) {
+		t.Fatalf("most recent event %q evicted unexpectedly", recentKey)
+	}
+
+	// Advance past TTL — every remaining entry should now look unseen
+	// to producers, so a re-issued event would be re-emitted (which is
+	// the desired "old enough that we forget" behavior).
+	now = now.Add(seenTTL + time.Hour)
+	if w.hasSeenEvent(recentKey) {
+		t.Fatalf("event %q still seen after TTL expiry; expected eviction on read", recentKey)
+	}
+}
+
 type concurrentFakeGitClient struct {
 	mu     sync.Mutex
 	head   gitadapter.Commit
