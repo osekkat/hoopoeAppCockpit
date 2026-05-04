@@ -26,6 +26,7 @@
     "@hoopoe/design-system": "workspace:*",
     "@hoopoe/fixture-replay": "workspace:*",
     "@hoopoe/fixtures": "workspace:*",
+    "@hoopoe/problem-types": "workspace:*",
     "@hoopoe/schemas": "workspace:*",
     "@hoopoe/test-evidence": "workspace:*",
     "@tanstack/react-query": "^5.100.8",

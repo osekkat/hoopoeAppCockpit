@@ -2,6 +2,8 @@ import { Link, Outlet, useParams, useRouterState } from "@tanstack/react-router"
 import { Activity, Command, PanelRightClose, PanelRightOpen } from "lucide-react";
 import { useCallback, useEffect, useRef } from "react";
 import { ActivityDrawer, useActivityStore } from "../activity/index.ts";
+import { ErrorUxRoot } from "../error-ux/index.ts";
+import "../error-ux/error-ux.css";
 import {
   stageDefinitions,
   stageForPathname,
@@ -189,6 +191,8 @@ export function RootLayout() {
         projectId={projectId}
         onClose={closeCommandPalette}
       />
+
+      <ErrorUxRoot />
     </div>
   );
 }

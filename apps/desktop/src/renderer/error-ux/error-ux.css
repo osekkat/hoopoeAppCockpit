@@ -1,0 +1,385 @@
+/* hp-8dym — Renderer error UX surfaces. */
+
+.hh-error-aria-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ─────────────────────────────────────── Toast ─────── */
+
+.hh-error-toast-stack {
+  position: fixed;
+  top: 56px;
+  right: 16px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(360px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.hh-error-toast {
+  pointer-events: auto;
+  display: grid;
+  grid-template-columns: 18px 1fr auto;
+  gap: 10px;
+  align-items: start;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--hh-border-subtle, rgba(255, 255, 255, 0.1));
+  background: var(--hh-surface-1, rgba(20, 23, 28, 0.92));
+  backdrop-filter: blur(10px);
+  color: var(--hh-text-primary, rgba(255, 255, 255, 0.92));
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.32);
+  font-size: 12px;
+  animation: hh-error-toast-in 180ms ease;
+}
+
+.hh-error-toast-stack-reduced-motion .hh-error-toast {
+  animation: none;
+}
+
+@keyframes hh-error-toast-in {
+  from {
+    transform: translateX(8px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.hh-error-toast-info {
+  border-color: rgba(96, 165, 250, 0.45);
+}
+
+.hh-error-toast-warning {
+  border-color: rgba(251, 191, 36, 0.45);
+}
+
+.hh-error-toast-error,
+.hh-error-toast-critical,
+.hh-error-toast-blocking {
+  border-color: rgba(239, 68, 68, 0.55);
+}
+
+.hh-error-toast-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 1px;
+  color: rgb(147, 197, 253);
+}
+
+.hh-error-toast-warning .hh-error-toast-icon {
+  color: rgb(253, 224, 71);
+}
+
+.hh-error-toast-error .hh-error-toast-icon,
+.hh-error-toast-critical .hh-error-toast-icon,
+.hh-error-toast-blocking .hh-error-toast-icon {
+  color: rgb(252, 165, 165);
+}
+
+.hh-error-toast-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.hh-error-toast-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 12.5px;
+}
+
+.hh-error-toast-count {
+  font-size: 10px;
+  font-family: var(--hh-font-mono, ui-monospace, monospace);
+  background: rgba(255, 255, 255, 0.08);
+  padding: 1px 6px;
+  border-radius: 999px;
+}
+
+.hh-error-toast-detail {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--hh-text-muted, rgba(255, 255, 255, 0.7));
+  line-height: 1.4;
+}
+
+.hh-error-toast-action {
+  align-self: flex-start;
+  background: rgba(96, 165, 250, 0.16);
+  color: rgb(147, 197, 253);
+  border: 1px solid rgba(96, 165, 250, 0.45);
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.hh-error-toast-dismiss {
+  background: transparent;
+  border: none;
+  color: var(--hh-text-muted, rgba(255, 255, 255, 0.55));
+  cursor: pointer;
+  padding: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hh-error-toast-overflow {
+  pointer-events: auto;
+  align-self: flex-end;
+  font-size: 10.5px;
+  color: var(--hh-text-muted);
+  background: var(--hh-surface-1, rgba(20, 23, 28, 0.92));
+  border: 1px solid var(--hh-border-subtle, rgba(255, 255, 255, 0.08));
+  padding: 3px 9px;
+  border-radius: 999px;
+}
+
+/* ─────────────────────────────────────── Banner ───── */
+
+.hh-error-banner-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--hh-border-subtle, rgba(255, 255, 255, 0.06));
+}
+
+.hh-error-banner {
+  display: grid;
+  grid-template-columns: 18px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 16px;
+  background: var(--hh-surface-1, rgba(20, 23, 28, 0.92));
+  border-bottom: 1px solid transparent;
+  font-size: 12px;
+}
+
+.hh-error-banner-info {
+  background: rgba(59, 130, 246, 0.08);
+  border-color: rgba(96, 165, 250, 0.4);
+  color: rgb(199, 220, 255);
+}
+
+.hh-error-banner-warning {
+  background: rgba(251, 191, 36, 0.08);
+  border-color: rgba(251, 191, 36, 0.4);
+  color: rgb(254, 240, 196);
+}
+
+.hh-error-banner-error,
+.hh-error-banner-critical,
+.hh-error-banner-blocking {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.45);
+  color: rgb(255, 217, 217);
+}
+
+.hh-error-banner-icon {
+  color: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hh-error-banner-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.hh-error-banner-title {
+  font-weight: 600;
+}
+
+.hh-error-banner-detail {
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.hh-error-banner-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hh-error-banner-action {
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.hh-error-banner-dismiss {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.55);
+  padding: 2px;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.hh-error-banner-overflow {
+  background: var(--hh-surface-0, rgba(0, 0, 0, 0.2));
+  color: var(--hh-text-muted);
+  font-size: 11px;
+  padding: 5px 12px;
+  text-align: left;
+  border: none;
+  border-bottom: 1px solid var(--hh-border-subtle, rgba(255, 255, 255, 0.08));
+  cursor: pointer;
+}
+
+/* ─────────────────────────────────────── Inline pill ─ */
+
+.hh-error-inline-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(251, 191, 36, 0.12);
+  color: rgb(253, 224, 71);
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.hh-error-inline-pill-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 18ch;
+}
+
+.hh-error-inline-pill:focus-visible {
+  outline: 2px solid rgba(96, 165, 250, 0.7);
+  outline-offset: 2px;
+}
+
+/* ─────────────────────────────────────── Modal ────── */
+
+.hh-error-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 1100;
+  backdrop-filter: blur(4px);
+}
+
+.hh-error-modal {
+  width: min(460px, 100%);
+  background: var(--hh-surface-1, rgba(28, 32, 40, 0.96));
+  border: 1px solid var(--hh-border-subtle, rgba(255, 255, 255, 0.12));
+  border-radius: 12px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  padding: 18px;
+  color: var(--hh-text-primary, rgba(255, 255, 255, 0.94));
+}
+
+.hh-error-modal-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.hh-error-modal-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: rgb(252, 165, 165);
+}
+
+.hh-error-modal-info .hh-error-modal-icon {
+  color: rgb(147, 197, 253);
+}
+
+.hh-error-modal-warning .hh-error-modal-icon {
+  color: rgb(253, 224, 71);
+}
+
+.hh-error-modal-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.hh-error-modal-body {
+  font-size: 13px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.hh-error-modal-body p {
+  margin: 0 0 8px;
+}
+
+.hh-error-modal-extra {
+  color: rgba(255, 255, 255, 0.62);
+  font-family: var(--hh-font-mono, ui-monospace, monospace);
+  font-size: 11.5px;
+}
+
+.hh-error-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.hh-error-modal-secondary {
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.hh-error-modal-primary {
+  background: rgba(96, 165, 250, 0.18);
+  color: rgb(199, 220, 255);
+  border: 1px solid rgba(96, 165, 250, 0.5);
+  padding: 6px 16px;
+  border-radius: 999px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hh-error-toast {
+    animation: none;
+  }
+}
