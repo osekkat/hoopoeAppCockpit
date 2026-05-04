@@ -1,0 +1,79 @@
+{
+  "packVersion": "0.1.0",
+  "createdAt": "2026-05-04T14:56:55Z",
+  "mode": "local-stand-in",
+  "realVpsAcceptance": false,
+  "fixturesVersion": "phase0-bv",
+  "supersededIn": null,
+  "captureSource": {
+    "host": "ubuntu@hoopoeAppCockpit-dev",
+    "beadsDir": ".beads/",
+    "issueCount": 261,
+    "openCount": 88,
+    "inProgressCount": 3,
+    "note": "VPS admin@45.85.250.216 does not have bv on PATH (`which bv` returns 'command not found'). The Phase 0 fixture pack at packages/fixtures/phase0-2026-05-02/scenarios/{fresh,active,failure}/adapters/bv.json correctly records present=false for that reason. This pack captures real `bv` robot output against the local hoopoeAppCockpit `.beads/` so adapter contract tests have a real shape to assert against. A follow-up bead must capture the same outputs against a real ACFS VPS once `bv` is installed there (sub-bead filed alongside hp-ge0)."
+  },
+  "tool": {
+    "name": "bv",
+    "version": "v0.16.0",
+    "robotFlags": [
+      "--robot-triage",
+      "--robot-plan",
+      "--robot-priority",
+      "--robot-insights",
+      "--robot-recipes",
+      "--robot-next",
+      "--robot-forecast"
+    ],
+    "exportFlags": [
+      "--export-md"
+    ],
+    "notes": [
+      "The user-listed `--robot-snapshot` flag does not exist in bv v0.16.0; substituted `--robot-triage` (the unified mega-command). See `bv --robot-help`.",
+      "The user-listed `--robot-export-md` flag does not exist; substituted `--export-md <path>` which writes Markdown rather than streaming JSON."
+    ]
+  },
+  "captures": {
+    "robot-triage.json": {
+      "argv": ["bv", "--robot-triage"],
+      "exit": 0,
+      "topLevelKeys": ["data_hash", "generated_at", "triage", "usage_hints"]
+    },
+    "robot-plan.json": {
+      "argv": ["bv", "--robot-plan"],
+      "exit": 0,
+      "topLevelKeys": ["analysis_config", "data_hash", "generated_at", "plan", "status", "usage_hints"]
+    },
+    "robot-priority.json": {
+      "argv": ["bv", "--robot-priority"],
+      "exit": 0,
+      "topLevelKeys": ["analysis_config", "data_hash", "field_descriptions", "filters", "generated_at", "recommendations", "status", "summary", "usage_hints"]
+    },
+    "robot-insights.json": {
+      "argv": ["bv", "--robot-insights"],
+      "exit": 0,
+      "topLevelKeys": ["Articulation", "Authorities", "Bottlenecks", "ClusterDensity", "Cores", "Cycles", "Hubs", "Influencers", "Keystones", "Orphans", "Slack", "Stats", "Velocity", "advanced_insights", "analysis_config", "data_hash", "full_stats", "generated_at", "status", "top_what_ifs", "usage_hints"]
+    },
+    "robot-recipes.json": {
+      "argv": ["bv", "--robot-recipes"],
+      "exit": 0,
+      "topLevelKeys": ["recipes"]
+    },
+    "robot-next.json": {
+      "argv": ["bv", "--robot-next"],
+      "exit": 0,
+      "topLevelKeys": ["claim_command", "data_hash", "generated_at", "id", "output_format", "reasons", "score", "show_command", "title", "unblocks", "version"]
+    },
+    "robot-forecast-all.json": {
+      "argv": ["bv", "--robot-forecast", "all"],
+      "exit": 0,
+      "topLevelKeys": ["agents", "data_hash", "forecast_count", "forecasts", "generated_at", "output_format", "summary", "version"]
+    },
+    "export.head.md": {
+      "argv": ["bv", "--export-md", "<path>"],
+      "exit": 0,
+      "format": "markdown",
+      "note": "First 200 lines of the export. Full export is 21k lines / ~1MB; the head sample is sufficient to validate format invariants."
+    }
+  }
+}
