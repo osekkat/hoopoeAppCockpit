@@ -1,8 +1,11 @@
 package transport
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -83,6 +86,68 @@ func TestResolveListenDecisionAllowsPublicBindWithRuntimeConfirmation(t *testing
 	}
 }
 
+func TestRunBootstrapTokenOnlyCreatesInitialPairingOnce(t *testing.T) {
+	stateDir := t.TempDir()
+	var first bytes.Buffer
+	if err := Run(context.Background(), []string{"-state-dir", stateDir, "-bootstrap-token-only"}, Config{Stdout: &first}); err != nil {
+		t.Fatalf("first bootstrap token run: %v", err)
+	}
+	firstOutput := first.String()
+	if !strings.Contains(firstOutput, "HOOPOE_PAIRING_TOKEN=") || !strings.Contains(firstOutput, "HOOPOE_PAIRING_TOKEN_ID=") {
+		t.Fatalf("first bootstrap output = %q, want token and token id", firstOutput)
+	}
+
+	var second bytes.Buffer
+	if err := Run(context.Background(), []string{"-state-dir", stateDir, "-bootstrap-token-only"}, Config{Stdout: &second}); err != nil {
+		t.Fatalf("second bootstrap token run: %v", err)
+	}
+	if got := strings.TrimSpace(second.String()); got != "HOOPOE_PAIRING_TOKEN_ALREADY_INITIALIZED=1" {
+		t.Fatalf("second bootstrap output = %q, want already initialized marker", got)
+	}
+}
+
+func TestRunNotifiesSystemdReadyAndWatchdog(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	notifier := &fakeSystemdNotifier{
+		ready:    make(chan string, 1),
+		watchdog: make(chan struct{}, 1),
+		interval: time.Millisecond,
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- Run(ctx, []string{"-state-dir", t.TempDir(), "-addr", "127.0.0.1:0"}, Config{
+			Stdout:          io.Discard,
+			SystemdNotifier: notifier,
+		})
+	}()
+
+	select {
+	case status := <-notifier.ready:
+		if status != "hoopoe daemon accepting requests" {
+			t.Fatalf("ready status = %q", status)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for ready notification")
+	}
+
+	select {
+	case <-notifier.watchdog:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for watchdog notification")
+	}
+
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Run after cancel: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for Run to stop")
+	}
+}
+
 type recordingLogger struct {
 	infos []map[string]any
 }
@@ -92,3 +157,29 @@ func (l *recordingLogger) Info(_ context.Context, _ string, fields map[string]an
 }
 
 func (l *recordingLogger) Error(context.Context, string, map[string]any) {}
+
+type fakeSystemdNotifier struct {
+	ready    chan string
+	watchdog chan struct{}
+	interval time.Duration
+}
+
+func (n *fakeSystemdNotifier) Ready(_ context.Context, status string) error {
+	n.ready <- status
+	return nil
+}
+
+func (n *fakeSystemdNotifier) Watchdog(context.Context) error {
+	select {
+	case n.watchdog <- struct{}{}:
+	default:
+	}
+	return nil
+}
+
+func (n *fakeSystemdNotifier) WatchdogInterval() (time.Duration, bool, error) {
+	if n.interval <= 0 {
+		return 0, false, nil
+	}
+	return n.interval, true, nil
+}

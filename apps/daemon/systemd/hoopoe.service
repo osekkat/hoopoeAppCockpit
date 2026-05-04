@@ -1,0 +1,24 @@
+[Unit]
+Description=Hoopoe VPS daemon
+Documentation=https://github.com/hoopoe-cockpit/hoopoe
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=notify
+NotifyAccess=main
+Environment=HOOPOE_DAEMON_ADDR=127.0.0.1:8756
+ExecStart=%h/.hoopoe/bin/hoopoed -addr ${HOOPOE_DAEMON_ADDR} -state-dir %h/.hoopoe
+Restart=on-failure
+WatchdogSec=30
+KillMode=mixed
+TimeoutStopSec=20
+LimitNOFILE=65536
+ProtectSystem=strict
+ReadWritePaths=%h/.hoopoe /data/projects /tmp
+NoNewPrivileges=true
+PrivateTmp=true
+WorkingDirectory=%h
+
+[Install]
+WantedBy=default.target
