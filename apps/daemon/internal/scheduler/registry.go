@@ -3,18 +3,21 @@ package scheduler
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 )
 
 type Registry struct {
-	mu          sync.Mutex
-	store       Store
-	state       State
-	now         func() time.Time
-	runCounter  uint64
-	leaseHolder string
-	leaseTTL    time.Duration
+	mu                   sync.Mutex
+	store                Store
+	state                State
+	now                  func() time.Time
+	runCounter           uint64
+	leaseHolder          string
+	leaseTTL             time.Duration
+	terminalRunRetention int
+	dedupeRetention      int
 }
 
 type RegistryConfig struct {
@@ -22,6 +25,17 @@ type RegistryConfig struct {
 	Now         func() time.Time
 	LeaseHolder string
 	LeaseTTL    time.Duration
+	// TerminalRunRetention caps how many terminal (succeeded / failed /
+	// interrupted / skipped) runs are retained in state.Runs. Without
+	// this bound the registry's state.json grows O(time) and every
+	// persistLocked re-encodes the full slice — disk and CPU pressure
+	// on long-running daemons. Zero or negative disables pruning
+	// (legacy behavior; tests that walk the full history opt in).
+	TerminalRunRetention int
+	// DedupeRetention caps the size of state.EventDedupe. Without it,
+	// jobs that fire with unique eventKeys (commit SHA, message id)
+	// accumulate dedup entries forever. Zero or negative disables.
+	DedupeRetention int
 }
 
 func NewRegistry(ctx context.Context, cfg RegistryConfig) (*Registry, error) {
@@ -46,11 +60,13 @@ func NewRegistry(ctx context.Context, cfg RegistryConfig) (*Registry, error) {
 	}
 	normalizeState(&state)
 	reg := &Registry{
-		store:       cfg.Store,
-		state:       state,
-		now:         now,
-		leaseHolder: holder,
-		leaseTTL:    ttl,
+		store:                cfg.Store,
+		state:                state,
+		now:                  now,
+		leaseHolder:          holder,
+		leaseTTL:             ttl,
+		terminalRunRetention: cfg.TerminalRunRetention,
+		dedupeRetention:      cfg.DedupeRetention,
 	}
 	if err := reg.reclaimExpiredLeasesLocked(ctx, reg.now().UTC()); err != nil {
 		return nil, err
@@ -344,6 +360,7 @@ func (r *Registry) EmitEvent(ctx context.Context, eventType string, eventKey str
 	if len(decisions) == 0 {
 		return nil, nil, nil
 	}
+	r.pruneEventDedupeLocked()
 	if err := r.persistLocked(ctx); err != nil {
 		return nil, nil, err
 	}
@@ -402,10 +419,85 @@ func (r *Registry) CompleteRun(ctx context.Context, runID string, result RunResu
 		}
 		r.state.Jobs[run.JobID] = job
 	}
+	r.pruneTerminalRunsLocked()
 	if err := r.persistLocked(ctx); err != nil {
 		return Run{}, err
 	}
 	return cloneRun(run), nil
+}
+
+// pruneTerminalRunsLocked drops the oldest terminal runs (Succeeded /
+// Failed / Interrupted / Skipped) once state.Runs exceeds the
+// configured retention bound. Active runs (RunStatusRunning,
+// RunStatusQueued) are always retained — they are part of the live
+// state machine, not history. Eviction order is by CompletedAt
+// ascending, so the oldest completion is dropped first.
+func (r *Registry) pruneTerminalRunsLocked() {
+	if r.terminalRunRetention <= 0 {
+		return
+	}
+	terminal := make([]Run, 0)
+	for _, run := range r.state.Runs {
+		switch run.Status {
+		case RunStatusSucceeded, RunStatusFailed, RunStatusInterrupted, RunStatusSkipped:
+			terminal = append(terminal, run)
+		}
+	}
+	excess := len(terminal) - r.terminalRunRetention
+	if excess <= 0 {
+		return
+	}
+	sort.Slice(terminal, func(i, j int) bool {
+		ti, tj := terminal[i].CompletedAt, terminal[j].CompletedAt
+		switch {
+		case ti == nil && tj == nil:
+			return terminal[i].QueuedAt.Before(terminal[j].QueuedAt)
+		case ti == nil:
+			return true
+		case tj == nil:
+			return false
+		default:
+			return ti.Before(*tj)
+		}
+	})
+	for i := 0; i < excess; i++ {
+		delete(r.state.Runs, terminal[i].ID)
+	}
+}
+
+// pruneEventDedupeLocked caps state.EventDedupe at dedupeRetention by
+// dropping arbitrary entries when over the bound. Strict insertion
+// order isn't preserved on disk, so eviction is best-effort: pick
+// entries whose corresponding run is already terminal (or absent),
+// since those keys are no longer load-bearing for in-flight dedup
+// decisions.
+func (r *Registry) pruneEventDedupeLocked() {
+	if r.dedupeRetention <= 0 {
+		return
+	}
+	excess := len(r.state.EventDedupe) - r.dedupeRetention
+	if excess <= 0 {
+		return
+	}
+	// Two-pass: first prefer entries pointing at terminal-or-missing
+	// runs, then fall back to arbitrary entries if still over the cap.
+	for key, runID := range r.state.EventDedupe {
+		if excess <= 0 {
+			return
+		}
+		run, ok := r.state.Runs[runID]
+		if !ok || run.Status == RunStatusSucceeded || run.Status == RunStatusFailed || run.Status == RunStatusInterrupted || run.Status == RunStatusSkipped {
+			delete(r.state.EventDedupe, key)
+			excess--
+		}
+	}
+	for key := range r.state.EventDedupe {
+		if excess <= 0 {
+			return
+		}
+		delete(r.state.EventDedupe, key)
+		excess--
+	}
 }
 
 func (r *Registry) RecordTickDuration(ctx context.Context, duration time.Duration) error {

@@ -452,6 +452,12 @@ func openTendingRegistry(ctx context.Context, io *tendingIO) (*scheduler.Registr
 		Now:         io.Now,
 		LeaseHolder: "hoopoe-cli",
 		LeaseTTL:    time.Minute,
+		// hp-dqm8: bound state.Runs and EventDedupe so the on-disk
+		// state.json doesn't grow O(time) over the daemon's lifetime.
+		// 1024 terminal runs covers a few days of normal tending; the
+		// audit log is the canonical history.
+		TerminalRunRetention: 1024,
+		DedupeRetention:      1024,
 	})
 }
 

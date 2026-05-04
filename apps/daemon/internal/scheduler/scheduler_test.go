@@ -971,6 +971,100 @@ func (a *recordingAudit) Len() int {
 	return len(a.decisions)
 }
 
+// TestRegistryPrunesTerminalRunsBeyondRetention guards hp-dqm8: with
+// TerminalRunRetention set, every CompleteRun must keep the in-memory
+// state.Runs population at the configured cap by evicting the oldest
+// terminal record, while leaving active runs untouched. Without the
+// bound, state.Runs grew O(time) and persistLocked re-encoded the
+// full slice on every disk write.
+func TestRegistryPrunesTerminalRunsBeyondRetention(t *testing.T) {
+	t.Parallel()
+	clock := newTestClock(time.Date(2026, 5, 4, 12, 0, 0, 0, time.UTC))
+	registry, err := NewRegistry(context.Background(), RegistryConfig{
+		Store:                NewMemoryStore(),
+		Now:                  clock.Now,
+		LeaseHolder:          "retention-test",
+		LeaseTTL:             time.Minute,
+		TerminalRunRetention: 5,
+	})
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
+	if _, err := registry.ImportDefinition(context.Background(), testDefinition("retention", Schedule{Type: ScheduleOnDemand})); err != nil {
+		t.Fatalf("ImportDefinition: %v", err)
+	}
+
+	for i := 0; i < 25; i++ {
+		clock.Advance(time.Second)
+		run, _, err := registry.RunNow(context.Background(), "retention")
+		if err != nil {
+			t.Fatalf("RunNow %d: %v", i, err)
+		}
+		clock.Advance(time.Second)
+		if _, err := registry.CompleteRun(context.Background(), run.ID, RunResult{}, nil); err != nil {
+			t.Fatalf("CompleteRun %d: %v", i, err)
+		}
+	}
+
+	snap, err := registry.Snapshot(context.Background())
+	if err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+	if len(snap.Runs) != 5 {
+		t.Fatalf("len(state.Runs) = %d, want 5 (retention bound)", len(snap.Runs))
+	}
+	// Verify the retained runs are the 5 most-recent completions.
+	completed := make([]time.Time, 0, len(snap.Runs))
+	for _, run := range snap.Runs {
+		if run.CompletedAt == nil {
+			t.Fatalf("retained run %s has nil CompletedAt", run.ID)
+		}
+		completed = append(completed, *run.CompletedAt)
+	}
+	for _, ts := range completed {
+		if ts.Before(clock.Now().Add(-15 * time.Second)) {
+			t.Fatalf("retained run with old completion %s; eviction did not pick the oldest first", ts)
+		}
+	}
+}
+
+// TestRegistryPrunesEventDedupeBeyondRetention guards hp-dqm8: a job
+// firing many ScheduleEvent triggers with unique eventKeys must not
+// grow EventDedupe without bound.
+func TestRegistryPrunesEventDedupeBeyondRetention(t *testing.T) {
+	t.Parallel()
+	clock := newTestClock(time.Date(2026, 5, 4, 13, 0, 0, 0, time.UTC))
+	registry, err := NewRegistry(context.Background(), RegistryConfig{
+		Store:           NewMemoryStore(),
+		Now:             clock.Now,
+		LeaseHolder:     "dedupe-test",
+		LeaseTTL:        time.Minute,
+		DedupeRetention: 8,
+	})
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
+	if _, err := registry.ImportDefinition(context.Background(), testDefinition("evt", Schedule{Type: ScheduleEvent, Event: "agent_mail.received"})); err != nil {
+		t.Fatalf("ImportDefinition: %v", err)
+	}
+
+	for i := 0; i < 40; i++ {
+		clock.Advance(time.Second)
+		key := fmt.Sprintf("msg-%04d", i)
+		if _, _, err := registry.EmitEvent(context.Background(), "agent_mail.received", key, nil); err != nil {
+			t.Fatalf("EmitEvent %d: %v", i, err)
+		}
+	}
+
+	snap, err := registry.Snapshot(context.Background())
+	if err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+	if got := len(snap.EventDedupe); got > 8 {
+		t.Fatalf("len(state.EventDedupe) = %d, want <= 8 (retention bound)", got)
+	}
+}
+
 func newTestRegistry(t *testing.T, clock *testClock) *Registry {
 	t.Helper()
 	registry, err := NewRegistry(context.Background(), RegistryConfig{
