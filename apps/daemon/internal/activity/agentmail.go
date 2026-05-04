@@ -245,92 +245,98 @@ func (i *Ingestor) Run(ctx context.Context) error {
 }
 
 func (i *Ingestor) IngestMessages(messages []agentmail.Message) []api.Event {
-	i.mu.Lock()
-	defer i.mu.Unlock()
+	inputs := func() []api.PublishInput {
+		i.mu.Lock()
+		defer i.mu.Unlock()
 
-	events := make([]api.Event, 0, len(messages))
-	for _, msg := range messages {
-		if msg.ID <= 0 {
-			continue
+		inputs := make([]api.PublishInput, 0, len(messages))
+		for _, msg := range messages {
+			if msg.ID <= 0 {
+				continue
+			}
+			if _, seen := i.seenMessages[msg.ID]; seen {
+				continue
+			}
+			i.seenMessages[msg.ID] = struct{}{}
+			inputs = append(inputs, i.messagePublishInput(msg))
 		}
-		if _, seen := i.seenMessages[msg.ID]; seen {
-			continue
-		}
-		i.seenMessages[msg.ID] = struct{}{}
-		events = append(events, i.publishMessageLocked(msg))
-	}
-	return events
+		return inputs
+	}()
+	return i.publishInputs(inputs)
 }
 
 func (i *Ingestor) IngestReservations(reservations []agentmail.Reservation) []api.Event {
-	i.mu.Lock()
-	defer i.mu.Unlock()
+	inputs := func() []api.PublishInput {
+		i.mu.Lock()
+		defer i.mu.Unlock()
 
-	now := i.now().UTC()
-	events := make([]api.Event, 0, len(reservations))
-	current := make(map[int]agentmail.Reservation, len(reservations))
-	active := make([]agentmail.Reservation, 0, len(reservations))
-	for _, reservation := range reservations {
-		if reservation.ID <= 0 {
-			continue
-		}
-		current[reservation.ID] = reservation
-		isActive := reservation.ReleasedTS == ""
-		if isActive {
-			active = append(active, reservation)
-		}
-		previous, hadPrevious := i.reservations[reservation.ID]
-		i.reservations[reservation.ID] = reservationState{Reservation: reservation, Active: isActive}
-		switch {
-		case !hadPrevious && isActive:
-			events = append(events, i.publishReservationLocked(EventReservationRequested, reservation, "reserved", nil))
-		case hadPrevious && previous.Active && !isActive:
-			events = append(events, i.publishReservationLocked(EventReservationReleased, reservation, "released", nil))
-		case hadPrevious && previous.Active && isActive && previous.Reservation.ExpiresTS != reservation.ExpiresTS:
-			events = append(events, i.publishReservationLocked(EventReservationRenewed, reservation, "renewed", nil))
-		}
-		if isActive && expired(reservation.ExpiresTS, now) {
-			key := fmt.Sprintf("stale:%d:%s", reservation.ID, reservation.ExpiresTS)
-			if _, seen := i.conflicts[key]; !seen {
-				i.conflicts[key] = struct{}{}
-				conflict := &ReservationConflict{
-					Type:        "stale",
-					Reservation: reservationData(reservation),
-					Action: map[string]string{
-						"kind": "reservation.force_release",
-						"id":   fmt.Sprintf("%d", reservation.ID),
-					},
+		now := i.now().UTC()
+		inputs := make([]api.PublishInput, 0, len(reservations))
+		current := make(map[int]agentmail.Reservation, len(reservations))
+		active := make([]agentmail.Reservation, 0, len(reservations))
+		for _, reservation := range reservations {
+			if reservation.ID <= 0 {
+				continue
+			}
+			current[reservation.ID] = reservation
+			isActive := reservation.ReleasedTS == ""
+			if isActive {
+				active = append(active, reservation)
+			}
+			previous, hadPrevious := i.reservations[reservation.ID]
+			i.reservations[reservation.ID] = reservationState{Reservation: reservation, Active: isActive}
+			switch {
+			case !hadPrevious && isActive:
+				inputs = append(inputs, i.reservationPublishInput(EventReservationRequested, reservation, "reserved", nil))
+			case hadPrevious && previous.Active && !isActive:
+				inputs = append(inputs, i.reservationPublishInput(EventReservationReleased, reservation, "released", nil))
+			case hadPrevious && previous.Active && isActive && previous.Reservation.ExpiresTS != reservation.ExpiresTS:
+				inputs = append(inputs, i.reservationPublishInput(EventReservationRenewed, reservation, "renewed", nil))
+			}
+			if isActive && expired(reservation.ExpiresTS, now) {
+				key := fmt.Sprintf("stale:%d:%s", reservation.ID, reservation.ExpiresTS)
+				if _, seen := i.conflicts[key]; !seen {
+					i.conflicts[key] = struct{}{}
+					conflict := &ReservationConflict{
+						Type:        "stale",
+						Reservation: reservationData(reservation),
+						Action: map[string]string{
+							"kind": "reservation.force_release",
+							"id":   fmt.Sprintf("%d", reservation.ID),
+						},
+					}
+					inputs = append(inputs, i.reservationPublishInput(EventReservationConflicted, reservation, "stale", conflict))
 				}
-				events = append(events, i.publishReservationLocked(EventReservationConflicted, reservation, "stale", conflict))
 			}
 		}
-	}
-	for id, previous := range i.reservations {
-		if _, ok := current[id]; ok || !previous.Active {
-			continue
+		for id, previous := range i.reservations {
+			if _, ok := current[id]; ok || !previous.Active {
+				continue
+			}
+			released := previous.Reservation
+			released.ReleasedTS = now.Format(time.RFC3339Nano)
+			i.reservations[id] = reservationState{Reservation: released, Active: false}
+			inputs = append(inputs, i.reservationPublishInput(EventReservationReleased, released, "released", nil))
 		}
-		released := previous.Reservation
-		released.ReleasedTS = now.Format(time.RFC3339Nano)
-		i.reservations[id] = reservationState{Reservation: released, Active: false}
-		events = append(events, i.publishReservationLocked(EventReservationReleased, released, "released", nil))
-	}
-	for _, conflict := range DetectReservationConflicts(active) {
-		key := fmt.Sprintf("overlap:%d:%d", conflict.Reservation.ID, conflict.Other.ID)
-		if _, seen := i.conflicts[key]; seen {
-			continue
+		for _, conflict := range DetectReservationConflicts(active) {
+			key := fmt.Sprintf("overlap:%d:%d", conflict.Reservation.ID, conflict.Other.ID)
+			if _, seen := i.conflicts[key]; seen {
+				continue
+			}
+			i.conflicts[key] = struct{}{}
+			inputs = append(inputs, i.reservationPublishInput(EventReservationConflicted, toAgentMailReservation(conflict.Reservation), "conflict", &ReservationConflict{
+				Type:        "overlap",
+				Reservation: reservationData(toAgentMailReservation(conflict.Reservation)),
+				Other:       ptrReservationData(toAgentMailReservation(conflict.Other)),
+				Action: map[string]string{
+					"kind": "reservation.force_release",
+					"id":   fmt.Sprintf("%d", conflict.Reservation.ID),
+				},
+			}))
 		}
-		i.conflicts[key] = struct{}{}
-		events = append(events, i.publishReservationLocked(EventReservationConflicted, toAgentMailReservation(conflict.Reservation), "conflict", &ReservationConflict{
-			Type:        "overlap",
-			Reservation: reservationData(toAgentMailReservation(conflict.Reservation)),
-			Other:       ptrReservationData(toAgentMailReservation(conflict.Other)),
-			Action: map[string]string{
-				"kind": "reservation.force_release",
-				"id":   fmt.Sprintf("%d", conflict.Reservation.ID),
-			},
-		}))
-	}
-	return events
+		return inputs
+	}()
+	return i.publishInputs(inputs)
 }
 
 func (i *Ingestor) ForceReleaseReservation(ctx context.Context, req agentmail.ForceReleaseReservationRequest) (agentmail.ForceReleaseReservationResponse, api.Event, error) {
@@ -348,7 +354,7 @@ func (i *Ingestor) ForceReleaseReservation(ctx context.Context, req agentmail.Fo
 		ReleasedTS: i.now().UTC().Format(time.RFC3339Nano),
 	}
 	if err != nil {
-		event := i.publishReservationLocked(EventReservationConflicted, reservation, "force_release_failed", &ReservationConflict{
+		event := i.events.Publish(i.reservationPublishInput(EventReservationConflicted, reservation, "force_release_failed", &ReservationConflict{
 			Type:        "force_release_failed",
 			Reservation: reservationData(reservation),
 			Action: map[string]string{
@@ -356,14 +362,22 @@ func (i *Ingestor) ForceReleaseReservation(ctx context.Context, req agentmail.Fo
 				"id":    fmt.Sprintf("%d", req.FileReservationID),
 				"error": err.Error(),
 			},
-		})
+		}))
 		return out, event, err
 	}
-	event := i.publishReservationLocked(EventReservationReleased, reservation, "force_released", nil)
+	event := i.events.Publish(i.reservationPublishInput(EventReservationReleased, reservation, "force_released", nil))
 	return out, event, nil
 }
 
-func (i *Ingestor) publishMessageLocked(msg agentmail.Message) api.Event {
+func (i *Ingestor) publishInputs(inputs []api.PublishInput) []api.Event {
+	events := make([]api.Event, 0, len(inputs))
+	for _, input := range inputs {
+		events = append(events, i.events.Publish(input))
+	}
+	return events
+}
+
+func (i *Ingestor) messagePublishInput(msg agentmail.Message) api.PublishInput {
 	kind := messageKind(msg, i.agentName)
 	beadID := beadIDFromThread(msg.ThreadID)
 	importance := "info"
@@ -400,7 +414,7 @@ func (i *Ingestor) publishMessageLocked(msg agentmail.Message) api.Event {
 	if msg.AckRequired {
 		data.Pills = append(data.Pills, ActivityPill{ID: "ack", Label: "ack required", Tone: "warn"})
 	}
-	return i.events.Publish(api.PublishInput{
+	return api.PublishInput{
 		Channel: i.channel,
 		Type:    kind,
 		Actor: map[string]any{
@@ -409,10 +423,10 @@ func (i *Ingestor) publishMessageLocked(msg agentmail.Message) api.Event {
 		},
 		CorrelationID: msg.ThreadID,
 		Data:          data,
-	})
+	}
 }
 
-func (i *Ingestor) publishReservationLocked(kind string, reservation agentmail.Reservation, reason string, conflict *ReservationConflict) api.Event {
+func (i *Ingestor) reservationPublishInput(kind string, reservation agentmail.Reservation, reason string, conflict *ReservationConflict) api.PublishInput {
 	importance := "info"
 	if kind == EventReservationConflicted {
 		importance = "urgent"
@@ -437,7 +451,7 @@ func (i *Ingestor) publishReservationLocked(kind string, reservation agentmail.R
 		data.Pills = append(data.Pills, ActivityPill{ID: "path", Label: reservation.PathPattern})
 		data.Pivot = &ActivityPivot{Kind: "reservation", ProjectID: i.projectID, Path: reservation.PathPattern}
 	}
-	return i.events.Publish(api.PublishInput{
+	return api.PublishInput{
 		Channel: i.channel,
 		Type:    kind,
 		Actor: map[string]any{
@@ -446,7 +460,7 @@ func (i *Ingestor) publishReservationLocked(kind string, reservation agentmail.R
 		},
 		CorrelationID: data.BeadID,
 		Data:          data,
-	})
+	}
 }
 
 func messageKind(msg agentmail.Message, localAgent string) string {

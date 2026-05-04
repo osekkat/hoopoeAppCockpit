@@ -217,6 +217,102 @@ func TestForceReleaseDelegatesAndPublishesOutcome(t *testing.T) {
 	}
 }
 
+func TestIngestMessagesPublishesAfterReleasingMutex(t *testing.T) {
+	t.Parallel()
+	publisher := &reentrantPublisher{}
+	ingestor := newTestIngestorWithPublisher(t, &fakeAgentMail{}, publisher)
+	reentered := false
+	innerEvents := -1
+	publisher.onPublish = func() {
+		if reentered {
+			return
+		}
+		reentered = true
+		inner := ingestor.IngestMessages([]agentmail.Message{{
+			ID:      102,
+			Subject: "reentrant message",
+			From:    "TealPond",
+		}})
+		innerEvents = len(inner)
+	}
+
+	done := make(chan []api.Event, 1)
+	go func() {
+		done <- ingestor.IngestMessages([]agentmail.Message{{
+			ID:      101,
+			Subject: "outer message",
+			From:    "BlueLake",
+		}})
+	}()
+
+	select {
+	case events := <-done:
+		if len(events) != 1 {
+			t.Fatalf("outer events len = %d, want 1", len(events))
+		}
+	case <-time.After(time.Second):
+		t.Fatal("IngestMessages deadlocked while publisher re-entered the ingestor")
+	}
+	if !reentered {
+		t.Fatal("publisher did not exercise reentrant ingestor path")
+	}
+	if innerEvents != 1 {
+		t.Fatalf("inner events len = %d, want 1", innerEvents)
+	}
+	if publisher.count() != 2 {
+		t.Fatalf("publish count = %d, want 2", publisher.count())
+	}
+}
+
+func TestIngestReservationsPublishesAfterReleasingMutex(t *testing.T) {
+	t.Parallel()
+	publisher := &reentrantPublisher{}
+	ingestor := newTestIngestorWithPublisher(t, &fakeAgentMail{}, publisher)
+	reentered := false
+	innerEvents := -1
+	publisher.onPublish = func() {
+		if reentered {
+			return
+		}
+		reentered = true
+		inner := ingestor.IngestReservations([]agentmail.Reservation{{
+			ID:          202,
+			Agent:       "TealPond",
+			PathPattern: "apps/daemon/internal/api/**",
+			Exclusive:   true,
+		}})
+		innerEvents = len(inner)
+	}
+
+	done := make(chan []api.Event, 1)
+	go func() {
+		done <- ingestor.IngestReservations([]agentmail.Reservation{{
+			ID:          201,
+			Agent:       "BlueLake",
+			PathPattern: "apps/daemon/internal/activity/**",
+			Exclusive:   true,
+		}})
+	}()
+
+	select {
+	case events := <-done:
+		if len(events) != 1 {
+			t.Fatalf("outer events len = %d, want 1", len(events))
+		}
+	case <-time.After(time.Second):
+		t.Fatal("IngestReservations deadlocked while publisher re-entered the ingestor")
+	}
+	if !reentered {
+		t.Fatal("publisher did not exercise reentrant reservation path")
+	}
+	if innerEvents == 0 {
+		t.Fatal("inner reservation ingest emitted no events")
+	}
+	if publisher.count() < 2 {
+		t.Fatalf("publish count = %d, want at least 2", publisher.count())
+	}
+}
+
 func TestReservationOverlapDetection(t *testing.T) {
 	t.Parallel()
 	conflicts := DetectReservationConflicts([]agentmail.Reservation{
@@ -235,12 +331,17 @@ func newTestIngestor(t *testing.T, client *fakeAgentMail) *Ingestor {
 	hub := api.NewEventHub(api.EventHubConfig{
 		Now: func() time.Time { return time.Date(2026, 5, 4, 0, 0, 0, 0, time.UTC) },
 	})
+	return newTestIngestorWithPublisher(t, client, hub)
+}
+
+func newTestIngestorWithPublisher(t *testing.T, client *fakeAgentMail, publisher Publisher) *Ingestor {
+	t.Helper()
 	ingestor, err := NewAgentMailIngestor(Config{
 		ProjectID:     "proj_01",
 		ProjectKey:    "/repo",
 		AgentName:     "WhiteStream",
 		Mail:          client,
-		Events:        hub,
+		Events:        publisher,
 		IncludeBodies: true,
 		Now: func() time.Time {
 			return time.Date(2026, 5, 4, 0, 0, 0, 0, time.UTC)
@@ -250,6 +351,29 @@ func newTestIngestor(t *testing.T, client *fakeAgentMail) *Ingestor {
 		t.Fatalf("NewAgentMailIngestor: %v", err)
 	}
 	return ingestor
+}
+
+type reentrantPublisher struct {
+	onPublish func()
+	inputs    []api.PublishInput
+}
+
+func (p *reentrantPublisher) Publish(input api.PublishInput) api.Event {
+	p.inputs = append(p.inputs, input)
+	if p.onPublish != nil {
+		p.onPublish()
+	}
+	return api.Event{
+		Channel:       input.Channel,
+		Type:          input.Type,
+		Actor:         input.Actor,
+		CorrelationID: input.CorrelationID,
+		Data:          input.Data,
+	}
+}
+
+func (p *reentrantPublisher) count() int {
+	return len(p.inputs)
 }
 
 type fakeAgentMail struct {
