@@ -32,6 +32,7 @@ import {
   type SubscriptionUsageSummary,
   type ToolHealthSnapshot,
 } from "./topbar-data.ts";
+import { selectVpsHealthDot, useTunnelStore } from "../tunnel/tunnel-store.ts";
 import type { ShellProjectSummary } from "../store.ts";
 
 interface PillProps {
@@ -42,7 +43,16 @@ interface PillProps {
 
 export function ToolHealthPill({ project }: PillProps) {
   const query = useToolHealthQuery(project);
-  const snapshot = query.data ?? {
+  // hp-m79e: VPS dot prefers the live tunnel FSM snapshot over the
+  // capability-registry view. The tunnel store reflects ConnectionManager
+  // state changes (sleep/wake, heartbeat fail, reconnect) at sub-second
+  // latency; the capabilities query is a 30s-stale read. Until the tunnel
+  // store has received a snapshot (`receivedAt === null`), `selectVpsHealthDot`
+  // returns `unknown` and the query data wins; once the FSM is live, the
+  // store is the source of truth for the VPS dot specifically.
+  const tunnelDot = useTunnelStore(selectVpsHealthDot);
+  const tunnelHasSnapshot = useTunnelStore((s) => s.receivedAt !== null);
+  const baseSnapshot = query.data ?? {
     vps: "unknown" as HealthDot,
     ntm: "unknown" as HealthDot,
     mail: "unknown" as HealthDot,
@@ -51,6 +61,24 @@ export function ToolHealthPill({ project }: PillProps) {
     allHealthy: false,
     anyOffline: false,
   };
+  const snapshot: ToolHealthSnapshot = tunnelHasSnapshot
+    ? {
+        ...baseSnapshot,
+        vps: tunnelDot,
+        allHealthy:
+          tunnelDot === "healthy" &&
+          baseSnapshot.ntm === "healthy" &&
+          baseSnapshot.mail === "healthy" &&
+          baseSnapshot.br === "healthy" &&
+          baseSnapshot.bv === "healthy",
+        anyOffline:
+          tunnelDot === "offline" ||
+          baseSnapshot.ntm === "offline" ||
+          baseSnapshot.mail === "offline" ||
+          baseSnapshot.br === "offline" ||
+          baseSnapshot.bv === "offline",
+      }
+    : baseSnapshot;
   return (
     <PillLink
       ariaLabel={toolHealthAria(snapshot)}

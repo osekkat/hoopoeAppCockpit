@@ -12,6 +12,9 @@
 
 import { create } from "zustand";
 
+import type { HealthDot } from "../topbar/topbar-data.ts";
+import { tunnelHealthDot } from "./format-helpers.ts";
+
 // ── Wire shapes (mirror the FSM types from electron/tunnel/types.ts) ──
 
 export const TUNNEL_STATES = [
@@ -78,6 +81,26 @@ export const useTunnelStore = create<TunnelStoreState>((set) => ({
 
 export function selectTunnelSnapshot(state: TunnelStoreState): TunnelSnapshot {
   return state.snapshot;
+}
+
+// ── HealthDot mapping ─────────────────────────────────────────────────────
+//
+// hp-m79e: ToolHealthPill's VPS dot reads its state from the tunnel FSM
+// snapshot. `selectVpsHealthDot` gates the existing `tunnelHealthDot`
+// mapping (in `./format-helpers.ts`) on `receivedAt` so a renderer that
+// has not yet received any snapshot from the orchestrator stays at
+// `unknown` rather than reporting whatever the INITIAL_TUNNEL_SNAPSHOT
+// would map to.
+
+/** Selector for the VPS health dot. Returns `unknown` when the tunnel
+ *  store has not yet received any snapshot (`receivedAt === null`); past
+ *  the first hydrate, derives from the live FSM state via the existing
+ *  `tunnelHealthDot` mapping. The format-helpers import is type-only on
+ *  the back side (format-helpers imports `type TunnelState` from here)
+ *  so the runtime graph stays acyclic. */
+export function selectVpsHealthDot(state: TunnelStoreState): HealthDot {
+  if (state.receivedAt === null) return "unknown";
+  return tunnelHealthDot(state.snapshot.state);
 }
 
 // ── Bridge resolution ────────────────────────────────────────────────────

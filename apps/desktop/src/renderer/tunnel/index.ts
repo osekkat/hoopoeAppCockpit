@@ -5,6 +5,7 @@ export {
   TUNNEL_STATES,
   hydrateFromBridge,
   selectTunnelSnapshot,
+  selectVpsHealthDot,
   subscribeToTunnelEvents,
   useTunnelStore,
   type ConnectionFault,

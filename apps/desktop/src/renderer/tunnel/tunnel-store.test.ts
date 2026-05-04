@@ -5,6 +5,7 @@ import {
   INITIAL_TUNNEL_SNAPSHOT,
   hydrateFromBridge,
   selectTunnelSnapshot,
+  selectVpsHealthDot,
   subscribeToTunnelEvents,
   useTunnelStore,
   type TunnelSnapshot,
@@ -123,6 +124,28 @@ test("subscribeToTunnelEvents: returns no-op when bridge missing", () => {
   const unsub = subscribeToTunnelEvents(useTunnelStore.getState().recordEvent);
   expect(typeof unsub).toBe("function");
   expect(() => unsub()).not.toThrow();
+});
+
+test("selectVpsHealthDot: returns unknown until the first snapshot lands (receivedAt === null)", () => {
+  // Default store has receivedAt === null even though the snapshot
+  // shape says "unconfigured" — we prefer reporting `unknown` over
+  // `tunnelHealthDot('unconfigured')` so the topbar renders grey
+  // instead of a misleading green/yellow before the orchestrator
+  // pushes its first state.
+  expect(selectVpsHealthDot(useTunnelStore.getState())).toBe("unknown");
+});
+
+test("selectVpsHealthDot: reflects the live FSM state after the first event lands", () => {
+  useTunnelStore.getState().recordEvent(READY_SNAPSHOT, FIXED_NOW);
+  expect(selectVpsHealthDot(useTunnelStore.getState())).toBe("healthy");
+
+  useTunnelStore.getState().recordEvent(RECONNECTING_SNAPSHOT, FIXED_NOW);
+  // tunnelHealthDot maps reconnecting → offline.
+  expect(selectVpsHealthDot(useTunnelStore.getState())).toBe("offline");
+
+  // Reset clears receivedAt → back to unknown.
+  useTunnelStore.getState().clear();
+  expect(selectVpsHealthDot(useTunnelStore.getState())).toBe("unknown");
 });
 
 test("subscribeToTunnelEvents: wires events.tunnel + records valid payloads", () => {

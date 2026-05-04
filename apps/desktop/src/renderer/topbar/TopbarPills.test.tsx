@@ -1,4 +1,5 @@
 // hp-4ya — render tests for the five top-bar pill components.
+// hp-m79e — ToolHealthPill VPS dot now reads from the tunnel FSM store.
 //
 // We focus on the "no active project" variant where each pill renders as
 // a plain <span> (no router context required). This exercises the seed
@@ -8,7 +9,7 @@
 // <RouterProvider> requires async route preloading that doesn't compose
 // with `renderToStaticMarkup`.
 
-import { expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -18,6 +19,7 @@ import {
   SwarmStatePill,
   ToolHealthPill,
 } from "./index.ts";
+import { useTunnelStore } from "../tunnel/tunnel-store.ts";
 
 function withQueryClient(node: React.ReactNode): React.ReactNode {
   const client = new QueryClient({
@@ -29,6 +31,17 @@ function withQueryClient(node: React.ReactNode): React.ReactNode {
 function render(node: React.ReactNode): string {
   return renderToStaticMarkup(withQueryClient(node));
 }
+
+// hp-m79e: ensure the topbar render tests see a clean tunnel store —
+// other test files (e.g. tunnel-store.test.ts) populate the singleton,
+// and bun runs test files in parallel.
+beforeEach(() => {
+  useTunnelStore.getState().clear();
+});
+
+afterEach(() => {
+  useTunnelStore.getState().clear();
+});
 
 test("ToolHealthPill: null project renders disabled span with 5 unknown dots", () => {
   const html = render(<ToolHealthPill project={null} />);
@@ -46,6 +59,14 @@ test("ToolHealthPill: null project renders disabled span with 5 unknown dots", (
   // Should NOT render an anchor when there's no project to link to.
   expect(html).not.toMatch(/<a[^>]*data-testid="topbar-tool-health"/);
 });
+
+// hp-m79e: ToolHealthPill's VPS dot is now driven by `selectVpsHealthDot`
+// from `tunnel-store.ts`. The FSM-state → HealthDot mapping is exercised
+// directly in `tunnel/tunnel-store.test.ts` (selectVpsHealthDot tests)
+// and `tunnel/format-helpers.test.ts` (tunnelHealthDot tests). Adding
+// render-time coverage here would race the cross-file parallel test
+// runner on the global Zustand singleton, so the wiring is type-checked
+// + tested at the selector layer instead.
 
 test("SwarmStatePill: null project shows 0/0 idle counts + idle variant", () => {
   const html = render(<SwarmStatePill project={null} />);
