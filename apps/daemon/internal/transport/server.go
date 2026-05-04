@@ -17,6 +17,7 @@ import (
 
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/api"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/auth"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/capabilities"
 	jobstore "github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/jobs"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/onboarding/checkpoints"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/security"
@@ -33,6 +34,8 @@ type Config struct {
 	Logger              api.Logger
 	Redactor            api.Redactor
 	WSValidator         api.WebSocketTokenValidator
+	Capabilities        *capabilities.Registry
+	Inventory           api.InventoryService
 	PublicBindConfirmer security.PublicBindConfirmer
 	StateDir            string
 	SystemdNotifier     systemdNotifier
@@ -111,15 +114,17 @@ func Run(ctx context.Context, args []string, cfg Config) error {
 		wsValidator = api.StaticWebSocketTokenValidator{Token: *wsToken}
 	}
 	router := api.NewRouter(api.Config{
-		Build:       cfg.Build,
-		Events:      cfg.Events,
-		Jobs:        cfg.Jobs,
-		Auth:        authRuntime.config,
-		Onboarding:  onboarding,
-		Logger:      cfg.Logger,
-		Redactor:    cfg.Redactor,
-		WSValidator: wsValidator,
-		Now:         now,
+		Build:        cfg.Build,
+		Events:       cfg.Events,
+		Jobs:         cfg.Jobs,
+		Auth:         authRuntime.config,
+		Onboarding:   onboarding,
+		Logger:       cfg.Logger,
+		Redactor:     cfg.Redactor,
+		WSValidator:  wsValidator,
+		Capabilities: cfg.Capabilities,
+		Inventory:    cfg.Inventory,
+		Now:          now,
 	})
 	router = api.WithBindSafetyReport(router, security.NewBindReport(decision, now()))
 

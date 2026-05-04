@@ -10,6 +10,7 @@ import (
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/api"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/capabilities"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/fixtures"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/inventory"
 )
 
 type Config struct {
@@ -24,6 +25,7 @@ type Daemon struct {
 	Events       *api.EventHub
 	Jobs         *JobReader
 	Capabilities *capabilities.Registry
+	Inventory    *inventory.Service
 	Build        api.BuildInfo
 	Now          func() time.Time
 }
@@ -98,8 +100,12 @@ func NewDaemon(cfg Config) (*Daemon, error) {
 		Events:       events,
 		Jobs:         NewJobReader(scenario, now),
 		Capabilities: registry,
-		Build:        build,
-		Now:          now,
+		Inventory: inventory.NewService(inventory.Config{
+			Registry: registry,
+			Now:      now,
+		}),
+		Build: build,
+		Now:   now,
 	}, nil
 }
 
@@ -123,10 +129,12 @@ func (d *Daemon) Router() http.Handler {
 	r.Get("/v1/mock/scenario", d.handleScenario)
 	r.Get("/v1/mock/adapters/{tool}", d.handleAdapter)
 	r.Mount("/", api.NewRouter(api.Config{
-		Build:  d.Build,
-		Events: d.Events,
-		Jobs:   d.Jobs,
-		Now:    d.Now,
+		Build:        d.Build,
+		Events:       d.Events,
+		Jobs:         d.Jobs,
+		Capabilities: d.Capabilities,
+		Inventory:    d.Inventory,
+		Now:          d.Now,
 	}))
 	return r
 }

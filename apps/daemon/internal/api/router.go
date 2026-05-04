@@ -43,6 +43,7 @@ type Config struct {
 	Redactor     Redactor
 	WSValidator  WebSocketTokenValidator
 	Capabilities *capabilities.Registry
+	Inventory    InventoryService
 	Onboarding   *checkpoints.Service
 	Auth         *AuthConfig
 	Upgrade      http.Handler
@@ -83,6 +84,7 @@ type server struct {
 	redactor     Redactor
 	wsValidator  WebSocketTokenValidator
 	capabilities *capabilities.Registry
+	inventory    InventoryService
 	onboarding   *checkpoints.Service
 	authConfig   *AuthConfig
 	upgrade      http.Handler
@@ -114,6 +116,7 @@ func NewRouter(cfg Config) http.Handler {
 	r.Get("/v1/events/sse", s.handleEventSSE)
 	r.Get("/v1/events/ws", s.handleEventWS)
 	s.mountCapabilityRoutes(r)
+	s.mountInventoryRoutes(r)
 	s.mountSeedContractRoutes(r)
 	s.mountOnboardingRoutes(r)
 	// Auth routes mount AFTER the seed contract so they override the
@@ -163,6 +166,7 @@ func normalizeConfig(cfg Config) *server {
 	if wsValidator == nil {
 		wsValidator = AllowAllWebSocketTokens{}
 	}
+	inventory := resolveInventoryService(cfg.Inventory, cfg.Capabilities, now)
 	return &server{
 		build:        build,
 		events:       events,
@@ -172,6 +176,7 @@ func normalizeConfig(cfg Config) *server {
 		redactor:     redactor,
 		wsValidator:  wsValidator,
 		capabilities: cfg.Capabilities,
+		inventory:    inventory,
 		onboarding:   cfg.Onboarding,
 		authConfig:   cfg.Auth,
 		upgrade:      cfg.Upgrade,
