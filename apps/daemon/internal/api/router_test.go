@@ -1125,6 +1125,52 @@ func TestSlowConsumerReceivesLagEvent(t *testing.T) {
 	}
 }
 
+// TestHeartbeatDoesNotConsumeChannelSequence guards hp-2wrg: the
+// per-connection heartbeat timer used to call nextSequenceLocked,
+// burning _system sequence numbers and creating phantom gaps for
+// Subscribe('_system') consumers (next real _system event arrived at
+// seq=N+1 instead of seq=1; cursor=0 subscribers saw last>since with
+// an empty replay buffer because heartbeats aren't appended).
+//
+// transientEvent must read h.sequences without mutating it, so the
+// next real Publish on the channel still gets the next monotonic
+// sequence.
+func TestHeartbeatDoesNotConsumeChannelSequence(t *testing.T) {
+	hub := NewEventHub(EventHubConfig{})
+
+	// Publish one real _system event so the channel has a real seq=1.
+	first := hub.Publish(PublishInput{Channel: "_system", Type: "boot", Data: map[string]any{}})
+	if first.Sequence != 1 {
+		t.Fatalf("first real _system event seq = %d, want 1", first.Sequence)
+	}
+
+	// Fire 100 heartbeats — none should burn a sequence number.
+	for i := 0; i < 100; i++ {
+		hb := hub.Heartbeat()
+		if hb.Sequence != 1 {
+			t.Fatalf("heartbeat %d sequence = %d, want 1 (channel last seq, not consumed)", i, hb.Sequence)
+		}
+	}
+	// CompatibilityWarning must also not consume.
+	for i := 0; i < 50; i++ {
+		cw := hub.CompatibilityWarning(0)
+		if cw.Sequence != 1 {
+			t.Fatalf("compatibility warning %d sequence = %d, want 1", i, cw.Sequence)
+		}
+	}
+
+	// The next real _system event must arrive at seq=2, NOT seq=152.
+	second := hub.Publish(PublishInput{Channel: "_system", Type: "auth.rotated", Data: map[string]any{}})
+	if second.Sequence != 2 {
+		t.Fatalf("next real _system event seq = %d, want 2 (heartbeats inflated cursor)", second.Sequence)
+	}
+
+	// And LastSequence reports the real cursor, not heartbeat-inflated.
+	if last := hub.LastSequence("_system"); last != 2 {
+		t.Fatalf("LastSequence(_system) = %d, want 2", last)
+	}
+}
+
 // TestEventHubSubscribeAcceptsNilCtxWithoutPanic guards hp-uvjg: the
 // Subscribe watcher goroutine used to call ctx.Done() on whatever ctx
 // the caller passed. A nil ctx panicked the goroutine ("nil pointer

@@ -446,10 +446,24 @@ func (h *EventHub) nextSequenceLocked(channel string) uint64 {
 	return h.sequences[channel]
 }
 
+// transientEvent constructs a control-plane event (heartbeat,
+// compatibility warning, lag/gap markers) that is sent directly to a
+// single SSE/WS connection rather than appended to the replay buffer
+// or fan-routed via subscribers.deliver. hp-2wrg: previous versions
+// called nextSequenceLocked (mutating the channel cursor), so per-
+// connection heartbeat timers burned _system sequence numbers. After
+// N heartbeats, h.sequences['_system'] was N, and the next REAL
+// _system event arrived at seq=N+1 — a Subscribe('_system') at
+// cursor=0 saw last>since with an empty replay buffer (heartbeats
+// aren't appended) and reported a phantom gap.
+//
+// Read the channel's current sequence WITHOUT mutating it. Receivers
+// that care about ordering still see a meaningful sequence; the next
+// real Publish on that channel still gets sequence currentMax+1.
 func (h *EventHub) transientEvent(channel string, eventType string, data any) Event {
-	h.mu.Lock()
-	sequence := h.nextSequenceLocked(channel)
-	h.mu.Unlock()
+	h.mu.RLock()
+	sequence := h.sequences[channel]
+	h.mu.RUnlock()
 	return Event{
 		EventID:       newEventID(),
 		SchemaVersion: schemaVersion,
