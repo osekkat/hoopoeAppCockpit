@@ -5,14 +5,18 @@ usage() {
   cat <<'USAGE'
 Usage: bootstrap.sh --daemon-url URL --manifest-url URL --signature-url URL --attestation-url URL --sbom-url URL --trusted-key PATH [options]
 
-Installs or upgrades the Hoopoe daemon on an existing VPS, creates the first
-pairing token when needed, installs the user systemd unit, and starts the
-service.
+Installs or upgrades the Hoopoe daemon on an existing VPS, creates the
+least-privilege daemon user, installs the root-owned setup helper and systemd
+unit, creates the first pairing token when needed, and starts the service.
 
 Options:
   --daemon-url URL                 signed release binary URL
   --daemon-sha256 SHA256           expected daemon binary SHA256
   --binary-path PATH               local daemon binary path instead of URL
+  --setup-helper-url URL           signed setup-helper binary URL
+  --setup-helper-sha256 SHA256     expected setup-helper binary SHA256
+  --setup-helper-binary-path PATH  local setup-helper binary path instead of URL
+  --setup-helper-path PATH         install path, default /usr/local/bin/hoopoe-setup-helper
   --manifest-url URL               release manifest URL
   --signature-url URL              Ed25519 signature URL
   --attestation-url URL            provenance attestation URL
@@ -86,6 +90,72 @@ write_audit() {
     "$(json_escape "$event")" "$(json_escape "$result")" "$ts" "$(json_escape "$detail")" >>"$HOOPOE_HOME/audit.jsonl"
 }
 
+require_root() {
+  [ "$(id -u)" = "0" ] || die "bootstrap must run as root to create the hoopoe user, install the system unit, and write sudoers"
+}
+
+install_setup_helper() {
+  local staged="$HOOPOE_RELEASE_DIR/hoopoe-setup-helper"
+  if [ -n "${HOOPOE_SETUP_HELPER_BINARY_PATH:-}" ]; then
+    install -m 0755 "$HOOPOE_SETUP_HELPER_BINARY_PATH" "$staged"
+  elif [ -n "${HOOPOE_SETUP_HELPER_URL:-}" ]; then
+    download_file "$HOOPOE_SETUP_HELPER_URL" "$staged"
+    chmod 0755 "$staged"
+  elif [ -d "$DAEMON_ROOT/scripts/setup-helper" ] && command -v go >/dev/null 2>&1; then
+    (
+      cd "$DAEMON_ROOT"
+      go build -o "$staged" ./scripts/setup-helper
+    )
+    chmod 0755 "$staged"
+  else
+    die "setup-helper unavailable; pass --setup-helper-url or --setup-helper-binary-path"
+  fi
+  verify_sha256 "$staged" "${HOOPOE_SETUP_HELPER_SHA256:-}"
+  install -d -m 0755 "$(dirname "$HOOPOE_SETUP_HELPER_PATH")"
+  install -m 0755 "$staged" "$HOOPOE_SETUP_HELPER_PATH"
+
+  local staged_allowlist="$HOOPOE_RELEASE_DIR/setup-helper.allowed"
+  "$HOOPOE_SETUP_HELPER_PATH" default-allowlist >"$staged_allowlist"
+  install -d -m 0755 "$(dirname "$HOOPOE_ALLOWLIST_PATH")"
+  install -m 0644 "$staged_allowlist" "$HOOPOE_ALLOWLIST_PATH"
+  "$HOOPOE_SETUP_HELPER_PATH" bootstrap \
+    --allowlist "$HOOPOE_ALLOWLIST_PATH" \
+    --audit-log "$HOOPOE_BOOTSTRAP_AUDIT_LOG" \
+    --action register-helper-allowlist \
+    -- --path="$staged_allowlist" >/dev/null
+
+  local staged_sudoers="$HOOPOE_RELEASE_DIR/hoopoe.sudoers"
+  "$HOOPOE_SETUP_HELPER_PATH" sudoers-rule "$HOOPOE_SETUP_HELPER_PATH" >"$staged_sudoers"
+  install -d -m 0755 "$(dirname "$HOOPOE_SUDOERS_PATH")"
+  install -m 0440 "$staged_sudoers" "$HOOPOE_SUDOERS_PATH"
+}
+
+ensure_daemon_user() {
+  if id -u hoopoe >/dev/null 2>&1; then
+    return 0
+  fi
+  "$HOOPOE_SETUP_HELPER_PATH" bootstrap \
+    --allowlist "$HOOPOE_ALLOWLIST_PATH" \
+    --audit-log "$HOOPOE_BOOTSTRAP_AUDIT_LOG" \
+    --action create-hoopoe-user \
+    -- --user=hoopoe >/dev/null
+}
+
+prepare_daemon_paths() {
+  install -d -o hoopoe -g hoopoe -m 0750 "$HOOPOE_HOME"
+  install -d -o root -g root -m 0755 "$HOOPOE_BIN_DIR"
+  install -d -o root -g root -m 0750 "$HOOPOE_RELEASE_DIR"
+  install -d -m 0750 /data/projects
+  "$HOOPOE_SETUP_HELPER_PATH" bootstrap \
+    --allowlist "$HOOPOE_ALLOWLIST_PATH" \
+    --audit-log "$HOOPOE_BOOTSTRAP_AUDIT_LOG" \
+    --action chown-acfs-paths \
+    -- --path=/data/projects >/dev/null
+  touch "$HOOPOE_HOME/audit.jsonl"
+  chown hoopoe:hoopoe "$HOOPOE_HOME/audit.jsonl"
+  chmod 0600 "$HOOPOE_HOME/audit.jsonl"
+}
+
 install_acfs_if_needed() {
   [ "${HOOPOE_SKIP_ACFS:-0}" = "1" ] && return 0
   if command -v br >/dev/null 2>&1 && command -v bv >/dev/null 2>&1 && command -v ntm >/dev/null 2>&1; then
@@ -146,13 +216,15 @@ verify_release() {
   write_audit "daemon.release.verification_override" "override" "operator supplied insecure dev override"
 }
 
-write_systemd_unit() {
+stage_systemd_unit() {
+  local staged="$HOOPOE_RELEASE_DIR/hoopoe.service"
   local source_unit="$DAEMON_ROOT/systemd/hoopoe.service"
   if [ -f "$source_unit" ]; then
-    install -m 0644 "$source_unit" "$HOOPOE_UNIT_PATH"
+    install -m 0644 "$source_unit" "$staged"
+    printf '%s\n' "$staged"
     return 0
   fi
-  cat >"$HOOPOE_UNIT_PATH" <<'UNIT'
+  cat >"$staged" <<'UNIT'
 [Unit]
 Description=Hoopoe VPS daemon
 Wants=network-online.target
@@ -162,21 +234,24 @@ After=network-online.target
 Type=notify
 NotifyAccess=main
 Environment=HOOPOE_DAEMON_ADDR=127.0.0.1:8756
-ExecStart=%h/.hoopoe/bin/hoopoed -addr ${HOOPOE_DAEMON_ADDR} -state-dir %h/.hoopoe
+User=hoopoe
+Group=hoopoe
+ExecStart=/usr/local/bin/hoopoed -addr ${HOOPOE_DAEMON_ADDR} -state-dir /var/lib/hoopoe
 Restart=on-failure
 WatchdogSec=30
 KillMode=mixed
 TimeoutStopSec=20
 LimitNOFILE=65536
 ProtectSystem=strict
-ReadWritePaths=%h/.hoopoe /data/projects /tmp
+ReadWritePaths=/var/lib/hoopoe /data/projects /tmp
 NoNewPrivileges=true
 PrivateTmp=true
-WorkingDirectory=%h
+WorkingDirectory=/var/lib/hoopoe
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target
 UNIT
+  printf '%s\n' "$staged"
 }
 
 wait_for_health() {
@@ -188,17 +263,20 @@ wait_for_health() {
     fi
     sleep 1
   done
-  journalctl --user-unit hoopoe.service -n 80 --no-pager >&2 || true
+  journalctl -u hoopoe.service -n 80 --no-pager >&2 || true
   die "daemon did not become healthy at $url"
 }
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 DAEMON_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
-HOOPOE_HOME=${HOOPOE_HOME:-"$HOME/.hoopoe"}
-HOOPOE_BIN_DIR=${HOOPOE_BIN_DIR:-"$HOOPOE_HOME/bin"}
+HOOPOE_HOME=${HOOPOE_HOME:-"/var/lib/hoopoe"}
+HOOPOE_BIN_DIR=${HOOPOE_BIN_DIR:-"/usr/local/bin"}
 HOOPOE_RELEASE_DIR=${HOOPOE_RELEASE_DIR:-"$HOOPOE_HOME/release"}
-HOOPOE_SYSTEMD_USER_DIR=${HOOPOE_SYSTEMD_USER_DIR:-"$HOME/.config/systemd/user"}
-HOOPOE_UNIT_PATH=${HOOPOE_UNIT_PATH:-"$HOOPOE_SYSTEMD_USER_DIR/hoopoe.service"}
+HOOPOE_UNIT_PATH=${HOOPOE_UNIT_PATH:-"/etc/systemd/system/hoopoe.service"}
+HOOPOE_SETUP_HELPER_PATH=${HOOPOE_SETUP_HELPER_PATH:-"/usr/local/bin/hoopoe-setup-helper"}
+HOOPOE_ALLOWLIST_PATH=${HOOPOE_ALLOWLIST_PATH:-"/etc/hoopoe/setup-helper.allowed"}
+HOOPOE_SUDOERS_PATH=${HOOPOE_SUDOERS_PATH:-"/etc/sudoers.d/hoopoe"}
+HOOPOE_BOOTSTRAP_AUDIT_LOG=${HOOPOE_BOOTSTRAP_AUDIT_LOG:-"/var/log/hoopoe-setup-helper.bootstrap.log"}
 HOOPOE_DAEMON_ADDR=${HOOPOE_DAEMON_ADDR:-"127.0.0.1:8756"}
 HOOPOE_TRUSTED_KEY=${HOOPOE_TRUSTED_KEY:-}
 HOOPOE_STAGED_BINARY="$HOOPOE_RELEASE_DIR/hoopoed"
@@ -208,6 +286,10 @@ while [ "$#" -gt 0 ]; do
     --daemon-url) HOOPOE_DAEMON_URL=$2; shift 2 ;;
     --daemon-sha256) HOOPOE_DAEMON_SHA256=$2; shift 2 ;;
     --binary-path) HOOPOE_DAEMON_BINARY_PATH=$2; shift 2 ;;
+    --setup-helper-url) HOOPOE_SETUP_HELPER_URL=$2; shift 2 ;;
+    --setup-helper-sha256) HOOPOE_SETUP_HELPER_SHA256=$2; shift 2 ;;
+    --setup-helper-binary-path) HOOPOE_SETUP_HELPER_BINARY_PATH=$2; shift 2 ;;
+    --setup-helper-path) HOOPOE_SETUP_HELPER_PATH=$2; shift 2 ;;
     --manifest-url) HOOPOE_MANIFEST_URL=$2; shift 2 ;;
     --signature-url) HOOPOE_SIGNATURE_URL=$2; shift 2 ;;
     --attestation-url) HOOPOE_ATTESTATION_URL=$2; shift 2 ;;
@@ -235,15 +317,19 @@ require_command bash
 require_command chmod
 require_command curl
 require_command date
+require_command id
 require_command install
 require_command mkdir
 require_command seq
 require_command sha256sum
 require_command systemctl
 
-systemctl --user show-environment >/dev/null 2>&1 || die "systemd --user is unavailable in this SSH session"
+require_root
 
-mkdir -p "$HOOPOE_BIN_DIR" "$HOOPOE_RELEASE_DIR" "$HOOPOE_SYSTEMD_USER_DIR"
+mkdir -p "$HOOPOE_RELEASE_DIR"
+install_setup_helper
+ensure_daemon_user
+prepare_daemon_paths
 write_audit "daemon.bootstrap.started" "started" "bootstrap invoked"
 
 install_acfs_if_needed
@@ -270,10 +356,15 @@ install -m 0755 "$HOOPOE_STAGED_BINARY" "$HOOPOE_BIN_DIR/hoopoed"
 write_audit "daemon.binary.installed" "ok" "$HOOPOE_BIN_DIR/hoopoed"
 
 token_output=$("$HOOPOE_BIN_DIR/hoopoed" -state-dir "$HOOPOE_HOME" -bootstrap-token-only)
-write_systemd_unit
-systemctl --user daemon-reload
-systemctl --user enable hoopoe.service >/dev/null
-systemctl --user restart hoopoe.service
+staged_unit=$(stage_systemd_unit)
+"$HOOPOE_SETUP_HELPER_PATH" bootstrap \
+  --allowlist "$HOOPOE_ALLOWLIST_PATH" \
+  --audit-log "$HOOPOE_BOOTSTRAP_AUDIT_LOG" \
+  --action install-systemd-unit \
+  -- --unit-path="$HOOPOE_UNIT_PATH" --source="$staged_unit" >/dev/null
+systemctl daemon-reload
+systemctl enable hoopoe.service >/dev/null
+systemctl restart hoopoe.service
 wait_for_health
 write_audit "daemon.service.started" "ok" "$HOOPOE_DAEMON_ADDR"
 

@@ -21,7 +21,7 @@ func TestBootstrapKeepsReleaseVerificationAndPairingTokenFlow(t *testing.T) {
 		"verify_release",
 		"verify-release",
 		"-bootstrap-token-only",
-		"systemctl --user restart hoopoe.service",
+		"systemctl restart hoopoe.service",
 		"daemon.service.started",
 	} {
 		if !strings.Contains(body, required) {
@@ -30,19 +30,41 @@ func TestBootstrapKeepsReleaseVerificationAndPairingTokenFlow(t *testing.T) {
 	}
 }
 
+func TestBootstrapInstallsLeastPrivilegeHelperContract(t *testing.T) {
+	body := readFile(t, "bootstrap.sh")
+	for _, required := range []string{
+		"require_root",
+		"install_setup_helper",
+		"create-hoopoe-user",
+		"/usr/local/bin/hoopoe-setup-helper",
+		"/etc/hoopoe/setup-helper.allowed",
+		"/etc/sudoers.d/hoopoe",
+		"register-helper-allowlist",
+		"install-systemd-unit",
+		"chown-acfs-paths",
+	} {
+		if !strings.Contains(body, required) {
+			t.Fatalf("bootstrap.sh missing least-privilege wiring %q", required)
+		}
+	}
+}
+
 func TestSystemdUnitContainsRequiredHardening(t *testing.T) {
 	body := readFile(t, "../../systemd/hoopoe.service")
 	for _, required := range []string{
 		"Type=notify",
+		"User=hoopoe",
+		"Group=hoopoe",
 		"Restart=on-failure",
 		"WatchdogSec=30",
 		"KillMode=mixed",
 		"TimeoutStopSec=20",
 		"LimitNOFILE=65536",
 		"ProtectSystem=strict",
-		"ReadWritePaths=%h/.hoopoe /data/projects /tmp",
+		"ReadWritePaths=/var/lib/hoopoe /data/projects /tmp",
 		"NoNewPrivileges=true",
 		"PrivateTmp=true",
+		"WorkingDirectory=/var/lib/hoopoe",
 	} {
 		if !strings.Contains(body, required) {
 			t.Fatalf("hoopoe.service missing %q", required)
