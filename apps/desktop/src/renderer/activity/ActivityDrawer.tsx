@@ -122,8 +122,10 @@ export function ActivityDrawer({
 
         <div className="hh-activity-thread-wrap">
           <TimelineList
+            emptyReason={events.length === 0 ? "no-events" : "filtered"}
             events={visibleEvents}
             onEventClick={handleEventClick}
+            onResetFilters={resetFilter}
             {...(onContextAction ? { onContextAction } : {})}
           />
         </div>

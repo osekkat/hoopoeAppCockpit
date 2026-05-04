@@ -1,10 +1,21 @@
-import { Activity, Inbox, LayoutDashboard, Users } from "lucide-react";
+import {
+  Activity,
+  GitBranch,
+  Inbox,
+  LayoutDashboard,
+  MessageSquare,
+  RotateCcw,
+  Users,
+  Wrench,
+} from "lucide-react";
 import { useSwarmStageQuery } from "../../data/stage-data.ts";
 import { StateSurface } from "../../state-view/index.ts";
+import { useShellUiStore } from "../../store.ts";
 import "./SwarmStage.css";
 
 export function SwarmStage({ projectId }: { readonly projectId: string }) {
   const query = useSwarmStageQuery(projectId);
+  const setActivityPanelOpen = useShellUiStore((state) => state.setActivityPanelOpen);
 
   if (query.isLoading) {
     return (
@@ -13,6 +24,7 @@ export function SwarmStage({ projectId }: { readonly projectId: string }) {
         eyebrow="Swarm"
         title="Loading swarm"
         description="Fetching NTM session state, bead assignments, and activity mail."
+        details={["NTM sessions", "Agent assignments", "Agent Mail activity"]}
         testId="swarm-stage-loading"
       />
     );
@@ -26,6 +38,23 @@ export function SwarmStage({ projectId }: { readonly projectId: string }) {
         icon={<Activity size={18} strokeWidth={2.1} />}
         title="Swarm data unavailable"
         description="Reconnect the daemon before launching or tending agents."
+        details={[
+          "Swarm state comes from NTM, br, bv, and Agent Mail.",
+          "Raw pane scrollback is not the default UI source.",
+        ]}
+        actions={[
+          {
+            label: "Open Diagnostics",
+            href: `/${projectId}/diag`,
+            icon: <Wrench size={13} strokeWidth={2.1} />,
+            variant: "primary",
+          },
+          {
+            label: "Reconnect VPS",
+            href: "/first-run",
+            icon: <RotateCcw size={13} strokeWidth={2.1} />,
+          },
+        ]}
         testId="swarm-stage-error"
       />
     );
@@ -67,6 +96,15 @@ export function SwarmStage({ projectId }: { readonly projectId: string }) {
                 density="compact"
                 title="No bead claims"
                 description="Launch or resume a swarm to populate assignments."
+                details={["Claimed beads appear after agents mark work in br."]}
+                actions={[
+                  {
+                    label: "Open Beads",
+                    href: `/${projectId}/bead`,
+                    icon: <GitBranch size={13} strokeWidth={2.1} />,
+                    variant: "primary",
+                  },
+                ]}
                 testId="swarm-bead-board-empty"
               />
             )}
@@ -102,6 +140,15 @@ export function SwarmStage({ projectId }: { readonly projectId: string }) {
                 density="compact"
                 title="No active agents"
                 description="Start a swarm after beads are ready."
+                details={["The agent grid shows harness, account, current bead, and state."]}
+                actions={[
+                  {
+                    label: "Open Beads",
+                    href: `/${projectId}/bead`,
+                    icon: <GitBranch size={13} strokeWidth={2.1} />,
+                    variant: "primary",
+                  },
+                ]}
                 testId="swarm-agent-grid-empty"
               />
             )}
@@ -130,6 +177,15 @@ export function SwarmStage({ projectId }: { readonly projectId: string }) {
                 density="compact"
                 title="No activity mail"
                 description="Agent Mail events appear here after the swarm starts."
+                details={["The cross-stage Activity drawer stays available while this panel is empty."]}
+                actions={[
+                  {
+                    label: "Open Activity",
+                    icon: <MessageSquare size={13} strokeWidth={2.1} />,
+                    onClick: () => setActivityPanelOpen(true),
+                    variant: "primary",
+                  },
+                ]}
                 testId="swarm-mail-empty"
               />
             )}

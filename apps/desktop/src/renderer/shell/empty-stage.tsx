@@ -1,7 +1,15 @@
-import { Boxes, ShieldCheck, Stethoscope } from "lucide-react";
+import {
+  Boxes,
+  ClipboardList,
+  GitBranch,
+  PlayCircle,
+  ShieldCheck,
+  Stethoscope,
+  Wrench,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import type { ShellRouteId } from "../stages.ts";
-import { StateSurface } from "../state-view/index.ts";
+import { StateSurface, type StateSurfaceAction } from "../state-view/index.ts";
 import { useShellUiStore } from "../store.ts";
 
 interface StagePanel {
@@ -13,33 +21,81 @@ interface EmptyStageCopy {
   readonly title: string;
   readonly description: string;
   readonly icon: ReactNode;
+  readonly actions?: readonly StateSurfaceAction[];
+  readonly details: readonly string[];
 }
 
 const copyByStage: Record<ShellRouteId, EmptyStageCopy> = {
   plan: {
     title: "No planning workspace selected",
-    description: "Create or import a project, then start with a plan intake.",
+    description: "Start with a plain-language goal or import an existing plan artifact.",
+    details: ["Candidate models, synthesis, critique, and refinement rounds appear here."],
     icon: <Boxes size={18} strokeWidth={2.1} />,
+    actions: [
+      {
+        label: "Add project",
+        href: "/",
+        icon: <GitBranch size={13} strokeWidth={2.1} />,
+        variant: "primary",
+      },
+    ],
   },
   bead: {
     title: "No bead workspace selected",
     description: "Lock a plan before converting work into canonical br beads.",
+    details: ["The board and DAG stay read from br and bv robot surfaces."],
     icon: <Boxes size={18} strokeWidth={2.1} />,
+    actions: [
+      {
+        label: "Open Planning",
+        href: "plan",
+        icon: <ClipboardList size={13} strokeWidth={2.1} />,
+        variant: "primary",
+      },
+    ],
   },
   swarm: {
     title: "No active swarm",
-    description: "Launch agents after the ready frontier is curated.",
+    description: "Launch agents after the ready frontier, build queue, and rate-limit warnings are clear.",
+    details: ["The default dashboard shows bead and agent state; raw panes stay in Diagnostics."],
     icon: <Boxes size={18} strokeWidth={2.1} />,
+    actions: [
+      {
+        label: "Open Beads",
+        href: "bead",
+        icon: <PlayCircle size={13} strokeWidth={2.1} />,
+        variant: "primary",
+      },
+    ],
   },
   harden: {
     title: "No hardening session",
     description: "Run review rounds after implementation beads converge.",
+    details: ["UBS, findings, health metrics, and convergence status collect here."],
     icon: <ShieldCheck size={18} strokeWidth={2.1} />,
+    actions: [
+      {
+        label: "Open Swarm",
+        href: "swarm",
+        icon: <PlayCircle size={13} strokeWidth={2.1} />,
+        variant: "primary",
+      },
+    ],
   },
   diag: {
     title: "Diagnostics ready",
     description: "Inspect capabilities, repairs, audit entries, and raw panes from here.",
+    details: ["Raw panes require an explicit audited toggle and are never the default swarm UI."],
     icon: <Stethoscope size={18} strokeWidth={2.1} />,
+    actions: [
+      {
+        label: "Reconnect VPS",
+        href: "/first-run",
+        icon: <Wrench size={13} strokeWidth={2.1} />,
+        variant: "primary",
+        testId: "diagnostics-reconnect-wizard",
+      },
+    ],
   },
 };
 
@@ -80,6 +136,8 @@ export function EmptyStage({ stageId }: { readonly stageId: ShellRouteId }) {
         icon={copyByStage[stageId].icon}
         title={copyByStage[stageId].title}
         description={copyByStage[stageId].description}
+        details={copyByStage[stageId].details}
+        {...(copyByStage[stageId].actions ? { actions: copyByStage[stageId].actions } : {})}
         testId={`empty-stage-${stageId}`}
       />
       <section className="hh-empty-grid" aria-label="Stage workspace">
@@ -96,13 +154,6 @@ export function EmptyStage({ stageId }: { readonly stageId: ShellRouteId }) {
       </section>
       {stageId === "diag" ? (
         <div className="hh-empty-actions">
-          <a
-            className="hh-text-button"
-            data-testid="diagnostics-reconnect-wizard"
-            href="/first-run"
-          >
-            Reconnect VPS
-          </a>
           <button
             className="hh-text-button"
             data-testid="diagnostics-onboarding-tour"

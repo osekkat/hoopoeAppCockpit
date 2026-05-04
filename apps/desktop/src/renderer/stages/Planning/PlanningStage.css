@@ -614,12 +614,10 @@
 }
 
 .hh-plan-stage-empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
+  display: grid;
+  align-content: start;
+  gap: 14px;
   padding: 28px;
-  color: var(--hh-text-muted);
 }
 
 /* hp-pmw — plan-job usage sidebar */

@@ -56,6 +56,8 @@ test("Swarm empty state exposes bead board and agent grid without terminal panes
 
   expect(markup).toContain("Bead board");
   expect(markup).toContain("Agent grid");
+  expect(markup).toContain("Open Beads");
+  expect(markup).toContain("raw panes stay in Diagnostics");
   expect(markup.toLowerCase()).not.toContain("terminal");
 });
 

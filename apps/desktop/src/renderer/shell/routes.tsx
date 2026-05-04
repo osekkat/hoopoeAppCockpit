@@ -1,4 +1,5 @@
 import { Link, useParams } from "@tanstack/react-router";
+import { FolderPlus, Route, Server } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   defaultProjectId,
@@ -11,6 +12,7 @@ import { ProjectEntry } from "../projects/index.ts";
 import { BeadsStage } from "../stages/Beads/BeadsStage.tsx";
 import { PlanningStage } from "../stages/Planning/PlanningStage.tsx";
 import { SwarmStage } from "../stages/Swarm/SwarmStage.tsx";
+import { StateSurface } from "../state-view/index.ts";
 import { useShellUiStore } from "../store.ts";
 import { formatRelativeActivation, routeForStage } from "../topbar/project-switcher-model.ts";
 import { EmptyStage } from "./empty-stage.tsx";
@@ -28,6 +30,35 @@ export function ProjectPickerRoute() {
         <span className="hh-stage-kicker">PROJECTS</span>
         <h1 id="project-picker-title">Local demo</h1>
       </div>
+      {projects.length === 0 ? (
+        <StateSurface
+          variant="empty"
+          eyebrow="Projects"
+          icon={<FolderPlus size={18} strokeWidth={2.1} />}
+          title="No projects yet"
+          description="Connect an existing VPS or add a repo so Hoopoe can mirror canonical Flywheel state."
+          details={[
+            "Existing-VPS onboarding comes first.",
+            "Projects need an origin remote before agents can push branches.",
+          ]}
+          actions={[
+            {
+              label: "Connect VPS",
+              href: "/first-run",
+              icon: <Server size={13} strokeWidth={2.1} />,
+              variant: "primary",
+              testId: "project-picker-connect-vps",
+            },
+            {
+              label: "Add project",
+              icon: <Route size={13} strokeWidth={2.1} />,
+              onClick: () => setEntryOpen(true),
+              testId: "project-picker-empty-add",
+            },
+          ]}
+          testId="project-picker-empty"
+        />
+      ) : null}
       <div className="hh-project-list">
         {projects.map((project) => {
           const restoredStage =

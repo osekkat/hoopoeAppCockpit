@@ -12,6 +12,7 @@
 
 import * as React from "react";
 import { useEffect, useMemo, useState } from "react";
+import { RotateCcw, SearchX } from "lucide-react";
 import {
   SETTING_DESCRIPTORS,
   SECTION_LABELS,
@@ -23,6 +24,7 @@ import {
 } from "./SettingsModel.ts";
 import { dimmedDescriptors, searchSettings } from "./SettingsSearch.ts";
 import { SettingRow } from "./SettingRow.tsx";
+import { StateSurface } from "../state-view/index.ts";
 
 export interface SettingsScreenProps {
   /** Defaults map (per-key). */
@@ -77,6 +79,9 @@ export function SettingsScreen(props: SettingsScreenProps): React.JSX.Element {
     for (const hit of queryHits) m.set(hit.descriptor.key, hit.matchedTerms);
     return m;
   }, [queryHits]);
+  const searchActive = query.trim().length > 0;
+  const noSearchMatches = searchActive && queryHits.length === 0;
+  const activeRows = grouped[activeSection];
 
   // Cmd+Comma to open is the host's job (registers the global shortcut);
   // here we honor Esc-to-close via the host-wired handler. Keyboard nav
@@ -170,9 +175,36 @@ export function SettingsScreen(props: SettingsScreenProps): React.JSX.Element {
           className="hh-settings-pane__rows"
           role="list"
           aria-live="polite"
-          data-search-active={query.trim().length > 0 ? "true" : "false"}
+          data-search-active={searchActive ? "true" : "false"}
         >
-          {grouped[activeSection].map((descriptor) => {
+          {noSearchMatches ? (
+            <StateSurface
+              variant="empty"
+              density="compact"
+              icon={<SearchX size={18} strokeWidth={2.1} />}
+              title="No settings match"
+              description="Try a different setting name, section, or policy keyword."
+              details={["Search checks labels, descriptions, keywords, and section names."]}
+              actions={[
+                {
+                  label: "Clear search",
+                  icon: <RotateCcw size={13} strokeWidth={2.1} />,
+                  onClick: () => setQuery(""),
+                  variant: "primary",
+                },
+              ]}
+              testId="settings-search-empty"
+            />
+          ) : activeRows.length === 0 ? (
+            <StateSurface
+              variant="empty"
+              density="compact"
+              title="No settings in this section"
+              description="This section has no visible settings with the current mode."
+              details={["Enable development mode to see dev-only settings when appropriate."]}
+              testId="settings-section-empty"
+            />
+          ) : activeRows.map((descriptor) => {
             const resolution = resolveSettingSource(
               defaults,
               globalOverrides,

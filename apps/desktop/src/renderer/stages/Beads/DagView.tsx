@@ -11,7 +11,15 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { AlertTriangle, CircleDot, Sparkles, Workflow } from "lucide-react";
+import {
+  AlertTriangle,
+  CircleDot,
+  GitBranch,
+  RotateCcw,
+  Sparkles,
+  Workflow,
+  Wrench,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import { useDagStageQuery } from "../../data/dag-data.ts";
 import { StateSurface } from "../../state-view/index.ts";
@@ -49,6 +57,7 @@ export function DagView({ projectId }: DagViewProps) {
         eyebrow="DAG"
         title="Loading bead graph"
         description="Building the graph layout from canonical bead dependencies."
+        details={["bv robot graph", "Critical path", "Ready frontier"]}
         testId="dag-stage-loading"
       />
     );
@@ -60,6 +69,22 @@ export function DagView({ projectId }: DagViewProps) {
         eyebrow="DAG"
         title="Bead graph unavailable"
         description="Refresh canonical br state before opening the dependency graph."
+        details={[
+          "The renderer waits for canonical graph inputs instead of inferring truth from cached rows.",
+        ]}
+        actions={[
+          {
+            label: "Open Diagnostics",
+            href: `/${projectId}/diag`,
+            icon: <Wrench size={13} strokeWidth={2.1} />,
+            variant: "primary",
+          },
+          {
+            label: "Retry",
+            icon: <RotateCcw size={13} strokeWidth={2.1} />,
+            onClick: () => window.location.reload(),
+          },
+        ]}
         testId="dag-stage-error"
       />
     );
@@ -72,6 +97,15 @@ export function DagView({ projectId }: DagViewProps) {
         eyebrow="DAG"
         title="No bead graph yet"
         description="There are no bead dependencies to render for this project."
+        details={["Convert a locked plan or import br state before graph review."]}
+        actions={[
+          {
+            label: "Open Beads",
+            href: `/${projectId}/bead`,
+            icon: <GitBranch size={13} strokeWidth={2.1} />,
+            variant: "primary",
+          },
+        ]}
         testId="dag-stage-empty"
       />
     );

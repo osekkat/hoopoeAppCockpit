@@ -34,6 +34,7 @@ import {
   type ProjectImportInput,
   type ReadinessOutput,
 } from "./data.ts";
+import { StateSurface } from "../state-view/index.ts";
 import "./ProjectEntry.css";
 
 export type ProjectEntryMode = "import" | "create" | "clone";
@@ -426,25 +427,27 @@ export function ReadinessPanel({ data, error, isFetching }: ReadinessPanelProps)
   }
   if (error) {
     return (
-      <aside
-        aria-labelledby="hh-readiness-title"
-        className="hh-readiness-panel hh-readiness-panel-error"
-        data-testid="readiness-panel"
-      >
-        <h3 id="hh-readiness-title">Readiness probe failed</h3>
-        <p>{error.message}</p>
-      </aside>
+      <StateSurface
+        variant="error"
+        density="compact"
+        icon={<AlertCircle size={18} strokeWidth={2.1} />}
+        title="Readiness probe failed"
+        description={error.message}
+        details={["Check the daemon connection before importing this project."]}
+        testId="readiness-panel"
+      />
     );
   }
   if (isFetching && !data) {
     return (
-      <aside
-        aria-labelledby="hh-readiness-title"
-        className="hh-readiness-panel"
-        data-testid="readiness-panel"
-      >
-        <h3 id="hh-readiness-title">Probing readiness...</h3>
-      </aside>
+      <StateSurface
+        variant="loading"
+        density="compact"
+        title="Probing readiness"
+        description="Checking repository, origin remote, AGENTS.md, and Flywheel tool visibility."
+        details={["The import gate is advisory until canonical daemon state returns."]}
+        testId="readiness-panel"
+      />
     );
   }
   if (!data) return null;

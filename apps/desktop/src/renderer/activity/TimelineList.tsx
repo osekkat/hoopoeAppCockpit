@@ -7,6 +7,7 @@ import {
   getTimelineRowModel,
   type TimelineRowProps,
 } from "@hoopoe/design-system";
+import { FilterX, MessageSquare } from "lucide-react";
 import {
   mapToTimelineKind,
   type ActivityEvent,
@@ -16,8 +17,10 @@ import { StateSurface } from "../state-view/index.ts";
 
 export interface TimelineListProps {
   readonly events: readonly ActivityEvent[];
+  readonly emptyReason?: "no-events" | "filtered";
   readonly onEventClick?: (event: ActivityEvent, pivot: ActivityPivot | null) => void;
   readonly onContextAction?: (event: ActivityEvent, action: ActivityContextAction) => void;
+  readonly onResetFilters?: () => void;
 }
 
 export type ActivityContextAction =
@@ -27,17 +30,48 @@ export type ActivityContextAction =
   | "mark-acknowledged";
 
 export function TimelineList({
+  emptyReason = "filtered",
   events,
   onEventClick,
   onContextAction,
+  onResetFilters,
 }: TimelineListProps) {
   if (events.length === 0) {
+    const noEvents = emptyReason === "no-events";
     return (
       <StateSurface
         variant="empty"
         density="compact"
-        title="No matching events"
-        description="Clear filters to restore the activity timeline."
+        icon={
+          noEvents ? (
+            <MessageSquare size={18} strokeWidth={2.1} />
+          ) : (
+            <FilterX size={18} strokeWidth={2.1} />
+          )
+        }
+        title={noEvents ? "No activity yet" : "No matching events"}
+        description={
+          noEvents
+            ? "Agent Mail, reservations, builds, approvals, and orchestrator messages will appear here."
+            : "Clear filters to restore the activity timeline."
+        }
+        details={
+          noEvents
+            ? ["Use the composer below to contact the orchestrator when a swarm is running."]
+            : ["Filters never change canonical activity; they only hide rows in this drawer."]
+        }
+        actions={
+          !noEvents && onResetFilters
+            ? [
+                {
+                  label: "Clear filters",
+                  icon: <FilterX size={13} strokeWidth={2.1} />,
+                  onClick: onResetFilters,
+                  variant: "primary",
+                },
+              ]
+            : []
+        }
         testId="activity-timeline-empty"
       />
     );

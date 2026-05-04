@@ -82,6 +82,34 @@
   line-height: 1.45;
 }
 
+.hh-state-surface-detail-list {
+  display: grid;
+  gap: 5px;
+  margin: 2px 0 0;
+  padding: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+  list-style: none;
+}
+
+.hh-state-surface-detail-list li {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.hh-state-surface-detail-list li::before {
+  width: 5px;
+  height: 5px;
+  margin-top: 6px;
+  border-radius: var(--radius-full);
+  background: currentColor;
+  content: "";
+  opacity: 0.75;
+}
+
 .hh-state-surface-actions {
   display: flex;
   flex-wrap: wrap;
@@ -102,6 +130,8 @@
   font: inherit;
   font-size: 12px;
   font-weight: 720;
+  line-height: 1.2;
+  text-decoration: none;
   cursor: pointer;
 }
 

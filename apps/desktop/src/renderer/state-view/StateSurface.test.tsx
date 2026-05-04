@@ -39,6 +39,7 @@ test("StateSurface renders optional actions without requiring handlers", () => {
       variant="empty"
       title="No matching events"
       description="Clear filters to restore the activity timeline."
+      details={["Agent Mail events will appear here.", "Filters can hide older automation."]}
       actions={[{ label: "Retry", icon: <RotateCcw size={12} />, variant: "primary" }]}
     />,
   );
@@ -46,4 +47,25 @@ test("StateSurface renders optional actions without requiring handlers", () => {
   expect(markup).toContain("No matching events");
   expect(markup).toContain('data-action-variant="primary"');
   expect(markup).toContain("Retry");
+  expect(markup).toContain("Agent Mail events will appear here.");
+});
+
+test("StateSurface renders href actions as links", () => {
+  const markup = renderToStaticMarkup(
+    <StateSurface
+      variant="degraded"
+      title="Daemon disconnected"
+      description="Open Diagnostics to repair the tunnel."
+      actions={[
+        {
+          label: "Open Diagnostics",
+          href: "/local-demo/diag",
+          testId: "open-diagnostics",
+        },
+      ]}
+    />,
+  );
+
+  expect(markup).toContain('href="/local-demo/diag"');
+  expect(markup).toContain('data-testid="open-diagnostics"');
 });

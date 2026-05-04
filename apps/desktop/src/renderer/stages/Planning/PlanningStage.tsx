@@ -1,4 +1,4 @@
-import { FileText, Lock } from "lucide-react";
+import { FileText, PenLine, RotateCcw, Settings, Wrench, Lock } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
   findActivePlan,
@@ -63,6 +63,7 @@ export function PlanningStage({ projectId }: { readonly projectId: string }) {
         eyebrow="Planning"
         title="Loading plans"
         description="Fetching plan artifacts, history, and model outputs for this project."
+        details={["Plan list", "Artifact rail", "Candidate and critique outputs"]}
         testId="planning-stage-loading"
       />
     );
@@ -75,6 +76,20 @@ export function PlanningStage({ projectId }: { readonly projectId: string }) {
         eyebrow="Planning"
         title="Plan data unavailable"
         description="Reconnect the daemon or open Diagnostics, then retry this stage."
+        details={["The plan cache is not canonical.", "Hoopoe will re-read plan artifacts from the project source."]}
+        actions={[
+          {
+            label: "Open Diagnostics",
+            href: `/${projectId}/diag`,
+            icon: <Wrench size={13} strokeWidth={2.1} />,
+            variant: "primary",
+          },
+          {
+            label: "Reconnect VPS",
+            href: "/first-run",
+            icon: <RotateCcw size={13} strokeWidth={2.1} />,
+          },
+        ]}
         testId="planning-stage-error"
       />
     );
@@ -88,6 +103,25 @@ export function PlanningStage({ projectId }: { readonly projectId: string }) {
     // and shows the no-subscription banner today.
     return (
       <div className="hh-live-stage hh-plan-stage-empty" data-testid="plan-stage-empty">
+        <StateSurface
+          variant="empty"
+          eyebrow="Planning"
+          icon={<PenLine size={18} strokeWidth={2.1} />}
+          title="No plans yet"
+          description="Describe the target outcome, then run the planning pipeline to collect candidates, synthesis, critique, and refinements."
+          details={[
+            "ChatGPT Pro is the recommended planning default.",
+            "Hoopoe labels quality scores as decision aids, not truth.",
+          ]}
+          actions={[
+            {
+              label: "Check subscriptions",
+              href: "/first-run",
+              icon: <Settings size={13} strokeWidth={2.1} />,
+            },
+          ]}
+          testId="planning-empty-guide"
+        />
         <PlanInputChatBox />
       </div>
     );

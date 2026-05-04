@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import {
   applyFilter,
   buildFixtureEvents,
@@ -12,6 +14,7 @@ import {
   type ActivityEvent,
   type ActivityEventKind,
 } from "./types.ts";
+import { TimelineList } from "./TimelineList.tsx";
 
 const T = (n: number) => `2026-05-04T00:0${n}:00Z`;
 
@@ -290,6 +293,26 @@ describe("type mappings", () => {
       );
       expect(ACTIVITY_CATEGORIES).toContain(categoryFor(k));
     }
+  });
+});
+
+describe("TimelineList empty states", () => {
+  test("distinguishes no activity from filtered results", () => {
+    const emptyMarkup = renderToStaticMarkup(
+      createElement(TimelineList, { emptyReason: "no-events", events: [] }),
+    );
+    const filteredMarkup = renderToStaticMarkup(
+      createElement(TimelineList, {
+        emptyReason: "filtered",
+        events: [],
+        onResetFilters: () => undefined,
+      }),
+    );
+
+    expect(emptyMarkup).toContain("No activity yet");
+    expect(emptyMarkup).toContain("orchestrator");
+    expect(filteredMarkup).toContain("No matching events");
+    expect(filteredMarkup).toContain("Clear filters");
   });
 });
 

@@ -1,4 +1,12 @@
-import { CheckCircle2, CircleDotDashed, ListChecks, Workflow } from "lucide-react";
+import {
+  CheckCircle2,
+  CircleDotDashed,
+  ClipboardList,
+  ListChecks,
+  RotateCcw,
+  Wrench,
+  Workflow,
+} from "lucide-react";
 import { useState } from "react";
 import { useBeadsStageQuery } from "../../data/stage-data.ts";
 import { StateSurface } from "../../state-view/index.ts";
@@ -18,6 +26,7 @@ export function BeadsStage({ projectId }: { readonly projectId: string }) {
         eyebrow="Beads"
         title="Loading beads"
         description="Fetching canonical br state and graph-ready bead summaries."
+        details={["br issue list", "Status counts", "DAG-ready dependencies"]}
         testId="beads-stage-loading"
       />
     );
@@ -30,6 +39,20 @@ export function BeadsStage({ projectId }: { readonly projectId: string }) {
         eyebrow="Beads"
         title="Bead data unavailable"
         description="Reconnect the daemon or refresh canonical br state before editing the board."
+        details={["Renderer cache is not canonical.", "Bead truth must come from br and bv robot output."]}
+        actions={[
+          {
+            label: "Open Diagnostics",
+            href: `/${projectId}/diag`,
+            icon: <Wrench size={13} strokeWidth={2.1} />,
+            variant: "primary",
+          },
+          {
+            label: "Reconnect VPS",
+            href: "/first-run",
+            icon: <RotateCcw size={13} strokeWidth={2.1} />,
+          },
+        ]}
         testId="beads-stage-error"
       />
     );
@@ -115,13 +138,46 @@ export function BeadsStage({ projectId }: { readonly projectId: string }) {
               density="compact"
               title="No beads yet"
               description="Convert a locked plan into beads or import canonical br state."
+              details={["Ready work appears after br has unblocked issues."]}
+              actions={[
+                {
+                  label: "Open Planning",
+                  href: `/${projectId}/plan`,
+                  icon: <ClipboardList size={13} strokeWidth={2.1} />,
+                  variant: "primary",
+                },
+                {
+                  label: "Open Diagnostics",
+                  href: `/${projectId}/diag`,
+                  icon: <Wrench size={13} strokeWidth={2.1} />,
+                },
+              ]}
               testId="beads-list-empty"
             />
           )}
         </section>
       ) : (
         <section className="hh-beads-dag-container" aria-label="Mock Flywheel bead DAG">
-          <BeadsDagView beads={data.beads} />
+          {hasBeads ? (
+            <BeadsDagView beads={data.beads} />
+          ) : (
+            <StateSurface
+              variant="empty"
+              density="compact"
+              title="No DAG to render"
+              description="DAG view appears after br exposes beads and bv graph intelligence."
+              details={["The renderer does not compute graph truth when bv robot data is absent."]}
+              actions={[
+                {
+                  label: "Open Planning",
+                  href: `/${projectId}/plan`,
+                  icon: <ClipboardList size={13} strokeWidth={2.1} />,
+                  variant: "primary",
+                },
+              ]}
+              testId="beads-dag-empty"
+            />
+          )}
         </section>
       )}
     </div>

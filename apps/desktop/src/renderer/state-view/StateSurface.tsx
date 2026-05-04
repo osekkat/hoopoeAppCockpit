@@ -13,8 +13,10 @@ export type StateSurfaceDensity = "regular" | "compact";
 
 export interface StateSurfaceAction {
   readonly label: string;
+  readonly href?: string;
   readonly icon?: ReactNode;
   readonly onClick?: () => void;
+  readonly testId?: string;
   readonly variant?: "primary" | "secondary";
 }
 
@@ -25,6 +27,7 @@ export interface StateSurfaceProps {
   readonly eyebrow?: string;
   readonly icon?: ReactNode;
   readonly actions?: readonly StateSurfaceAction[];
+  readonly details?: readonly string[];
   readonly density?: StateSurfaceDensity;
   readonly testId?: string;
 }
@@ -36,6 +39,7 @@ export function StateSurface({
   eyebrow,
   icon,
   actions = [],
+  details = [],
   density = "regular",
   testId,
 }: StateSurfaceProps) {
@@ -58,21 +62,43 @@ export function StateSurface({
         {eyebrow ? <span className="hh-state-surface-eyebrow">{eyebrow}</span> : null}
         <h2>{title}</h2>
         <p>{description}</p>
+        {details.length > 0 ? (
+          <ul className="hh-state-surface-detail-list">
+            {details.map((detail) => (
+              <li key={detail}>{detail}</li>
+            ))}
+          </ul>
+        ) : null}
         {variant === "loading" ? <LoadingSkeleton /> : null}
         {actions.length > 0 ? (
           <div className="hh-state-surface-actions">
-            {actions.map((action) => (
-              <button
-                className="hh-state-surface-action"
-                data-action-variant={action.variant ?? "secondary"}
-                key={action.label}
-                onClick={action.onClick}
-                type="button"
-              >
-                {action.icon ? <span aria-hidden="true">{action.icon}</span> : null}
-                <span>{action.label}</span>
-              </button>
-            ))}
+            {actions.map((action) =>
+              action.href ? (
+                <a
+                  className="hh-state-surface-action"
+                  data-action-variant={action.variant ?? "secondary"}
+                  data-testid={action.testId}
+                  href={action.href}
+                  key={action.label}
+                  onClick={action.onClick}
+                >
+                  {action.icon ? <span aria-hidden="true">{action.icon}</span> : null}
+                  <span>{action.label}</span>
+                </a>
+              ) : (
+                <button
+                  className="hh-state-surface-action"
+                  data-action-variant={action.variant ?? "secondary"}
+                  data-testid={action.testId}
+                  key={action.label}
+                  onClick={action.onClick}
+                  type="button"
+                >
+                  {action.icon ? <span aria-hidden="true">{action.icon}</span> : null}
+                  <span>{action.label}</span>
+                </button>
+              ),
+            )}
           </div>
         ) : null}
       </div>
