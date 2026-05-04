@@ -56,134 +56,185 @@ export interface RegisteredMockFlywheelClient {
   unregister: () => void;
 }
 
+type RegisterMockCommand = <Input, Output>(
+  id: MockFlywheelCommandId,
+  handle: (input: Input) => Output | Promise<Output>,
+) => void;
+
+interface ReplayLifecycle {
+  readonly session: ReplaySession | null;
+  start: () => void;
+  cancel: () => void;
+  swapScenario: (scenarioId: string, opts: { readonly isAbsolutePath?: boolean }) => string;
+  setSpeed: (speed: ReplaySpeed) => ReplaySpeed;
+}
+
 /** Register every MockDaemonClient-backed IPC command against the given
  *  IpcRegistry. Returns a teardown handle for tests + hot-reload. */
 export function registerMockFlywheelClient(
   options: RegisterMockFlywheelClientOptions,
 ): RegisteredMockFlywheelClient {
   const { ipcRegistry, client } = options;
-  const initialSpeed: ReplaySpeed = options.initialReplaySpeed ?? 1;
-  let session: ReplaySession | null = null;
-  let currentSpeed: ReplaySpeed = initialSpeed;
-
   const teardowns: Array<() => void> = [];
-  function reg<I, O>(id: string, handle: (input: I) => O | Promise<O>): void {
-    const registration: IpcCommandRegistration<I, O> = {
+  const register = createMockCommandRegistrar(ipcRegistry, teardowns);
+  const replay = createReplayLifecycle(client, options);
+
+  registerReadCommands(register, client);
+  registerAuthCommands(register, client);
+  registerScenarioCommands(register, client, replay);
+
+  replay.start();
+
+  return {
+    commandsRegistered: teardowns.length,
+    get session() {
+      return replay.session;
+    },
+    unregister: () => {
+      replay.cancel();
+      unregisterAll(teardowns);
+    },
+  };
+}
+
+function createMockCommandRegistrar(
+  ipcRegistry: IpcRegistry,
+  teardowns: Array<() => void>,
+): RegisterMockCommand {
+  return function register<Input, Output>(
+    id: MockFlywheelCommandId,
+    handle: (input: Input) => Output | Promise<Output>,
+  ): void {
+    const registration: IpcCommandRegistration<Input, Output> = {
       id,
       handler: { handle },
       whenContextKeys: [WHEN_MOCK_FLYWHEEL],
     };
     const disposed = ipcRegistry.register(registration);
     teardowns.push(disposed.unregister);
-  }
+  };
+}
 
-  reg<void, ReturnType<MockDaemonClient["health"]>>(MOCK_FLYWHEEL_COMMANDS.health, () =>
+function registerReadCommands(register: RegisterMockCommand, client: MockDaemonClient): void {
+  register<void, ReturnType<MockDaemonClient["health"]>>(MOCK_FLYWHEEL_COMMANDS.health, () =>
     client.health(),
   );
-  reg<void, ReturnType<MockDaemonClient["version"]>>(
+  register<void, ReturnType<MockDaemonClient["version"]>>(
     MOCK_FLYWHEEL_COMMANDS.version,
     () => client.version(),
   );
-  reg<void, ReturnType<MockDaemonClient["capabilities"]>>(
+  register<void, ReturnType<MockDaemonClient["capabilities"]>>(
     MOCK_FLYWHEEL_COMMANDS.capabilities,
     () => client.capabilities(),
   );
-  reg<void, ReturnType<MockDaemonClient["listProjects"]>>(
+  register<void, ReturnType<MockDaemonClient["listProjects"]>>(
     MOCK_FLYWHEEL_COMMANDS.listProjects,
     () => client.listProjects(),
   );
-  reg<{ projectId: string }, unknown>(MOCK_FLYWHEEL_COMMANDS.getBeads, ({ projectId }) =>
+  register<{ projectId: string }, unknown>(MOCK_FLYWHEEL_COMMANDS.getBeads, ({ projectId }) =>
     client.getBeads(projectId),
   );
-  reg<{ projectId: string }, unknown>(MOCK_FLYWHEEL_COMMANDS.getTriage, ({ projectId }) =>
+  register<{ projectId: string }, unknown>(MOCK_FLYWHEEL_COMMANDS.getTriage, ({ projectId }) =>
     client.getTriage(projectId),
   );
-  reg<{ projectId: string }, unknown>(
+  register<{ projectId: string }, unknown>(
     MOCK_FLYWHEEL_COMMANDS.getSwarmSnapshot,
     ({ projectId }) => client.getSwarmSnapshot(projectId),
   );
-  reg<{ projectId: string }, unknown>(MOCK_FLYWHEEL_COMMANDS.getMailDump, ({ projectId }) =>
-    client.getMailDump(projectId),
+  register<{ projectId: string }, unknown>(
+    MOCK_FLYWHEEL_COMMANDS.getMailDump,
+    ({ projectId }) => client.getMailDump(projectId),
   );
-  reg<{ projectId: string }, unknown>(
+  register<{ projectId: string }, unknown>(
     MOCK_FLYWHEEL_COMMANDS.getReservations,
     ({ projectId }) => client.getReservations(projectId),
   );
-  reg<{ runId: string }, ReturnType<MockDaemonClient["getBuildLog"]>>(
+  register<{ runId: string }, ReturnType<MockDaemonClient["getBuildLog"]>>(
     MOCK_FLYWHEEL_COMMANDS.getBuildLog,
     ({ runId }) => client.getBuildLog(runId),
   );
-  reg<{ agent: string }, ReturnType<MockDaemonClient["getPaneLog"]>>(
+  register<{ agent: string }, ReturnType<MockDaemonClient["getPaneLog"]>>(
     MOCK_FLYWHEEL_COMMANDS.getPaneLog,
     ({ agent }) => client.getPaneLog(agent),
   );
-  reg<{ pairingToken: string }, ReturnType<MockDaemonClient["exchangePairingForBearer"]>>(
+}
+
+function registerAuthCommands(register: RegisterMockCommand, client: MockDaemonClient): void {
+  register<{ pairingToken: string }, ReturnType<MockDaemonClient["exchangePairingForBearer"]>>(
     MOCK_FLYWHEEL_COMMANDS.exchangePairingForBearer,
     (input) => client.exchangePairingForBearer(input),
   );
-  reg<{ bearerToken: string }, ReturnType<MockDaemonClient["issueWsToken"]>>(
+  register<{ bearerToken: string }, ReturnType<MockDaemonClient["issueWsToken"]>>(
     MOCK_FLYWHEEL_COMMANDS.issueWsToken,
     (input) => client.issueWsToken(input),
   );
-  reg<void, { scenarioId: string; cursors: Record<string, number> }>(
+}
+
+function registerScenarioCommands(
+  register: RegisterMockCommand,
+  client: MockDaemonClient,
+  replay: ReplayLifecycle,
+): void {
+  register<void, { scenarioId: string; cursors: Record<string, number> }>(
     MOCK_FLYWHEEL_COMMANDS.scenarioInfo,
     () => ({ scenarioId: client.scenarioId(), cursors: client.currentCursors() }),
   );
-  reg<{ scenarioId: string; isAbsolutePath?: boolean }, { scenarioId: string }>(
+  register<{ scenarioId: string; isAbsolutePath?: boolean }, { scenarioId: string }>(
     MOCK_FLYWHEEL_COMMANDS.swapScenario,
     ({ scenarioId, isAbsolutePath }) => {
-      // Cancel any active subscription before swap; the renderer must
-      // resubscribe (which is the right reconnect-replay behavior anyway).
-      if (session) {
-        session.cancel();
-        session = null;
-      }
       const opts = isAbsolutePath !== undefined ? { isAbsolutePath } : {};
-      client.swapScenario(scenarioId, opts);
-      // Auto-restart subscription if the caller had wired emitEvent.
-      if (options.emitEvent) {
-        session = client.subscribe(
-          { speed: currentSpeed },
-          options.emitEvent,
-        );
-      }
-      return { scenarioId: client.scenarioId() };
+      return { scenarioId: replay.swapScenario(scenarioId, opts) };
     },
   );
-  reg<{ speed: ReplaySpeed }, { speed: ReplaySpeed }>(
+  register<{ speed: ReplaySpeed }, { speed: ReplaySpeed }>(
     MOCK_FLYWHEEL_COMMANDS.setReplaySpeed,
-    ({ speed }) => {
-      currentSpeed = speed;
-      // Restart the subscription so the new speed takes effect.
-      if (options.emitEvent) {
-        session?.cancel();
-        session = client.subscribe(
-          { speed: currentSpeed },
-          options.emitEvent,
-        );
-      }
-      return { speed: currentSpeed };
-    },
+    ({ speed }) => ({ speed: replay.setSpeed(speed) }),
   );
+}
 
-  // Auto-start subscription if the caller wired emitEvent.
-  if (options.emitEvent) {
+function createReplayLifecycle(
+  client: MockDaemonClient,
+  options: RegisterMockFlywheelClientOptions,
+): ReplayLifecycle {
+  let session: ReplaySession | null = null;
+  let currentSpeed: ReplaySpeed = options.initialReplaySpeed ?? 1;
+
+  function start(): void {
+    if (!options.emitEvent || session !== null) return;
     session = client.subscribe({ speed: currentSpeed }, options.emitEvent);
   }
 
-  const handle: RegisteredMockFlywheelClient = {
-    commandsRegistered: teardowns.length,
+  function cancel(): void {
+    session?.cancel();
+    session = null;
+  }
+
+  return {
     get session() {
       return session;
     },
-    unregister: () => {
-      session?.cancel();
-      session = null;
-      while (teardowns.length > 0) {
-        const t = teardowns.pop();
-        if (t) t();
+    start,
+    cancel,
+    swapScenario: (scenarioId, opts) => {
+      cancel();
+      client.swapScenario(scenarioId, opts);
+      start();
+      return client.scenarioId();
+    },
+    setSpeed: (speed) => {
+      currentSpeed = speed;
+      if (options.emitEvent) {
+        cancel();
+        start();
       }
+      return currentSpeed;
     },
   };
-  return handle;
+}
+
+function unregisterAll(teardowns: Array<() => void>): void {
+  while (teardowns.length > 0) {
+    const teardown = teardowns.pop();
+    if (teardown) teardown();
+  }
 }

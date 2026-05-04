@@ -173,10 +173,18 @@ describe("registerMockFlywheelClient (hp-o74)", () => {
   test("registers all 16 mock commands", () => {
     const { ipc, client } = setup();
     const handle = registerMockFlywheelClient({ ipcRegistry: ipc, client });
-    expect(handle.commandsRegistered).toBe(Object.keys(MOCK_FLYWHEEL_COMMANDS).length);
+    const commands = Object.values(MOCK_FLYWHEEL_COMMANDS);
+    expect(new Set(commands).size).toBe(commands.length);
+    expect(handle.commandsRegistered).toBe(commands.length);
     expect(ipc.size()).toBe(handle.commandsRegistered);
+    for (const command of commands) {
+      expect(ipc.has(command)).toBe(true);
+    }
     handle.unregister();
     expect(ipc.size()).toBe(0);
+    for (const command of commands) {
+      expect(ipc.has(command)).toBe(false);
+    }
   });
 
   test("dispatching health returns the same payload as direct call", async () => {
