@@ -288,6 +288,23 @@ func (s *server) handleAuthRotateSecret(w http.ResponseWriter, r *http.Request) 
 	}
 
 	flowID := "rot_" + newEventID()
+	pairingsToRevoke, err := activePairingGrants(r.Context(), rotator)
+	if err != nil {
+		s.writeProblemCode(w, http.StatusInternalServerError, "auth.rotate_secret_pairing_list_failed", "pairing list failed", err.Error())
+		return
+	}
+	newPairing, err := rotator.CreatePairing(r.Context(), auth.CreatePairingRequest{Role: auth.PairingRoleOwner})
+	if err != nil {
+		s.writeProblemCode(w, http.StatusInternalServerError, "auth.rotate_secret_pairing_create_failed", "replacement pairing token failed", err.Error())
+		return
+	}
+	revokedPairings, err := revokePairingGrants(r.Context(), rotator, flowID, pairingsToRevoke)
+	if err != nil {
+		revokeReplacementPairing(r.Context(), rotator, flowID, newPairing)
+		s.writeProblemCode(w, http.StatusInternalServerError, "auth.rotate_secret_pairing_revoke_failed", "pairing revoke failed", err.Error())
+		return
+	}
+
 	s.events.Publish(PublishInput{
 		Channel:       authRotateSecretSystemChannel,
 		Type:          authRotateSecretImminentEvent,
@@ -302,17 +319,8 @@ func (s *server) handleAuthRotateSecret(w http.ResponseWriter, r *http.Request) 
 	revokedBearers := countActiveSessions(s.authConfig.Service.ListSessions(), s.now())
 	snap, err := s.authConfig.Service.RotateSecret()
 	if err != nil {
+		revokeReplacementPairing(r.Context(), rotator, flowID, newPairing)
 		s.writeProblemCode(w, http.StatusInternalServerError, "auth.rotate_secret_failed", "secret rotation failed", err.Error())
-		return
-	}
-	revokedPairings, err := revokeOpenPairingGrants(r.Context(), rotator, flowID)
-	if err != nil {
-		s.writeProblemCode(w, http.StatusInternalServerError, "auth.rotate_secret_pairing_revoke_failed", "pairing revoke failed", err.Error())
-		return
-	}
-	newPairing, err := rotator.CreatePairing(r.Context(), auth.CreatePairingRequest{Role: auth.PairingRoleOwner})
-	if err != nil {
-		s.writeProblemCode(w, http.StatusInternalServerError, "auth.rotate_secret_pairing_create_failed", "replacement pairing token failed", err.Error())
 		return
 	}
 
@@ -437,16 +445,23 @@ func writeApprovalProblem(s *server, w http.ResponseWriter, err error) {
 	s.writeProblemCode(w, http.StatusInternalServerError, "auth.rotate_secret_approval_error", "approval check failed", err.Error())
 }
 
-func revokeOpenPairingGrants(ctx context.Context, rotator PairingRotator, actor string) (int, error) {
+func activePairingGrants(ctx context.Context, rotator PairingRotator) ([]auth.PairingRecord, error) {
 	records, err := rotator.ListPairings(ctx)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
+	active := make([]auth.PairingRecord, 0, len(records))
+	for _, record := range records {
+		if record.Active() {
+			active = append(active, record)
+		}
+	}
+	return active, nil
+}
+
+func revokePairingGrants(ctx context.Context, rotator PairingRotator, actor string, records []auth.PairingRecord) (int, error) {
 	revoked := 0
 	for _, record := range records {
-		if !record.Active() {
-			continue
-		}
 		if _, err := rotator.RevokePairing(ctx, auth.RevokePairingRequest{
 			TokenID: record.TokenID,
 			Actor:   actor,
@@ -456,6 +471,16 @@ func revokeOpenPairingGrants(ctx context.Context, rotator PairingRotator, actor 
 		revoked++
 	}
 	return revoked, nil
+}
+
+func revokeReplacementPairing(ctx context.Context, rotator PairingRotator, actor string, issued auth.IssuedPairing) {
+	if strings.TrimSpace(issued.TokenID) == "" {
+		return
+	}
+	_, _ = rotator.RevokePairing(ctx, auth.RevokePairingRequest{
+		TokenID: issued.TokenID,
+		Actor:   actor,
+	})
 }
 
 func countActiveSessions(records []auth.SessionRecord, now time.Time) int {

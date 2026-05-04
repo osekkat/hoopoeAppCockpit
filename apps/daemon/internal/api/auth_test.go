@@ -23,6 +23,9 @@ import (
 // branches without booting the full BootstrapCredentialService).
 type fakePairing struct {
 	consumeErr error
+	createErr  error
+	listErr    error
+	revokeErr  error
 	record     auth.PairingRecord
 	calls      int
 	pairings   []auth.PairingRecord
@@ -48,6 +51,9 @@ func (f *fakePairing) ConsumePairing(_ context.Context, req auth.ConsumePairingR
 }
 
 func (f *fakePairing) CreatePairing(_ context.Context, req auth.CreatePairingRequest) (auth.IssuedPairing, error) {
+	if f.createErr != nil {
+		return auth.IssuedPairing{}, f.createErr
+	}
 	role := req.Role
 	if role == "" {
 		role = auth.PairingRoleClient
@@ -63,12 +69,18 @@ func (f *fakePairing) CreatePairing(_ context.Context, req auth.CreatePairingReq
 }
 
 func (f *fakePairing) ListPairings(_ context.Context) ([]auth.PairingRecord, error) {
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
 	out := make([]auth.PairingRecord, len(f.pairings))
 	copy(out, f.pairings)
 	return out, nil
 }
 
 func (f *fakePairing) RevokePairing(_ context.Context, req auth.RevokePairingRequest) (auth.PairingRecord, error) {
+	if f.revokeErr != nil {
+		return auth.PairingRecord{}, f.revokeErr
+	}
 	f.revoked = append(f.revoked, req)
 	for i, record := range f.pairings {
 		if record.TokenID != req.TokenID {
@@ -457,6 +469,72 @@ func TestRotateSecretHappyPathInvalidatesBearerAndReturnsReplacementPairing(t *t
 	}
 	if strings.Contains(string(rawEvents), resp.NewPairingToken.Value) {
 		t.Fatalf("event stream leaked replacement pairing token: %s", rawEvents)
+	}
+}
+
+func TestRotateSecretDoesNotInvalidateBearerWhenPairingRevokeFails(t *testing.T) {
+	rig := newAuthRouter(t)
+	bootRR := postJSON(t, rig.router, "/v1/auth/bootstrap/bearer", map[string]any{
+		"pairingToken": "H0123456789AB",
+		"instanceId":   "desktop-1",
+	}, nil)
+	if bootRR.Code != http.StatusOK {
+		t.Fatalf("bootstrap status=%d body=%s", bootRR.Code, bootRR.Body.String())
+	}
+	bearer := decodeBearer(t, bootRR)
+	approvalID := approveRotateSecret(t, rig)
+	rig.pairing.revokeErr = errors.New("pairing store unavailable")
+
+	rr := postJSON(t, rig.router, "/v1/auth/rotate-secret", nil, map[string]string{
+		"Authorization":                "Bearer " + bearer.Token,
+		authRotateSecretConfirmHeader:  "yes",
+		authRotateSecretApprovalHeader: approvalID,
+	})
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("rotate status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if _, err := rig.svc.VerifyBearer(bearer.Token); err != nil {
+		t.Fatalf("bearer was invalidated before revoke succeeded: %v", err)
+	}
+	events, gap := rig.events.Replay("_system", 0)
+	if gap {
+		t.Fatal("unexpected replay gap")
+	}
+	if len(events) != 0 {
+		t.Fatalf("rotation events published before revoke succeeded: %+v", events)
+	}
+}
+
+func TestRotateSecretDoesNotInvalidateBearerWhenReplacementPairingFails(t *testing.T) {
+	rig := newAuthRouter(t)
+	bootRR := postJSON(t, rig.router, "/v1/auth/bootstrap/bearer", map[string]any{
+		"pairingToken": "H0123456789AB",
+		"instanceId":   "desktop-1",
+	}, nil)
+	if bootRR.Code != http.StatusOK {
+		t.Fatalf("bootstrap status=%d body=%s", bootRR.Code, bootRR.Body.String())
+	}
+	bearer := decodeBearer(t, bootRR)
+	approvalID := approveRotateSecret(t, rig)
+	rig.pairing.createErr = errors.New("entropy unavailable")
+
+	rr := postJSON(t, rig.router, "/v1/auth/rotate-secret", nil, map[string]string{
+		"Authorization":                "Bearer " + bearer.Token,
+		authRotateSecretConfirmHeader:  "yes",
+		authRotateSecretApprovalHeader: approvalID,
+	})
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("rotate status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if _, err := rig.svc.VerifyBearer(bearer.Token); err != nil {
+		t.Fatalf("bearer was invalidated before replacement pairing existed: %v", err)
+	}
+	events, gap := rig.events.Replay("_system", 0)
+	if gap {
+		t.Fatal("unexpected replay gap")
+	}
+	if len(events) != 0 {
+		t.Fatalf("rotation events published before replacement pairing existed: %+v", events)
 	}
 }
 
