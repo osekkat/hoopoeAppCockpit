@@ -22,6 +22,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -31,6 +32,12 @@ import (
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/auth"
 	schemas "github.com/hoopoe-cockpit/hoopoe/packages/schemas/go"
 )
+
+// authRequestBodyLimit caps decoded auth request bodies. The auth surface is
+// reachable pre-bearer (POST /v1/auth/bootstrap/bearer) so an attacker
+// without credentials must not be able to drive the daemon out of memory by
+// streaming a huge body. Mirrors decodeRequiredJSON in seed_contract.go.
+const authRequestBodyLimit = 1 << 20
 
 const (
 	authRotateSecretActionKind      = "auth.rotate_secret"
@@ -140,7 +147,7 @@ func (s *server) handleAuthBootstrapBearer(w http.ResponseWriter, r *http.Reques
 		PairingToken string `json:"pairingToken"`
 		InstanceID   string `json:"instanceId"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := json.NewDecoder(io.LimitReader(r.Body, authRequestBodyLimit)).Decode(&body); err != nil {
 		s.writeProblemCode(w, http.StatusBadRequest, "auth.invalid_json", "invalid request body", err.Error())
 		return
 	}
@@ -237,7 +244,7 @@ func (s *server) handleAuthSessionRevoke(w http.ResponseWriter, r *http.Request)
 	var body struct {
 		SID string `json:"sid"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := json.NewDecoder(io.LimitReader(r.Body, authRequestBodyLimit)).Decode(&body); err != nil {
 		s.writeProblemCode(w, http.StatusBadRequest, "auth.invalid_json", "invalid request body", err.Error())
 		return
 	}

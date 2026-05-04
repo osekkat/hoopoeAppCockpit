@@ -239,6 +239,23 @@ func TestBootstrapBearerInvalidJSON(t *testing.T) {
 	}
 }
 
+func TestBootstrapBearerRejectsOversizedBody(t *testing.T) {
+	// hp-c5rb: /v1/auth/bootstrap/bearer is reachable pre-bearer, so an
+	// attacker without credentials must not be able to drive the daemon out
+	// of memory by streaming a huge body. The handler caps the decoded
+	// request at authRequestBodyLimit (1 MB).
+	rig := newAuthRouter(t)
+	oversized := bytes.Repeat([]byte("A"), authRequestBodyLimit+1024)
+	body := append([]byte(`{"pairingToken":"H0123456789AB","instanceId":"`), oversized...)
+	body = append(body, []byte(`"}`)...)
+	req := httptest.NewRequest(http.MethodPost, "/v1/auth/bootstrap/bearer", bytes.NewReader(body))
+	rr := httptest.NewRecorder()
+	rig.router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d, want 400; body=%s", rr.Code, rr.Body.String())
+	}
+}
+
 func TestBootstrapBearerPairingNotFound(t *testing.T) {
 	rig := newAuthRouter(t)
 	rig.pairing.consumeErr = auth.ErrPairingNotFound
@@ -371,6 +388,28 @@ func TestSessionRevokeMissingBearer(t *testing.T) {
 	}, nil)
 	if rr.Code != http.StatusUnauthorized {
 		t.Errorf("status=%d", rr.Code)
+	}
+}
+
+func TestSessionRevokeRejectsOversizedBody(t *testing.T) {
+	// hp-c5rb: even with a valid bearer, an oversized body must be capped
+	// before the JSON decoder buffers GBs into memory.
+	rig := newAuthRouter(t)
+	bootRR := postJSON(t, rig.router, "/v1/auth/bootstrap/bearer", map[string]any{
+		"pairingToken": "H0123456789AB",
+		"instanceId":   "desktop-1",
+	}, nil)
+	bearer := decodeBearer(t, bootRR)
+
+	oversized := bytes.Repeat([]byte("S"), authRequestBodyLimit+1024)
+	body := append([]byte(`{"sid":"`), oversized...)
+	body = append(body, []byte(`"}`)...)
+	req := httptest.NewRequest(http.MethodPost, "/v1/auth/session/revoke", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+bearer.Token)
+	rr := httptest.NewRecorder()
+	rig.router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d, want 400; body=%s", rr.Code, rr.Body.String())
 	}
 }
 

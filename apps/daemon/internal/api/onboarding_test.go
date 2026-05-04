@@ -74,3 +74,27 @@ func TestOnboardingRoutesUnavailableWithoutService(t *testing.T) {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNotImplemented)
 	}
 }
+
+func TestOnboardingTransitionRejectsOversizedBody(t *testing.T) {
+	// hp-c5rb: checkpoint transitions are reachable during onboarding before
+	// the daemon has structured rate limiting; the handler must cap the
+	// decoded request body so a malicious or buggy client cannot drive the
+	// daemon out of memory by streaming a huge body.
+	t.Parallel()
+	now := time.Date(2026, 5, 4, 14, 0, 0, 0, time.UTC)
+	service := checkpoints.NewService(checkpoints.Config{
+		Now:   func() time.Time { return now },
+		NewID: func() (string, error) { return "evt_oversize", nil },
+	})
+	router := NewRouter(Config{Onboarding: service})
+
+	oversized := bytes.Repeat([]byte("E"), (1<<20)+1024)
+	payload := append([]byte(`{"projectId":"proj_oversize","status":"failed","failureReason":"`), oversized...)
+	payload = append(payload, []byte(`"}`)...)
+	req := httptest.NewRequest(http.MethodPost, "/v1/bootstrap/runs/run_oversize/checkpoints/acfs-install.doctor/transition", bytes.NewReader(payload))
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+}

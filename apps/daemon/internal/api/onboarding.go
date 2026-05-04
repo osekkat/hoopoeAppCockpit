@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"time"
 
@@ -49,7 +50,10 @@ func (s *server) handleOnboardingTransition(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	var body checkpointTransitionBody
-	dec := json.NewDecoder(r.Body)
+	// 1<<20 mirrors decodeRequiredJSON in seed_contract.go and authRequestBodyLimit
+	// in auth.go; checkpoint transitions are reachable during onboarding before
+	// the daemon has any structured rate limiting in front of them.
+	dec := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&body); err != nil {
 		writeProblemCode(w, http.StatusBadRequest, "onboarding.transition.invalid_json", "invalid checkpoint transition", err.Error())
