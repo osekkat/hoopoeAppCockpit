@@ -1,6 +1,10 @@
 # bv (beads viewer) local config and caches
 .bv/
 
+# Beads JSONL repair backups (created by hp-pqv-style local repairs;
+# preserved on disk for manual recovery, never committed to origin).
+.beads/issues.jsonl.bak.*
+
 # Node/Bun/Turbo
 node_modules
 .bun
