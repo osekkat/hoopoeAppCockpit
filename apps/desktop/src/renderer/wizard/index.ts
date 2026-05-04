@@ -40,11 +40,3 @@ export { WizardShell, type WizardShellProps } from "./WizardShell.tsx";
 export { Step1PathPicker, type Step1PathPickerProps } from "./Step1PathPicker.tsx";
 export { Step11Success, type Step11SuccessProps } from "./Step11Success.tsx";
 export { StepStub, type StepStubProps } from "./StepStub.tsx";
-export {
-  StepVpsConnect,
-  type StepVpsConnectProps,
-  type VpsConnectBridge,
-  type VpsConnectFingerprintPrompt,
-  type VpsConnectFormInput,
-  type VpsConnectSelection,
-} from "./StepVpsConnect.tsx";
