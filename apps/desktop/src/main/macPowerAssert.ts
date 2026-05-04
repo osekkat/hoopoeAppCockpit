@@ -39,6 +39,23 @@ export interface CaffeinateSpawner {
   }): CaffeinateProcess;
 }
 
+interface SpawnedProcess extends CaffeinateProcess {
+  unref?(): void;
+}
+
+type NativeHelperSpawner = (
+  command: string,
+  args: string[],
+  options: { detached: false; stdio: "ignore" },
+) => SpawnedProcess;
+
+export interface NSProcessInfoBridgeOptions {
+  readonly platform?: NodeJS.Platform;
+  readonly helperPath?: string;
+  readonly spawn?: NativeHelperSpawner;
+  readonly idFactory?: () => string;
+}
+
 export interface BatterySnapshot {
   readonly powerSource: "ac" | "battery" | "unknown";
   readonly levelPercent: number | null;
@@ -227,7 +244,10 @@ export class PowerAssertionManager {
     };
   }
 
-  release(assertionId: string, reason: PowerAssertionReleaseReason = "round_complete"): PowerAssertionSnapshot {
+  release(
+    assertionId: string,
+    reason: PowerAssertionReleaseReason = "round_complete",
+  ): PowerAssertionSnapshot {
     const lease = this.#leases.get(assertionId);
     if (!lease) {
       throw new PowerAssertionError("unknown_assertion", `unknown power assertion ${assertionId}`);
@@ -316,13 +336,15 @@ export class PowerAssertionManager {
     const out: PowerAssertionAuditEvent[] = [];
     for (const lease of this.#heldLeases()) {
       if (active.has(lease.roundId)) continue;
-      out.push(this.#emit({
-        kind: "pro-round.power_warning",
-        roundId: lease.roundId,
-        assertionId: lease.assertionId,
-        warningKind: "leak_detected",
-        message: "power assertion held for a round that is no longer active",
-      }));
+      out.push(
+        this.#emit({
+          kind: "pro-round.power_warning",
+          roundId: lease.roundId,
+          assertionId: lease.assertionId,
+          warningKind: "leak_detected",
+          message: "power assertion held for a round that is no longer active",
+        }),
+      );
     }
     return out;
   }
@@ -459,7 +481,10 @@ export function registerPowerAssertionIpc(
         handle: (input) => manager.acquire(assertAcquireInput(input)).snapshot(),
       },
     }),
-    registry.register<{ readonly assertionId: string; readonly reason?: PowerAssertionReleaseReason }, PowerAssertionSnapshot>({
+    registry.register<
+      { readonly assertionId: string; readonly reason?: PowerAssertionReleaseReason },
+      PowerAssertionSnapshot
+    >({
       id: PRELOAD_IPC_CHANNELS.powerRelease,
       handler: {
         handle: (input) => manager.release(assertReleaseInput(input).assertionId, input.reason),
@@ -474,7 +499,44 @@ export function registerPowerAssertionIpc(
   ];
 }
 
-function normalizeAcquireInput(input: PowerAssertionAcquireInput): Required<PowerAssertionAcquireInput> {
+export function createNSProcessInfoBridge(
+  options: NSProcessInfoBridgeOptions = {},
+): NativeActivityBridge | undefined {
+  if ((options.platform ?? process.platform) !== "darwin") {
+    return undefined;
+  }
+  const helperPath = options.helperPath ?? "/usr/bin/osascript";
+  const idFactory = options.idFactory ?? (() => cryptoRandomId());
+  const spawnImpl: NativeHelperSpawner =
+    options.spawn ?? ((command, args, spawnOptions) => spawn(command, args, spawnOptions));
+  const helpers = new Map<string, SpawnedProcess>();
+  return {
+    beginActivity(input) {
+      const token = idFactory();
+      const helper = spawnImpl(
+        helperPath,
+        ["-l", "JavaScript", "-e", nsProcessInfoActivityScript(input.level, input.reason)],
+        { detached: false, stdio: "ignore" },
+      );
+      helper.unref?.();
+      helpers.set(token, helper);
+      return token;
+    },
+    endActivity(token) {
+      const key = String(token);
+      const helper = helpers.get(key);
+      if (!helper) {
+        return;
+      }
+      helpers.delete(key);
+      helper.kill("SIGTERM");
+    },
+  };
+}
+
+function normalizeAcquireInput(
+  input: PowerAssertionAcquireInput,
+): Required<PowerAssertionAcquireInput> {
   return {
     roundId: cleanIdentifier(input.roundId, "roundId"),
     modelId: input.modelId ? cleanIdentifier(input.modelId, "modelId") : "gpt-5.4-pro",
@@ -530,9 +592,10 @@ const POWER_ASSERTION_RELEASE_REASONS: ReadonlySet<PowerAssertionReleaseReason> 
 function createCaffeinateSpawner(): CaffeinateSpawner {
   return {
     spawn(input) {
-      const args = input.level === "display"
-        ? ["-d", "-w", String(input.pid)]
-        : ["-dimsu", "-w", String(input.pid)];
+      const args =
+        input.level === "display"
+          ? ["-d", "-w", String(input.pid)]
+          : ["-dimsu", "-w", String(input.pid)];
       const child = spawn("/usr/bin/caffeinate", args, {
         detached: false,
         stdio: "ignore",
@@ -542,6 +605,25 @@ function createCaffeinateSpawner(): CaffeinateSpawner {
     },
   };
 }
+
+function nsProcessInfoActivityScript(level: PowerAssertionLevel, reason: string): string {
+  const optionsExpr = NS_PROCESS_INFO_OPTIONS[level];
+  return [
+    "ObjC.import('Foundation');",
+    `const reason = ${JSON.stringify(reason)};`,
+    `const activity = $.NSProcessInfo.processInfo.beginActivityWithOptionsReason(${optionsExpr}, reason);`,
+    "while (true) {",
+    "  $.NSRunLoop.currentRunLoop.runUntilDate($.NSDate.dateWithTimeIntervalSinceNow(3600));",
+    "}",
+    "activity;",
+  ].join("\n");
+}
+
+const NS_PROCESS_INFO_OPTIONS: Record<PowerAssertionLevel, string> = {
+  display: "$.NSActivityIdleDisplaySleepDisabled",
+  "app-suspension": "$.NSActivityUserInitiated",
+  system: "$.NSActivityIdleSystemSleepDisabled + $.NSActivityUserInitiated",
+};
 
 function cryptoRandomId(): string {
   return `pa_${randomUUID()}`;

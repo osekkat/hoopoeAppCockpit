@@ -19,21 +19,18 @@ import {
   defaultUserSettingsPath,
   projectSettingsPath,
 } from "./main/SettingsBridge.ts";
-import {
-  createJsonlBatchAuditSink,
-  type SettingsActor,
-} from "./main/SettingsAuditTrail.ts";
+import { createJsonlBatchAuditSink, type SettingsActor } from "./main/SettingsAuditTrail.ts";
 import { AuthBridge } from "./main/AuthBridge.ts";
 import {
+  createNSProcessInfoBridge,
   PowerAssertionManager,
   registerPowerAssertionIpc,
+  type NativeActivityBridge,
   type PowerAssertionAuditEvent,
   type PowerSaveBlockerLike,
 } from "./main/macPowerAssert.ts";
 import { resolveDesktopRuntimeInfo } from "./vendored/t3code/runtimeArch.ts";
-import {
-  resolveDefaultDesktopUpdateChannel,
-} from "./vendored/t3code/updateChannels.ts";
+import { resolveDefaultDesktopUpdateChannel } from "./vendored/t3code/updateChannels.ts";
 import type { DesktopSecretStorage } from "./vendored/t3code/clientPersistence.ts";
 
 /** Production-tier audit sink lives at `<homeDir>/.hoopoe/audit.jsonl`.
@@ -100,6 +97,7 @@ export interface DesktopBootstrapInput {
   readonly processArch?: string;
   readonly runningUnderArm64Translation?: boolean;
   readonly powerSaveBlocker?: PowerSaveBlockerLike;
+  readonly nativeActivity?: NativeActivityBridge;
 }
 
 export interface DesktopBootstrapHandle {
@@ -137,10 +135,15 @@ export async function bootstrapDesktop(
   });
 
   const ipc = new IpcRegistry();
+  const nativeActivity =
+    input.nativeActivity ??
+    createNSProcessInfoBridge({ platform: input.platform ?? process.platform });
   const powerAssertions = new PowerAssertionManager({
     powerSaveBlocker: input.powerSaveBlocker ?? Electron.powerSaveBlocker,
+    ...(nativeActivity ? { nativeActivity } : {}),
     disabled: settings.resolved().desktop.disablePowerAssertions,
-    audit: (event) => appendPowerAssertionAuditEvent(defaultSettingsAuditPath(input.homeDir), event),
+    audit: (event) =>
+      appendPowerAssertionAuditEvent(defaultSettingsAuditPath(input.homeDir), event),
   });
   registerPowerAssertionIpc(ipc, powerAssertions);
   const powerSettingsSubscription = settings.subscribe((event) => {

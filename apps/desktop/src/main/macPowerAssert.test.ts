@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  createNSProcessInfoBridge,
   PowerAssertionError,
   PowerAssertionManager,
   registerPowerAssertionIpc,
@@ -343,4 +344,47 @@ test("PowerAssertionManager refuses malformed round IDs", () => {
     powerSaveBlocker: makePowerSaveBlocker().blocker,
   });
   expect(() => manager.acquire({ roundId: "../bad" })).toThrow(PowerAssertionError);
+});
+
+test("createNSProcessInfoBridge is only active on macOS", () => {
+  expect(createNSProcessInfoBridge({ platform: "linux" })).toBeUndefined();
+});
+
+test("createNSProcessInfoBridge holds a native helper until endActivity", () => {
+  const spawns: Array<{ command: string; args: string[]; options: unknown }> = [];
+  const kills: Array<string | number | undefined> = [];
+  const unrefs: string[] = [];
+  const bridge = createNSProcessInfoBridge({
+    platform: "darwin",
+    idFactory: () => "native-token",
+    spawn(command, args, options) {
+      spawns.push({ command, args, options });
+      return {
+        kill(signal) {
+          kills.push(signal);
+          return true;
+        },
+        unref() {
+          unrefs.push("called");
+        },
+      };
+    },
+  });
+
+  expect(bridge).toBeDefined();
+  const token = bridge!.beginActivity({
+    level: "app-suspension",
+    reason: "ChatGPT Pro Oracle round in progress",
+  });
+
+  expect(token).toBe("native-token");
+  expect(unrefs).toEqual(["called"]);
+  expect(spawns).toHaveLength(1);
+  expect(spawns[0]?.command).toBe("/usr/bin/osascript");
+  expect(spawns[0]?.args.slice(0, 3)).toEqual(["-l", "JavaScript", "-e"]);
+  expect(spawns[0]?.args[3]).toContain("NSProcessInfo.processInfo.beginActivityWithOptionsReason");
+  expect(spawns[0]?.args[3]).toContain("$.NSActivityUserInitiated");
+
+  bridge!.endActivity(token);
+  expect(kills).toEqual(["SIGTERM"]);
 });
