@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -11,6 +12,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/redaction"
 )
 
 func TestRegistryIntervalSelectionSurvivesRestartAndReclaimsLease(t *testing.T) {
@@ -702,6 +705,48 @@ func TestSchedulerWaitContextDoesNotLeakWaitersOnCallerCancellation(t *testing.T
 	if err := scheduler.WaitContext(ctx); err != nil {
 		t.Fatalf("WaitContext after run release returned %v, want nil", err)
 	}
+}
+
+// TestSchedulerRecoversRunnerPanicRedactsValue guards hp-dqxs: a
+// panicking runner can pass arbitrary data to panic() — including
+// errors that wrap secret-shaped strings. Without redaction, the
+// secret renders verbatim into run.Error and lands in the on-disk
+// scheduler state plus the audit log. With Config.Redactor set, the
+// recovered value must be scrubbed before formatting into the error.
+func TestSchedulerRecoversRunnerPanicRedactsValue(t *testing.T) {
+	const secret = "sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789"
+	ctx := context.Background()
+	clock := newTestClock(time.Date(2026, 5, 4, 18, 0, 0, 0, time.UTC))
+	registry := newTestRegistry(t, clock)
+	if _, err := registry.ImportDefinition(ctx, testDefinition("redact-panic", Schedule{Type: ScheduleOnDemand})); err != nil {
+		t.Fatal(err)
+	}
+	scheduler, err := New(Config{
+		Registry: registry,
+		Runner: RunnerFunc(func(context.Context, Run) (RunResult, error) {
+			panic(fmt.Errorf("upstream auth: %s", secret))
+			// unreachable, but Go's flow analysis requires a return
+			return RunResult{}, nil
+		}),
+		Redactor:   redaction.NewDefault(),
+		MaxWorkers: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	decision, err := scheduler.RunNow(ctx, "redact-panic")
+	if err != nil {
+		t.Fatalf("RunNow: %v", err)
+	}
+	run := waitForRunStatus(t, registry, decision.RunID, RunStatusFailed)
+	if !strings.Contains(run.Error, "panic recovered") {
+		t.Fatalf("run.Error = %q, want substring %q", run.Error, "panic recovered")
+	}
+	if strings.Contains(run.Error, secret) {
+		t.Fatalf("run.Error leaked raw secret: %q", run.Error)
+	}
+	scheduler.Wait()
 }
 
 // TestSchedulerRunNowDispatchesEvenWhenAuditFails guards hp-54te: the

@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/redaction"
 )
 
 type Scheduler struct {
 	registry          *Registry
 	runner            Runner
 	audit             AuditSink
+	redactor          *redaction.Redactor
 	workers           chan struct{}
 	rootCtx           context.Context
 	stop              chan struct{}
@@ -29,6 +32,15 @@ type Config struct {
 	MaxWorkers        int
 	Context           context.Context
 	CompletionTimeout time.Duration
+	// Redactor scrubs recovered panic values before they are formatted
+	// into run.Error and persisted via registry.CompleteRun. A panicking
+	// runner can pass arbitrary data through panic() — `panic(err)` where
+	// err.Error() embeds an API key is an easy way to leak secrets into
+	// the scheduler state file (which is plain JSON on disk) and into
+	// the audit log. nil is permitted; tests and load fixtures with
+	// known-clean panic values can opt out, but production wiring should
+	// always pass a non-nil redactor.
+	Redactor *redaction.Redactor
 }
 
 func New(cfg Config) (*Scheduler, error) {
@@ -62,12 +74,29 @@ func New(cfg Config) (*Scheduler, error) {
 		registry:          cfg.Registry,
 		runner:            runner,
 		audit:             cfg.AuditSink,
+		redactor:          cfg.Redactor,
 		workers:           make(chan struct{}, workers),
 		rootCtx:           root,
 		stop:              make(chan struct{}),
 		completionTimeout: completionTimeout,
 		waiters:           make(map[chan struct{}]struct{}),
 	}, nil
+}
+
+// redactPanicMessage scrubs a recovered panic value before it is
+// embedded in run.Error. Panic values are arbitrary `any` and an
+// upstream library may panic with an error or string that embeds API
+// keys, bearer tokens, or other secret-shaped strings. Without this
+// pass the scheduler state file (plain JSON on disk) and the audit log
+// would carry the raw text — a defense-in-depth gap that hp-dqxs
+// flagged after hp-vpo introduced the recover guards.
+func (s *Scheduler) redactPanicMessage(r any) string {
+	msg := fmt.Sprintf("%v", r)
+	if s.redactor == nil {
+		return msg
+	}
+	redacted, _ := s.redactor.RedactText(redaction.SurfaceLogger, "scheduler.panic", msg)
+	return redacted
 }
 
 func (s *Scheduler) Tick(ctx context.Context) ([]Decision, error) {
@@ -276,7 +305,7 @@ func (s *Scheduler) recoverDispatch(runID string) {
 	defer func() {
 		_ = recover()
 	}()
-	s.completeRun(runID, RunResult{}, fmt.Errorf("scheduler: dispatch panic recovered: %v", r))
+	s.completeRun(runID, RunResult{}, fmt.Errorf("scheduler: dispatch panic recovered: %s", s.redactPanicMessage(r)))
 }
 
 // invokeRunner calls the configured Runner under a recover guard so that a
@@ -287,7 +316,7 @@ func (s *Scheduler) invokeRunner(ctx context.Context, run Run) (result RunResult
 	defer func() {
 		if r := recover(); r != nil {
 			result = RunResult{}
-			err = fmt.Errorf("scheduler: runner panic recovered: %v", r)
+			err = fmt.Errorf("scheduler: runner panic recovered: %s", s.redactPanicMessage(r))
 		}
 	}()
 	return s.runner.Run(ctx, run)
