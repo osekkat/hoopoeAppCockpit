@@ -6,16 +6,39 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/api/vps"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/approvals"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/capabilities"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/jobs"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/projects"
 	schemas "github.com/hoopoe-cockpit/hoopoe/packages/schemas/go"
 )
+
+// projectImportRequiredCaps lists the canonical capability refs that must be
+// available before /v1/projects (POST) runs git rev-parse / remote / branch
+// reads and `br init`. Mirrors the gates the projects.Service exercises but
+// consulted at the HTTP boundary so a degraded toolchain surfaces a problem
+// envelope instead of letting the import optimistically run + fail mid-flight.
+var projectImportRequiredCaps = []string{
+	"git.status.read",
+	"git.remote.read",
+	"git.branch.read",
+	"br.create",
+}
+
+// projectReadinessRequiredCaps lists the canonical capability refs that must
+// be available before /v1/projects/{id}/readiness re-runs Git reads. The
+// readiness handler does not invoke br, only Git inspection.
+var projectReadinessRequiredCaps = []string{
+	"git.status.read",
+	"git.remote.read",
+	"git.branch.read",
+}
 
 func (s *server) mountSeedContractRoutes(r chi.Router) {
 	r.Get("/v1/system/specs", s.handleSystemSpecs)
@@ -51,9 +74,10 @@ func (s *server) mountSeedContractRoutes(r chi.Router) {
 		r.Get("/readiness", s.handleProjectReadiness)
 
 		vps.MountGitRoutes(r, vps.Config{
-			Projects: s.projects,
-			Logger:   s.logger,
-			Now:      s.now,
+			Projects:     s.projects,
+			Logger:       s.logger,
+			Capabilities: s.capabilities,
+			Now:          s.now,
 		})
 		r.Post("/git/push", s.handlePlannedWrite("git.push"))
 
@@ -213,6 +237,9 @@ func (s *server) handleProjectReadiness(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
+	if !s.requireProjectCapabilities(w, "projects.readiness", projectReadinessRequiredCaps) {
+		return
+	}
 	if s.projects != nil {
 		readiness, err := s.projects.Readiness(r.Context(), projectID)
 		if err != nil {
@@ -266,6 +293,9 @@ func validProjectID(projectID string) bool {
 func (s *server) handleProjectCreate(w http.ResponseWriter, r *http.Request) {
 	if s.projects == nil {
 		s.writeProblemCode(w, http.StatusNotImplemented, "projects.create.unavailable", "endpoint unavailable", "project registry is not configured")
+		return
+	}
+	if !s.requireProjectCapabilities(w, "projects.create", projectImportRequiredCaps) {
 		return
 	}
 	var body schemas.ProjectCreateRequest
@@ -396,6 +426,51 @@ func (s *server) handlePlannedWrite(code string) http.HandlerFunc {
 		_ = r.Header.Get("Idempotency-Key")
 		s.writeProblemCode(w, http.StatusNotImplemented, code+".unavailable", "endpoint unavailable", "this seed contract route accepts Idempotency-Key but its backing adapter is not configured yet")
 	}
+}
+
+// requireProjectCapabilities consults the capability registry for each
+// capRef and returns false (after writing a problem envelope) if any required
+// capability is absent, untested, or blocked by policy. Degraded statuses
+// pass — the caller is expected to surface degradation in its own response
+// payload (e.g., readiness gates).
+//
+// When s.capabilities is nil (daemon was started without a registry — e.g.,
+// minimal test routers), this gate is a no-op so unrelated tests keep
+// working. Production wires Config.Capabilities; the capability route itself
+// 503s on nil registry.
+func (s *server) requireProjectCapabilities(w http.ResponseWriter, code string, refs []string) bool {
+	if s.capabilities == nil {
+		return true
+	}
+	var unavailable, blocked []string
+	for _, ref := range refs {
+		status, ok := s.capabilities.LookupCapabilityStatus(ref)
+		switch {
+		case !ok || status == capabilities.StatusMissing || status == capabilities.StatusUntested:
+			unavailable = append(unavailable, ref)
+		case status == capabilities.StatusBlockedByPolicy:
+			blocked = append(blocked, ref)
+		}
+	}
+	if len(unavailable) == 0 && len(blocked) == 0 {
+		return true
+	}
+	sort.Strings(unavailable)
+	sort.Strings(blocked)
+	detail := strings.Builder{}
+	if len(unavailable) > 0 {
+		detail.WriteString("missing or untested capabilities: ")
+		detail.WriteString(strings.Join(unavailable, ", "))
+	}
+	if len(blocked) > 0 {
+		if detail.Len() > 0 {
+			detail.WriteString("; ")
+		}
+		detail.WriteString("blocked-by-policy: ")
+		detail.WriteString(strings.Join(blocked, ", "))
+	}
+	s.writeProblemCode(w, http.StatusServiceUnavailable, code+".capabilities_unavailable", "required capabilities unavailable", detail.String())
+	return false
 }
 
 func (s *server) writeJobError(w http.ResponseWriter, err error) {

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/approvals"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/capabilities"
 	jobstore "github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/jobs"
 	projectstore "github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/projects"
 	schemas "github.com/hoopoe-cockpit/hoopoe/packages/schemas/go"
@@ -440,6 +441,167 @@ func TestProjectRoutesUseRegistry(t *testing.T) {
 	router.ServeHTTP(missingRec, missingReq)
 	if missingRec.Code != http.StatusNotFound {
 		t.Fatalf("missing status = %d, want %d; body=%s", missingRec.Code, http.StatusNotFound, missingRec.Body.String())
+	}
+}
+
+// projectCapabilityRegistry seeds a capabilities.Registry whose git/br
+// reports default to OK. Per-test overrides flip individual capRefs to
+// missing/blocked-by-policy/degraded so the gate paths in handleProjectCreate
+// + handleProjectReadiness can be exercised without a live VPS.
+func projectCapabilityRegistry(t *testing.T, overrides map[string]capabilities.CapabilityStatus) *capabilities.Registry {
+	t.Helper()
+	stamp := "2026-05-04T00:00:00Z"
+	r := capabilities.New("0.1.0")
+	stampParsed, err := time.Parse(time.RFC3339, stamp)
+	if err != nil {
+		t.Fatalf("parse stamp: %v", err)
+	}
+	r.SetClock(func() time.Time { return stampParsed })
+
+	gitCaps := map[string]capabilities.Capability{
+		"git.status.read": {Status: capabilities.StatusOK},
+		"git.remote.read": {Status: capabilities.StatusOK},
+		"git.branch.read": {Status: capabilities.StatusOK},
+	}
+	brCaps := map[string]capabilities.Capability{
+		"br.create": {Status: capabilities.StatusOK},
+	}
+	for ref, status := range overrides {
+		switch {
+		case strings.HasPrefix(ref, "git."):
+			gitCaps[ref] = capabilities.Capability{Status: status}
+		case strings.HasPrefix(ref, "br."):
+			brCaps[ref] = capabilities.Capability{Status: status}
+		}
+	}
+	if err := r.SetReport(&capabilities.ToolReport{
+		Tool: capabilities.ToolGit, Version: "2.40.0", Source: "test",
+		LastCheckedAt: stamp, Capabilities: gitCaps,
+	}); err != nil {
+		t.Fatalf("seed git report: %v", err)
+	}
+	if err := r.SetReport(&capabilities.ToolReport{
+		Tool: capabilities.ToolBR, Version: "0.5.0", Source: "test",
+		LastCheckedAt: stamp, Capabilities: brCaps,
+	}); err != nil {
+		t.Fatalf("seed br report: %v", err)
+	}
+	return r
+}
+
+func TestProjectCreateBlockedWhenRequiredCapabilityMissing(t *testing.T) {
+	root := t.TempDir()
+	writeRouterTestFile(t, filepath.Join(root, "AGENTS.md"), "agent\n")
+	writeRouterTestFile(t, filepath.Join(root, "go.mod"), "module example.invalid/api\n\ngo 1.26\n")
+	service := newRouterProjectService(t, root)
+	registry := projectCapabilityRegistry(t, map[string]capabilities.CapabilityStatus{
+		"git.remote.read": capabilities.StatusMissing,
+	})
+	router := NewRouter(Config{Projects: service, Capabilities: registry})
+
+	body, err := json.Marshal(map[string]string{"id": "proj_cap", "name": "P", "rootPath": root})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Idempotency-Key", "idem-cap")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503; body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "projects.create.capabilities_unavailable") {
+		t.Errorf("expected capability problem code in body, got %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "git.remote.read") {
+		t.Errorf("expected git.remote.read named in problem detail, got %s", rec.Body.String())
+	}
+}
+
+func TestProjectCreateBlockedWhenRequiredCapabilityBlockedByPolicy(t *testing.T) {
+	root := t.TempDir()
+	writeRouterTestFile(t, filepath.Join(root, "go.mod"), "module example.invalid/api\n\ngo 1.26\n")
+	service := newRouterProjectService(t, root)
+	registry := projectCapabilityRegistry(t, map[string]capabilities.CapabilityStatus{
+		"br.create": capabilities.StatusBlockedByPolicy,
+	})
+	router := NewRouter(Config{Projects: service, Capabilities: registry})
+
+	body, err := json.Marshal(map[string]string{"id": "proj_blk", "name": "P", "rootPath": root})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Idempotency-Key", "idem-blk")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503; body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "blocked-by-policy") {
+		t.Errorf("expected blocked-by-policy in body, got %s", rec.Body.String())
+	}
+}
+
+func TestProjectReadinessBlockedWhenGitCapabilityMissing(t *testing.T) {
+	registry := projectCapabilityRegistry(t, map[string]capabilities.CapabilityStatus{
+		"git.status.read": capabilities.StatusMissing,
+	})
+	router := NewRouter(Config{Capabilities: registry})
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects/proj_x/readiness", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503; body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "projects.readiness.capabilities_unavailable") {
+		t.Errorf("expected readiness capability problem code, got %s", rec.Body.String())
+	}
+}
+
+func TestProjectCreateAllowsWhenCapabilitiesOK(t *testing.T) {
+	root := t.TempDir()
+	writeRouterTestFile(t, filepath.Join(root, "go.mod"), "module example.invalid/api\n\ngo 1.26\n")
+	service := newRouterProjectService(t, root)
+	registry := projectCapabilityRegistry(t, nil)
+	router := NewRouter(Config{Projects: service, Capabilities: registry})
+
+	body, err := json.Marshal(map[string]string{"id": "proj_ok", "name": "P", "rootPath": root})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Idempotency-Key", "idem-ok")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201; body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestProjectCreateAllowsWhenCapabilityRegistryMissing(t *testing.T) {
+	// Backwards-compat: a router built without Config.Capabilities (e.g.,
+	// minimal smoke harness) must not gate project routes — the existing
+	// TestProjectRoutesUseRegistry exercises this shape.
+	root := t.TempDir()
+	writeRouterTestFile(t, filepath.Join(root, "go.mod"), "module example.invalid/api\n\ngo 1.26\n")
+	service := newRouterProjectService(t, root)
+	router := NewRouter(Config{Projects: service})
+	body, err := json.Marshal(map[string]string{"id": "proj_legacy", "name": "P", "rootPath": root})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Idempotency-Key", "idem-legacy")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201; body=%s", rec.Code, rec.Body.String())
 	}
 }
 
