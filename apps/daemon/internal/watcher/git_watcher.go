@@ -316,8 +316,8 @@ func (w *GitWatcher) PollOrigin(ctx context.Context) ([]Event, error) {
 		return nil, nil
 	}
 	updates := changedRefs(w.lastRemote, next)
-	w.lastRemote = next
 	if len(updates) == 0 {
+		w.lastRemote = next
 		return nil, nil
 	}
 	payload := gitevents.OriginUpdatedPayload{
@@ -328,6 +328,7 @@ func (w *GitWatcher) PollOrigin(ctx context.Context) ([]Event, error) {
 	}
 	key := originUpdateKey(payload)
 	if w.hasSeenEvent(key) {
+		w.lastRemote = next
 		return nil, nil
 	}
 	event := w.gitEvent(gitevents.EventOriginUpdated, payload)
@@ -335,6 +336,7 @@ func (w *GitWatcher) PollOrigin(ctx context.Context) ([]Event, error) {
 		return nil, err
 	}
 	w.markSeenEvent(key)
+	w.lastRemote = next
 	return []Event{event}, nil
 }
 

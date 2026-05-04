@@ -276,6 +276,46 @@ func TestPollOriginExternalPushEmitsOriginUpdatedWithinPoll(t *testing.T) {
 	}
 }
 
+func TestPollOriginRetriesAfterPublishFailure(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	refs := &fakeRemoteRefs{snapshots: [][]gitevents.RefState{
+		{{Name: "refs/heads/main", SHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}},
+		{{Name: "refs/heads/main", SHA: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}},
+		{{Name: "refs/heads/main", SHA: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}},
+	}}
+	publisher := &recordingPublisher{failNext: errors.New("event hub unavailable")}
+	w := NewGitWatcher("proj_01", &fakeGitClient{status: &gitadapter.Status{Branch: "main"}}, publisher)
+	w.RemoteRefs = refs
+	w.Now = fixedWatcherNow
+
+	if first, err := w.PollOrigin(ctx); err != nil || len(first) != 0 {
+		t.Fatalf("first poll = (%+v, %v), want seed only", first, err)
+	}
+	if _, err := w.PollOrigin(ctx); err == nil {
+		t.Fatalf("second poll should return publish error")
+	}
+	if got := w.lastRemote["refs/heads/main"]; got != "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" {
+		t.Fatalf("remote checkpoint advanced after failed publish: %s", got)
+	}
+
+	events, err := w.PollOrigin(ctx)
+	if err != nil {
+		t.Fatalf("retry poll: %v", err)
+	}
+	if len(events) != 1 || events[0].Type != gitevents.EventOriginUpdated {
+		t.Fatalf("retry events = %+v", events)
+	}
+	payload := events[0].Data.(gitevents.OriginUpdatedPayload)
+	if payload.Refs[0].OldSHA != "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" ||
+		payload.Refs[0].NewSHA != "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" {
+		t.Fatalf("retry payload = %+v", payload)
+	}
+	if got := w.lastRemote["refs/heads/main"]; got != "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" {
+		t.Fatalf("remote checkpoint after retry = %s", got)
+	}
+}
+
 func TestEventHubPublisherFlowsThroughSequenceReplay(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
