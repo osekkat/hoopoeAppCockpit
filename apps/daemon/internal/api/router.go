@@ -41,6 +41,7 @@ type Config struct {
 	Events       *EventHub
 	Jobs         JobsReader
 	Projects     ProjectRegistry
+	Providers    schemas.ProviderRegistry
 	Logger       Logger
 	Redactor     Redactor
 	WSValidator  WebSocketTokenValidator
@@ -84,6 +85,7 @@ type server struct {
 	events       *EventHub
 	jobs         JobsReader
 	projects     ProjectRegistry
+	providers    schemas.ProviderRegistry
 	logger       Logger
 	redactor     Redactor
 	wsValidator  WebSocketTokenValidator
@@ -126,6 +128,7 @@ func NewRouter(cfg Config) http.Handler {
 	s.mountTelemetryRoutes(r)
 	s.mountCapabilityRoutes(r)
 	s.mountInventoryRoutes(r)
+	s.mountProviderRoutes(r)
 	s.mountSeedContractRoutes(r)
 	s.mountOnboardingRoutes(r)
 	// Auth routes mount AFTER the seed contract so they override the
@@ -192,6 +195,7 @@ func normalizeConfig(cfg Config) *server {
 		events:       events,
 		jobs:         jobs,
 		projects:     cfg.Projects,
+		providers:    cfg.Providers,
 		logger:       logger,
 		redactor:     redactor,
 		wsValidator:  wsValidator,
