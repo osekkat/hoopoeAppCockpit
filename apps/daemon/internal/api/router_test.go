@@ -246,8 +246,11 @@ func TestSeedContractGeneratedSchemaRoundTrips(t *testing.T) {
 		{name: "version", path: "/v1/version", target: &schemas.VersionResponse{}},
 		{name: "projects", path: "/v1/projects", target: &schemas.ProjectListResponse{}},
 		{name: "readiness", path: "/v1/projects/proj_01/readiness", target: &schemas.ProjectReadiness{}},
-		{name: "plans", path: "/v1/projects/proj_01/plans", target: &schemas.PlanListResponse{}},
-		{name: "beads", path: "/v1/projects/proj_01/beads", target: &schemas.BeadListResponse{}},
+		// /plans and /beads are deliberately excluded: when no adapter is
+		// wired they return 501 plans.unavailable / beads.unavailable
+		// (problem+json), not 200 with an empty list. The 501 path is
+		// covered by TestPlansAndBeadsRoutesRequireAdapter and the wired
+		// path by TestPlansAndBeadsRoutesUseAdapter.
 		{name: "approvals", path: "/v1/projects/proj_01/approvals", target: &schemas.ApprovalListResponse{}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -264,6 +267,225 @@ func TestSeedContractGeneratedSchemaRoundTrips(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPlansAndBeadsRoutesRequireAdapter(t *testing.T) {
+	// When no PlansReader/BeadsReader is configured the seed contract
+	// must return 501 with a problem envelope, never 200 with an empty
+	// list — silent empty would be indistinguishable from "project
+	// genuinely has no plans/beads."
+	router := NewRouter(Config{Now: func() time.Time { return time.Unix(10, 0).UTC() }})
+
+	cases := []struct {
+		name     string
+		path     string
+		wantCode string
+	}{
+		{name: "plans-list", path: "/v1/projects/proj_01/plans", wantCode: "plans.unavailable"},
+		{name: "beads-list", path: "/v1/projects/proj_01/beads", wantCode: "beads.unavailable"},
+		{name: "beads-ready", path: "/v1/projects/proj_01/beads/ready", wantCode: "beads.unavailable"},
+		{name: "beads-show", path: "/v1/projects/proj_01/beads/hp-1ry", wantCode: "beads.unavailable"},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+			if rec.Code != http.StatusNotImplemented {
+				t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusNotImplemented, rec.Body.String())
+			}
+			if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "application/problem+json") {
+				t.Fatalf("content-type = %q, want problem+json", got)
+			}
+			var problem schemas.Problem
+			if err := json.Unmarshal(rec.Body.Bytes(), &problem); err != nil {
+				t.Fatalf("decode problem: %v", err)
+			}
+			if problem.Code != tc.wantCode {
+				t.Fatalf("problem.Code = %q, want %q", problem.Code, tc.wantCode)
+			}
+			if problem.Status != http.StatusNotImplemented {
+				t.Fatalf("problem.Status = %d, want %d", problem.Status, http.StatusNotImplemented)
+			}
+		})
+	}
+}
+
+func TestPlansAndBeadsRoutesUseAdapter(t *testing.T) {
+	// With adapters wired, the routes must delegate and surface real
+	// adapter data. /beads and /beads/ready dispatch to different reader
+	// methods so callers can tell which column of the Stage 02 board
+	// they're looking at.
+	plans := &fakePlansReader{
+		response: schemas.PlanListResponse{
+			Items: []schemas.Plan{{
+				Id:            "plan_01",
+				ProjectId:     "proj_01",
+				SchemaVersion: 1,
+				State:         schemas.PlanLifecycleState("draft"),
+				CreatedAt:     time.Unix(10, 0).UTC(),
+			}},
+			Page: schemas.PageMeta{HasMore: false},
+		},
+	}
+	beads := &fakeBeadsReader{
+		list: schemas.BeadListResponse{
+			Items: []schemas.Bead{{
+				Id:            "hp-1ry",
+				Title:         "wired",
+				IssueType:     schemas.BeadIssueType("task"),
+				SchemaVersion: 1,
+				Status:        schemas.BeadStatus("open"),
+				Priority:      1,
+			}},
+			Page: schemas.PageMeta{HasMore: false},
+		},
+		ready: schemas.BeadListResponse{
+			Items: []schemas.Bead{{
+				Id:            "hp-1ry",
+				Title:         "ready",
+				IssueType:     schemas.BeadIssueType("task"),
+				SchemaVersion: 1,
+				Status:        schemas.BeadStatus("open"),
+				Priority:      1,
+			}},
+			Page: schemas.PageMeta{HasMore: false},
+		},
+		single: schemas.Bead{
+			Id:            "hp-1ry",
+			Title:         "single",
+			IssueType:     schemas.BeadIssueType("task"),
+			SchemaVersion: 1,
+			Status:        schemas.BeadStatus("open"),
+			Priority:      1,
+		},
+	}
+	router := NewRouter(Config{
+		Plans: plans,
+		Beads: beads,
+		Now:   func() time.Time { return time.Unix(10, 0).UTC() },
+	})
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/projects/proj_01/plans", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("plans status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var plansBody schemas.PlanListResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &plansBody); err != nil {
+		t.Fatalf("decode plans body: %v", err)
+	}
+	if len(plansBody.Items) != 1 || plansBody.Items[0].Id != "plan_01" {
+		t.Fatalf("plans body = %+v", plansBody)
+	}
+	if plans.lastProjectID != "proj_01" {
+		t.Fatalf("plans reader projectID = %q, want proj_01", plans.lastProjectID)
+	}
+
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/projects/proj_01/beads", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("beads status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var beadsBody schemas.BeadListResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &beadsBody); err != nil {
+		t.Fatalf("decode beads body: %v", err)
+	}
+	if len(beadsBody.Items) != 1 || beadsBody.Items[0].Title != "wired" {
+		t.Fatalf("beads body = %+v", beadsBody)
+	}
+
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/projects/proj_01/beads/ready", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("beads/ready status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var readyBody schemas.BeadListResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &readyBody); err != nil {
+		t.Fatalf("decode beads/ready body: %v", err)
+	}
+	if len(readyBody.Items) != 1 || readyBody.Items[0].Title != "ready" {
+		t.Fatalf("beads/ready dispatched to wrong reader method: %+v", readyBody)
+	}
+
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/projects/proj_01/beads/hp-1ry", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("beads/{id} status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var showBody schemas.Bead
+	if err := json.Unmarshal(rec.Body.Bytes(), &showBody); err != nil {
+		t.Fatalf("decode beads/{id} body: %v", err)
+	}
+	if showBody.Title != "single" {
+		t.Fatalf("beads show body = %+v", showBody)
+	}
+	if beads.lastBeadID != "hp-1ry" {
+		t.Fatalf("beads reader beadID = %q, want hp-1ry", beads.lastBeadID)
+	}
+}
+
+func TestBeadsShowMapsNotFoundError(t *testing.T) {
+	// ErrBeadNotFound from the adapter must surface as a 404 problem
+	// envelope (bead.not_found), not a 500.
+	beads := &fakeBeadsReader{singleErr: ErrBeadNotFound}
+	router := NewRouter(Config{
+		Beads: beads,
+		Now:   func() time.Time { return time.Unix(10, 0).UTC() },
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects/proj_01/beads/hp-missing", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+	var problem schemas.Problem
+	if err := json.Unmarshal(rec.Body.Bytes(), &problem); err != nil {
+		t.Fatalf("decode problem: %v", err)
+	}
+	if problem.Code != "bead.not_found" {
+		t.Fatalf("problem.Code = %q, want bead.not_found", problem.Code)
+	}
+}
+
+type fakePlansReader struct {
+	response      schemas.PlanListResponse
+	err           error
+	lastProjectID string
+}
+
+func (f *fakePlansReader) ListPlans(_ context.Context, projectID string) (schemas.PlanListResponse, error) {
+	f.lastProjectID = projectID
+	return f.response, f.err
+}
+
+type fakeBeadsReader struct {
+	list          schemas.BeadListResponse
+	listErr       error
+	ready         schemas.BeadListResponse
+	readyErr      error
+	single        schemas.Bead
+	singleErr     error
+	lastProjectID string
+	lastBeadID    string
+}
+
+func (f *fakeBeadsReader) ListBeads(_ context.Context, projectID string) (schemas.BeadListResponse, error) {
+	f.lastProjectID = projectID
+	return f.list, f.listErr
+}
+
+func (f *fakeBeadsReader) ReadyBeads(_ context.Context, projectID string) (schemas.BeadListResponse, error) {
+	f.lastProjectID = projectID
+	return f.ready, f.readyErr
+}
+
+func (f *fakeBeadsReader) Bead(_ context.Context, projectID, beadID string) (schemas.Bead, error) {
+	f.lastProjectID = projectID
+	f.lastBeadID = beadID
+	return f.single, f.singleErr
 }
 
 func TestApprovalRoutesMutateQueueUsedByAuthLookup(t *testing.T) {

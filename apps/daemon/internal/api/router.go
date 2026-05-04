@@ -44,6 +44,8 @@ type Config struct {
 	Events       *EventHub
 	Jobs         JobsReader
 	Projects     ProjectRegistry
+	Plans        PlansReader
+	Beads        BeadsReader
 	Providers    schemas.ProviderRegistry
 	Logger       Logger
 	Redactor     Redactor
@@ -90,6 +92,8 @@ type server struct {
 	events       *EventHub
 	jobs         JobsReader
 	projects     ProjectRegistry
+	plans        PlansReader
+	beads        BeadsReader
 	providers    schemas.ProviderRegistry
 	logger       Logger
 	redactor     Redactor
@@ -258,6 +262,8 @@ func normalizeConfig(cfg Config) *server {
 		events:       events,
 		jobs:         jobs,
 		projects:     cfg.Projects,
+		plans:        cfg.Plans,
+		beads:        cfg.Beads,
 		providers:    cfg.Providers,
 		logger:       logger,
 		redactor:     redactor,

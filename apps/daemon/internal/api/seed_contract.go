@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -96,7 +97,7 @@ func (s *server) mountSeedContractRoutes(r chi.Router) {
 
 		r.Get("/beads", s.handleBeads)
 		r.Get("/beads/graph", s.handlePlannedRead("beads.graph"))
-		r.Get("/beads/ready", s.handleBeads)
+		r.Get("/beads/ready", s.handleBeadsReady)
 		r.Get("/beads/{beadId}", s.handleBead)
 		r.Patch("/beads/{beadId}", s.handlePlannedWrite("beads.patch"))
 		r.Post("/beads/conversion-runs", s.handlePlannedWrite("beads.conversion_runs"))
@@ -324,22 +325,100 @@ func (s *server) handleProjectCreate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, project)
 }
 
-func (s *server) handlePlans(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, schemas.PlanListResponse{
-		Items: []schemas.Plan{},
-		Page:  emptyPageMeta(),
-	})
+// ErrBeadNotFound is returned by BeadsReader.Bead when the requested bead id
+// does not resolve in the underlying adapter. It maps to a 404 problem
+// envelope; any other error maps to 500.
+var ErrBeadNotFound = errors.New("bead not found")
+
+// PlansReader yields the plan list for /v1/projects/{id}/plans. Until a
+// reader is configured the route returns 501 plans.unavailable instead of an
+// empty 200 — silent empties are indistinguishable from "project genuinely
+// has no plans" and would let Stage 02 gate on a phantom success.
+type PlansReader interface {
+	ListPlans(ctx context.Context, projectID string) (schemas.PlanListResponse, error)
 }
 
-func (s *server) handleBeads(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, schemas.BeadListResponse{
-		Items: []schemas.Bead{},
-		Page:  emptyPageMeta(),
-	})
+// BeadsReader yields list / ready / show responses for the
+// /v1/projects/{id}/beads* routes. Until a reader is configured those routes
+// return 501 beads.unavailable so callers can distinguish "br adapter not
+// wired" from "project has no beads."
+type BeadsReader interface {
+	ListBeads(ctx context.Context, projectID string) (schemas.BeadListResponse, error)
+	ReadyBeads(ctx context.Context, projectID string) (schemas.BeadListResponse, error)
+	Bead(ctx context.Context, projectID, beadID string) (schemas.Bead, error)
+}
+
+func (s *server) handlePlans(w http.ResponseWriter, r *http.Request) {
+	projectID, ok := s.projectIDParam(w, r)
+	if !ok {
+		return
+	}
+	if s.plans == nil {
+		s.writeProblemCode(w, http.StatusNotImplemented, "plans.unavailable", "endpoint unavailable", "the planning adapter is not configured in the seed daemon")
+		return
+	}
+	response, err := s.plans.ListPlans(r.Context(), projectID)
+	if err != nil {
+		s.writeProblemCode(w, http.StatusInternalServerError, "plans.error", "plan list failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *server) handleBeads(w http.ResponseWriter, r *http.Request) {
+	projectID, ok := s.projectIDParam(w, r)
+	if !ok {
+		return
+	}
+	if s.beads == nil {
+		s.writeProblemCode(w, http.StatusNotImplemented, "beads.unavailable", "endpoint unavailable", "the beads adapter is not configured in the seed daemon")
+		return
+	}
+	response, err := s.beads.ListBeads(r.Context(), projectID)
+	if err != nil {
+		s.writeProblemCode(w, http.StatusInternalServerError, "beads.error", "bead list failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *server) handleBeadsReady(w http.ResponseWriter, r *http.Request) {
+	projectID, ok := s.projectIDParam(w, r)
+	if !ok {
+		return
+	}
+	if s.beads == nil {
+		s.writeProblemCode(w, http.StatusNotImplemented, "beads.unavailable", "endpoint unavailable", "the beads adapter is not configured in the seed daemon")
+		return
+	}
+	response, err := s.beads.ReadyBeads(r.Context(), projectID)
+	if err != nil {
+		s.writeProblemCode(w, http.StatusInternalServerError, "beads.error", "ready beads failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (s *server) handleBead(w http.ResponseWriter, r *http.Request) {
-	s.writeProblemCode(w, http.StatusNotFound, "bead.not_found", "bead not found", fmt.Sprintf("bead %q is not available in the seed daemon", chi.URLParam(r, "beadId")))
+	projectID, ok := s.projectIDParam(w, r)
+	if !ok {
+		return
+	}
+	if s.beads == nil {
+		s.writeProblemCode(w, http.StatusNotImplemented, "beads.unavailable", "endpoint unavailable", "the beads adapter is not configured in the seed daemon")
+		return
+	}
+	beadID := strings.TrimSpace(chi.URLParam(r, "beadId"))
+	bead, err := s.beads.Bead(r.Context(), projectID, beadID)
+	if err != nil {
+		if errors.Is(err, ErrBeadNotFound) {
+			s.writeProblemCode(w, http.StatusNotFound, "bead.not_found", "bead not found", fmt.Sprintf("bead %q is not available", beadID))
+			return
+		}
+		s.writeProblemCode(w, http.StatusInternalServerError, "bead.error", "bead lookup failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, bead)
 }
 
 func (s *server) handleApprovals(w http.ResponseWriter, r *http.Request) {
