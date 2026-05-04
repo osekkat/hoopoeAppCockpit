@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -168,6 +169,9 @@ func (r *Redactor) SnapshotStats() Stats {
 	for _, stat := range r.stats {
 		out.Patterns = append(out.Patterns, stat)
 	}
+	sort.Slice(out.Patterns, func(i, j int) bool {
+		return out.Patterns[i].PatternID < out.Patterns[j].PatternID
+	})
 	return out
 }
 

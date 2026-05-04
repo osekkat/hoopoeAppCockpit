@@ -395,3 +395,30 @@ func TestRedactTextNilSafe(t *testing.T) {
 		t.Errorf("nil redactor returned traces: %+v", traces)
 	}
 }
+
+// SnapshotStats must emit Patterns sorted by PatternID so Go and TS produce
+// the same key order — the TS mirror in apps/desktop/src/shared/redact/
+// already sorts; without sorting on the Go side, diagnostics consumers see
+// non-deterministic orderings depending on map iteration.
+func TestRedactSnapshotStatsSortedByPatternID(t *testing.T) {
+	r := NewDefault()
+	// Hit several distinct patterns so the stats map has multiple entries.
+	_, _ = r.RedactText(SurfaceAudit, "test", "sk-abcdef0123456789ABCDEF0123456789")
+	_, _ = r.RedactText(SurfaceAudit, "test", "AKIAIOSFODNN7EXAMPLE")
+	_, _ = r.RedactText(SurfaceAudit, "test", "ghp_abcdefghijklmnopqrstuvwxyz0123456789")
+	_, _ = r.RedactText(SurfaceAudit, "test", "Authorization: Bearer foo")
+	_, _ = r.RedactText(SurfaceAudit, "test", "notify alice@example.com")
+
+	stats := r.SnapshotStats()
+	if len(stats.Patterns) < 3 {
+		t.Fatalf("expected at least 3 stats entries, got %d: %#v", len(stats.Patterns), stats.Patterns)
+	}
+	for i := 1; i < len(stats.Patterns); i++ {
+		prev := stats.Patterns[i-1].PatternID
+		curr := stats.Patterns[i].PatternID
+		if prev >= curr {
+			t.Errorf("Patterns[%d].PatternID=%q not strictly less than Patterns[%d].PatternID=%q",
+				i-1, prev, i, curr)
+		}
+	}
+}

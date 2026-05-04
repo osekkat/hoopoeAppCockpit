@@ -303,6 +303,22 @@ describe("Redactor.snapshotStats", () => {
     expect(names).toContain("provider-key-github");
   });
 
+  test("patterns emitted in patternId-sorted order (Go↔TS parity)", () => {
+    const r = F();
+    // Hit several distinct patterns; without sorting, the Go side's map
+    // iteration produced non-deterministic key order. The TS side has
+    // always sorted, so this test pins the contract on both surfaces.
+    r.redactText(SurfaceLogger, "h", "key=sk-abcdef0123456789ABCDEF0123456789");
+    r.redactText(SurfaceLogger, "h", "AKIAIOSFODNN7EXAMPLE");
+    r.redactText(SurfaceLogger, "h", "ghp_abcdefghijklmnopqrstuvwxyz0123456789");
+    r.redactText(SurfaceLogger, "h", "Authorization: Bearer foo");
+    r.redactText(SurfaceLogger, "h", "notify alice@example.com");
+    const ids = r.snapshotStats().patterns.map((p) => p.patternId);
+    expect(ids.length).toBeGreaterThanOrEqual(3);
+    const sorted = [...ids].sort();
+    expect(ids).toEqual(sorted);
+  });
+
   test("resetStats clears the accumulator", () => {
     const r = F();
     r.redactText(SurfaceLogger, "h", "Bearer sk-abcdef0123456789ABCDEF0123456789");
