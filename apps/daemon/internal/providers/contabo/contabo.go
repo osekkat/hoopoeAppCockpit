@@ -16,6 +16,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/audit"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/logger"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/redaction"
 	schemas "github.com/hoopoe-cockpit/hoopoe/packages/schemas/go"
 )
 
@@ -44,10 +47,16 @@ func (f TokenSourceFunc) BearerToken(ctx context.Context) (string, error) {
 	return f(ctx)
 }
 
+type AuditAppender interface {
+	Append(audit.Entry) (audit.Entry, []redaction.TraceEvent, error)
+}
+
 type Options struct {
 	BaseURL    string
 	HTTPClient *http.Client
 	Token      TokenSource
+	Logger     *logger.Logger
+	Audit      AuditAppender
 	Now        func() time.Time
 }
 
@@ -55,6 +64,8 @@ type Plugin struct {
 	baseURL string
 	client  *http.Client
 	token   TokenSource
+	log     *logger.Logger
+	audit   AuditAppender
 	now     func() time.Time
 }
 
@@ -77,6 +88,8 @@ func New(opts Options) *Plugin {
 		baseURL: baseURL,
 		client:  client,
 		token:   opts.Token,
+		log:     opts.Logger,
+		audit:   opts.Audit,
 		now:     now,
 	}
 }
@@ -168,7 +181,24 @@ func (p *Plugin) EstimateMonthlyCost(ctx context.Context, opts schemas.ProviderE
 	}, nil
 }
 
-func (p *Plugin) CreateInstance(ctx context.Context, opts schemas.ProviderCreateInstanceOpts) (*schemas.ProviderInstance, error) {
+func (p *Plugin) CreateInstance(ctx context.Context, opts schemas.ProviderCreateInstanceOpts) (inst *schemas.ProviderInstance, err error) {
+	started := p.now().UTC()
+	auditData := map[string]any{
+		"provider": ProviderID,
+		"name":     opts.Name,
+		"region":   opts.Region,
+		"size":     opts.Size,
+		"imageId":  opts.ImageId,
+	}
+	defer func() {
+		if inst != nil {
+			auditData["instanceId"] = inst.InstanceId
+			auditData["status"] = inst.Status
+		}
+		if auditErr := p.auditProviderAction("provider.contabo.create_instance", started, err, auditData); err == nil && auditErr != nil {
+			err = auditErr
+		}
+	}()
 	if err := validateCreateOpts(opts); err != nil {
 		return nil, err
 	}
@@ -182,13 +212,14 @@ func (p *Plugin) CreateInstance(ctx context.Context, opts schemas.ProviderCreate
 	if existing, err := p.findInstanceByDisplayName(ctx, opts.Name); err != nil {
 		return nil, err
 	} else if existing != nil {
+		auditData["existing"] = true
 		return existing, nil
 	}
 	secretID, err := p.createSSHKeySecret(ctx, opts.Name, opts.SshPubKey)
 	if err != nil {
 		return nil, err
 	}
-	inst, err := p.createComputeInstance(ctx, opts, size, secretID)
+	inst, err = p.createComputeInstance(ctx, opts, size, secretID)
 	if err != nil {
 		_ = p.deleteSecret(context.WithoutCancel(ctx), secretID)
 		return nil, err
@@ -196,8 +227,21 @@ func (p *Plugin) CreateInstance(ctx context.Context, opts schemas.ProviderCreate
 	return inst, nil
 }
 
-func (p *Plugin) DestroyInstance(ctx context.Context, instanceID string) (*schemas.ProviderDestroyResult, error) {
+func (p *Plugin) DestroyInstance(ctx context.Context, instanceID string) (result *schemas.ProviderDestroyResult, err error) {
 	instanceID = strings.TrimSpace(instanceID)
+	started := p.now().UTC()
+	auditData := map[string]any{
+		"provider":   ProviderID,
+		"instanceId": instanceID,
+	}
+	defer func() {
+		if result != nil {
+			auditData["ok"] = result.Ok
+		}
+		if auditErr := p.auditProviderAction("provider.contabo.destroy_instance", started, err, auditData); err == nil && auditErr != nil {
+			err = auditErr
+		}
+	}()
 	if instanceID == "" {
 		return nil, fmt.Errorf("%w: instance id is required", ErrInvalidRequest)
 	}
@@ -341,8 +385,15 @@ func (p *Plugin) do(ctx context.Context, method, path string, query url.Values, 
 	if len(query) > 0 {
 		endpoint += "?" + query.Encode()
 	}
+	started := p.now().UTC()
+	statusCode := 0
+	errorClass := ""
+	defer func() {
+		p.logAPICall(ctx, method, path, started, statusCode, errorClass)
+	}()
 	req, err := http.NewRequestWithContext(ctx, method, endpoint, body)
 	if err != nil {
+		errorClass = "request_build_failed"
 		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -351,23 +402,106 @@ func (p *Plugin) do(ctx context.Context, method, path string, query url.Values, 
 	req.Header.Set("x-request-id", newRequestID())
 	resp, err := p.client.Do(req)
 	if err != nil {
+		errorClass = "transport"
 		return err
 	}
 	defer resp.Body.Close()
+	statusCode = resp.StatusCode
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
+		errorClass = "response_read_failed"
 		return err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return newProviderError(method, path, resp.StatusCode, data)
+		perr := newProviderError(method, path, resp.StatusCode, data)
+		errorClass = perr.ErrorClass
+		return perr
 	}
 	if responseBody == nil || len(data) == 0 {
 		return nil
 	}
 	if err := json.Unmarshal(data, responseBody); err != nil {
+		errorClass = "decode_failed"
 		return fmt.Errorf("%w: decode response: %v", ErrProviderUnavailable, err)
 	}
 	return nil
+}
+
+func (p *Plugin) logAPICall(ctx context.Context, method, path string, started time.Time, statusCode int, errorClass string) {
+	log := p.log
+	if log == nil {
+		log = logger.FromContext(ctx)
+	}
+	if log == nil {
+		return
+	}
+	fields := []logger.Field{
+		{Key: "plugin", Value: ProviderID},
+		{Key: "method", Value: method},
+		{Key: "path", Value: path},
+		{Key: "durationMs", Value: p.now().UTC().Sub(started).Milliseconds()},
+	}
+	if statusCode > 0 {
+		fields = append(fields, logger.Field{Key: "statusCode", Value: statusCode})
+	}
+	if errorClass != "" {
+		fields = append(fields, logger.Field{Key: "errorClass", Value: errorClass})
+		log.With(
+			logger.Field{Key: "component", Value: logger.ComponentDaemonAdapters},
+			logger.Field{Key: "subsystem", Value: "providers.contabo"},
+		).Warn("contabo api call failed", fields...)
+		return
+	}
+	log.With(
+		logger.Field{Key: "component", Value: logger.ComponentDaemonAdapters},
+		logger.Field{Key: "subsystem", Value: "providers.contabo"},
+	).Info("contabo api call", fields...)
+}
+
+func (p *Plugin) auditProviderAction(action string, started time.Time, actionErr error, data map[string]any) error {
+	if p.audit == nil {
+		return nil
+	}
+	result := audit.ResultSuccess
+	if actionErr != nil {
+		result = audit.ResultFailure
+		data["errorClass"] = providerErrorClass(actionErr)
+		data["error"] = actionErr.Error()
+	}
+	data["durationMs"] = p.now().UTC().Sub(started).Milliseconds()
+	_, _, err := p.audit.Append(audit.Entry{
+		ProjectID: audit.GlobalProjectID,
+		Actor:     audit.Actor{Kind: audit.ActorAdapter, ID: ProviderID},
+		Action:    action,
+		Result:    result,
+		Data:      data,
+	})
+	if err != nil {
+		return fmt.Errorf("contabo: audit provider action: %w", err)
+	}
+	return nil
+}
+
+func providerErrorClass(err error) string {
+	if err == nil {
+		return ""
+	}
+	var perr *ProviderError
+	if errors.As(err, &perr) {
+		return perr.ErrorClass
+	}
+	switch {
+	case errors.Is(err, ErrInvalidRequest):
+		return "invalid_request"
+	case errors.Is(err, ErrAuthRequired):
+		return "auth"
+	case errors.Is(err, ErrUnknownRegion), errors.Is(err, ErrUnknownSize):
+		return "request_rejected"
+	case errors.Is(err, ErrProviderUnavailable):
+		return "provider_unavailable"
+	default:
+		return "unknown"
+	}
 }
 
 type ProviderError struct {

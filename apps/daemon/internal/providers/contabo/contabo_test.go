@@ -11,6 +11,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/audit"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/logger"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/redaction"
 	schemas "github.com/hoopoe-cockpit/hoopoe/packages/schemas/go"
 )
 
@@ -189,6 +192,145 @@ func TestDestroyInstanceIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestAPICallsEmitStructuredLogsWithoutSecrets(t *testing.T) {
+	t.Parallel()
+	fake := newFakeAPI(t)
+	fake.expectedToken = "tok-secret-value"
+	capture := logger.NewCaptureTransport(0)
+	plugin := New(Options{
+		BaseURL:    fake.server.URL,
+		HTTPClient: fake.server.Client(),
+		Token:      staticToken("tok-secret-value"),
+		Logger: logger.New(logger.Config{
+			Component: logger.ComponentDaemonAdapters,
+			MinLevel:  logger.LevelDebug,
+			Outputs:   []logger.Transport{capture},
+			Now:       fixedNow,
+		}),
+		Now: fixedNow,
+	})
+
+	if _, err := plugin.DestroyInstance(context.Background(), "12345"); err != nil {
+		t.Fatalf("DestroyInstance: %v", err)
+	}
+	entries := capture.Entries()
+	if len(entries) != 1 {
+		t.Fatalf("log entries = %d, want 1: %+v", len(entries), entries)
+	}
+	entry := entries[0]
+	if entry.Level != logger.LevelInfo || entry.Component != logger.ComponentDaemonAdapters || entry.Subsystem != "providers.contabo" {
+		t.Fatalf("entry envelope = %+v", entry)
+	}
+	if entry.Fields["plugin"] != ProviderID || entry.Fields["method"] != http.MethodPost ||
+		entry.Fields["path"] != "/compute/instances/12345/cancel" || entry.Fields["statusCode"] != http.StatusCreated {
+		t.Fatalf("entry fields = %+v", entry.Fields)
+	}
+	if strings.Contains(capture.JSONLines(), "tok-secret-value") {
+		t.Fatalf("log leaked bearer token: %s", capture.JSONLines())
+	}
+}
+
+func TestProviderErrorsEmitWarningLogs(t *testing.T) {
+	t.Parallel()
+	fake := newFakeAPI(t)
+	fake.cancelStatus = http.StatusTooManyRequests
+	capture := logger.NewCaptureTransport(0)
+	plugin := New(Options{
+		BaseURL:    fake.server.URL,
+		HTTPClient: fake.server.Client(),
+		Token:      staticToken("tok"),
+		Logger: logger.New(logger.Config{
+			Component: logger.ComponentDaemonAdapters,
+			MinLevel:  logger.LevelDebug,
+			Outputs:   []logger.Transport{capture},
+			Now:       fixedNow,
+		}),
+		Now: fixedNow,
+	})
+
+	_, err := plugin.DestroyInstance(context.Background(), "12345")
+	var perr *ProviderError
+	if !errors.As(err, &perr) || perr.ErrorClass != "rate_limited" {
+		t.Fatalf("err = %v, want rate_limited ProviderError", err)
+	}
+	entries := capture.Entries()
+	if len(entries) != 1 {
+		t.Fatalf("log entries = %d, want 1: %+v", len(entries), entries)
+	}
+	if entries[0].Level != logger.LevelWarn || entries[0].Fields["errorClass"] != "rate_limited" ||
+		entries[0].Fields["statusCode"] != http.StatusTooManyRequests {
+		t.Fatalf("warning entry = %+v", entries[0])
+	}
+}
+
+func TestCreateAndDestroyEmitAuditEntries(t *testing.T) {
+	t.Parallel()
+	fake := newFakeAPI(t)
+	auditSink := &recordingAudit{}
+	plugin := New(Options{
+		BaseURL:    fake.server.URL,
+		HTTPClient: fake.server.Client(),
+		Token:      staticToken("tok"),
+		Audit:      auditSink,
+		Now:        fixedNow,
+	})
+
+	instance, err := plugin.CreateInstance(context.Background(), schemas.ProviderCreateInstanceOpts{
+		Region:    "eu-central-1",
+		Size:      "cloud-vps-50",
+		Name:      "hoopoe-acfs-test",
+		SshPubKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAItest user@host",
+		ImageId:   "ubuntu-24.04-image-id",
+	})
+	if err != nil {
+		t.Fatalf("CreateInstance: %v", err)
+	}
+	if _, err := plugin.DestroyInstance(context.Background(), instance.InstanceId); err != nil {
+		t.Fatalf("DestroyInstance: %v", err)
+	}
+	if len(auditSink.entries) != 2 {
+		t.Fatalf("audit entries = %+v", auditSink.entries)
+	}
+	create := auditSink.entries[0]
+	if create.Action != "provider.contabo.create_instance" || create.Result != audit.ResultSuccess ||
+		create.Actor.Kind != audit.ActorAdapter || create.Actor.ID != ProviderID {
+		t.Fatalf("create audit = %+v", create)
+	}
+	if create.Data["instanceId"] != "12345" || create.Data["region"] != "eu-central-1" ||
+		create.Data["size"] != "cloud-vps-50" {
+		t.Fatalf("create audit data = %+v", create.Data)
+	}
+	if _, ok := create.Data["sshPubKey"]; ok {
+		t.Fatalf("create audit leaked ssh key material: %+v", create.Data)
+	}
+	destroy := auditSink.entries[1]
+	if destroy.Action != "provider.contabo.destroy_instance" || destroy.Result != audit.ResultSuccess ||
+		destroy.Data["instanceId"] != "12345" || destroy.Data["ok"] != true {
+		t.Fatalf("destroy audit = %+v", destroy)
+	}
+}
+
+func TestSuccessfulMutationSurfacesAuditFailure(t *testing.T) {
+	t.Parallel()
+	fake := newFakeAPI(t)
+	auditSink := &recordingAudit{err: errors.New("audit unavailable")}
+	plugin := New(Options{
+		BaseURL:    fake.server.URL,
+		HTTPClient: fake.server.Client(),
+		Token:      staticToken("tok"),
+		Audit:      auditSink,
+		Now:        fixedNow,
+	})
+
+	result, err := plugin.DestroyInstance(context.Background(), "12345")
+	if err == nil || !strings.Contains(err.Error(), "audit unavailable") {
+		t.Fatalf("err = %v, want audit failure", err)
+	}
+	if result == nil || !result.Ok {
+		t.Fatalf("result = %+v, want provider result preserved", result)
+	}
+}
+
 func TestProviderErrorsAreClassified(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -253,16 +395,18 @@ type fakeAPI struct {
 	createStatus        int
 	cancelStatus        int
 	lastCreateBody      string
+	expectedToken       string
 }
 
 func newFakeAPI(t *testing.T) *fakeAPI {
 	t.Helper()
 	f := &fakeAPI{
-		t:            t,
-		counts:       map[string]int{},
-		listStatus:   http.StatusOK,
-		createStatus: http.StatusCreated,
-		cancelStatus: http.StatusCreated,
+		t:             t,
+		counts:        map[string]int{},
+		listStatus:    http.StatusOK,
+		createStatus:  http.StatusCreated,
+		cancelStatus:  http.StatusCreated,
+		expectedToken: "tok",
 	}
 	f.server = httptest.NewServer(http.HandlerFunc(f.handle))
 	t.Cleanup(f.server.Close)
@@ -273,7 +417,7 @@ func (f *fakeAPI) handle(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	f.counts[r.Method+" "+r.URL.Path]++
 	f.mu.Unlock()
-	if r.Header.Get("Authorization") != "Bearer tok" {
+	if r.Header.Get("Authorization") != "Bearer "+f.expectedToken {
 		http.Error(w, "missing token", http.StatusUnauthorized)
 		return
 	}
@@ -357,4 +501,14 @@ func staticToken(token string) TokenSource {
 
 func fixedNow() time.Time {
 	return time.Date(2026, 5, 4, 12, 0, 0, 0, time.UTC)
+}
+
+type recordingAudit struct {
+	entries []audit.Entry
+	err     error
+}
+
+func (r *recordingAudit) Append(entry audit.Entry) (audit.Entry, []redaction.TraceEvent, error) {
+	r.entries = append(r.entries, entry)
+	return entry, nil, r.err
 }
