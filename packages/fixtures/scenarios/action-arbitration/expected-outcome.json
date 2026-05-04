@@ -5,47 +5,81 @@
     "fixturesVersion": "phase0-2026-05-02",
     "capturedAt": "2026-05-04T17:55:00Z",
     "vpsId": "mock-flywheel",
-    "source": "hand-written hp-15z corrected action-arbitration tending fixture",
-    "notes": "A less-destructive recovery ActionPlan is already accepted and in flight for GreenBear. A later destructive kill plan targets the same agent and is rejected as superseded_by the safer plan, with the rejected plan linked to the winning safety run."
+    "source": "hand-written hp-15z safety-supersession action-arbitration tending fixture",
+    "notes": "A recovery ActionPlan is already accepted and in flight for GreenBear. A later watch-safety-thresholds ActionPlan targets the same swarm with swarm.halt, wins arbitration, and records the recovery plan as superseded_by the safety plan with a link to the winning safety run."
   },
   "detections": [
     {
-      "kind": "actionplan.destructive_superseded",
+      "kind": "actionplan.safety_supersedes_recovery",
       "payload": {
         "targetSwarm": "hoopoeAppCockpit",
         "targetAgent": "GreenBear",
-        "winnerPlanId": "plan-safe-001",
-        "winnerAction": "agent.ask_status",
-        "loserPlanId": "plan-kill-001",
-        "loserAction": "agent.kill_wedged_process",
-        "supersededBy": "plan-safe-001"
+        "winnerPlanId": "plan-safety-halt-001",
+        "winnerRunId": "safety-run-001",
+        "winnerJobId": "watch-safety-thresholds",
+        "winnerAction": "swarm.halt",
+        "loserPlanId": "plan-recovery-001",
+        "loserJobId": "tend-swarm",
+        "loserAction": "agent.restart_pane",
+        "supersededBy": "plan-safety-halt-001"
       }
     },
     {
-      "kind": "actionplan.safety_preferred",
+      "kind": "actionplan.recovery_superseded_by_safety",
       "payload": {
-        "reason": "less-destructive recovery plan in flight",
-        "policy": "destructive actions lose while a bounded safer intervention is active"
+        "reason": "safety action targets the same swarm as a recovery action",
+        "policy": "safety actions supersede recovery actions in the same arbitration window"
       }
     }
   ],
   "wakeAgent": false,
+  "actionPlan": {
+    "jobId": "watch-safety-thresholds",
+    "actor": "pre_script:watch-safety-thresholds",
+    "riskClass": "safety",
+    "requiresApproval": false,
+    "actions": [
+      {
+        "type": "swarm.halt",
+        "idempotencyKey": "watch-safety-thresholds:hoopoeAppCockpit:safety-supersession:2026-05-04T17:55:00Z",
+        "target": {
+          "swarmId": "hoopoeAppCockpit"
+        },
+        "args": {
+          "reason": "safety threshold crossed while recovery was in flight"
+        },
+        "postconditions": [
+          "recovery plan plan-recovery-001 is recorded as superseded_by plan-safety-halt-001",
+          "ntm reports hoopoeAppCockpit state=HALTED",
+          "audit log records the arbitration winner and loser"
+        ]
+      }
+    ]
+  },
   "approvalsRequested": [],
   "postconditions": [
     {
-      "check": "actionplan.plan-safe-001.status == in_flight",
+      "check": "actionplan.plan-safety-halt-001.status == accepted",
       "expect": true
     },
     {
-      "check": "actionplan.plan-kill-001.status == rejected",
+      "check": "actionplan.plan-recovery-001.status == superseded",
       "expect": true
     },
     {
-      "check": "actionplan.plan-kill-001.superseded_by == plan-safe-001",
+      "check": "actionplan.plan-recovery-001.superseded_by == plan-safety-halt-001",
       "expect": true
     },
     {
-      "check": "approvals.no_request_for_rejected_destructive_plan",
+      "check": "actionplan.plan-recovery-001.superseded_by_run == safety-run-001",
+      "expect": true
+    },
+    {
+      "check": "ntm.swarm.hoopoeAppCockpit.state == HALTED",
+      "expect": true
+    },
+    {
+      "check": "approvals.no_request_for_superseded_recovery_plan",
       "expect": true
     },
     {
@@ -53,7 +87,7 @@
       "expect": true
     },
     {
-      "check": "activity.warning_emitted",
+      "check": "activity.urgent_emitted",
       "expect": true
     }
   ],

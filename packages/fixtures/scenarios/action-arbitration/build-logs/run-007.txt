@@ -1,5 +1,5 @@
 2026-05-04T17:55:00Z tend-swarm action arbitration start
-plan-safe-001 submitted by HoopoeCC1; action=agent.ask_status; status=in_flight
-plan-kill-001 submitted by HoopoeCC2; action=agent.kill_wedged_process; destructive=true
-plan-kill-001 rejected with outcome=superseded_by; superseded_by=plan-safe-001; safety_run=safety-run-001
-audit.actionplan_arbitrated emitted with arbitrationReason=less_destructive_recovery_in_flight
+plan-recovery-001 submitted by HoopoeCC2; action=agent.restart_pane; status=in_flight
+plan-safety-halt-001 submitted by watch-safety-thresholds; action=swarm.halt; status=accepted
+plan-recovery-001 recorded with outcome=superseded_by; superseded_by=plan-safety-halt-001; safety_run=safety-run-001
+audit.actionplan_arbitrated emitted with arbitrationReason=safety_supersedes_recovery

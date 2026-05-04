@@ -18,7 +18,7 @@
         {
           "id": "hp-15z-target",
           "score": 0.5,
-          "rationale": "A safer recovery ActionPlan is in flight; destructive recovery must be superseded."
+          "rationale": "A recovery ActionPlan is in flight; the safety swarm.halt ActionPlan must supersede it."
         }
       ]
     },

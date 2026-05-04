@@ -1,1 +1,1 @@
-[hp-15z-target] plan-kill-001 rejected: actionplan.superseded_by; superseded_by=plan-safe-001
+[hp-15z-target] plan-recovery-001 superseded: actionplan.superseded_by; superseded_by=plan-safety-halt-001; safety_run=safety-run-001

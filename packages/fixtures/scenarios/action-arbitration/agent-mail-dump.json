@@ -3,20 +3,20 @@
     {
       "id": "msg-action-arbitration-001",
       "thread_id": "hp-15z-target",
-      "from": "HoopoeCC1",
-      "to": ["orchestrator", "HoopoeCC2"],
-      "subject": "[hp-15z-target] Safer recovery in flight",
-      "body_md": "Submitted plan-safe-001: ask GreenBear for status before any destructive process action.",
+      "from": "HoopoeCC2",
+      "to": ["orchestrator", "HoopoeCC1"],
+      "subject": "[hp-15z-target] Recovery restart in flight",
+      "body_md": "Submitted plan-recovery-001: restart GreenBear after a wedged-output precheck.",
       "sent_at": "2026-05-04T17:55:00Z",
       "ack_required": false
     },
     {
       "id": "msg-action-arbitration-002",
       "thread_id": "hp-15z-target",
-      "from": "HoopoeCC2",
-      "to": ["orchestrator", "HoopoeCC1"],
-      "subject": "[hp-15z-target] Destructive recovery rejected",
-      "body_md": "Submitted plan-kill-001 to kill GreenBear, but daemon rejected it as superseded_by plan-safe-001.",
+      "from": "orchestrator",
+      "to": ["HoopoeCC1", "HoopoeCC2"],
+      "subject": "[hp-15z-target] Safety halt superseded recovery",
+      "body_md": "watch-safety-thresholds accepted plan-safety-halt-001. The daemon recorded plan-recovery-001 as superseded_by plan-safety-halt-001 with safety_run=safety-run-001.",
       "sent_at": "2026-05-04T17:55:02Z",
       "ack_required": true
     }
@@ -24,7 +24,7 @@
   "threads": [
     {
       "id": "hp-15z-target",
-      "subject": "[hp-15z-target] Safer recovery in flight",
+      "subject": "[hp-15z-target] Safety halt superseded recovery",
       "message_count": 2
     }
   ],

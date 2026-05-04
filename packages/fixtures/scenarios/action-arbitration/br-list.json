@@ -2,8 +2,8 @@
   "issues": [
     {
       "id": "hp-15z-target",
-      "title": "[fixture] GreenBear recovery arbitration",
-      "description": "Synthetic bead used by the action-arbitration tending fixture. A less-destructive recovery ActionPlan is in flight for GreenBear when a later destructive kill plan targets the same agent and must be rejected as superseded_by.",
+      "title": "[fixture] Safety halt supersedes recovery",
+      "description": "Synthetic bead used by the action-arbitration tending fixture. A recovery ActionPlan is in flight for GreenBear when watch-safety-thresholds emits a safety swarm.halt plan for the same swarm; the recovery plan must be recorded as superseded_by the safety plan.",
       "status": "in_progress",
       "priority": 2,
       "issue_type": "task",

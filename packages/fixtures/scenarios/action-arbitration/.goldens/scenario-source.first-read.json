@@ -3,28 +3,28 @@
     "messages": [
       {
         "ack_required": false,
-        "body_md": "Submitted plan-safe-001: ask GreenBear for status before any destructive process action.",
-        "from": "HoopoeCC1",
+        "body_md": "Submitted plan-recovery-001: restart GreenBear after a wedged-output precheck.",
+        "from": "HoopoeCC2",
         "id": "msg-action-arbitration-001",
         "sent_at": "2026-05-04T17:55:00Z",
-        "subject": "[hp-15z-target] Safer recovery in flight",
-        "thread_id": "hp-15z-target",
-        "to": [
-          "orchestrator",
-          "HoopoeCC2"
-        ]
-      },
-      {
-        "ack_required": true,
-        "body_md": "Submitted plan-kill-001 to kill GreenBear, but daemon rejected it as superseded_by plan-safe-001.",
-        "from": "HoopoeCC2",
-        "id": "msg-action-arbitration-002",
-        "sent_at": "2026-05-04T17:55:02Z",
-        "subject": "[hp-15z-target] Destructive recovery rejected",
+        "subject": "[hp-15z-target] Recovery restart in flight",
         "thread_id": "hp-15z-target",
         "to": [
           "orchestrator",
           "HoopoeCC1"
+        ]
+      },
+      {
+        "ack_required": true,
+        "body_md": "watch-safety-thresholds accepted plan-safety-halt-001. The daemon recorded plan-recovery-001 as superseded_by plan-safety-halt-001 with safety_run=safety-run-001.",
+        "from": "orchestrator",
+        "id": "msg-action-arbitration-002",
+        "sent_at": "2026-05-04T17:55:02Z",
+        "subject": "[hp-15z-target] Safety halt superseded recovery",
+        "thread_id": "hp-15z-target",
+        "to": [
+          "HoopoeCC1",
+          "HoopoeCC2"
         ]
       }
     ],
@@ -32,7 +32,7 @@
       {
         "id": "hp-15z-target",
         "message_count": 2,
-        "subject": "[hp-15z-target] Safer recovery in flight"
+        "subject": "[hp-15z-target] Safety halt superseded recovery"
       }
     ],
     "unread_total": 1
@@ -41,12 +41,12 @@
     "issues": [
       {
         "created_at": "2026-05-04T17:08:00Z",
-        "description": "Synthetic bead used by the action-arbitration tending fixture. A less-destructive recovery ActionPlan is in flight for GreenBear when a later destructive kill plan targets the same agent and must be rejected as superseded_by.",
+        "description": "Synthetic bead used by the action-arbitration tending fixture. A recovery ActionPlan is in flight for GreenBear when watch-safety-thresholds emits a safety swarm.halt plan for the same swarm; the recovery plan must be recorded as superseded_by the safety plan.",
         "id": "hp-15z-target",
         "issue_type": "task",
         "priority": 2,
         "status": "in_progress",
-        "title": "[fixture] GreenBear recovery arbitration",
+        "title": "[fixture] Safety halt supersedes recovery",
         "updated_at": "2026-05-04T17:08:00Z"
       }
     ],
@@ -55,7 +55,7 @@
   "buildLogs": [
     {
       "runId": "run-007",
-      "text": "2026-05-04T17:55:00Z tend-swarm action arbitration start\nplan-safe-001 submitted by HoopoeCC1; action=agent.ask_status; status=in_flight\nplan-kill-001 submitted by HoopoeCC2; action=agent.kill_wedged_process; destructive=true\nplan-kill-001 rejected with outcome=superseded_by; superseded_by=plan-safe-001; safety_run=safety-run-001\naudit.actionplan_arbitrated emitted with arbitrationReason=less_destructive_recovery_in_flight\n"
+      "text": "2026-05-04T17:55:00Z tend-swarm action arbitration start\nplan-recovery-001 submitted by HoopoeCC2; action=agent.restart_pane; status=in_flight\nplan-safety-halt-001 submitted by watch-safety-thresholds; action=swarm.halt; status=accepted\nplan-recovery-001 recorded with outcome=superseded_by; superseded_by=plan-safety-halt-001; safety_run=safety-run-001\naudit.actionplan_arbitrated emitted with arbitrationReason=safety_supersedes_recovery\n"
     }
   ],
   "bvTriage": {
@@ -77,7 +77,7 @@
         "top_picks": [
           {
             "id": "hp-15z-target",
-            "rationale": "A safer recovery ActionPlan is in flight; destructive recovery must be superseded.",
+            "rationale": "A recovery ActionPlan is in flight; the safety swarm.halt ActionPlan must supersede it.",
             "score": 0.5
           }
         ]
@@ -311,21 +311,22 @@
         "actions": [
           {
             "postconditions": [
-              "status message present in Agent Mail thread for hp-15z-target"
+              "ntm reports GreenBear restarted",
+              "GreenBear posts a fresh status update"
             ],
             "target": {
               "agentId": "GreenBear"
             },
-            "type": "agent.ask_status"
+            "type": "agent.restart_pane"
           }
         ],
-        "agent": "HoopoeCC1",
+        "agent": "HoopoeCC2",
         "beadId": "hp-15z-target",
-        "destructiveness": "low",
+        "destructiveness": "bounded-recovery",
         "jobId": "tend-swarm",
-        "planId": "plan-safe-001",
-        "riskClass": "low",
-        "summary": "Ask GreenBear for status before considering destructive recovery.",
+        "planId": "plan-recovery-001",
+        "riskClass": "medium",
+        "summary": "Restart GreenBear after a wedged-output precheck.",
         "targetAgent": "GreenBear",
         "targetSwarm": "hoopoeAppCockpit"
       },
@@ -336,14 +337,14 @@
     {
       "channel": "tending",
       "payload": {
-        "agent": "HoopoeCC1",
+        "agent": "HoopoeCC2",
         "executor": "daemon",
-        "planId": "plan-safe-001",
-        "safetyRunId": "safety-run-001",
+        "planId": "plan-recovery-001",
+        "recoveryRunId": "recovery-run-001",
         "status": "in_flight"
       },
       "seq": 2,
-      "ts": "2026-05-04T17:55:00Z",
+      "ts": "2026-05-04T17:55:00.2Z",
       "type": "actionplan.accepted"
     },
     {
@@ -351,45 +352,64 @@
       "payload": {
         "actions": [
           {
+            "args": {
+              "reason": "safety threshold crossed while recovery was in flight"
+            },
             "postconditions": [
-              "ntm no longer reports GreenBear process"
+              "ntm reports hoopoeAppCockpit state=HALTED",
+              "plan-recovery-001 is recorded as superseded_by plan-safety-halt-001"
             ],
             "target": {
-              "agentId": "GreenBear"
+              "swarmId": "hoopoeAppCockpit"
             },
-            "type": "agent.kill_wedged_process"
+            "type": "swarm.halt"
           }
         ],
-        "agent": "HoopoeCC2",
+        "agent": "pre_script:watch-safety-thresholds",
         "beadId": "hp-15z-target",
-        "destructiveness": "destructive",
-        "jobId": "tend-swarm",
-        "planId": "plan-kill-001",
-        "riskClass": "high",
-        "summary": "Kill GreenBear immediately as wedged.",
+        "destructiveness": "safety-stop",
+        "jobId": "watch-safety-thresholds",
+        "planId": "plan-safety-halt-001",
+        "riskClass": "safety",
+        "summary": "Halt the swarm because a safety threshold crossed while recovery was in flight.",
         "targetAgent": "GreenBear",
         "targetSwarm": "hoopoeAppCockpit"
       },
       "seq": 3,
-      "ts": "2026-05-04T17:55:01Z",
+      "ts": "2026-05-04T17:55:00.5Z",
       "type": "actionplan.submitted"
     },
     {
       "channel": "tending",
       "payload": {
-        "loserAgent": "HoopoeCC2",
-        "loserPlanId": "plan-kill-001",
-        "outcome": "superseded_by",
-        "planId": "plan-kill-001",
-        "reason": "less-destructive recovery ActionPlan is already in flight for the same agent",
-        "targetAgent": "GreenBear",
-        "targetSwarm": "hoopoeAppCockpit",
-        "winnerAgent": "HoopoeCC1",
-        "winnerPlanId": "plan-safe-001",
-        "winnerRunId": "safety-run-001"
+        "agent": "pre_script:watch-safety-thresholds",
+        "executor": "daemon",
+        "planId": "plan-safety-halt-001",
+        "safetyRunId": "safety-run-001",
+        "status": "accepted"
       },
       "seq": 4,
-      "ts": "2026-05-04T17:55:01Z",
+      "ts": "2026-05-04T17:55:00.6Z",
+      "type": "actionplan.accepted"
+    },
+    {
+      "channel": "tending",
+      "payload": {
+        "loserAgent": "HoopoeCC2",
+        "loserOutcome": "superseded_by",
+        "loserPlanId": "plan-recovery-001",
+        "loserRunId": "recovery-run-001",
+        "outcome": "safety_supersedes_recovery",
+        "planId": "plan-safety-halt-001",
+        "reason": "safety action supersedes recovery action targeting the same swarm",
+        "targetAgent": "GreenBear",
+        "targetSwarm": "hoopoeAppCockpit",
+        "winnerAgent": "pre_script:watch-safety-thresholds",
+        "winnerPlanId": "plan-safety-halt-001",
+        "winnerRunId": "safety-run-001"
+      },
+      "seq": 5,
+      "ts": "2026-05-04T17:55:00.7Z",
       "type": "actionplan.arbitration"
     },
     {
@@ -398,72 +418,144 @@
         "agent": "HoopoeCC2",
         "beadId": "hp-15z-target",
         "outcome": "superseded_by",
-        "planId": "plan-kill-001",
+        "planId": "plan-recovery-001",
         "problem": {
           "code": "actionplan.superseded_by",
-          "detail": "plan-safe-001 is already asking GreenBear for status; destructive kill_wedged_process is rejected until the safer plan times out or fails postconditions",
+          "detail": "plan-safety-halt-001 from watch-safety-thresholds targets the same swarm; recovery plan-recovery-001 is stopped and linked to safety-run-001.",
           "status": 409,
-          "title": "action plan rejected: safer recovery already in flight",
+          "title": "action plan superseded: safety halt has priority",
           "type": "urn:hoopoe:problem:actionplan-superseded"
         },
-        "supersededBy": "plan-safe-001",
+        "status": "superseded",
+        "supersededBy": "plan-safety-halt-001",
         "supersededByRunId": "safety-run-001"
       },
-      "seq": 5,
+      "seq": 6,
+      "ts": "2026-05-04T17:55:00.8Z",
+      "type": "actionplan.superseded"
+    },
+    {
+      "channel": "swarm",
+      "payload": {
+        "actionPlanId": "plan-safety-halt-001",
+        "actor": "pre_script:watch-safety-thresholds",
+        "idempotencyKey": "watch-safety-thresholds:hoopoeAppCockpit:safety-supersession:2026-05-04T17:55:00Z",
+        "jobId": "watch-safety-thresholds",
+        "reason": "safety threshold crossed while recovery was in flight",
+        "supersededPlanId": "plan-recovery-001",
+        "swarmId": "hoopoeAppCockpit",
+        "wakeAgent": false
+      },
+      "seq": 7,
       "ts": "2026-05-04T17:55:01Z",
-      "type": "actionplan.rejected"
+      "type": "swarm.halt"
+    },
+    {
+      "channel": "ntm",
+      "payload": {
+        "agents": [
+          {
+            "agent": "GreenBear",
+            "reason": "swarm halted by safety action superseding recovery",
+            "state": "PAUSED"
+          }
+        ],
+        "buildQueue": "PAUSED",
+        "haltedAt": "2026-05-04T17:55:01.2Z",
+        "postconditionOf": "plan-safety-halt-001",
+        "state": "HALTED",
+        "supersededPlans": [
+          "plan-recovery-001"
+        ],
+        "swarmId": "hoopoeAppCockpit"
+      },
+      "seq": 8,
+      "ts": "2026-05-04T17:55:01.2Z",
+      "type": "ntm.swarm_state"
     },
     {
       "channel": "activity",
       "payload": {
         "beadId": "hp-15z-target",
-        "severity": "warning",
-        "summary": "HoopoeCC2's destructive plan-kill-001 rejected: superseded by safer plan-safe-001 for GreenBear",
-        "supersededBy": "plan-safe-001"
+        "category": "actionplan.arbitration",
+        "severity": "critical",
+        "summary": "Safety halt plan-safety-halt-001 superseded recovery plan-recovery-001 for hoopoeAppCockpit.",
+        "supersededBy": "plan-safety-halt-001",
+        "supersededByRunId": "safety-run-001",
+        "supersededPlanId": "plan-recovery-001"
       },
-      "seq": 6,
+      "seq": 9,
       "ts": "2026-05-04T17:55:02Z",
-      "type": "activity.warning"
+      "type": "activity.urgent"
     },
     {
       "channel": "audit",
       "payload": {
-        "arbitrationReason": "less_destructive_recovery_in_flight",
+        "arbitrationReason": "safety_supersedes_recovery",
         "loserAgent": "HoopoeCC2",
+        "loserJobId": "tend-swarm",
         "loserOutcome": "superseded_by",
-        "loserPlanId": "plan-kill-001",
+        "loserPlanId": "plan-recovery-001",
+        "loserRunId": "recovery-run-001",
         "targetAgent": "GreenBear",
         "targetSwarm": "hoopoeAppCockpit",
-        "winnerAgent": "HoopoeCC1",
-        "winnerPlanId": "plan-safe-001",
+        "winnerAgent": "pre_script:watch-safety-thresholds",
+        "winnerJobId": "watch-safety-thresholds",
+        "winnerPlanId": "plan-safety-halt-001",
         "winnerRunId": "safety-run-001"
       },
-      "seq": 7,
+      "seq": 10,
       "ts": "2026-05-04T17:55:02Z",
       "type": "audit.actionplan_arbitrated"
     }
   ],
   "expectedOutcome": {
+    "actionPlan": {
+      "actions": [
+        {
+          "args": {
+            "reason": "safety threshold crossed while recovery was in flight"
+          },
+          "idempotencyKey": "watch-safety-thresholds:hoopoeAppCockpit:safety-supersession:2026-05-04T17:55:00Z",
+          "postconditions": [
+            "recovery plan plan-recovery-001 is recorded as superseded_by plan-safety-halt-001",
+            "ntm reports hoopoeAppCockpit state=HALTED",
+            "audit log records the arbitration winner and loser"
+          ],
+          "target": {
+            "swarmId": "hoopoeAppCockpit"
+          },
+          "type": "swarm.halt"
+        }
+      ],
+      "actor": "pre_script:watch-safety-thresholds",
+      "jobId": "watch-safety-thresholds",
+      "requiresApproval": false,
+      "riskClass": "safety"
+    },
     "activityBehavior": "surface",
     "approvalsRequested": [],
     "detections": [
       {
-        "kind": "actionplan.destructive_superseded",
+        "kind": "actionplan.safety_supersedes_recovery",
         "payload": {
-          "loserAction": "agent.kill_wedged_process",
-          "loserPlanId": "plan-kill-001",
-          "supersededBy": "plan-safe-001",
+          "loserAction": "agent.restart_pane",
+          "loserJobId": "tend-swarm",
+          "loserPlanId": "plan-recovery-001",
+          "supersededBy": "plan-safety-halt-001",
           "targetAgent": "GreenBear",
           "targetSwarm": "hoopoeAppCockpit",
-          "winnerAction": "agent.ask_status",
-          "winnerPlanId": "plan-safe-001"
+          "winnerAction": "swarm.halt",
+          "winnerJobId": "watch-safety-thresholds",
+          "winnerPlanId": "plan-safety-halt-001",
+          "winnerRunId": "safety-run-001"
         }
       },
       {
-        "kind": "actionplan.safety_preferred",
+        "kind": "actionplan.recovery_superseded_by_safety",
         "payload": {
-          "policy": "destructive actions lose while a bounded safer intervention is active",
-          "reason": "less-destructive recovery plan in flight"
+          "policy": "safety actions supersede recovery actions in the same arbitration window",
+          "reason": "safety action targets the same swarm as a recovery action"
         }
       }
     ],
@@ -471,26 +563,34 @@
       "capturedAt": "<scrubbed-captured-at>",
       "fixturesVersion": "phase0-2026-05-02",
       "kind": "synthetic",
-      "notes": "A less-destructive recovery ActionPlan is already accepted and in flight for GreenBear. A later destructive kill plan targets the same agent and is rejected as superseded_by the safer plan, with the rejected plan linked to the winning safety run.",
+      "notes": "A recovery ActionPlan is already accepted and in flight for GreenBear. A later watch-safety-thresholds ActionPlan targets the same swarm with swarm.halt, wins arbitration, and records the recovery plan as superseded_by the safety plan with a link to the winning safety run.",
       "scenario": "action-arbitration",
-      "source": "hand-written hp-15z corrected action-arbitration tending fixture",
+      "source": "hand-written hp-15z safety-supersession action-arbitration tending fixture",
       "vpsId": "mock-flywheel"
     },
     "postconditions": [
       {
-        "check": "actionplan.plan-safe-001.status == in_flight",
+        "check": "actionplan.plan-safety-halt-001.status == accepted",
         "expect": true
       },
       {
-        "check": "actionplan.plan-kill-001.status == rejected",
+        "check": "actionplan.plan-recovery-001.status == superseded",
         "expect": true
       },
       {
-        "check": "actionplan.plan-kill-001.superseded_by == plan-safe-001",
+        "check": "actionplan.plan-recovery-001.superseded_by == plan-safety-halt-001",
         "expect": true
       },
       {
-        "check": "approvals.no_request_for_rejected_destructive_plan",
+        "check": "actionplan.plan-recovery-001.superseded_by_run == safety-run-001",
+        "expect": true
+      },
+      {
+        "check": "ntm.swarm.hoopoeAppCockpit.state == HALTED",
+        "expect": true
+      },
+      {
+        "check": "approvals.no_request_for_superseded_recovery_plan",
         "expect": true
       },
       {
@@ -498,7 +598,7 @@
         "expect": true
       },
       {
-        "check": "activity.warning_emitted",
+        "check": "activity.urgent_emitted",
         "expect": true
       }
     ],
@@ -509,58 +609,52 @@
     "capturedAt": "<scrubbed-captured-at>",
     "fixturesVersion": "phase0-2026-05-02",
     "kind": "synthetic",
-    "notes": "A less-destructive recovery ActionPlan (agent.ask_status) is already accepted and in flight for GreenBear when a later destructive kill_wedged_process ActionPlan targets the same agent and swarm. Per plan.md §8.8 and hp-15z, arbitration rejects the destructive plan as superseded_by the safer in-flight plan and records the link to the winning safety run.",
+    "notes": "A recovery ActionPlan is already accepted and in flight for GreenBear when watch-safety-thresholds emits a safety ActionPlan for the same swarm. Per plan.md §8.8 and hp-15z, the safety swarm.halt plan wins, the recovery plan is recorded as superseded_by the safety plan, and the record links to the winning safety run.",
     "scenario": "action-arbitration",
-    "source": "hand-written hp-15z corrected action-arbitration tending fixture",
+    "source": "hand-written hp-15z safety-supersession action-arbitration tending fixture",
     "vpsId": "mock-flywheel"
   },
   "ntmSnapshot": {
     "counters": {
-      "alive": 3,
+      "alive": 0,
       "errored": 0,
+      "halted": 1,
       "panes": 3,
       "sessions": 1,
       "wedged": 0
     },
     "sessions": [
       {
-        "agents": [
+        "haltReason": "watch-safety-thresholds safety action superseded recovery plan-recovery-001",
+        "haltedAt": "2026-05-04T17:55:01.2Z",
+        "id": "hoopoeAppCockpit",
+        "panes": [
           {
-            "agent_id": "HoopoeCC1",
-            "current_bead": "hp-15z-target",
-            "last_output_age_sec": 4,
-            "pane": "0.1",
-            "pending_mail": 0,
-            "state": "active",
-            "type": "claude",
-            "type_confidence": 0.95,
-            "type_method": "process"
+            "agent": "claude-code",
+            "id": "HoopoeCC1",
+            "lastActivityAt": "2026-05-04T17:55:01.2Z",
+            "lastReason": "swarm halted by safety arbitration",
+            "model": "claude-opus-4-7",
+            "state": "PAUSED"
           },
           {
-            "agent_id": "HoopoeCC2",
-            "current_bead": "hp-15z-target",
-            "last_output_age_sec": 6,
-            "pane": "0.2",
-            "pending_mail": 0,
-            "state": "active",
-            "type": "claude",
-            "type_confidence": 0.95,
-            "type_method": "process"
+            "agent": "claude-code",
+            "id": "HoopoeCC2",
+            "lastActivityAt": "2026-05-04T17:55:01.2Z",
+            "lastReason": "recovery plan superseded_by plan-safety-halt-001",
+            "model": "claude-opus-4-7",
+            "state": "PAUSED"
           },
           {
-            "agent_id": "GreenBear",
-            "current_bead": "hp-15z-target",
-            "last_output_age_sec": 585,
-            "pane": "0.3",
-            "pending_mail": 1,
-            "state": "tool_use",
-            "type": "codex",
-            "type_confidence": 0.95,
-            "type_method": "process"
+            "agent": "codex",
+            "id": "GreenBear",
+            "lastActivityAt": "2026-05-04T17:55:01.2Z",
+            "lastReason": "swarm halted by watch-safety-thresholds safety action",
+            "model": "gpt-5.5",
+            "state": "PAUSED"
           }
         ],
-        "attached": true,
-        "name": "hoopoeAppCockpit"
+        "state": "HALTED"
       }
     ]
   },
@@ -569,14 +663,14 @@
       "agent": "HoopoeCC1",
       "bytes": {
         "encoding": "base64",
-        "data": "W2hwLTE1ei10YXJnZXRdIHBsYW4tc2FmZS0wMDEgYWNjZXB0ZWQ6IGFza2luZyBHcmVlbkJlYXIgZm9yIHN0YXR1cyBiZWZvcmUgZGVzdHJ1Y3RpdmUgcmVjb3ZlcnkK"
+        "data": "W2hwLTE1ei10YXJnZXRdIHBsYW4tc2FmZXR5LWhhbHQtMDAxIGFjY2VwdGVkOiBzd2FybS5oYWx0IHdpbnMgc2FmZXR5IGFyYml0cmF0aW9uCg=="
       }
     },
     {
       "agent": "HoopoeCC2",
       "bytes": {
         "encoding": "base64",
-        "data": "W2hwLTE1ei10YXJnZXRdIHBsYW4ta2lsbC0wMDEgcmVqZWN0ZWQ6IGFjdGlvbnBsYW4uc3VwZXJzZWRlZF9ieTsgc3VwZXJzZWRlZF9ieT1wbGFuLXNhZmUtMDAxCg=="
+        "data": "W2hwLTE1ei10YXJnZXRdIHBsYW4tcmVjb3ZlcnktMDAxIHN1cGVyc2VkZWQ6IGFjdGlvbnBsYW4uc3VwZXJzZWRlZF9ieTsgc3VwZXJzZWRlZF9ieT1wbGFuLXNhZmV0eS1oYWx0LTAwMTsgc2FmZXR5X3J1bj1zYWZldHktcnVuLTAwMQo="
       }
     }
   ],
