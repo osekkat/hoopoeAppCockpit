@@ -113,6 +113,66 @@ func TestPickerOptionsDisableMissingSkillsAndCapabilities(t *testing.T) {
 	assertEnabled(t, options, AuditUBSRecentFiles, false, "missing capability: "+ubs.CapabilityScan)
 }
 
+func TestRequiredSkillRegistrationsAreDeterministic(t *testing.T) {
+	t.Parallel()
+	registrations, err := RequiredSkillRegistrations(DefaultCatalog())
+	if err != nil {
+		t.Fatalf("RequiredSkillRegistrations: %v", err)
+	}
+	wantSkills := []string{
+		"deadlock-finder-and-fixer",
+		"mock-code-finder",
+		"modes-of-reasoning-project-analysis",
+		"profiling-software-performance",
+		"reality-check-for-project",
+		"security-audit-for-saas",
+		"testing-fuzzing",
+		"testing-golden-artifacts",
+		"testing-real-service-e2e-no-mocks",
+		"ui-polish",
+	}
+	gotSkills := make([]string, 0, len(registrations))
+	for _, registration := range registrations {
+		gotSkills = append(gotSkills, registration.SkillID)
+		if registration.Source != SourceForSkill(registration.SkillID) {
+			t.Fatalf("%s source = %q", registration.SkillID, registration.Source)
+		}
+		if len(registration.AuditIDs) == 0 {
+			t.Fatalf("%s missing audit ids", registration.SkillID)
+		}
+	}
+	if !reflect.DeepEqual(gotSkills, wantSkills) {
+		t.Fatalf("skill registrations = %#v, want %#v", gotSkills, wantSkills)
+	}
+}
+
+func TestBuildRunnableSpecRequiresAvailableSkillAndCapability(t *testing.T) {
+	t.Parallel()
+	_, err := BuildRunnableSpec(DefaultCatalog(), Availability{
+		Skills: map[string]bool{
+			"deadlock-finder-and-fixer": false,
+		},
+	}, RunnerRequest{AuditID: AuditDeadlock})
+	if !errors.Is(err, ErrUnavailable) || !strings.Contains(err.Error(), "missing skill: deadlock-finder-and-fixer") {
+		t.Fatalf("deadlock readiness err = %v, want unavailable missing skill", err)
+	}
+	_, err = BuildRunnableSpec(DefaultCatalog(), Availability{
+		Capabilities: map[string]bool{ubs.CapabilityScan: false},
+	}, RunnerRequest{AuditID: AuditUBSStrict})
+	if !errors.Is(err, ErrUnavailable) || !strings.Contains(err.Error(), "missing capability: "+ubs.CapabilityScan) {
+		t.Fatalf("ubs readiness err = %v, want unavailable missing capability", err)
+	}
+	spec, err := BuildRunnableSpec(DefaultCatalog(), Availability{
+		Capabilities: map[string]bool{ubs.CapabilityScan: true},
+	}, RunnerRequest{AuditID: AuditUBSStrict, TargetPaths: []string{"apps/daemon/internal/audits"}})
+	if err != nil {
+		t.Fatalf("BuildRunnableSpec available: %v", err)
+	}
+	if spec.AuditID != AuditUBSStrict || spec.ExecutionMode != ModeUBSAdapter {
+		t.Fatalf("spec = %+v", spec)
+	}
+}
+
 func TestBuildRunnerSpecShapesDelegatedAgentPromptAndPolicy(t *testing.T) {
 	t.Parallel()
 	spec, err := BuildRunnerSpec(DefaultCatalog(), RunnerRequest{

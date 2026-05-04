@@ -27,6 +27,7 @@ var (
 	ErrInvalidCatalog = errors.New("audits: invalid catalog")
 	ErrInvalidRequest = errors.New("audits: invalid request")
 	ErrNotFound       = errors.New("audits: not found")
+	ErrUnavailable    = errors.New("audits: unavailable")
 )
 
 type ReviewRound string
@@ -130,6 +131,12 @@ type RunnerSpec struct {
 	MaxFindings          int           `json:"maxFindings,omitempty"`
 	FindingPolicy        FindingPolicy `json:"findingPolicy"`
 	Prompt               string        `json:"prompt"`
+}
+
+type SkillRegistration struct {
+	SkillID  string    `json:"skillId"`
+	AuditIDs []AuditID `json:"auditIds"`
+	Source   string    `json:"source"`
 }
 
 type FindingPolicy struct {
@@ -276,6 +283,55 @@ func PickerOptions(definitions []Definition, availability Availability) ([]Picke
 		options = append(options, option)
 	}
 	return options, nil
+}
+
+func RequiredSkillRegistrations(definitions []Definition) ([]SkillRegistration, error) {
+	if err := ValidateCatalog(definitions); err != nil {
+		return nil, err
+	}
+	bySkill := map[string]*SkillRegistration{}
+	for _, definition := range definitions {
+		if definition.ExecutionMode != ModeDelegatedAgent {
+			continue
+		}
+		registration := bySkill[definition.SkillID]
+		if registration == nil {
+			registration = &SkillRegistration{
+				SkillID: definition.SkillID,
+				Source:  definition.Source,
+			}
+			bySkill[definition.SkillID] = registration
+		}
+		registration.AuditIDs = append(registration.AuditIDs, definition.ID)
+	}
+	out := make([]SkillRegistration, 0, len(bySkill))
+	for _, registration := range bySkill {
+		sort.Slice(registration.AuditIDs, func(i, j int) bool {
+			return registration.AuditIDs[i] < registration.AuditIDs[j]
+		})
+		out = append(out, *registration)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].SkillID < out[j].SkillID
+	})
+	return out, nil
+}
+
+func BuildRunnableSpec(definitions []Definition, availability Availability, req RunnerRequest) (RunnerSpec, error) {
+	options, err := PickerOptions(definitions, availability)
+	if err != nil {
+		return RunnerSpec{}, err
+	}
+	for _, option := range options {
+		if option.Definition.ID != req.AuditID {
+			continue
+		}
+		if !option.Enabled {
+			return RunnerSpec{}, fmt.Errorf("%w: %s: %s", ErrUnavailable, req.AuditID, strings.Join(option.DisabledReasons, "; "))
+		}
+		return BuildRunnerSpec(definitions, req)
+	}
+	return RunnerSpec{}, fmt.Errorf("%w: audit %q", ErrNotFound, req.AuditID)
 }
 
 func BuildRunnerSpec(definitions []Definition, req RunnerRequest) (RunnerSpec, error) {
