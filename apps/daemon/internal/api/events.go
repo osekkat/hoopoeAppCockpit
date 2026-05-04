@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"sync"
 	"time"
+
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/redaction"
 )
 
 const (
@@ -31,6 +33,13 @@ type EventHubConfig struct {
 	ReplayCapacity     int
 	SubscriberCapacity int
 	Now                func() time.Time
+	// Redactor scrubs Publish.Data before the event is appended to the
+	// replay buffer or delivered to subscribers. Mirrors audit/writer.go's
+	// pre-write redaction so secret-shaped strings in commit messages,
+	// agent-mail bodies, or any future producer cannot reach WS/SSE
+	// subscribers raw. nil means no redaction (used by tests + chaos/mock
+	// fixtures where inputs are trusted).
+	Redactor *redaction.Redactor
 }
 
 type EventHub struct {
@@ -43,6 +52,7 @@ type EventHub struct {
 	events             []Event
 	subscribers        map[uint64]*subscriber
 	nextSubscriberID   uint64
+	redactor           *redaction.Redactor
 }
 
 type PublishInput struct {
@@ -107,6 +117,7 @@ func NewEventHub(cfg EventHubConfig) *EventHub {
 		sequences:          make(map[string]uint64),
 		events:             make([]Event, 0, replayCapacity),
 		subscribers:        make(map[uint64]*subscriber),
+		redactor:           cfg.Redactor,
 	}
 }
 
@@ -116,6 +127,16 @@ func (h *EventHub) Publish(input PublishInput) Event {
 	}
 	if input.Type == "" {
 		input.Type = "daemon.event"
+	}
+
+	// Redact event Data before persistence + delivery. Mirrors
+	// audit.Writer.redactEntry — the EventHub is a streaming surface and
+	// must not let secret-shaped strings (commit messages, mail bodies,
+	// any other 'any' payload) reach WS/SSE subscribers or sit in the
+	// replay buffer raw.
+	data := input.Data
+	if h.redactor != nil && data != nil {
+		data, _ = h.redactor.RedactStreamedEvent(data)
 	}
 
 	h.mu.Lock()
@@ -129,7 +150,7 @@ func (h *EventHub) Publish(input PublishInput) Event {
 		Actor:         input.Actor,
 		CausationID:   input.CausationID,
 		CorrelationID: input.CorrelationID,
-		Data:          input.Data,
+		Data:          data,
 	}
 	h.events = append(h.events, ev)
 	if len(h.events) > h.replayCapacity {

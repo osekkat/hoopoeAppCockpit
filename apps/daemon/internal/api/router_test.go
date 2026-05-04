@@ -17,6 +17,7 @@ import (
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/capabilities"
 	jobstore "github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/jobs"
 	projectstore "github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/projects"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/redaction"
 	schemas "github.com/hoopoe-cockpit/hoopoe/packages/schemas/go"
 	_ "modernc.org/sqlite"
 	"nhooyr.io/websocket"
@@ -824,6 +825,83 @@ func TestSlowConsumerReceivesLagEvent(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for lag event")
+	}
+}
+
+func TestEventHubRedactsPublishDataBeforeDeliveryAndReplay(t *testing.T) {
+	// hp-aek: EventHub.Publish must scrub secret-shaped data before it
+	// reaches WS/SSE subscribers or sits in the replay buffer. Mirrors
+	// audit.Writer.redactEntry. Without the redactor, a commit message
+	// containing `sk-...` or an agent-mail body referencing an API key
+	// reaches subscribers raw.
+	redactor := redaction.NewDefault()
+	hub := NewEventHub(EventHubConfig{Redactor: redactor})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sub := hub.Subscribe(ctx, []string{"project:test"})
+	defer sub.Close()
+
+	const secret = "sk-abcdef0123456789ABCDEF0123456789"
+	hub.Publish(PublishInput{
+		Channel: "project:test",
+		Type:    "git.commit",
+		Data: map[string]any{
+			"message":  "leak " + secret + " in body",
+			"metadata": map[string]any{"key": secret},
+			"list":     []any{"safe", secret, "Bearer abcdefghijklmnopqrstuvwxyz012345"},
+		},
+	})
+
+	select {
+	case ev := <-sub.Events():
+		body, err := json.Marshal(ev.Data)
+		if err != nil {
+			t.Fatalf("marshal delivered event: %v", err)
+		}
+		rendered := string(body)
+		if strings.Contains(rendered, "sk-abcdef") {
+			t.Fatalf("subscriber received raw secret in delivered Data: %s", rendered)
+		}
+		if strings.Contains(rendered, "abcdefghijklmnopqrstuvwxyz012345") {
+			t.Fatalf("subscriber received raw bearer token in delivered Data: %s", rendered)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for delivered event")
+	}
+
+	// Replay buffer must also be redacted — the same surface stores it.
+	replayed, _ := hub.Replay("project:test", 0)
+	if len(replayed) == 0 {
+		t.Fatal("replay buffer empty")
+	}
+	body, err := json.Marshal(replayed[0].Data)
+	if err != nil {
+		t.Fatalf("marshal replay event: %v", err)
+	}
+	if strings.Contains(string(body), "sk-abcdef") {
+		t.Fatalf("replay buffer holds raw secret: %s", body)
+	}
+}
+
+func TestEventHubWithoutRedactorDeliversDataVerbatim(t *testing.T) {
+	// Backwards-compat: when EventHubConfig.Redactor is nil, Publish must
+	// not panic and must deliver Data unchanged. Tests + chaos/mock
+	// fixtures rely on this.
+	hub := NewEventHub(EventHubConfig{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sub := hub.Subscribe(ctx, []string{"project:nofilter"})
+	defer sub.Close()
+
+	hub.Publish(PublishInput{Channel: "project:nofilter", Type: "raw", Data: map[string]any{"message": "literal-secret-shaped sk-abcdef0123456789ABCDEF0123456789"}})
+	select {
+	case ev := <-sub.Events():
+		body, _ := json.Marshal(ev.Data)
+		if !strings.Contains(string(body), "sk-abcdef0123456789") {
+			t.Fatalf("nil redactor mutated Data: %s", body)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for event")
 	}
 }
 
