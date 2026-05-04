@@ -85,14 +85,20 @@ export {
 export {
   HttpVersionDriver,
   HttpVersionError,
-  VersionedHeartbeatDriver,
   type HttpVersionDriverOptions,
   type HttpVersionErrorCode,
   type HttpVersionProbeResult,
   type VersionCompatibility,
-  type VersionProbeDriver,
-  type VersionedHeartbeatDriverOptions,
 } from "./httpVersionDriver.ts";
+
+export {
+  CompositeHeartbeatDriver,
+  type CompositeHeartbeatAuditEvent,
+  type CompositeHeartbeatAuditSink,
+  type CompositeHeartbeatDriverOptions,
+  type HealthProbe,
+  type VersionProbe,
+} from "./compositeHeartbeatDriver.ts";
 
 export {
   installSleepWakeMonitor,
