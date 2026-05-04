@@ -123,6 +123,62 @@ func TestJobRoutesWithoutRegistryReturnUnavailableProblem(t *testing.T) {
 	}
 }
 
+func TestRouterFallbacksReturnGeneratedProblems(t *testing.T) {
+	router := NewRouter(Config{})
+
+	for _, tc := range []struct {
+		name         string
+		method       string
+		path         string
+		status       int
+		code         string
+		allowInclude string
+	}{
+		{
+			name:   "not found",
+			method: http.MethodGet,
+			path:   "/v1/does-not-exist",
+			status: http.StatusNotFound,
+			code:   "route.not_found",
+		},
+		{
+			name:         "method not allowed",
+			method:       http.MethodPost,
+			path:         "/v1/version",
+			status:       http.StatusMethodNotAllowed,
+			code:         "route.method_not_allowed",
+			allowInclude: http.MethodGet,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(tc.method, tc.path, nil)
+			rec := httptest.NewRecorder()
+
+			router.ServeHTTP(rec, req)
+
+			if rec.Code != tc.status {
+				t.Fatalf("status = %d, want %d; body=%s", rec.Code, tc.status, rec.Body.String())
+			}
+			if got := rec.Header().Get("Content-Type"); got != "application/problem+json; charset=utf-8" {
+				t.Fatalf("content-type = %q, want problem+json", got)
+			}
+			if tc.allowInclude != "" {
+				allow := strings.Join(rec.Header().Values("Allow"), ",")
+				if !strings.Contains(allow, tc.allowInclude) {
+					t.Fatalf("allow = %q, want method %q", allow, tc.allowInclude)
+				}
+			}
+			var body schemas.Problem
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+				t.Fatalf("decode problem: %v", err)
+			}
+			if body.Code != tc.code || body.Status != tc.status {
+				t.Fatalf("problem = %+v", body)
+			}
+		})
+	}
+}
+
 func TestVersionRoundTrip(t *testing.T) {
 	router := NewRouter(Config{
 		Build: BuildInfo{

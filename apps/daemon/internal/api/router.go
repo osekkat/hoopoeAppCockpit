@@ -155,8 +155,48 @@ func NewRouter(cfg Config) http.Handler {
 	// + session/revoke (chi's last registration wins for a given path +
 	// method). When the AuthConfig is unset, the stubs answer with 501.
 	s.mountAuthRoutes(r)
+	mountProblemFallbacks(r)
 
 	return r
+}
+
+func mountProblemFallbacks(r chi.Router) {
+	r.NotFound(func(w http.ResponseWriter, req *http.Request) {
+		writeProblemCode(w, http.StatusNotFound, "route.not_found", "route not found", "no route matched "+req.URL.Path)
+	})
+	r.MethodNotAllowed(func(w http.ResponseWriter, req *http.Request) {
+		for _, method := range allowedMethodsForPath(r, req.URL.Path) {
+			w.Header().Add("Allow", method)
+		}
+		writeProblemCode(
+			w,
+			http.StatusMethodNotAllowed,
+			"route.method_not_allowed",
+			"method not allowed",
+			req.Method+" is not supported for "+req.URL.Path,
+		)
+	})
+}
+
+func allowedMethodsForPath(routes chi.Routes, path string) []string {
+	candidates := []string{
+		http.MethodGet,
+		http.MethodHead,
+		http.MethodPost,
+		http.MethodPut,
+		http.MethodPatch,
+		http.MethodDelete,
+		http.MethodOptions,
+		http.MethodConnect,
+		http.MethodTrace,
+	}
+	allowed := make([]string, 0, len(candidates))
+	for _, method := range candidates {
+		if routes.Match(chi.NewRouteContext(), method, path) {
+			allowed = append(allowed, method)
+		}
+	}
+	return allowed
 }
 
 func normalizeConfig(cfg Config) *server {
