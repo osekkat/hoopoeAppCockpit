@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "tool": "ntm",
+  "fixturePack": "phase0-ntm-2026-05-04",
+  "scope": "phase0-real-vps-conformance",
+  "expectedDiscrepancies": [
+    {
+      "id": "ntm.phase0.no-active-sessions",
+      "status": "accepted-gap",
+      "reason": "The canonical Phase 0 NTM capture was taken from a fresh VPS with no sessions and no .beads directory, so Session, Pane, Action, and Approval matrices are intentionally empty until an active-session fixture pack lands.",
+      "fields": ["sessions", "panes", "actions", "approvals"]
+    },
+    {
+      "id": "ntm.phase0.robot-events-absent",
+      "status": "accepted-drift",
+      "flag": "--robot-events",
+      "substitution": "no direct equivalent; --robot-history requires a session arg, --robot-replay also session-scoped — captured neither (defer until we have a session)"
+    },
+    {
+      "id": "ntm.phase0.robot-attention-absent",
+      "status": "accepted-drift",
+      "flag": "--robot-attention",
+      "substitution": "captured --robot-alerts which exposes the same alert-state surface used by attention/label-attention"
+    }
+  ]
+}
