@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/api/vps"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/jobs"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/projects"
 	schemas "github.com/hoopoe-cockpit/hoopoe/packages/schemas/go"
@@ -43,10 +44,11 @@ func (s *server) mountSeedContractRoutes(r chi.Router) {
 		r.Post("/activate", s.handlePlannedWrite("projects.activate"))
 		r.Get("/readiness", s.handleProjectReadiness)
 
-		r.Get("/git/status", s.handlePlannedRead("git.status"))
-		r.Get("/git/staged-diff", s.handlePlannedRead("git.staged_diff"))
-		r.Get("/git/unstaged-diff", s.handlePlannedRead("git.unstaged_diff"))
-		r.Get("/git/unpushed-commits", s.handlePlannedRead("git.unpushed_commits"))
+		vps.MountGitRoutes(r, vps.Config{
+			Projects: s.projects,
+			Logger:   s.logger,
+			Now:      s.now,
+		})
 		r.Post("/git/push", s.handlePlannedWrite("git.push"))
 
 		r.Get("/plans", s.handlePlans)
