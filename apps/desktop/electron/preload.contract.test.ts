@@ -26,11 +26,13 @@ import {
 test("preload contract: every allowlisted preload channel is registrable on IpcRegistry", () => {
   const registry = new IpcRegistry();
   // Each preload channel can be registered — this proves main + preload
-  // see the same allowlist.
+  // see the same allowlist and each renderer-facing channel has validators.
   for (const channel of Object.values(PRELOAD_IPC_CHANNELS)) {
     expect(() =>
       registry.register({
         id: channel,
+        validateInput: passthrough,
+        validateOutput: passthrough,
         handler: { handle: () => null },
       }),
     ).not.toThrow();
@@ -123,3 +125,5 @@ test("preload contract: source-of-truth parity — registry allowlist matches is
     expect(isAllowedRegistryCommandId(evil)).toBe(false);
   }
 });
+
+const passthrough = (value: unknown): unknown => value;

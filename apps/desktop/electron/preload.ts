@@ -40,20 +40,25 @@ import {
 
 const CHANNELS = PRELOAD_IPC_CHANNELS;
 
-// Generic invoke shape — every method round-trips through ipcRenderer.invoke
-// with a single args object and returns whatever the main-process handler
-// resolves to. The renderer-side typed shapes come from `@hoopoe/schemas`.
-async function invoke<I, O>(channel: string, args: I): Promise<O> {
-  return (await ipcRenderer.invoke(channel, args)) as O;
+// Every method round-trips through ipcRenderer.invoke with a single args
+// object. Concrete request/response validation happens in main-process
+// IpcRegistry handlers; preload exposes unknown wire values until a caller
+// narrows them with the generated schema types.
+async function invoke(channel: string, args: unknown): Promise<unknown> {
+  return await ipcRenderer.invoke(channel, args);
+}
+
+async function invokeVoid(channel: string, args: unknown): Promise<void> {
+  await invoke(channel, args);
 }
 
 // Subscribe shape — main process pushes events on a channel; the listener
 // fires with the typed payload until `unsubscribe()` is called.
-function subscribe<P>(
+function subscribe(
   channel: string,
-  listener: (payload: P) => void,
+  listener: (payload: unknown) => void,
 ): () => void {
-  const wrapped = (_event: IpcRendererEvent, payload: P) => {
+  const wrapped = (_event: IpcRendererEvent, payload: unknown) => {
     listener(payload);
   };
   ipcRenderer.on(channel, wrapped);
@@ -69,42 +74,42 @@ export interface HoopoeBridge {
     /** hp-n5za: `method` is statically constrained to the allowlist in
      *  `src/shared/ipc-contract.ts`. Unknown methods are rejected at the
      *  preload boundary BEFORE main IPC sees them. */
-    readonly request: <I, O>(method: DaemonRequestMethod, body: I) => Promise<O>;
-    readonly subscribe: <P>(
+    readonly request: (method: DaemonRequestMethod, body: unknown) => Promise<unknown>;
+    readonly subscribe: (
       topic: DaemonSubscribeTopic,
-      listener: (payload: P) => void,
+      listener: (payload: unknown) => void,
     ) => () => void;
   };
   readonly settings: {
-    readonly get: <T>() => Promise<T>;
-    readonly set: <T>(partial: T) => Promise<void>;
-    readonly watch: <T>(listener: (next: T) => void) => () => void;
+    readonly get: () => Promise<unknown>;
+    readonly set: (partial: unknown) => Promise<void>;
+    readonly watch: (listener: (next: unknown) => void) => () => void;
   };
   readonly keybindings: {
-    readonly compile: <I, O>(rules: I) => Promise<O>;
-    readonly dispatch: <I, O>(input: I) => Promise<O>;
+    readonly compile: (rules: unknown) => Promise<unknown>;
+    readonly dispatch: (input: unknown) => Promise<unknown>;
   };
   readonly approvals: {
-    readonly listPending: <O>() => Promise<O>;
-    readonly approve: <I, O>(decision: I) => Promise<O>;
-    readonly deny: <I, O>(decision: I) => Promise<O>;
-    readonly extend: <I, O>(decision: I) => Promise<O>;
+    readonly listPending: () => Promise<unknown>;
+    readonly approve: (decision: unknown) => Promise<unknown>;
+    readonly deny: (decision: unknown) => Promise<unknown>;
+    readonly extend: (decision: unknown) => Promise<unknown>;
   };
   readonly files: {
     readonly openExternal: (url: string) => Promise<void>;
     readonly revealInFinder: (path: string) => Promise<void>;
-    readonly ripgrep: <I, O>(query: I) => Promise<O>;
+    readonly ripgrep: (query: unknown) => Promise<unknown>;
   };
   readonly ssh: {
-    readonly listKeys: <O>() => Promise<O>;
-    readonly generateKey: <I, O>(input: I) => Promise<O>;
+    readonly listKeys: () => Promise<unknown>;
+    readonly generateKey: (input: unknown) => Promise<unknown>;
   };
   readonly clone: {
     /** hp-58wp: Discard local changes against a project's local clone.
      *  Runs `git reset --hard @{u}` + `git clean -fd` in main with safe
      *  argv. The renderer never supplies a path; only the projectId is
      *  carried across the IPC boundary. */
-    readonly discardLocalChanges: <O>(input: { projectId: string }) => Promise<O>;
+    readonly discardLocalChanges: (input: { projectId: string }) => Promise<unknown>;
     /** hp-5bhy: Reveal the project's local clone in Finder. Main
      *  resolves the path from the project registry; renderer carries
      *  only the projectId. */
@@ -115,27 +120,27 @@ export interface HoopoeBridge {
     /** hp-5bhy: Persist a per-project cap override into clone-state.json.
      *  Pass `capsOverride: null` to clear the override and fall back to
      *  the global cap config. */
-    readonly setCapOverride: <O>(input: {
+    readonly setCapOverride: (input: {
       projectId: string;
       capsOverride: { softCapBytes: number; hardCapBytes: number } | null;
-    }) => Promise<O>;
+    }) => Promise<unknown>;
   };
   readonly power: {
     /** hp-6gs4: Scoped Mac awake assertion while a ChatGPT Pro Oracle
      *  browser round is actively running. Main owns the OS mechanisms;
      *  renderer passes only round metadata. */
-    readonly acquire: <O>(input: {
+    readonly acquire: (input: {
       roundId: string;
       modelId?: string;
       oracleTopology?: "mac" | "vps";
       estimatedDurationMs?: number;
       reason?: string;
-    }) => Promise<O>;
-    readonly release: <O>(input: {
+    }) => Promise<unknown>;
+    readonly release: (input: {
       assertionId: string;
       reason?: "round_complete" | "round_failed" | "round_cancelled" | "watchdog_force_release" | "user_disabled" | "shutdown";
-    }) => Promise<O>;
-    readonly snapshot: <O>() => Promise<O>;
+    }) => Promise<unknown>;
+    readonly snapshot: () => Promise<unknown>;
   };
 }
 
@@ -172,7 +177,7 @@ export const hoopoeBridge: HoopoeBridge = {
   },
   settings: {
     get: () => invoke(CHANNELS.settingsGet, {}),
-    set: (partial) => invoke(CHANNELS.settingsSet, partial),
+    set: (partial) => invokeVoid(CHANNELS.settingsSet, partial),
     watch: (listener) => subscribe(CHANNELS.settingsWatch, listener),
   },
   keybindings: {
@@ -186,8 +191,8 @@ export const hoopoeBridge: HoopoeBridge = {
     extend: (decision) => invoke(CHANNELS.approvalsExtend, decision),
   },
   files: {
-    openExternal: (url) => invoke(CHANNELS.filesOpenExternal, { url }),
-    revealInFinder: (path) => invoke(CHANNELS.filesRevealInFinder, { path }),
+    openExternal: (url) => invokeVoid(CHANNELS.filesOpenExternal, { url }),
+    revealInFinder: (path) => invokeVoid(CHANNELS.filesRevealInFinder, { path }),
     ripgrep: (query) => invoke(CHANNELS.filesRipgrep, query),
   },
   ssh: {
@@ -196,8 +201,8 @@ export const hoopoeBridge: HoopoeBridge = {
   },
   clone: {
     discardLocalChanges: (input) => invoke(CHANNELS.cloneDiscardLocalChanges, input),
-    revealInFinder: (input) => invoke(CHANNELS.cloneRevealInFinder, input),
-    openInTerminal: (input) => invoke(CHANNELS.cloneOpenInTerminal, input),
+    revealInFinder: (input) => invokeVoid(CHANNELS.cloneRevealInFinder, input),
+    openInTerminal: (input) => invokeVoid(CHANNELS.cloneOpenInTerminal, input),
     setCapOverride: (input) => invoke(CHANNELS.cloneSetCapOverride, input),
   },
   power: {

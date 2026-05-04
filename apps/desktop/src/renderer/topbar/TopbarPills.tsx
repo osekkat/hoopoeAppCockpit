@@ -53,7 +53,7 @@ export interface PowerAssertionSnapshot {
 }
 
 interface ResolvedPowerBridge {
-  readonly snapshot: <O>() => Promise<O>;
+  readonly snapshot: () => Promise<unknown>;
 }
 
 type WindowTimerHandle = ReturnType<Window["setTimeout"]>;
@@ -152,7 +152,7 @@ export function startPowerSnapshotPoller({
 
   const load = async () => {
     try {
-      const next = await bridge.snapshot<PowerAssertionSnapshot>();
+      const next = asPowerAssertionSnapshot(await bridge.snapshot());
       if (cancelled) return;
       failureAnnounced = false;
       onSnapshot(next);
@@ -203,6 +203,67 @@ function resolvePowerBridge(): ResolvedPowerBridge | null {
   const snapshot = window.hoopoe?.power?.snapshot;
   if (typeof snapshot !== "function") return null;
   return { snapshot };
+}
+
+function asPowerAssertionSnapshot(value: unknown): PowerAssertionSnapshot {
+  if (!isRecord(value)) {
+    throw new Error("power snapshot must be an object");
+  }
+  if (typeof value.active !== "boolean") {
+    throw new Error("power snapshot active must be boolean");
+  }
+  if (!(value.assertionId === null || typeof value.assertionId === "string")) {
+    throw new Error("power snapshot assertionId must be string|null");
+  }
+  if (
+    !(
+      value.mechanism === null ||
+      value.mechanism === "powersaveblocker" ||
+      value.mechanism === "nsprocessinfo" ||
+      value.mechanism === "caffeinate"
+    )
+  ) {
+    throw new Error("power snapshot mechanism is invalid");
+  }
+  if (
+    !(
+      value.level === null ||
+      value.level === "display" ||
+      value.level === "app-suspension" ||
+      value.level === "system"
+    )
+  ) {
+    throw new Error("power snapshot level is invalid");
+  }
+  if (
+    !Array.isArray(value.ownerRoundIds) ||
+    !value.ownerRoundIds.every((id) => typeof id === "string")
+  ) {
+    throw new Error("power snapshot ownerRoundIds must be string[]");
+  }
+  if (
+    typeof value.heldCount !== "number" ||
+    !Number.isInteger(value.heldCount) ||
+    value.heldCount < 0
+  ) {
+    throw new Error("power snapshot heldCount must be a non-negative integer");
+  }
+  if (!(value.acquiredAt === null || typeof value.acquiredAt === "string")) {
+    throw new Error("power snapshot acquiredAt must be string|null");
+  }
+  return {
+    active: value.active,
+    assertionId: value.assertionId,
+    mechanism: value.mechanism,
+    level: value.level,
+    ownerRoundIds: value.ownerRoundIds,
+    heldCount: value.heldCount,
+    acquiredAt: value.acquiredAt,
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export function powerAssertionAria(snapshot: PowerAssertionSnapshot): string {

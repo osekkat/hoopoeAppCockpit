@@ -10,7 +10,7 @@ import {
   type PowerAssertionAuditEvent,
   type PowerSaveBlockerLike,
 } from "./macPowerAssert.ts";
-import { IpcRegistry } from "./IpcRegistry.ts";
+import { IpcPayloadValidationError, IpcRegistry } from "./IpcRegistry.ts";
 
 function fixedClock(startMs = 0) {
   let nowMs = startMs;
@@ -335,7 +335,7 @@ describe("PowerAssertionManager", () => {
 
     await expect(
       registry.dispatch("hoopoe.power.release", { assertionId: "pa-1", reason: "not-a-reason" }),
-    ).rejects.toThrow(PowerAssertionError);
+    ).rejects.toThrow(IpcPayloadValidationError);
   });
 });
 

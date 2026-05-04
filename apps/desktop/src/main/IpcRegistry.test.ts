@@ -1,9 +1,13 @@
 import { expect, test } from "bun:test";
 import {
   IpcCommandUnavailableError,
+  IpcPayloadValidationError,
   IpcRegistry,
+  MissingIpcValidatorError,
   UnknownIpcCommandError,
+  type IpcValueValidator,
 } from "./IpcRegistry.ts";
+import { PRELOAD_IPC_CHANNELS } from "../shared/ipc-contract.ts";
 
 // hp-n5za: test fixtures use the `internal.` prefix from the IPC contract
 // allowlist (apps/desktop/src/shared/ipc-contract.ts) so they exercise the
@@ -80,3 +84,82 @@ test("IpcRegistry: registering same id twice fails fast", () => {
     registry.register({ id: "internal.x", handler: { handle: () => null } }),
   ).toThrow();
 });
+
+test("IpcRegistry: renderer-facing preload channels require input and output validators", () => {
+  const registry = new IpcRegistry();
+
+  expect(() =>
+    registry.register({
+      id: PRELOAD_IPC_CHANNELS.filesOpenExternal,
+      handler: { handle: () => null },
+    }),
+  ).toThrow(MissingIpcValidatorError);
+
+  expect(() =>
+    registry.register({
+      id: PRELOAD_IPC_CHANNELS.filesOpenExternal,
+      validateInput: passthrough,
+      handler: { handle: () => null },
+    }),
+  ).toThrow(MissingIpcValidatorError);
+});
+
+test("IpcRegistry: input validation runs before renderer-facing handlers", async () => {
+  const registry = new IpcRegistry();
+  let calls = 0;
+  registry.register<{ url: string }, { ok: true }>({
+    id: PRELOAD_IPC_CHANNELS.filesOpenExternal,
+    validateInput: (value) => {
+      if (!isRecord(value) || typeof value.url !== "string") {
+        throw new Error("url required");
+      }
+      return { url: value.url };
+    },
+    validateOutput: expectOk,
+    handler: {
+      handle: () => {
+        calls++;
+        return { ok: true };
+      },
+    },
+  });
+
+  await expect(
+    registry.dispatch(PRELOAD_IPC_CHANNELS.filesOpenExternal, { path: "/tmp/x" }),
+  ).rejects.toBeInstanceOf(IpcPayloadValidationError);
+  expect(calls).toBe(0);
+});
+
+test("IpcRegistry: output validation catches renderer-facing handler drift", async () => {
+  const registry = new IpcRegistry();
+  registry.register<{ url: string }, { ok: true }>({
+    id: PRELOAD_IPC_CHANNELS.filesOpenExternal,
+    validateInput: (value) => {
+      if (!isRecord(value) || typeof value.url !== "string") {
+        throw new Error("url required");
+      }
+      return { url: value.url };
+    },
+    validateOutput: expectOk,
+    handler: {
+      handle: () => ({ ok: false }) as unknown as { ok: true },
+    },
+  });
+
+  await expect(
+    registry.dispatch(PRELOAD_IPC_CHANNELS.filesOpenExternal, { url: "https://example.com" }),
+  ).rejects.toBeInstanceOf(IpcPayloadValidationError);
+});
+
+const passthrough: IpcValueValidator<unknown> = (value) => value;
+
+function expectOk(value: unknown): { ok: true } {
+  if (!isRecord(value) || value.ok !== true) {
+    throw new Error("ok:true required");
+  }
+  return { ok: true };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}

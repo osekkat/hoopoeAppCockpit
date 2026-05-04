@@ -12,15 +12,14 @@
 //     (currently `mock-flywheel.` and `internal.`).
 // Adding a new command is a deliberate edit of the contract file.
 //
-// Validation of `Input`/`Output` shapes against generated TypeScript types
-// from `@hoopoe/schemas` is hp-r3i (Phase 2.5). The interim boundary is
-// documented + tested here: the unconstrained generics on `dispatch` are
-// still a known gap; allowlist + actor + redaction layers now sit above
-// this gap so a malicious renderer can't drive arbitrary commands.
+// hp-ifq hardening: renderer-facing preload channels must register runtime
+// input/output validators. Internal command ids may still use typed handlers
+// without validators because they are not reachable through the preload bridge.
 
 import {
   IpcContractError,
   isAllowedRegistryCommandId,
+  isPreloadIpcChannel,
 } from "../shared/ipc-contract.ts";
 
 export type WhenContextKeys = ReadonlyArray<string>;
@@ -29,9 +28,18 @@ export interface IpcCommandHandler<Input, Output> {
   readonly handle: (input: Input) => Promise<Output> | Output;
 }
 
+export type IpcValueValidator<T> = (value: unknown) => T;
+export type IpcPayloadValidationPhase = "input" | "output";
+
 export interface IpcCommandRegistration<Input, Output> {
   readonly id: string;
   readonly handler: IpcCommandHandler<Input, Output>;
+  /** Required for renderer-facing `hoopoe.*` preload channels. Validates and
+   * narrows the untrusted renderer payload before the handler runs. */
+  readonly validateInput?: IpcValueValidator<Input>;
+  /** Required for renderer-facing `hoopoe.*` preload channels. Validates the
+   * handler's returned wire shape before it crosses back into the renderer. */
+  readonly validateOutput?: IpcValueValidator<Output>;
   /** When-clause: keys that must all be true in the dispatch context for the
    * handler to be eligible. Undefined / empty means "always eligible". */
   readonly whenContextKeys?: WhenContextKeys;
@@ -63,6 +71,36 @@ export class IpcCommandUnavailableError extends Error {
   }
 }
 
+export class MissingIpcValidatorError extends Error {
+  readonly commandId: string;
+  readonly missing: readonly IpcPayloadValidationPhase[];
+  constructor(commandId: string, missing: readonly IpcPayloadValidationPhase[]) {
+    super(
+      `IPC command "${commandId}" is renderer-facing and must register ${missing.join(
+        " and ",
+      )} validator${missing.length === 1 ? "" : "s"}`,
+    );
+    this.name = "MissingIpcValidatorError";
+    this.commandId = commandId;
+    this.missing = missing;
+  }
+}
+
+export class IpcPayloadValidationError extends Error {
+  readonly commandId: string;
+  readonly phase: IpcPayloadValidationPhase;
+  override readonly cause: unknown;
+
+  constructor(commandId: string, phase: IpcPayloadValidationPhase, cause: unknown) {
+    const causeMessage = cause instanceof Error ? cause.message : String(cause);
+    super(`IPC ${phase} validation failed for "${commandId}": ${causeMessage}`);
+    this.name = "IpcPayloadValidationError";
+    this.commandId = commandId;
+    this.phase = phase;
+    this.cause = cause;
+  }
+}
+
 /**
  * Security-event payload emitted whenever the registry rejects a command —
  * either because the id isn't in the contract allowlist (`channel-not-allowlisted`),
@@ -81,12 +119,16 @@ export class IpcCommandUnavailableError extends Error {
 export type IpcSecurityEventKind =
   | "channel-not-allowlisted"
   | "command-not-registered"
-  | "command-not-eligible";
+  | "command-not-eligible"
+  | "preload-channel-missing-validator"
+  | "payload-validation-failed";
 
 export interface IpcSecurityEvent {
   readonly kind: IpcSecurityEventKind;
   readonly commandId: string;
   readonly missingContextKeys?: readonly string[];
+  readonly missingValidators?: readonly IpcPayloadValidationPhase[];
+  readonly payloadPhase?: IpcPayloadValidationPhase;
   readonly stage: "register" | "dispatch";
 }
 
@@ -136,6 +178,20 @@ export class IpcRegistry {
     }
     if (this.registrations.has(registration.id)) {
       throw new Error(`IPC command already registered: ${registration.id}`);
+    }
+    const missingValidators: IpcPayloadValidationPhase[] = [];
+    if (isPreloadIpcChannel(registration.id)) {
+      if (!registration.validateInput) missingValidators.push("input");
+      if (!registration.validateOutput) missingValidators.push("output");
+    }
+    if (missingValidators.length > 0) {
+      this.emitSecurityEvent({
+        kind: "preload-channel-missing-validator",
+        commandId: registration.id,
+        missingValidators,
+        stage: "register",
+      });
+      throw new MissingIpcValidatorError(registration.id, missingValidators);
     }
     this.registrations.set(
       registration.id,
@@ -200,8 +256,40 @@ export class IpcRegistry {
       });
       throw new IpcCommandUnavailableError(commandId, missing);
     }
-    const handler = registration.handler as IpcCommandHandler<Input, Output>;
-    return await handler.handle(input);
+    const inputForHandler = this.validatePayload(
+      commandId,
+      "input",
+      registration.validateInput,
+      input,
+    );
+    const handler = registration.handler as IpcCommandHandler<unknown, unknown>;
+    const output = await handler.handle(inputForHandler);
+    return this.validatePayload(
+      commandId,
+      "output",
+      registration.validateOutput,
+      output,
+    ) as Output;
+  }
+
+  private validatePayload<T>(
+    commandId: string,
+    phase: IpcPayloadValidationPhase,
+    validator: IpcValueValidator<T> | undefined,
+    value: unknown,
+  ): T | unknown {
+    if (!validator) return value;
+    try {
+      return validator(value);
+    } catch (error) {
+      this.emitSecurityEvent({
+        kind: "payload-validation-failed",
+        commandId,
+        payloadPhase: phase,
+        stage: "dispatch",
+      });
+      throw new IpcPayloadValidationError(commandId, phase, error);
+    }
   }
 
   /** Test-only helper for asserting registry contents. */

@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { PRELOAD_IPC_CHANNELS } from "../shared/ipc-contract.ts";
-import type { IpcRegistry } from "./IpcRegistry.ts";
+import type { IpcRegistry, IpcValueValidator } from "./IpcRegistry.ts";
 
 export type PowerAssertionLevel = "display" | "app-suspension" | "system";
 export type PowerAssertionMechanism = "powersaveblocker" | "nsprocessinfo" | "caffeinate";
@@ -477,8 +477,10 @@ export function registerPowerAssertionIpc(
   return [
     registry.register<PowerAssertionAcquireInput, PowerAssertionSnapshot>({
       id: PRELOAD_IPC_CHANNELS.powerAcquire,
+      validateInput: assertAcquireInput,
+      validateOutput: assertPowerAssertionSnapshot,
       handler: {
-        handle: (input) => manager.acquire(assertAcquireInput(input)).snapshot(),
+        handle: (input) => manager.acquire(input).snapshot(),
       },
     }),
     registry.register<
@@ -486,12 +488,16 @@ export function registerPowerAssertionIpc(
       PowerAssertionSnapshot
     >({
       id: PRELOAD_IPC_CHANNELS.powerRelease,
+      validateInput: assertReleaseInput,
+      validateOutput: assertPowerAssertionSnapshot,
       handler: {
-        handle: (input) => manager.release(assertReleaseInput(input).assertionId, input.reason),
+        handle: (input) => manager.release(input.assertionId, input.reason),
       },
     }),
     registry.register<Record<string, never>, PowerAssertionSnapshot>({
       id: PRELOAD_IPC_CHANNELS.powerSnapshot,
+      validateInput: assertEmptyObject,
+      validateOutput: assertPowerAssertionSnapshot,
       handler: {
         handle: () => manager.snapshot(),
       },
@@ -546,20 +552,161 @@ function normalizeAcquireInput(
   };
 }
 
-function assertAcquireInput(input: PowerAssertionAcquireInput): PowerAssertionAcquireInput {
-  normalizeAcquireInput(input);
-  return input;
-}
+const POWER_ASSERTION_MECHANISMS: ReadonlySet<PowerAssertionMechanism> = new Set([
+  "powersaveblocker",
+  "nsprocessinfo",
+  "caffeinate",
+]);
 
-function assertReleaseInput(input: {
+const POWER_ASSERTION_LEVELS: ReadonlySet<PowerAssertionLevel> = new Set([
+  "display",
+  "app-suspension",
+  "system",
+]);
+
+const assertAcquireInput: IpcValueValidator<PowerAssertionAcquireInput> = (
+  input,
+) => {
+  if (!isRecord(input)) {
+    throw new PowerAssertionError("invalid_input", "acquire input must be an object");
+  }
+  if (typeof input.roundId !== "string") {
+    throw new PowerAssertionError("invalid_input", "roundId is required");
+  }
+  const out: {
+    roundId: string;
+    modelId?: string;
+    oracleTopology?: "mac" | "vps";
+    estimatedDurationMs?: number;
+    reason?: string;
+  } = {
+    roundId: input.roundId,
+  };
+  if (input.modelId !== undefined) {
+    if (typeof input.modelId !== "string") {
+      throw new PowerAssertionError("invalid_input", "modelId must be a string");
+    }
+    out.modelId = input.modelId;
+  }
+  if (input.oracleTopology !== undefined) {
+    if (input.oracleTopology !== "mac" && input.oracleTopology !== "vps") {
+      throw new PowerAssertionError("invalid_input", "invalid oracleTopology");
+    }
+    out.oracleTopology = input.oracleTopology;
+  }
+  if (input.estimatedDurationMs !== undefined) {
+    if (
+      typeof input.estimatedDurationMs !== "number" ||
+      !Number.isFinite(input.estimatedDurationMs) ||
+      input.estimatedDurationMs < 0
+    ) {
+      throw new PowerAssertionError("invalid_input", "estimatedDurationMs must be a non-negative finite number");
+    }
+    out.estimatedDurationMs = input.estimatedDurationMs;
+  }
+  if (input.reason !== undefined) {
+    if (typeof input.reason !== "string") {
+      throw new PowerAssertionError("invalid_input", "reason must be a string");
+    }
+    out.reason = input.reason;
+  }
+  normalizeAcquireInput(out);
+  return out;
+};
+
+const assertReleaseInput: IpcValueValidator<{
   readonly assertionId: string;
   readonly reason?: PowerAssertionReleaseReason;
-}): { readonly assertionId: string; readonly reason?: PowerAssertionReleaseReason } {
-  cleanIdentifier(input.assertionId, "assertionId");
-  if (input.reason !== undefined && !POWER_ASSERTION_RELEASE_REASONS.has(input.reason)) {
-    throw new PowerAssertionError("invalid_input", "invalid release reason");
+}> = (input) => {
+  if (!isRecord(input)) {
+    throw new PowerAssertionError("invalid_input", "release input must be an object");
   }
-  return input;
+  if (typeof input.assertionId !== "string") {
+    throw new PowerAssertionError("invalid_input", "assertionId is required");
+  }
+  const out: { assertionId: string; reason?: PowerAssertionReleaseReason } = {
+    assertionId: input.assertionId,
+  };
+  if (input.reason !== undefined) {
+    if (
+      typeof input.reason !== "string" ||
+      !POWER_ASSERTION_RELEASE_REASONS.has(input.reason as PowerAssertionReleaseReason)
+    ) {
+      throw new PowerAssertionError("invalid_input", "invalid release reason");
+    }
+    out.reason = input.reason as PowerAssertionReleaseReason;
+  }
+  cleanIdentifier(out.assertionId, "assertionId");
+  return out;
+};
+
+const assertEmptyObject: IpcValueValidator<Record<string, never>> = (input) => {
+  if (!isRecord(input) || Object.keys(input).length > 0) {
+    throw new PowerAssertionError("invalid_input", "input must be an empty object");
+  }
+  return {};
+};
+
+const assertPowerAssertionSnapshot: IpcValueValidator<PowerAssertionSnapshot> = (
+  input,
+) => {
+  if (!isRecord(input)) {
+    throw new PowerAssertionError("invalid_input", "snapshot output must be an object");
+  }
+  const active = input.active;
+  const assertionId = input.assertionId;
+  const mechanism = input.mechanism;
+  const level = input.level;
+  const ownerRoundIds = input.ownerRoundIds;
+  const heldCount = input.heldCount;
+  const acquiredAt = input.acquiredAt;
+
+  if (typeof active !== "boolean") {
+    throw new PowerAssertionError("invalid_input", "snapshot.active must be boolean");
+  }
+  if (!(assertionId === null || typeof assertionId === "string")) {
+    throw new PowerAssertionError("invalid_input", "snapshot.assertionId must be string|null");
+  }
+  if (
+    !(
+      mechanism === null ||
+      (typeof mechanism === "string" &&
+        POWER_ASSERTION_MECHANISMS.has(mechanism as PowerAssertionMechanism))
+    )
+  ) {
+    throw new PowerAssertionError("invalid_input", "snapshot.mechanism is invalid");
+  }
+  if (
+    !(
+      level === null ||
+      (typeof level === "string" &&
+        POWER_ASSERTION_LEVELS.has(level as PowerAssertionLevel))
+    )
+  ) {
+    throw new PowerAssertionError("invalid_input", "snapshot.level is invalid");
+  }
+  if (!Array.isArray(ownerRoundIds) || !ownerRoundIds.every((id) => typeof id === "string")) {
+    throw new PowerAssertionError("invalid_input", "snapshot.ownerRoundIds must be string[]");
+  }
+  if (typeof heldCount !== "number" || !Number.isInteger(heldCount) || heldCount < 0) {
+    throw new PowerAssertionError("invalid_input", "snapshot.heldCount must be a non-negative integer");
+  }
+  if (!(acquiredAt === null || typeof acquiredAt === "string")) {
+    throw new PowerAssertionError("invalid_input", "snapshot.acquiredAt must be string|null");
+  }
+  return {
+    active,
+    assertionId,
+    mechanism: mechanism as PowerAssertionMechanism | null,
+    level: level as PowerAssertionLevel | null,
+    ownerRoundIds,
+    heldCount,
+    acquiredAt,
+  };
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function cleanIdentifier(value: string, field: string): string {
