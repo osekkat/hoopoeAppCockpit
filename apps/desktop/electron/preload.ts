@@ -95,6 +95,10 @@ export interface HoopoeBridge {
     readonly revealInFinder: (path: string) => Promise<void>;
     readonly ripgrep: <I, O>(query: I) => Promise<O>;
   };
+  readonly ssh: {
+    readonly listKeys: <O>() => Promise<O>;
+    readonly generateKey: <I, O>(input: I) => Promise<O>;
+  };
 }
 
 export const hoopoeBridge: HoopoeBridge = {
@@ -147,6 +151,10 @@ export const hoopoeBridge: HoopoeBridge = {
     openExternal: (url) => invoke(CHANNELS.filesOpenExternal, { url }),
     revealInFinder: (path) => invoke(CHANNELS.filesRevealInFinder, { path }),
     ripgrep: (query) => invoke(CHANNELS.filesRipgrep, query),
+  },
+  ssh: {
+    listKeys: () => invoke(CHANNELS.sshListKeys, {}),
+    generateKey: (input) => invoke(CHANNELS.sshGenerateKey, input),
   },
 };
 

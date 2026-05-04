@@ -13,6 +13,7 @@ import { useCallback, useMemo, useState } from "react";
 import { ChevronRight, Circle, CheckCircle2, AlertTriangle, MoreHorizontal } from "lucide-react";
 import { Step1PathPicker } from "./Step1PathPicker.tsx";
 import { Step11Success } from "./Step11Success.tsx";
+import { StepSshKey, type SshKeySelection } from "./StepSshKey.tsx";
 import { StepStub } from "./StepStub.tsx";
 import { WizardReplaySink } from "./state.ts";
 import {
@@ -106,6 +107,37 @@ export function WizardShell({ initialRunId, onComplete, persist, sink: providedS
     [persist, refreshUi, sink],
   );
 
+  const recordSshKeyComplete = useCallback(
+    (selection: SshKeySelection) => {
+      const next = sink.recordCheckpoint({
+        stepId: "ssh_key",
+        outcome: "completed",
+        data: {
+          label: selection.label,
+          path: selection.path,
+          fingerprint: selection.fingerprint,
+          algorithm: selection.algorithm,
+        },
+      });
+      persist?.(next);
+      refreshUi();
+    },
+    [persist, refreshUi, sink],
+  );
+
+  const recordSshKeyFailure = useCallback(
+    (failure: { readonly code: string; readonly message: string }) => {
+      const next = sink.recordCheckpoint({
+        stepId: "ssh_key",
+        outcome: "failed",
+        failure,
+      });
+      persist?.(next);
+      refreshUi();
+    },
+    [persist, refreshUi, sink],
+  );
+
   const finish = useCallback(() => {
     const next = sink.recordCheckpoint({ stepId: "success", outcome: "completed" });
     persist?.(next);
@@ -135,6 +167,12 @@ export function WizardShell({ initialRunId, onComplete, persist, sink: providedS
             <Step11Success
               onEnterCockpit={finish}
               path={run.path}
+            />
+          ) : computed.currentStep === "ssh_key" ? (
+            <StepSshKey
+              runId={run.runId}
+              onComplete={recordSshKeyComplete}
+              onFailed={recordSshKeyFailure}
             />
           ) : (
             <StubStep
