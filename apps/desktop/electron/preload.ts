@@ -30,6 +30,7 @@ import {
   type DaemonRequestMethod,
   type DaemonSubscribeTopic,
 } from "../src/shared/ipc-contract.ts";
+import type { BootstrapStepBridge } from "../src/shared/bootstrap-bridge.ts";
 
 // ── Channel names ──────────────────────────────────────────────────────────
 //
@@ -142,6 +143,15 @@ export interface HoopoeBridge {
     }) => Promise<unknown>;
     readonly snapshot: () => Promise<unknown>;
   };
+  /** hp-9z45 + hp-o90: Wizard bootstrap stream steps. Optional —
+   *  daemon endpoints (POST /v1/bootstrap/preflight, /acfs/start,
+   *  reconnect, verify-key) are still planned/stub routes. Preload
+   *  will register handlers and add the corresponding entries to
+   *  PRELOAD_IPC_CHANNELS once the daemon endpoints land; the renderer
+   *  surface (`apps/desktop/src/renderer/wizard/StepBootstrapStream.tsx`)
+   *  reads this property today and degrades to a "Waiting for the
+   *  bootstrap preload bridge." message until then. */
+  readonly bootstrap?: BootstrapStepBridge;
 }
 
 export const hoopoeBridge: HoopoeBridge = {

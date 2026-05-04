@@ -1,9 +1,14 @@
 // hp-9z45 — Wizard bootstrap stream steps.
+// hp-o90 — Bridge protocol types live in apps/desktop/src/shared/
+//          bootstrap-bridge.ts so preload (electron/preload.ts) and the
+//          renderer share the same surface; `window.hoopoe.bootstrap`
+//          is now typed against `HoopoeBridge.bootstrap` directly.
 //
 // These components replace the preflight / ACFS install / reconnect /
 // verify-key StepStubs with typed, checkpoint-producing UI. The daemon
 // endpoints are still exposed as planned/stub routes, so production
-// wiring is intentionally behind `window.hoopoe.bootstrap`.
+// wiring is intentionally behind `window.hoopoe.bootstrap` — preload
+// registers handlers once the daemon endpoints land.
 
 import { useState } from "react";
 import {
@@ -16,74 +21,33 @@ import {
   TerminalSquare,
   XCircle,
 } from "lucide-react";
+import type {
+  BootstrapDoctorCheck,
+  BootstrapEventSink,
+  BootstrapPhaseStatus,
+  BootstrapStepBridge,
+  BootstrapStepId,
+  BootstrapStepResult,
+  BootstrapStepRunInput,
+  BootstrapStreamEvent,
+} from "../../shared/bootstrap-bridge.ts";
 import type { WizardStepId } from "./types.ts";
 
-export type BootstrapStepId = Extract<
-  WizardStepId,
-  "preflight" | "acfs_install" | "reconnect" | "verify_key"
->;
+// Pin BootstrapStepId as a strict subset of WizardStepId at compile
+// time — if the wizard renames a step, the `satisfies` clause errors
+// before any runtime drift can ship.
+true satisfies BootstrapStepId extends WizardStepId ? true : never;
 
-export type BootstrapPhaseStatus =
-  | "pending"
-  | "running"
-  | "passed"
-  | "warning"
-  | "failed"
-  | "skipped";
-
-export interface BootstrapDoctorCheck {
-  readonly id: string;
-  readonly label: string;
-  readonly status: "ok" | "warn" | "fail";
-  readonly detail?: string;
-}
-
-export interface BootstrapStreamEvent {
-  readonly seq: number;
-  readonly phaseId: string;
-  readonly label: string;
-  readonly status: BootstrapPhaseStatus;
-  readonly message?: string;
-  readonly detail?: string;
-  readonly evidenceRef?: string;
-  readonly doctor?: readonly BootstrapDoctorCheck[];
-  readonly recordedAt?: string;
-}
-
-export interface BootstrapStepRunInput {
-  readonly runId: string;
-  readonly stepId: BootstrapStepId;
-  readonly sinceSeq?: number;
-}
-
-export type BootstrapEventSink = (event: BootstrapStreamEvent) => void;
-
-export interface BootstrapStepResult {
-  readonly outcome: "completed" | "failed";
-  readonly summary: string;
-  readonly events: readonly BootstrapStreamEvent[];
-  readonly evidenceRefs?: readonly string[];
-  readonly resumeHint?: string;
-}
-
-export interface BootstrapStepBridge {
-  readonly preflight?: (
-    input: BootstrapStepRunInput,
-    sink: BootstrapEventSink,
-  ) => Promise<BootstrapStepResult>;
-  readonly acfsInstall?: (
-    input: BootstrapStepRunInput,
-    sink: BootstrapEventSink,
-  ) => Promise<BootstrapStepResult>;
-  readonly reconnect?: (
-    input: BootstrapStepRunInput,
-    sink: BootstrapEventSink,
-  ) => Promise<BootstrapStepResult>;
-  readonly verifyKey?: (
-    input: BootstrapStepRunInput,
-    sink: BootstrapEventSink,
-  ) => Promise<BootstrapStepResult>;
-}
+export type {
+  BootstrapDoctorCheck,
+  BootstrapEventSink,
+  BootstrapPhaseStatus,
+  BootstrapStepBridge,
+  BootstrapStepId,
+  BootstrapStepResult,
+  BootstrapStepRunInput,
+  BootstrapStreamEvent,
+};
 
 export interface BootstrapStepSelection {
   readonly stepId: BootstrapStepId;
@@ -464,13 +428,12 @@ function evidenceRefsFromEvents(events: readonly BootstrapStreamEvent[]): readon
     .filter((ref): ref is string => typeof ref === "string" && ref.length > 0);
 }
 
-interface BootstrapBridgeShape {
-  readonly bootstrap?: BootstrapStepBridge;
-}
-
 function getDefaultBridge(): BootstrapStepBridge | null {
   if (typeof window === "undefined") return null;
-  const bootstrap = (window as Window & { readonly hoopoe?: BootstrapBridgeShape }).hoopoe?.bootstrap;
-  if (!bootstrap || typeof bootstrap !== "object") return null;
-  return bootstrap;
+  // `window.hoopoe` is declared in apps/desktop/electron/preload.ts;
+  // `hoopoe.bootstrap` is optional on `HoopoeBridge` and undefined
+  // until preload registers handlers (hp-o90 + future bootstrap
+  // wiring). The optional chain handles both "preload not yet loaded"
+  // and "bridge intentionally not wired."
+  return window.hoopoe?.bootstrap ?? null;
 }
