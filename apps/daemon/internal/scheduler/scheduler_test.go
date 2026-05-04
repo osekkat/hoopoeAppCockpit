@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -570,7 +571,7 @@ func (p *panickingStore) Save(ctx context.Context, state State) error {
 	return p.inner.Save(ctx, state)
 }
 
-func (p *panickingStore) arm()   { p.armed.Store(true) }
+func (p *panickingStore) arm()    { p.armed.Store(true) }
 func (p *panickingStore) disarm() { p.armed.Store(false) }
 
 func TestSchedulerRecoversCompleteRunPanic(t *testing.T) {
@@ -632,8 +633,8 @@ func TestSchedulerRecoversCompleteRunPanic(t *testing.T) {
 	close(releaseRunner)
 
 	// Wait for the dispatch goroutine to finish (with its panic recovered).
-	// scheduler.Wait blocks until s.wg counter hits zero — which happens
-	// inside the deferred s.wg.Done() at the top of the dispatch goroutine.
+	// scheduler.Wait blocks until the active-run counter reaches zero, which
+	// happens inside the deferred finishRun call at the top of dispatch.
 	scheduler.Wait()
 
 	// Step 3: prove the daemon survived by running another job successfully.
@@ -645,34 +646,61 @@ func TestSchedulerRecoversCompleteRunPanic(t *testing.T) {
 	scheduler.Wait()
 }
 
-func TestSchedulerWaitContextSurvivesInnerPanic(t *testing.T) {
-	// Construct a Scheduler whose internal WaitGroup we will deliberately
-	// poison by adding a counter then triggering a negative state via the
-	// public dispatch path. Easier path: assert the WaitContext goroutine
-	// is wrapped in a recover by inspecting that it does NOT panic when
-	// the underlying wg is in a healthy state, and that a synthetic panic
-	// path inside the inner goroutine cannot crash the test process.
-	//
-	// We cannot directly poison sync.WaitGroup from an external test, so
-	// the test verifies the structural guard: the inner goroutine completes
-	// cleanly under normal conditions. The recover defense is documented in
-	// the suggested-fix bead (hp-0xo) and visible in scheduler.go's
-	// WaitContext deferred recover.
-	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
-	defer cancel()
+func TestSchedulerWaitContextDoesNotLeakWaitersOnCallerCancellation(t *testing.T) {
+	ctx := context.Background()
 	clock := newTestClock(time.Date(2026, 5, 4, 15, 45, 0, 0, time.UTC))
 	registry := newTestRegistry(t, clock)
+	if _, err := registry.ImportDefinition(ctx, testDefinition("blocked-wait", Schedule{Type: ScheduleOnDemand})); err != nil {
+		t.Fatal(err)
+	}
+	started := make(chan struct{})
+	release := make(chan struct{})
 	scheduler, err := New(Config{
-		Registry:   registry,
+		Registry: registry,
+		Runner: RunnerFunc(func(context.Context, Run) (RunResult, error) {
+			close(started)
+			<-release
+			return RunResult{WakeAgent: false}, nil
+		}),
 		MaxWorkers: 1,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Healthy-state baseline: WaitContext returns nil because no goroutines
-	// are tracked by wg. The goroutine inside WaitContext completes cleanly.
+
+	if _, err := scheduler.RunNow(ctx, "blocked-wait"); err != nil {
+		t.Fatal(err)
+	}
+	waitForSignal(t, started, "blocked wait run")
+
+	baseline := runtime.NumGoroutine()
+	for i := 0; i < 40; i++ {
+		waitCtx, cancelWait := context.WithCancel(ctx)
+		cancelWait()
+		if err := scheduler.WaitContext(waitCtx); !errors.Is(err, context.Canceled) {
+			t.Fatalf("WaitContext attempt %d error = %v, want context canceled", i, err)
+		}
+	}
+	runtime.Gosched()
+
+	scheduler.waitMu.Lock()
+	activeRuns := scheduler.activeRuns
+	waiters := len(scheduler.waiters)
+	scheduler.waitMu.Unlock()
+	if activeRuns != 1 {
+		t.Fatalf("activeRuns = %d, want 1 blocked run", activeRuns)
+	}
+	if waiters != 0 {
+		t.Fatalf("waiters after canceled WaitContext calls = %d, want 0", waiters)
+	}
+	if after := runtime.NumGoroutine(); after > baseline+5 {
+		t.Fatalf("goroutines after canceled WaitContext calls = %d, baseline %d; likely leaked waiters", after, baseline)
+	}
+
+	close(release)
+	scheduler.Wait()
 	if err := scheduler.WaitContext(ctx); err != nil {
-		t.Fatalf("WaitContext on idle scheduler returned %v, want nil", err)
+		t.Fatalf("WaitContext after run release returned %v, want nil", err)
 	}
 }
 

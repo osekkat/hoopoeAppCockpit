@@ -16,7 +16,9 @@ type Scheduler struct {
 	stop              chan struct{}
 	stopOnce          sync.Once
 	completionTimeout time.Duration
-	wg                sync.WaitGroup
+	waitMu            sync.Mutex
+	activeRuns        int
+	waiters           map[chan struct{}]struct{}
 }
 
 type Config struct {
@@ -58,6 +60,7 @@ func New(cfg Config) (*Scheduler, error) {
 		rootCtx:           root,
 		stop:              make(chan struct{}),
 		completionTimeout: completionTimeout,
+		waiters:           make(map[chan struct{}]struct{}),
 	}, nil
 }
 
@@ -112,31 +115,22 @@ func (s *Scheduler) EmitEvent(ctx context.Context, eventType string, eventKey st
 }
 
 func (s *Scheduler) Wait() {
-	s.wg.Wait()
+	_ = s.WaitContext(context.Background())
 }
 
 func (s *Scheduler) WaitContext(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	done := make(chan struct{})
-	go func() {
-		// sync.WaitGroup.Wait panics on a negative counter (e.g., a future
-		// caller refactor that double-Done()s before Add). Recover so the
-		// daemon process survives; the outer select still observes ctx.Done()
-		// correctly because a panicking Wait would have prevented close(done)
-		// either way.
-		defer func() {
-			_ = recover()
-		}()
-		s.wg.Wait()
-		close(done)
-	}()
+	done := s.registerWaiter()
+	if done == nil {
+		return nil
+	}
 	select {
 	case <-done:
 		return nil
 	case <-ctx.Done():
-		return ctx.Err()
+		return s.cancelWaiter(done, ctx.Err())
 	}
 }
 
@@ -152,9 +146,9 @@ func (s *Scheduler) Shutdown(ctx context.Context) error {
 }
 
 func (s *Scheduler) dispatch(ctx context.Context, run Run) {
-	s.wg.Add(1)
+	s.startRun()
 	go func() {
-		defer s.wg.Done()
+		defer s.finishRun()
 		// Goroutine-boundary recover guards every call site in the dispatch
 		// path — runTimeout (registry lock + cloneJob), completeRun (Store.Save
 		// can panic on a buggy Store impl), dispatchContext, and any future
@@ -188,6 +182,60 @@ func (s *Scheduler) dispatch(ctx context.Context, run Run) {
 		}
 		s.completeRun(run.ID, result, err)
 	}()
+}
+
+func (s *Scheduler) startRun() {
+	s.waitMu.Lock()
+	s.activeRuns++
+	s.waitMu.Unlock()
+}
+
+func (s *Scheduler) finishRun() {
+	var waiters []chan struct{}
+	s.waitMu.Lock()
+	if s.activeRuns > 0 {
+		s.activeRuns--
+	}
+	if s.activeRuns == 0 && len(s.waiters) > 0 {
+		waiters = make([]chan struct{}, 0, len(s.waiters))
+		for waiter := range s.waiters {
+			waiters = append(waiters, waiter)
+			delete(s.waiters, waiter)
+		}
+	}
+	s.waitMu.Unlock()
+
+	for _, waiter := range waiters {
+		close(waiter)
+	}
+}
+
+func (s *Scheduler) registerWaiter() chan struct{} {
+	s.waitMu.Lock()
+	defer s.waitMu.Unlock()
+	if s.activeRuns == 0 {
+		return nil
+	}
+	waiter := make(chan struct{})
+	if s.waiters == nil {
+		s.waiters = make(map[chan struct{}]struct{})
+	}
+	s.waiters[waiter] = struct{}{}
+	return waiter
+}
+
+func (s *Scheduler) cancelWaiter(waiter chan struct{}, err error) error {
+	s.waitMu.Lock()
+	_, waiting := s.waiters[waiter]
+	if waiting {
+		delete(s.waiters, waiter)
+		close(waiter)
+	}
+	s.waitMu.Unlock()
+	if !waiting {
+		return nil
+	}
+	return err
 }
 
 // recoverDispatch is the dispatch goroutine's last-resort panic guard. If
