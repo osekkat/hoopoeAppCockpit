@@ -549,6 +549,11 @@ button {
   gap: 14px;
 }
 
+.hh-empty-stage {
+  display: grid;
+  gap: 14px;
+}
+
 .hh-empty-panel,
 .hh-project-card,
 .hh-activity-row {

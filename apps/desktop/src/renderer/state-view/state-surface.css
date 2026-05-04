@@ -1,0 +1,159 @@
+.hh-state-surface {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  min-height: 180px;
+  padding: 18px;
+  border: 1px solid var(--surface-border-soft);
+  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0)),
+    var(--surface-panel);
+  box-shadow: var(--shadow-soft);
+  color: var(--text-primary);
+}
+
+.hh-state-surface[data-density="compact"] {
+  min-height: 0;
+  padding: 13px;
+  border-radius: var(--radius-md);
+  box-shadow: none;
+}
+
+.hh-state-surface-icon {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid var(--surface-border-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface-panel-alt);
+  color: var(--hoopoe-blue);
+}
+
+.hh-state-surface[data-variant="empty"] .hh-state-surface-icon {
+  color: var(--hoopoe-russet);
+}
+
+.hh-state-surface[data-variant="loading"] .hh-state-surface-icon {
+  color: var(--hoopoe-blue);
+}
+
+.hh-state-surface[data-variant="error"] .hh-state-surface-icon {
+  color: var(--danger, #ff8e8e);
+}
+
+.hh-state-surface[data-variant="degraded"] .hh-state-surface-icon {
+  color: #f6c453;
+}
+
+.hh-state-surface-body {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.hh-state-surface-eyebrow {
+  color: var(--hoopoe-russet);
+  font-size: 11px;
+  font-weight: 780;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.hh-state-surface h2 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 16px;
+  font-weight: 760;
+  line-height: 1.25;
+}
+
+.hh-state-surface[data-density="compact"] h2 {
+  font-size: 13px;
+}
+
+.hh-state-surface p {
+  max-width: 64ch;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.hh-state-surface-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.hh-state-surface-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid var(--surface-border-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface-panel-alt);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 720;
+  cursor: pointer;
+}
+
+.hh-state-surface-action[data-action-variant="primary"] {
+  border-color: rgba(229, 130, 83, 0.52);
+  background: rgba(229, 130, 83, 0.16);
+  color: var(--text-primary);
+}
+
+.hh-state-surface-skeleton {
+  display: grid;
+  gap: 7px;
+  width: min(380px, 100%);
+  margin-top: 5px;
+}
+
+.hh-state-surface-skeleton span {
+  display: block;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.08),
+    rgba(255, 255, 255, 0.18),
+    rgba(255, 255, 255, 0.08)
+  );
+}
+
+.hh-state-surface-skeleton span:nth-child(1) {
+  width: 86%;
+}
+
+.hh-state-surface-skeleton span:nth-child(2) {
+  width: 68%;
+}
+
+.hh-state-surface-skeleton span:nth-child(3) {
+  width: 44%;
+}
+
+.hh-state-surface-spin {
+  animation: hh-state-surface-spin 1s linear infinite;
+}
+
+@keyframes hh-state-surface-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 680px) {
+  .hh-state-surface {
+    grid-template-columns: 1fr;
+  }
+}

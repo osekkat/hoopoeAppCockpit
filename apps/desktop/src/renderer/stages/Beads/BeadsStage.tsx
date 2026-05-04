@@ -1,6 +1,7 @@
-import { AlertCircle, CheckCircle2, CircleDotDashed, ListChecks, Workflow } from "lucide-react";
+import { CheckCircle2, CircleDotDashed, ListChecks, Workflow } from "lucide-react";
 import { useState } from "react";
 import { useBeadsStageQuery } from "../../data/stage-data.ts";
+import { StateSurface } from "../../state-view/index.ts";
 import { BeadsDagView } from "./BeadsDagView.tsx";
 import "./BeadsStage.css";
 
@@ -11,19 +12,31 @@ export function BeadsStage({ projectId }: { readonly projectId: string }) {
   const [view, setView] = useState<BeadView>("list");
 
   if (query.isLoading) {
-    return <div className="hh-live-stage hh-live-stage-loading">Loading Mock Flywheel beads...</div>;
+    return (
+      <StateSurface
+        variant="loading"
+        eyebrow="Beads"
+        title="Loading beads"
+        description="Fetching canonical br state and graph-ready bead summaries."
+        testId="beads-stage-loading"
+      />
+    );
   }
 
   if (query.isError || !query.data) {
     return (
-      <div className="hh-live-stage hh-live-stage-error" role="status">
-        <AlertCircle size={18} strokeWidth={2.1} />
-        <span>Daemon data is not available for this project yet.</span>
-      </div>
+      <StateSurface
+        variant="error"
+        eyebrow="Beads"
+        title="Bead data unavailable"
+        description="Reconnect the daemon or refresh canonical br state before editing the board."
+        testId="beads-stage-error"
+      />
     );
   }
 
   const { data } = query;
+  const hasBeads = data.beads.length > 0;
 
   return (
     <div className="hh-live-stage hh-beads-stage" data-testid="mock-beads-stage">
@@ -74,7 +87,7 @@ export function BeadsStage({ projectId }: { readonly projectId: string }) {
             <ListChecks size={17} strokeWidth={2.1} />
             <h2>Bead board</h2>
           </div>
-          {data.beads.map((bead) => (
+          {hasBeads ? data.beads.map((bead) => (
             <article className="hh-bead-row" key={bead.id}>
               <div className="hh-bead-row-icon" aria-hidden="true">
                 {bead.status === "closed" ? (
@@ -96,7 +109,15 @@ export function BeadsStage({ projectId }: { readonly projectId: string }) {
                 <span>{bead.status}</span>
               </div>
             </article>
-          ))}
+          )) : (
+            <StateSurface
+              variant="empty"
+              density="compact"
+              title="No beads yet"
+              description="Convert a locked plan into beads or import canonical br state."
+              testId="beads-list-empty"
+            />
+          )}
         </section>
       ) : (
         <section className="hh-beads-dag-container" aria-label="Mock Flywheel bead DAG">

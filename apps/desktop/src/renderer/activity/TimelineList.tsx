@@ -12,6 +12,7 @@ import {
   type ActivityEvent,
   type ActivityPivot,
 } from "./types.ts";
+import { StateSurface } from "../state-view/index.ts";
 
 export interface TimelineListProps {
   readonly events: readonly ActivityEvent[];
@@ -32,9 +33,13 @@ export function TimelineList({
 }: TimelineListProps) {
   if (events.length === 0) {
     return (
-      <div className="hh-activity-empty" role="status">
-        No events match the current filter.
-      </div>
+      <StateSurface
+        variant="empty"
+        density="compact"
+        title="No matching events"
+        description="Clear filters to restore the activity timeline."
+        testId="activity-timeline-empty"
+      />
     );
   }
 

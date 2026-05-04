@@ -1,4 +1,4 @@
-import { AlertCircle, FileText, Lock } from "lucide-react";
+import { FileText, Lock } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
   findActivePlan,
@@ -7,6 +7,7 @@ import {
   selectCandidates,
   usePlanStageQuery,
 } from "../../data/plan-data.ts";
+import { StateSurface } from "../../state-view/index.ts";
 import { ArtifactRail } from "./ArtifactRail.tsx";
 import { ComparativeMatrix } from "./ComparativeMatrix.tsx";
 import { HistoryTimeline } from "./HistoryTimeline.tsx";
@@ -57,16 +58,25 @@ export function PlanningStage({ projectId }: { readonly projectId: string }) {
 
   if (query.isLoading) {
     return (
-      <div className="hh-live-stage hh-live-stage-loading">Loading Mock Flywheel plans...</div>
+      <StateSurface
+        variant="loading"
+        eyebrow="Planning"
+        title="Loading plans"
+        description="Fetching plan artifacts, history, and model outputs for this project."
+        testId="planning-stage-loading"
+      />
     );
   }
 
   if (query.isError || !data) {
     return (
-      <div className="hh-live-stage hh-live-stage-error" role="status">
-        <AlertCircle size={18} strokeWidth={2.1} />
-        <span>Daemon plan data is not available for this project yet.</span>
-      </div>
+      <StateSurface
+        variant="error"
+        eyebrow="Planning"
+        title="Plan data unavailable"
+        description="Reconnect the daemon or open Diagnostics, then retry this stage."
+        testId="planning-stage-error"
+      />
     );
   }
 
@@ -161,10 +171,14 @@ export function PlanningStage({ projectId }: { readonly projectId: string }) {
               onSave={handleSave}
             />
           ) : (
-            <div className="hh-plan-stage-empty" role="status">
-              <FileText size={18} strokeWidth={2.1} />
-              <span>Select an artifact to view it.</span>
-            </div>
+            <StateSurface
+              variant="empty"
+              density="compact"
+              icon={<FileText size={18} strokeWidth={2.1} />}
+              title="No artifact selected"
+              description="Choose a plan artifact from the rail."
+              testId="planning-artifact-empty"
+            />
           )}
         </div>
 

@@ -14,6 +14,7 @@ import "@xyflow/react/dist/style.css";
 import { AlertTriangle, CircleDot, Sparkles, Workflow } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useDagStageQuery } from "../../data/dag-data.ts";
+import { StateSurface } from "../../state-view/index.ts";
 import type { BeadDagEdge, BeadDagLayout, BeadDagNode } from "./dag-layout.ts";
 
 const NODE_WIDTH = 220;
@@ -42,14 +43,37 @@ export function DagView({ projectId }: DagViewProps) {
   const [showReadyFrontier, setShowReadyFrontier] = useState(true);
 
   if (query.isLoading) {
-    return <div className="hh-live-stage hh-live-stage-loading">Loading bead graph…</div>;
+    return (
+      <StateSurface
+        variant="loading"
+        eyebrow="DAG"
+        title="Loading bead graph"
+        description="Building the graph layout from canonical bead dependencies."
+        testId="dag-stage-loading"
+      />
+    );
   }
   if (query.isError || !query.data) {
     return (
-      <div className="hh-live-stage hh-live-stage-error" role="status">
-        <AlertTriangle size={18} strokeWidth={2.1} />
-        <span>Bead graph data is not available for this project.</span>
-      </div>
+      <StateSurface
+        variant="error"
+        eyebrow="DAG"
+        title="Bead graph unavailable"
+        description="Refresh canonical br state before opening the dependency graph."
+        testId="dag-stage-error"
+      />
+    );
+  }
+
+  if (query.data.layout.nodes.length === 0) {
+    return (
+      <StateSurface
+        variant="empty"
+        eyebrow="DAG"
+        title="No bead graph yet"
+        description="There are no bead dependencies to render for this project."
+        testId="dag-stage-empty"
+      />
     );
   }
 
