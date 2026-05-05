@@ -338,6 +338,16 @@ func helperProcess(t *testing.T) {
 		os.Stdout.Write([]byte("\n"))
 		os.Exit(0)
 	}
+	if mode := os.Getenv("HOOPOE_PRESCRIPT_HELPER_MODE"); mode == "fail-with-stderr" {
+		// hp-ld2c: emit a large stderr block, then exit non-zero, so the
+		// caller can verify Invoke's error string is capped.
+		chunk := bytes.Repeat([]byte("E"), 4096)
+		for written := 0; written < 200*1024; written += len(chunk) {
+			os.Stderr.Write(chunk)
+		}
+		os.Stderr.Write([]byte("\nfinal stderr line\n"))
+		os.Exit(1)
+	}
 	fmt.Println("helper log line")
 	fmt.Printf("{\"wakeAgent\":false,\"context\":{\"jobId\":%q}}\n", input.Job.ID)
 	os.Exit(0)
@@ -433,5 +443,88 @@ func TestExecScriptInvokerCapsOversizedStdoutAndReturnsErrOutputTooLarge(t *test
 	}
 	if !strings.Contains(string(result.Stdout), "[TRUNCATED: stdout exceeded 262144 bytes]") {
 		t.Fatalf("stdout missing truncation marker; tail=%q", string(result.Stdout[max(0, len(result.Stdout)-200):]))
+	}
+}
+
+func TestTailStderrForErrorPassesShortStderrThrough(t *testing.T) {
+	// Short stderr (under errStderrTailBytes) is passed through verbatim
+	// after whitespace trim — no marker, no slicing.
+	got := tailStderrForError([]byte("  short error message\n"))
+	if got != "short error message" {
+		t.Fatalf("tailStderrForError = %q, want %q", got, "short error message")
+	}
+}
+
+func TestTailStderrForErrorCapsLongStderr(t *testing.T) {
+	// hp-ld2c: a misbehaving pre-script that floods stderr must not
+	// inflate run.Error → state-file → audit-log. tailStderrForError
+	// keeps just the last errStderrTailBytes plus a marker so the
+	// failure remains diagnosable without bloating downstream surfaces.
+	payload := append(bytes.Repeat([]byte("E"), 100*1024), []byte("final stderr line\n")...)
+	got := tailStderrForError(payload)
+	if !strings.HasPrefix(got, "...(stderr truncated to last 1024 bytes) ") {
+		t.Fatalf("tailStderrForError missing truncation prefix; head=%q", got[:min(64, len(got))])
+	}
+	if !strings.HasSuffix(got, "final stderr line") {
+		t.Fatalf("tailStderrForError dropped the most-recent stderr; tail=%q", got[max(0, len(got)-64):])
+	}
+	// Length budget: prefix is fixed text + 1024 bytes of content.
+	const prefix = "...(stderr truncated to last 1024 bytes) "
+	if len(got) > len(prefix)+errStderrTailBytes {
+		t.Fatalf("tailStderrForError len = %d, want <= %d", len(got), len(prefix)+errStderrTailBytes)
+	}
+}
+
+func TestExecScriptInvokerCapsStderrInsideErrorMessage(t *testing.T) {
+	// hp-ld2c: a non-zero exit with 200 KiB of stderr used to inflate
+	// the wrapped error message by the full stderr capacity (256 KiB).
+	// Now the error keeps just the last 1 KiB so audit/state surfaces
+	// stay bounded.
+	if os.Getenv("HOOPOE_PRESCRIPT_HELPER") == "1" {
+		helperProcess(t)
+		return
+	}
+	job := testJob()
+	run := testRun(job.Definition.ID)
+	input := Input{
+		SchemaVersion: SchemaVersion,
+		GeneratedAt:   fixedTime(),
+		Job:           job.Definition,
+		Run:           run,
+	}
+	stdin, err := json.Marshal(input)
+	if err != nil {
+		t.Fatalf("marshal input: %v", err)
+	}
+	invoker := ExecScriptInvoker{
+		Args: []string{"-test.run=TestExecScriptInvokerCapsStderrInsideErrorMessage", "--"},
+		Env:  []string{"HOOPOE_PRESCRIPT_HELPER=1", "HOOPOE_PRESCRIPT_HELPER_MODE=fail-with-stderr"},
+	}
+	result, err := invoker.Invoke(context.Background(), Invocation{
+		Script: os.Args[0],
+		Stdin:  stdin,
+		Job:    job,
+		Run:    run,
+	})
+	if err == nil {
+		t.Fatal("Invoke returned nil error for non-zero exit; expected wrapped exit error")
+	}
+	// The wrapped error should be small even though the script flooded
+	// stderr — message + helper text + 1 KiB tail. A 4 KiB ceiling
+	// gives generous slack for envelope text without ever approaching
+	// the 200 KiB stderr the helper produced.
+	if got := len(err.Error()); got > 4*1024 {
+		t.Fatalf("len(err.Error()) = %d bytes; want <= 4 KiB to bound state-file/audit growth", got)
+	}
+	// Full stderr is still available on the result for callers that
+	// explicitly want it (e.g. forensic logs); the cap only applies to
+	// the error string.
+	if len(result.Stderr) < 100*1024 {
+		t.Fatalf("len(result.Stderr) = %d, want >= 100 KiB (full capture preserved)", len(result.Stderr))
+	}
+	// And the most recent stderr content survives — operators need the
+	// final lines to diagnose the failure.
+	if !strings.Contains(err.Error(), "final stderr line") {
+		t.Fatalf("err.Error() missing tail content: %q", err.Error())
 	}
 }

@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"os/exec"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -285,12 +286,28 @@ func (i ExecScriptInvoker) Invoke(ctx context.Context, invocation Invocation) (I
 	runErr := cmd.Run()
 	result := InvocationResult{Stdout: stdout.bytes(), Stderr: stderr.bytes()}
 	if runErr != nil {
-		return result, fmt.Errorf("prescript: run %s: %w: %s", script, runErr, strings.TrimSpace(string(stderr.bytes())))
+		return result, fmt.Errorf("prescript: run %s: %w: %s", script, runErr, tailStderrForError(stderr.bytes()))
 	}
 	if stdout.didTruncate() || stderr.didTruncate() {
 		return result, fmt.Errorf("prescript: run %s: %w (stdoutTruncated=%t, stderrTruncated=%t)", script, ErrOutputTooLarge, stdout.didTruncate(), stderr.didTruncate())
 	}
 	return result, nil
+}
+
+// errStderrTailBytes caps how much stderr text is interpolated into the
+// error string returned by ExecScriptInvoker.Invoke. The full stderr
+// (up to MaxStreamBytes) remains in InvocationResult.Stderr for callers
+// that explicitly want it; the error message keeps just enough context
+// for an operator to diagnose the failure without ballooning state-file
+// or audit-log size when a misbehaving script floods stderr.
+const errStderrTailBytes = 1024
+
+func tailStderrForError(stderr []byte) string {
+	trimmed := strings.TrimSpace(string(stderr))
+	if len(trimmed) <= errStderrTailBytes {
+		return trimmed
+	}
+	return "...(stderr truncated to last " + strconv.Itoa(errStderrTailBytes) + " bytes) " + trimmed[len(trimmed)-errStderrTailBytes:]
 }
 
 // truncatingBuffer is an io.Writer that captures up to `cap` bytes. When the
