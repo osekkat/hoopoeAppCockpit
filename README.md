@@ -246,9 +246,20 @@ Phase 12   Debugging / Hardening: review rounds and convergence
 Phase 13   Provider automation and production polish
 ```
 
-Phase 0, Phase 1, Phase 1.5, and the early Phase 2 daemon substrate have
-landed in this checkout. The remaining beads continue to follow the same
-roadmap order and the milestone acceptance tests in `plan.md §18`.
+Phase 0 scaffolding has landed: the integration-contract docs under
+`docs/integration-contracts/`, the `scripts/research-spike/` collector +
+verifier, the reserved `packages/fixtures/phase0-2026-05-02/` corpus
+directory, and the synthetic Mock Flywheel scenarios under
+`packages/fixtures/scenarios/` (development substrate — useful for replay
+work, not Phase 0 acceptance evidence). The real-VPS acceptance evidence
+pack itself is **still pending**: no verifier-passing capture from a real
+ACFS-installed VPS has been unpacked into `scenarios/{fresh,active,failure}/`
+yet. See `packages/fixtures/phase0-2026-05-02/README.md` for the collector
+contract and the open beads tracking it (hp-r7i, hp-jvm, hp-7cs, hp-vtwm).
+
+Phase 1, Phase 1.5, and the early Phase 2 daemon substrate have landed in
+this checkout. The remaining beads continue to follow the same roadmap order
+and the milestone acceptance tests in `plan.md §18`.
 
 ---
 
