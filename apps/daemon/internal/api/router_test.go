@@ -1414,6 +1414,124 @@ func TestNormalizeConfigFallbackEventHubGetsRedactor(t *testing.T) {
 	}
 }
 
+func TestPublishSubstitutesSentinelForUnmarshalableData(t *testing.T) {
+	// hp-4qbg: Publish must pre-validate that Data marshals before
+	// inserting the event into the replay buffer. A chan/func/unsafe
+	// pointer in Data used to slip through, then writeSSE silently
+	// dropped it (phantom seq gap) and writeWebSocketJSON returned
+	// the marshal error (tearing down the connection). The fix is
+	// to substitute a marshalable sentinel preserving sequence +
+	// channel + the original Type for forensics.
+	hub := NewEventHub(EventHubConfig{})
+
+	clean := hub.Publish(PublishInput{
+		Channel: "project:test",
+		Type:    "project.ready",
+		Data:    map[string]any{"n": 1},
+	})
+	poisoned := hub.Publish(PublishInput{
+		Channel: "project:test",
+		Type:    "agent.dispatched",
+		Data:    make(chan int), // un-marshalable
+	})
+	follow := hub.Publish(PublishInput{
+		Channel: "project:test",
+		Type:    "project.ready",
+		Data:    map[string]any{"n": 2},
+	})
+
+	// Sequence stays monotonic — no phantom gap.
+	if clean.Sequence != 1 || poisoned.Sequence != 2 || follow.Sequence != 3 {
+		t.Fatalf("sequences = %d, %d, %d; want 1, 2, 3", clean.Sequence, poisoned.Sequence, follow.Sequence)
+	}
+
+	// Poisoned event's Type was rewritten to the sentinel + Data is a
+	// marshalable map carrying the originalType + marshal error.
+	if poisoned.Type != EventTypeEncodeError {
+		t.Fatalf("poisoned.Type = %q, want %q", poisoned.Type, EventTypeEncodeError)
+	}
+	data, ok := poisoned.Data.(map[string]any)
+	if !ok {
+		t.Fatalf("poisoned.Data type = %T, want map[string]any sentinel", poisoned.Data)
+	}
+	if data["_encodeError"] != true {
+		t.Fatalf("poisoned.Data._encodeError = %v, want true", data["_encodeError"])
+	}
+	if data["originalType"] != "agent.dispatched" {
+		t.Fatalf("poisoned.Data.originalType = %v, want agent.dispatched", data["originalType"])
+	}
+
+	// The buffer copy now marshals cleanly — /v1/events/replay no longer
+	// 500s the entire response on a single poisoned event.
+	if _, err := json.Marshal(poisoned); err != nil {
+		t.Fatalf("poisoned event still does not marshal after sanitization: %v", err)
+	}
+}
+
+func TestPublishSubstitutesSentinelForUnmarshalableActor(t *testing.T) {
+	// hp-4qbg: the Actor map is the OTHER `any`-typed field on Event
+	// that producers control. Same sanitization treatment.
+	hub := NewEventHub(EventHubConfig{})
+
+	poisoned := hub.Publish(PublishInput{
+		Channel: "project:test",
+		Type:    "audit.recorded",
+		Actor:   map[string]any{"agent": make(chan struct{})},
+		Data:    map[string]any{"ok": true},
+	})
+
+	if poisoned.Type != EventTypeEncodeError {
+		t.Fatalf("poisoned.Type = %q, want %q (Actor un-marshalable should sentinel-rewrite)", poisoned.Type, EventTypeEncodeError)
+	}
+	if poisoned.Actor != nil {
+		t.Fatalf("poisoned.Actor = %v, want nil after sanitization", poisoned.Actor)
+	}
+	if _, err := json.Marshal(poisoned); err != nil {
+		t.Fatalf("poisoned event still does not marshal: %v", err)
+	}
+}
+
+func TestReplayEndpointReturnsSentinelForPoisonedEvent(t *testing.T) {
+	// hp-4qbg: the acceptance also covers /v1/events/replay — a
+	// previously-poisoned event must now serialize cleanly so a
+	// resumed subscriber sees a sentinel rather than a 500.
+	now := time.Unix(100, 0).UTC()
+	hub := NewEventHub(EventHubConfig{
+		ReplayCapacity: 16,
+		Now:            func() time.Time { return now },
+	})
+	hub.Publish(PublishInput{Channel: "project:test", Type: "project.ready", Data: map[string]any{"n": 1}})
+	hub.Publish(PublishInput{Channel: "project:test", Type: "agent.dispatched", Data: make(chan int)})
+
+	router := NewRouter(Config{Events: hub})
+	req := httptest.NewRequest(http.MethodGet, "/v1/events/replay?channel=project:test&sinceSequence=0", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("replay status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Events []struct {
+			Sequence uint64                 `json:"sequence"`
+			Type     string                 `json:"type"`
+			Data     map[string]any         `json:"data"`
+		} `json:"events"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode replay: %v\n%s", err, rec.Body.String())
+	}
+	if len(body.Events) != 2 {
+		t.Fatalf("replay events = %d, want 2", len(body.Events))
+	}
+	if body.Events[1].Type != EventTypeEncodeError {
+		t.Fatalf("replay events[1].type = %q, want %q", body.Events[1].Type, EventTypeEncodeError)
+	}
+	if body.Events[1].Data["_encodeError"] != true {
+		t.Fatalf("replay events[1].data._encodeError = %v, want true", body.Events[1].Data["_encodeError"])
+	}
+}
+
 func TestEventSequencesArePerChannel(t *testing.T) {
 	hub := NewEventHub(EventHubConfig{})
 

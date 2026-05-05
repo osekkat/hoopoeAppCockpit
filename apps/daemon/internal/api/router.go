@@ -533,7 +533,23 @@ func (s *server) handleEventWS(w http.ResponseWriter, r *http.Request) {
 func writeWebSocketJSON(ctx context.Context, conn *websocket.Conn, payload any) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return err
+		// hp-4qbg: marshal failure used to be returned to the caller,
+		// which closed the WS connection. The client then reconnected,
+		// replayed from cursor, hit the same poisoned event, and got
+		// disconnected again — a tight reconnect loop. Publish now
+		// sanitizes EventHub events up-front so this branch is mostly
+		// unreachable for real Event payloads; the defensive sentinel
+		// here keeps the connection alive for any other payload whose
+		// nested types might still be unmarshalable.
+		sentinel, sentErr := json.Marshal(map[string]any{
+			"_encodeError": true,
+			"marshalError": err.Error(),
+			"type":         EventTypeEncodeError,
+		})
+		if sentErr != nil {
+			return err
+		}
+		return conn.Write(ctx, websocket.MessageText, sentinel)
 	}
 	return conn.Write(ctx, websocket.MessageText, body)
 }
@@ -597,7 +613,30 @@ func firstQueryValue(values map[string][]string, key string) string {
 func (s *server) writeSSE(w http.ResponseWriter, eventType string, payload any) {
 	body, err := json.Marshal(payload)
 	if err != nil {
-		s.logger.Error(context.Background(), "sse_encode_failed", map[string]any{"error": err.Error()})
+		// hp-4qbg: marshal failure used to silently drop the event,
+		// creating phantom sequence gaps that subscribers couldn't
+		// distinguish from real loss. Publish now sanitizes Event.Data
+		// up-front so this branch should be unreachable for real
+		// EventHub events; the defensive sentinel here covers any
+		// other payload (snapshot envelopes, heartbeats, compatibility
+		// warnings) whose nested types might still be unmarshalable.
+		s.logger.Error(context.Background(), "sse_encode_failed", map[string]any{
+			"error":     err.Error(),
+			"eventType": eventType,
+		})
+		sentinel, sentErr := json.Marshal(map[string]any{
+			"_encodeError": true,
+			"originalType": eventType,
+			"marshalError": err.Error(),
+		})
+		if sentErr != nil {
+			// Hand-rolled fallback: even the sentinel encoder failed,
+			// which would be a programmer error since the sentinel is
+			// primitive types.
+			sentinel = []byte(`{"_encodeError":true,"originalType":"unknown","marshalError":"sentinel encoder failed"}`)
+		}
+		fmt.Fprintf(w, "event: %s\n", EventTypeEncodeError)
+		fmt.Fprintf(w, "data: %s\n\n", sentinel)
 		return
 	}
 	fmt.Fprintf(w, "event: %s\n", safeSSEEventName(eventType))

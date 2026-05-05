@@ -15,6 +15,15 @@ import (
 const (
 	defaultReplayCapacity     = 1024
 	defaultSubscriberCapacity = 64
+
+	// EventTypeEncodeError is the sentinel Type assigned to events whose
+	// original Data could not be JSON-marshaled. The sentinel preserves
+	// the channel, sequence, timestamp, and originating event metadata
+	// so subscribers see a meaningful skip marker instead of a phantom
+	// gap (writeSSE used to silently drop them) or a torn-down WS
+	// connection (writeWebSocketJSON used to return the marshal error,
+	// which closed the socket). hp-4qbg.
+	EventTypeEncodeError = "_encode_error"
 )
 
 // Event is the daemon WebSocket/SSE envelope from plan.md section 2.6.
@@ -163,6 +172,31 @@ func (h *EventHub) Publish(input PublishInput) Event {
 	// replay buffer raw.
 	data := h.redactData(input.Data)
 
+	// hp-4qbg: pre-validate that the Data + Actor (the two `any` fields
+	// on Event that producers control) actually marshal. If they don't,
+	// poison the replay buffer / silently drop SSE / tear down WS.
+	// Substitute a marshalable sentinel and rewrite Type to the
+	// EventTypeEncodeError marker. The sequence number assigned below
+	// stays correct so subscribers see a clean monotonic stream.
+	originalType := input.Type
+	dataMarshalErr := tryMarshal(data)
+	actorMarshalErr := tryMarshal(input.Actor)
+	if dataMarshalErr != nil || actorMarshalErr != nil {
+		input.Type = EventTypeEncodeError
+		sentinel := map[string]any{
+			"_encodeError":  true,
+			"originalType":  originalType,
+		}
+		if dataMarshalErr != nil {
+			sentinel["dataMarshalError"] = dataMarshalErr.Error()
+		}
+		if actorMarshalErr != nil {
+			sentinel["actorMarshalError"] = actorMarshalErr.Error()
+		}
+		data = sentinel
+		input.Actor = nil
+	}
+
 	h.mu.Lock()
 	ev := Event{
 		EventID:       newEventID(),
@@ -237,6 +271,21 @@ func isStructLike(rt reflect.Type) bool {
 		return rt.Elem().Kind() == reflect.Struct
 	}
 	return false
+}
+
+// tryMarshal returns nil if the value JSON-marshals cleanly, or the
+// underlying marshal error otherwise. Used by Publish (hp-4qbg) to detect
+// chan/func/unsafe.Pointer Data and Actor fields BEFORE they hit the
+// replay buffer, where they would later silently drop on SSE or tear
+// down a WS connection.
+func tryMarshal(value any) error {
+	if value == nil {
+		return nil
+	}
+	if _, err := json.Marshal(value); err != nil {
+		return err
+	}
+	return nil
 }
 
 // LastSequence returns the highest sequence number ever assigned for a
