@@ -292,6 +292,12 @@ func (r *Registry) SelectDue(ctx context.Context, limit int) ([]Run, []Decision,
 	if len(decisions) == 0 {
 		return nil, nil, nil
 	}
+	// hp-f1vy: SelectDue's resolveDueLocked path adds RunStatusSkipped
+	// records for paused / dead-lettered / concurrency-capped jobs.
+	// Without this prune, a paused job under continuous scheduling
+	// pressure grows state.Runs linearly until the next CompleteRun
+	// fires (which never happens for a paused job).
+	r.pruneTerminalRunsLocked()
 	if err := r.persistLocked(ctx); err != nil {
 		return nil, nil, err
 	}
@@ -313,6 +319,10 @@ func (r *Registry) RunNow(ctx context.Context, jobID string) (Run, Decision, err
 		return Run{}, Decision{}, ErrNotFound
 	}
 	run, decision := r.resolveDueLocked(job, Trigger{Type: TriggerOnDemand}, now)
+	// hp-f1vy: RunNow on a paused / dead-lettered / capped job records
+	// a skip without ever calling CompleteRun, so the terminal-run
+	// prune that CompleteRun owns never fires for this code path.
+	r.pruneTerminalRunsLocked()
 	if err := r.persistLocked(ctx); err != nil {
 		return Run{}, Decision{}, err
 	}
@@ -361,6 +371,14 @@ func (r *Registry) EmitEvent(ctx context.Context, eventType string, eventKey str
 		return nil, nil, nil
 	}
 	r.pruneEventDedupeLocked()
+	// hp-f1vy: EmitEvent's duplicate-event branch (above) records a
+	// skip Run for every duplicate, and the resolveDueLocked branch
+	// can record skips for paused / dead-lettered jobs. Both flows
+	// add to state.Runs without a corresponding CompleteRun, so the
+	// terminal-run prune must fire here too — otherwise a high-
+	// frequency event source against a paused job grows state.Runs
+	// unbounded.
+	r.pruneTerminalRunsLocked()
 	if err := r.persistLocked(ctx); err != nil {
 		return nil, nil, err
 	}

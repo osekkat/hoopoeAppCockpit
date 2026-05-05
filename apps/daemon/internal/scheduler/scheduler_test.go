@@ -1209,6 +1209,107 @@ func TestRegistryPrunesEventDedupeBeyondRetention(t *testing.T) {
 	}
 }
 
+// TestRegistryPrunesSkipRunsFromEmitEventDedupePath guards hp-f1vy:
+// pruneTerminalRunsLocked used to be called only from CompleteRun, so
+// skip records from EmitEvent's duplicate-event branch (and the paused
+// / dead-lettered resolveDueLocked branches) accumulated in state.Runs
+// without bound. The fix calls pruneTerminalRunsLocked at every
+// persist site that can add a skip Run.
+func TestRegistryPrunesSkipRunsFromEmitEventDedupePath(t *testing.T) {
+	t.Parallel()
+	clock := newTestClock(time.Date(2026, 5, 4, 14, 0, 0, 0, time.UTC))
+	registry, err := NewRegistry(context.Background(), RegistryConfig{
+		Store:                NewMemoryStore(),
+		Now:                  clock.Now,
+		LeaseHolder:          "skip-prune-test",
+		LeaseTTL:             time.Minute,
+		TerminalRunRetention: 4,
+	})
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
+	if _, err := registry.ImportDefinition(context.Background(), testDefinition("evt-dup", Schedule{Type: ScheduleEvent, Event: "x.tick"})); err != nil {
+		t.Fatalf("ImportDefinition: %v", err)
+	}
+
+	// First fire (key=ping) starts a real run; subsequent fires with the
+	// same key hit the dedupe-skip path and record skip Runs.
+	if _, _, err := registry.EmitEvent(context.Background(), "x.tick", "ping", nil); err != nil {
+		t.Fatalf("EmitEvent first: %v", err)
+	}
+	for i := 0; i < 30; i++ {
+		clock.Advance(time.Second)
+		if _, _, err := registry.EmitEvent(context.Background(), "x.tick", "ping", nil); err != nil {
+			t.Fatalf("EmitEvent dup %d: %v", i, err)
+		}
+	}
+
+	snap, err := registry.Snapshot(context.Background())
+	if err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+	// Bound: at most TerminalRunRetention (4) terminal runs + 1
+	// active (the first started run is still RunStatusRunning since
+	// nothing called CompleteRun). The total should be <= 5; the test
+	// fails loudly if state.Runs balloons toward 30+.
+	terminal := 0
+	for _, run := range snap.Runs {
+		switch run.Status {
+		case RunStatusSucceeded, RunStatusFailed, RunStatusInterrupted, RunStatusSkipped:
+			terminal++
+		}
+	}
+	if terminal > 4 {
+		t.Fatalf("terminal runs after skip flood = %d, want <= 4 (retention bound)", terminal)
+	}
+}
+
+// TestRegistryPrunesSkipRunsFromRunNowPausedJob guards the RunNow leg
+// of hp-f1vy: invoking RunNow on a paused job records a Skip without
+// ever calling CompleteRun, so the prune that CompleteRun owned never
+// fired for this code path.
+func TestRegistryPrunesSkipRunsFromRunNowPausedJob(t *testing.T) {
+	t.Parallel()
+	clock := newTestClock(time.Date(2026, 5, 4, 15, 0, 0, 0, time.UTC))
+	registry, err := NewRegistry(context.Background(), RegistryConfig{
+		Store:                NewMemoryStore(),
+		Now:                  clock.Now,
+		LeaseHolder:          "runnow-prune-test",
+		LeaseTTL:             time.Minute,
+		TerminalRunRetention: 3,
+	})
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
+	if _, err := registry.ImportDefinition(context.Background(), testDefinition("paused-job", Schedule{Type: ScheduleOnDemand})); err != nil {
+		t.Fatalf("ImportDefinition: %v", err)
+	}
+	if _, err := registry.PauseJob(context.Background(), "paused-job"); err != nil {
+		t.Fatalf("PauseJob: %v", err)
+	}
+
+	for i := 0; i < 25; i++ {
+		clock.Advance(time.Second)
+		if _, _, err := registry.RunNow(context.Background(), "paused-job"); err != nil {
+			t.Fatalf("RunNow %d: %v", i, err)
+		}
+	}
+
+	snap, err := registry.Snapshot(context.Background())
+	if err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+	terminal := 0
+	for _, run := range snap.Runs {
+		if run.Status == RunStatusSkipped {
+			terminal++
+		}
+	}
+	if terminal > 3 {
+		t.Fatalf("skipped runs after RunNow flood on paused job = %d, want <= 3 (retention bound)", terminal)
+	}
+}
+
 func newTestRegistry(t *testing.T, clock *testClock) *Registry {
 	t.Helper()
 	registry, err := NewRegistry(context.Background(), RegistryConfig{
