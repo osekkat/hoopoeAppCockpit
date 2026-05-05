@@ -12,14 +12,27 @@ This bead closes the first two and adds defense-in-depth around the third.
 
 ## Single source of truth
 
-`apps/desktop/src/shared/ipc-contract.ts` declares — as `as const` arrays — every method and topic the renderer can drive:
+`packages/schemas/preload-api.yaml` is the **authoritative** declaration of every method, topic, channel, and direct-channel input/output type-name pair the renderer can drive. The codegen at `packages/schemas/scripts/gen-preload-contract.ts` emits `apps/desktop/src/shared/ipc-contract.gen.ts` from that YAML; the manual `apps/desktop/src/shared/ipc-contract.ts` re-declares the same constants AND owns the runtime guard helpers, error class, and TypeScript shape interfaces that don't yet have a generator. Both files MUST agree — the parity test below fails the build if they drift.
 
-- `DAEMON_REQUEST_METHODS` — daemon RPC methods (`ping`, `auth.exchangePairingForBearer`, `settings.get`, `projects.list`, `approvals.approve`, …).
-- `DAEMON_SUBSCRIBE_TOPICS` — WS event topics the renderer is entitled to observe (`events.swarm`, `events.beads`, …). **Internal-only topics (`events.audit`, `events.redaction`, `events.settings.tier-merge`) are intentionally absent** — the renderer cannot subscribe to those.
-- `PRELOAD_IPC_CHANNELS` — preload-layer channel names (one per direct preload method, NOT the daemon-RPC methods which all multiplex over `hoopoe.daemon.request`).
+The four families of identifiers exposed from each file:
+
+- `DAEMON_REQUEST_METHODS` — daemon RPC methods (`ping`, `auth.exchangePairingForBearer`, `settings.get`, `projects.list`, `approvals.approve`, …). Multiplexed over `hoopoe.daemon.request`.
+- `DAEMON_SUBSCRIBE_TOPICS` — WS event topics the renderer is entitled to observe (`events.swarm`, `events.beads`, …). **Internal-only topics (`events.audit`, `events.redaction`, `events.settings.tier-merge`) are intentionally absent** — the renderer cannot subscribe to those. Multiplexed over `hoopoe.daemon.subscribe` per-subscription channel suffixes.
+- `PRELOAD_IPC_CHANNELS` — direct preload-layer channel names (one per non-daemon-RPC preload method: `hoopoe.settings.get`, `hoopoe.power.acquire`, `hoopoe.clone.discard-local-changes`, …).
+- `PRELOAD_IPC_CHANNEL_CONTRACTS` — for every INVOKE-style entry in `PRELOAD_IPC_CHANNELS`, a record of `{ channel, input, output }` type-name pairs that pin the input/output validators registered with IpcRegistry. The codegen gate in `gen-preload-contract.ts:assertValidPreloadContracts` enumerates the multiplexer + watch channels that opt out of this requirement.
 - `INTERNAL_IPC_COMMAND_PREFIXES` — namespace prefixes (`mock-flywheel.`, `internal.`) under which the IpcRegistry accepts main-process-internal commands. The renderer cannot reach these because they aren't channels — they're command IDs registered by main-side modules (e.g., MockFlywheelClient).
 
-Both the preload (`apps/desktop/electron/preload.ts`) and `IpcRegistry` consume this file. A runtime parity test (`apps/desktop/src/shared/ipc-contract.test.ts` + `apps/desktop/electron/preload.contract.test.ts`) fails the build if they ever drift.
+Three layers consume these constants:
+
+- the preload (`apps/desktop/electron/preload.ts`) imports `PRELOAD_IPC_CHANNELS` + the runtime guards from the manual file;
+- `IpcRegistry` (`apps/desktop/src/main/IpcRegistry.ts`) imports `isAllowedRegistryCommandId` + `isPreloadIpcChannel` from the same;
+- the codegen-validator (`packages/schemas/scripts/validate-preload-codegen.ts`) re-runs the generator against the YAML and asserts the on-disk `ipc-contract.gen.ts` matches.
+
+Three runtime parity tests fail the build if anything drifts:
+
+- `apps/desktop/src/shared/ipc-contract.test.ts:110-119` — manual `ipc-contract.ts` constants must `.toEqual(...)` the generated `ipc-contract.gen.ts` constants (DAEMON_REQUEST_METHODS, DAEMON_SUBSCRIBE_TOPICS, PRELOAD_IPC_CHANNELS, PRELOAD_IPC_CHANNEL_CONTRACTS, MOCK_FLYWHEEL_COMMANDS, INTERNAL_IPC_COMMANDS).
+- `apps/desktop/electron/preload.contract.test.ts` — every channel registrable on `IpcRegistry` matches the allowlist; non-allowlisted ids are refused.
+- `bun run --cwd packages/schemas validate` — re-runs the YAML codegen and diffs against `ipc-contract.gen.ts` on disk; surfaces a `*.drift` artifact in the `schemas-codegen-drift.yml` workflow.
 
 ## Enforcement layers
 
@@ -34,15 +47,27 @@ The error class is `IpcContractError` from `src/shared/ipc-contract.ts`. It carr
 
 ## Adding a new daemon method
 
-1. Edit `apps/desktop/src/shared/ipc-contract.ts`. Append to `DAEMON_REQUEST_METHODS`. The kebab/dot-canonical name should match the daemon's HTTP/gRPC route exactly.
-2. Add a TypeScript shape for input + output (Phase 2.5 hp-r3i auto-generates these from `packages/schemas/preload-api.yaml`; until then, write them by hand and put them next to the const).
-3. Run `bun run --cwd apps/desktop test` — `ipc-contract.test.ts` checks the array for duplicates / shape; `preload.contract.test.ts` checks the IpcRegistry side picks the new id up.
-4. Wire a main-side handler via `IpcRegistry.register({ id: "hoopoe.daemon.request", ... })` that branches on `body.method` and calls into the daemon client.
-5. If the new method is **security-relevant**, add it to `SECURITY_RELEVANT_SETTING_KEYS` in `SettingsAuditTrail.ts` — every call records a `setting_changed` audit entry (hp-6obn).
+1. Edit `packages/schemas/preload-api.yaml`. Append the kebab/dot-canonical method name (matching the daemon's HTTP/gRPC route exactly) under `daemonRequestMethods`.
+2. Re-run codegen: `bun run --cwd packages/schemas generate` (or `bun run --cwd packages/schemas validate` to confirm the existing `ipc-contract.gen.ts` already matches your edit). The script emits `apps/desktop/src/shared/ipc-contract.gen.ts` from the YAML.
+3. Mirror the addition in `apps/desktop/src/shared/ipc-contract.ts`. Append to `DAEMON_REQUEST_METHODS` so the manual security-boundary file stays in lockstep with the generated file. Add the TypeScript input/output shape interfaces in the same file (the manual side still owns the shape interfaces; the generator does not yet emit them).
+4. Run `bun run --cwd apps/desktop test` — `ipc-contract.test.ts` checks the array for duplicates AND parity with the generated file (lines 110-119); `preload.contract.test.ts` checks the IpcRegistry side picks the new id up.
+5. Wire a main-side handler via `IpcRegistry.register({ id: "hoopoe.daemon.request", ... })` that branches on `body.method` and calls into the daemon client.
+6. If the new method is **security-relevant**, add it to `SECURITY_RELEVANT_SETTING_KEYS` in `SettingsAuditTrail.ts` — every call records a `setting_changed` audit entry (hp-6obn).
 
 ## Adding a new subscription topic
 
-Same flow. Be doubly careful: subscription topics let the renderer READ data. If the data is internal-only (audit, redaction, tier-merge), DO NOT add it. The threat model assumes any string the renderer constructs becomes observable.
+Same flow as a daemon method, but the YAML edit goes under `daemonSubscribeTopics` and the manual mirror goes into `DAEMON_SUBSCRIBE_TOPICS`. Be doubly careful: subscription topics let the renderer READ data. If the data is internal-only (audit, redaction, tier-merge), DO NOT add it. The threat model assumes any string the renderer constructs becomes observable.
+
+## Adding a new direct preload channel
+
+Direct preload channels (e.g., `hoopoe.settings.get`, `hoopoe.power.acquire`) bypass the daemon multiplexer and reach a dedicated IpcRegistry handler in main.
+
+1. Edit `packages/schemas/preload-api.yaml`. Append a `<key>: hoopoe.<namespace>.<verb>` entry under `preloadChannels`. INVOKE-style channels MUST also declare an entry under the typed-contract section pointing at TypeScript interface names (the codegen gate refuses any new channel that opts out without an explicit allowlist entry — only the multiplexers and `settingsWatch` opt out).
+2. Re-run codegen + validate as above.
+3. Mirror the addition in `apps/desktop/src/shared/ipc-contract.ts` (`PRELOAD_IPC_CHANNELS` + `PRELOAD_IPC_CHANNEL_CONTRACTS`) and add the TypeScript input/output shape interfaces.
+4. Add the bridge method to `apps/desktop/electron/preload.ts` so the renderer can reach it via `window.hoopoe.<namespace>.<verb>(...)`.
+5. Register a main-side handler via `IpcRegistry.register({ id: PRELOAD_IPC_CHANNELS.<key>, validateInput, validateOutput, handler })`. The registry refuses any preload channel registered without both validators (`MissingIpcValidatorError`).
+6. Add tests covering the validator + handler. The `preload.contract.test.ts` parity check picks up the new id automatically.
 
 ## Adding a main-process-internal command (no renderer access)
 
@@ -52,9 +77,13 @@ Use the `internal.` prefix. Example: `internal.health-snapshot.refresh`. The Ipc
 
 Live under `mock-flywheel.*` (registered by `MockFlywheelClient.registerMockFlywheelClient`). The prefix is in `INTERNAL_IPC_COMMAND_PREFIXES`. The renderer cannot reach these directly — they are dispatched by main when mock mode is active.
 
-## Relationship to hp-r3i (Phase 2.5)
+## Manual + generated: the current hybrid state
 
-When `packages/schemas/preload-api.yaml` lands and the codegen pipeline runs, the literal arrays in `ipc-contract.ts` are replaced with generated unions and the shape interfaces become generated `import` types. The runtime guards stay as-is and just consume the generated set. The parity tests stay as-is and verify generated == actually-registered. Until then, this manual-const file is the security boundary.
+`packages/schemas/preload-api.yaml` is authoritative; `apps/desktop/src/shared/ipc-contract.gen.ts` is its regenerable artifact; `apps/desktop/src/shared/ipc-contract.ts` is a hand-maintained mirror that ALSO carries the runtime-guard helpers, the `IpcContractError` class, and the TypeScript input/output shape interfaces (the YAML codegen does not emit these today). The parity tests at `ipc-contract.test.ts:110-119` keep the two const sets in lockstep.
+
+Future direction: when the codegen learns to emit the shape interfaces and the runtime guards consume only generated unions, the manual file collapses to a thin shim around the helpers and error class. The parity tests stay; only the source of the constants moves. Both files remain `import`-able from the same path so consumers don't move with the migration.
+
+A failed `bun run --cwd packages/schemas validate` (or the `schemas-codegen-drift.yml` CI workflow) blocks any PR that drifts the YAML from the generated file. A failed `apps/desktop/src/shared/ipc-contract.test.ts` blocks any PR that drifts the manual mirror.
 
 ## Threat model assumptions
 
