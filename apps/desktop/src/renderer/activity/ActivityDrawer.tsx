@@ -2,7 +2,7 @@
 // overlaying whichever stage the user is on. Per plan.md §7.5 + the
 // hp-1r4 bead.
 
-import { useEffect, useMemo, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import { ChatInput } from "./ChatInput.tsx";
 import { FilterBar } from "./FilterBar.tsx";
 import {
@@ -45,6 +45,8 @@ export function ActivityDrawer({
   const resetFilter = useActivityStore((s) => s.resetFilter);
   const markRead = useActivityStore((s) => s.markRead);
   const markAllRead = useActivityStore((s) => s.markAllRead);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -54,6 +56,23 @@ export function ActivityDrawer({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [onClose, open]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+
+    if (open) {
+      const activeElement = document.activeElement;
+      restoreFocusRef.current = activeElement instanceof HTMLElement ? activeElement : null;
+      const focusFrame = window.requestAnimationFrame(() => closeButtonRef.current?.focus());
+      return () => window.cancelAnimationFrame(focusFrame);
+    }
+
+    const restoreTarget = restoreFocusRef.current;
+    restoreFocusRef.current = null;
+    if (restoreTarget && document.contains(restoreTarget)) {
+      restoreTarget.focus();
+    }
+  }, [open]);
 
   const handleEventClick = (event: ActivityEvent, pivot: ActivityPivot | null) => {
     markRead(event.id);
@@ -71,10 +90,12 @@ export function ActivityDrawer({
         type="button"
       />
       <aside
+        aria-hidden={!open}
         aria-label="Activity drawer"
-        aria-modal={open}
+        aria-modal={open ? true : undefined}
         className="hh-activity-panel"
         data-open={open}
+        inert={!open}
         role="dialog"
       >
         <header className="hh-activity-header">
@@ -105,6 +126,7 @@ export function ActivityDrawer({
               aria-label="Close Activity drawer"
               className="hh-text-button"
               onClick={onClose}
+              ref={closeButtonRef}
               type="button"
             >
               Close

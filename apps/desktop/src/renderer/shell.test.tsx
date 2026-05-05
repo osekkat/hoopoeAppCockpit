@@ -93,6 +93,30 @@ test("Activity panel can render open and closed states", () => {
   expect(closedMarkup).toContain("data-open=\"false\"");
 });
 
+test("closed Activity panel is inert and hidden from the accessibility tree", () => {
+  const closedMarkup = renderToStaticMarkup(
+    <ActivityPanel open={false} onClose={() => undefined} />,
+  );
+
+  expect(closedMarkup).toContain("class=\"hh-activity-panel\"");
+  expect(closedMarkup).toContain("inert=\"\"");
+  expect(closedMarkup).toContain("aria-hidden=\"true\"");
+  expect(closedMarkup).not.toContain("aria-modal=\"true\"");
+});
+
+test("open Activity panel keeps drawer controls keyboard reachable", () => {
+  const openMarkup = renderToStaticMarkup(
+    <ActivityPanel open={true} onClose={() => undefined} />,
+  );
+
+  expect(openMarkup).toContain("aria-modal=\"true\"");
+  expect(openMarkup).toContain("aria-hidden=\"false\"");
+  expect(openMarkup).not.toContain("inert=\"\"");
+  expect(openMarkup).toContain("aria-label=\"Close Activity drawer\"");
+  expect(openMarkup).toContain("aria-label=\"Search activity\"");
+  expect(openMarkup).toContain("aria-label=\"Message to orchestrator\"");
+});
+
 test("shell UI store persists activity drawer and route memory state", () => {
   useShellUiStore.setState({
     activeProjectId: null,
