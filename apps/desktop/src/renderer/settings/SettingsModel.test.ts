@@ -8,6 +8,7 @@ import {
   SECTION_ORDER,
   groupBySections,
   resolveSettingSource,
+  resolveWriteTier,
 } from "./SettingsModel.ts";
 import { dimmedDescriptors, searchSettings } from "./SettingsSearch.ts";
 
@@ -77,6 +78,36 @@ describe("resolveSettingSource (hp-wg5p)", () => {
     const r = resolveSettingSource(defaults, {}, {}, {}, "desktop.telemetryOptIn");
     expect(r.tier).toBe("default");
     expect(r.value).toBe(false);
+  });
+});
+
+describe("resolveWriteTier (hp-sfs0)", () => {
+  const projectDescriptor = SETTING_DESCRIPTORS.find((d) => d.key === "project.pushPolicy");
+  const globalDescriptor = SETTING_DESCRIPTORS.find((d) => d.key === "desktop.updateChannel");
+
+  test("project-section descriptor with active project writes to project tier even without existing overrides", () => {
+    expect(projectDescriptor).toBeDefined();
+    expect(resolveWriteTier(projectDescriptor!, "proj-123")).toBe("project");
+  });
+
+  test("project-section descriptor without active project falls back to global tier", () => {
+    expect(resolveWriteTier(projectDescriptor!, null)).toBe("global");
+    expect(resolveWriteTier(projectDescriptor!, undefined)).toBe("global");
+    expect(resolveWriteTier(projectDescriptor!, "")).toBe("global");
+  });
+
+  test("global-section descriptor always writes to global tier regardless of project context", () => {
+    expect(globalDescriptor).toBeDefined();
+    expect(resolveWriteTier(globalDescriptor!, "proj-123")).toBe("global");
+    expect(resolveWriteTier(globalDescriptor!, null)).toBe("global");
+  });
+
+  test("non-project sections (accounts/skills/diagnostics) write to global tier", () => {
+    for (const key of ["accounts.caamSummary", "skills.installerPreference", "diagnostics.recoveryShellAccess"]) {
+      const d = SETTING_DESCRIPTORS.find((x) => x.key === key);
+      expect(d).toBeDefined();
+      expect(resolveWriteTier(d!, "proj-123")).toBe("global");
+    }
   });
 });
 

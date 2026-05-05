@@ -19,6 +19,7 @@ import {
   SECTION_ORDER,
   groupBySections,
   resolveSettingSource,
+  resolveWriteTier,
   type SettingDescriptor,
   type SettingSection,
 } from "./SettingsModel.ts";
@@ -31,8 +32,15 @@ export interface SettingsScreenProps {
   readonly defaults: Record<string, unknown>;
   /** Current global (user-tier) overrides. */
   readonly globalOverrides: Record<string, unknown>;
-  /** Current project-tier overrides (or empty when no project active). */
+  /** Current project-tier overrides (or empty when no project active, OR
+   *  when a project IS active but has no overrides yet). Do not infer
+   *  project-active state from this — use `activeProjectId` (hp-sfs0). */
   readonly projectOverrides: Record<string, unknown>;
+  /** Identifier of the currently active project, or `null`/`undefined`
+   *  when no project context is selected. Drives the write-tier decision
+   *  for `project.*` descriptors so the first save lands on the project
+   *  tier instead of accidentally mutating global defaults (hp-sfs0). */
+  readonly activeProjectId?: string | null;
   /** Env overrides (highest precedence). */
   readonly envOverrides?: Record<string, unknown>;
   /** Whether dev-only settings should be visible. */
@@ -53,6 +61,7 @@ export function SettingsScreen(props: SettingsScreenProps): React.JSX.Element {
     defaults,
     globalOverrides,
     projectOverrides,
+    activeProjectId = null,
     envOverrides = {},
     devModeEnabled = false,
     onSave,
@@ -98,11 +107,7 @@ export function SettingsScreen(props: SettingsScreenProps): React.JSX.Element {
   }, [query, queryHits, activeSection]);
 
   const handleChange = (descriptor: SettingDescriptor, value: unknown): void => {
-    // Default to writing project tier when a project is active (any
-    // projectOverrides values present); otherwise global.
-    const tier: "global" | "project" =
-      Object.keys(projectOverrides).length > 0 ? "project" : "global";
-    onSave(descriptor.key, value, tier);
+    onSave(descriptor.key, value, resolveWriteTier(descriptor, activeProjectId));
     if (descriptor.restartRequired) {
       setRestartPendingFor(descriptor.key);
     }

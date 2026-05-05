@@ -314,6 +314,25 @@ export const SECTION_ORDER: readonly SettingSection[] = [
   "about",
 ];
 
+/** Decide which tier a save targets given the descriptor and whether a
+ *  project is currently active.
+ *
+ *  hp-sfs0: previously inferred from `Object.keys(projectOverrides).length > 0`,
+ *  which conflated "no project active" with "project active but no overrides
+ *  yet." The first save for a `project.*` setting in an active project then
+ *  silently wrote to the global tier, mutating defaults for every project.
+ *  The descriptor's `section` is the right discriminator: only `section ===
+ *  "project"` descriptors target the project tier, and only when a project
+ *  context is actually active. */
+export function resolveWriteTier(
+  descriptor: Pick<SettingDescriptor, "section">,
+  activeProjectId: string | null | undefined,
+): "global" | "project" {
+  const wantsProjectTier = descriptor.section === "project";
+  const projectActive = typeof activeProjectId === "string" && activeProjectId.length > 0;
+  return wantsProjectTier && projectActive ? "project" : "global";
+}
+
 /** Build the source-resolution tier for a given setting under the
  *  default-←-global-←-project-←-env precedence. Pure function so it can
  *  be unit-tested. */
