@@ -99,6 +99,30 @@ func (s *Scheduler) redactPanicMessage(r any) string {
 	return redacted
 }
 
+// redactRunError scrubs a runner-returned error before its text is
+// embedded in run.Error. hp-s94w: hp-dqxs's redactPanicMessage only
+// fires on the recover paths (recoverDispatch + invokeRunner's
+// deferred recover). Normal runner-returned errors — including the
+// hp-ld2c stderr tail (up to 1 KiB of arbitrary script stderr) —
+// flow raw through completeRun → registry.CompleteRun → run.Error
+// → state.json. The same threat model applies: secret-shaped
+// strings in stderr land on disk and on the /v1/runs surface
+// without redaction. Returns the wrapped error with redacted text;
+// nil propagates unchanged so the success path keeps RunStatusSucceeded.
+func (s *Scheduler) redactRunError(runErr error) error {
+	if runErr == nil {
+		return nil
+	}
+	if s.redactor == nil {
+		return runErr
+	}
+	redacted, _ := s.redactor.RedactText(redaction.SurfaceLogger, "scheduler.run_error", runErr.Error())
+	if redacted == runErr.Error() {
+		return runErr
+	}
+	return errors.New(redacted)
+}
+
 func (s *Scheduler) Tick(ctx context.Context) ([]Decision, error) {
 	start := time.Now()
 	runs, decisions, err := s.registry.SelectDue(ctx, 0)
@@ -346,7 +370,12 @@ func (s *Scheduler) completeRun(runID string, result RunResult, runErr error) {
 		ctx, cancel = context.WithTimeout(ctx, s.completionTimeout)
 		defer cancel()
 	}
-	_, _ = s.registry.CompleteRun(ctx, runID, result, runErr)
+	// hp-s94w: scrub runErr text before persistence. The hp-dqxs
+	// redaction at recoverDispatch / invokeRunner only catches panic
+	// values; non-panic runner errors (e.g. ExecScriptInvoker wrapping
+	// up to 1 KiB of stderr per hp-ld2c) need the same defense-in-
+	// depth pass.
+	_, _ = s.registry.CompleteRun(ctx, runID, result, s.redactRunError(runErr))
 }
 
 func (s *Scheduler) recordAudit(ctx context.Context, decision Decision) error {

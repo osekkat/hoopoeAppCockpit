@@ -749,6 +749,53 @@ func TestSchedulerRecoversRunnerPanicRedactsValue(t *testing.T) {
 	scheduler.Wait()
 }
 
+// TestSchedulerRedactsRunnerReturnedErrorBeforePersist guards hp-s94w:
+// hp-dqxs's redactor only fires on recovered panics, but the same
+// threat applies to non-panic runner errors. The hp-ld2c stderr-tail
+// in ExecScriptInvoker errors can carry up to 1 KiB of arbitrary
+// script stderr — secret-shaped strings in that tail would land in
+// run.Error → state.json → /v1/runs without redaction. completeRun
+// must scrub runErr text via the configured redactor.
+func TestSchedulerRedactsRunnerReturnedErrorBeforePersist(t *testing.T) {
+	const secret = "sk-ant-api03-zyxwvutsrqponmlkjihgfedcba9876543210"
+	ctx := context.Background()
+	clock := newTestClock(time.Date(2026, 5, 4, 18, 30, 0, 0, time.UTC))
+	registry := newTestRegistry(t, clock)
+	if _, err := registry.ImportDefinition(ctx, testDefinition("redact-runerr", Schedule{Type: ScheduleOnDemand})); err != nil {
+		t.Fatal(err)
+	}
+	scheduler, err := New(Config{
+		Registry: registry,
+		Runner: RunnerFunc(func(context.Context, Run) (RunResult, error) {
+			// Returned error (not a panic) — exactly the hp-ld2c
+			// shape: a wrapped error whose text contains the
+			// stderr tail with a secret in it.
+			return RunResult{}, fmt.Errorf("prescript: run /usr/local/lib/hoopoe/tend: exit status 1: provider key %s", secret)
+		}),
+		Redactor:   redaction.NewDefault(),
+		MaxWorkers: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	decision, err := scheduler.RunNow(ctx, "redact-runerr")
+	if err != nil {
+		t.Fatalf("RunNow: %v", err)
+	}
+	run := waitForRunStatus(t, registry, decision.RunID, RunStatusFailed)
+	if strings.Contains(run.Error, secret) {
+		t.Fatalf("run.Error leaked raw secret: %q", run.Error)
+	}
+	// The error wrapping ('prescript: run ...') is part of the
+	// runner-side error envelope; the redactor only scrubs
+	// secret-shaped substrings, not the envelope itself.
+	if run.Error == "" {
+		t.Fatal("run.Error is empty; expected redacted text with envelope intact")
+	}
+	scheduler.Wait()
+}
+
 // TestSchedulerRunNowDispatchesEvenWhenAuditFails guards hp-54te: the
 // registry already persisted the run as RunStatusRunning by the time
 // RunNow returns. If audit is recorded before dispatch and audit
