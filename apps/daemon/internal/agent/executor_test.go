@@ -446,6 +446,41 @@ func TestFileIdempotencyStoreRejectsCorruptLogAtBoot(t *testing.T) {
 	}
 }
 
+// TestIsSilentReplyCovers cases enumerates the [SILENT] sentinel
+// matching contract from plan.md §8.3 and pins the hp-rlh9 fix.
+// Trailing whitespace between the sentinel and the newline is
+// permitted; content that begins with [SILENT] but no newline is
+// NOT silent (it's ordinary reply content that happens to start
+// with the literal token).
+func TestIsSilentReplyCovers(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name   string
+		body   string
+		silent bool
+	}{
+		{"bare", "[SILENT]", true},
+		{"trailing newline", "[SILENT]\n", true},
+		{"surrounded by outer whitespace", "  [SILENT]  ", true},
+		{"sentinel with newline and content", "[SILENT]\nfollow-up notes", true},
+		{"sentinel with internal trailing space then newline", "[SILENT]   \nfollow-up", true},
+		{"sentinel with internal tab then newline", "[SILENT]\t\nfollow-up", true},
+		{"sentinel with mixed horizontal whitespace then newline", "[SILENT] \t \nfollow-up", true},
+		{"empty body", "", false},
+		{"different sentinel", "[SILENT-ish]", false},
+		{"sentinel followed by content without newline", "[SILENT]content", false},
+		{"sentinel followed by content with no separator", "[SILENT]inline-text", false},
+		{"unrelated reply", "ack: agent processed the bead", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IsSilentReply(tc.body); got != tc.silent {
+				t.Errorf("IsSilentReply(%q) = %v, want %v", tc.body, got, tc.silent)
+			}
+		})
+	}
+}
+
 // TestFileIdempotencyStoreEmptyKeyRejected pins the contract that an
 // empty idempotency key is a programmer error: callers must always
 // generate a deterministic key per ActionPlan.BuildActionPlan

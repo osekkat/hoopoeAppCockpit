@@ -160,9 +160,33 @@ func RenderPrompt(promptTemplate string, context map[string]any) (string, error)
 	return buf.String(), nil
 }
 
+// IsSilentReply reports whether an agent's reply body uses the
+// [SILENT] sentinel (plan.md §8.3) to suppress Activity-panel noise.
+// The sentinel is permitted to carry trailing whitespace on the
+// marker line — '[SILENT]   ', '[SILENT]\t\nfoo', and similar are
+// still silent. A reply that BEGINS with [SILENT] but continues
+// without a newline (e.g. '[SILENT]content') is NOT silent — that's
+// content that happens to start with the literal sentinel.
+//
+// hp-rlh9: the previous implementation only matched '[SILENT]' or
+// '[SILENT]\n'-prefixed bodies, so an agent reply that happened to
+// emit a trailing space on the marker line ('[SILENT]   \nfoo')
+// fell through to the Activity panel.
 func IsSilentReply(body string) bool {
 	trimmed := strings.TrimSpace(body)
-	return trimmed == "[SILENT]" || strings.HasPrefix(trimmed, "[SILENT]\n")
+	if trimmed == "[SILENT]" {
+		return true
+	}
+	if !strings.HasPrefix(trimmed, "[SILENT]") {
+		return false
+	}
+	rest := trimmed[len("[SILENT]"):]
+	// Skip any horizontal whitespace between the sentinel and the
+	// first newline. A direct content character (not whitespace,
+	// not newline) means this is an ordinary reply that happens to
+	// start with the literal '[SILENT]'.
+	stripped := strings.TrimLeft(rest, " \t\r")
+	return strings.HasPrefix(stripped, "\n")
 }
 
 func (r *Runtime) loadSkills(ctx context.Context, names []string) ([]Skill, error) {
