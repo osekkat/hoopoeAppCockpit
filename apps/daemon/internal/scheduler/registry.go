@@ -4,9 +4,36 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
+
+// CapabilityStatus is the narrow status enum the scheduler reads from
+// the daemon's capability registry. Mirrors capabilities.CapabilityStatus
+// without taking a hard import dependency, so the registry package can
+// be wired in via a CapabilityChecker interface and tests can substitute
+// a fake without pulling the full capabilities subsystem.
+type CapabilityStatus string
+
+const (
+	CapabilityStatusOK              CapabilityStatus = "ok"
+	CapabilityStatusDegraded        CapabilityStatus = "degraded"
+	CapabilityStatusMissing         CapabilityStatus = "missing"
+	CapabilityStatusBlockedByPolicy CapabilityStatus = "blocked-by-policy"
+	CapabilityStatusUntested        CapabilityStatus = "untested"
+)
+
+// CapabilityChecker is the contract the scheduler uses to pre-flight
+// job capabilities before resolving a Run to OutcomeStarted. Production
+// wiring is the daemon's *capabilities.Registry (its
+// LookupCapabilityStatus method satisfies this interface via
+// CapabilityStatus(string) conversion through a thin adapter — see
+// cmd/hoopoe/tending.go). Tests substitute fakes that exercise OK /
+// degraded / missing / blocked / untested branches.
+type CapabilityChecker interface {
+	LookupCapabilityStatus(ref string) (CapabilityStatus, bool)
+}
 
 type Registry struct {
 	mu                   sync.Mutex
@@ -18,6 +45,7 @@ type Registry struct {
 	leaseTTL             time.Duration
 	terminalRunRetention int
 	dedupeRetention      int
+	capabilities         CapabilityChecker
 }
 
 type RegistryConfig struct {
@@ -36,6 +64,16 @@ type RegistryConfig struct {
 	// jobs that fire with unique eventKeys (commit SHA, message id)
 	// accumulate dedup entries forever. Zero or negative disables.
 	DedupeRetention int
+	// Capabilities, when non-nil, is consulted in resolveDueLocked
+	// before a Run is moved to OutcomeStarted. Any required
+	// capability that resolves to missing / blocked-by-policy /
+	// untested / unknown produces an audited
+	// OutcomeBlockedByCapability decision in place of the started
+	// run. Degraded statuses still dispatch — that matches the
+	// capabilities.Registry.Determine precedence (degraded ≠
+	// unavailable). Nil disables the gate entirely; legacy callers
+	// keep their pre-hp-8gq behavior.
+	Capabilities CapabilityChecker
 }
 
 func NewRegistry(ctx context.Context, cfg RegistryConfig) (*Registry, error) {
@@ -67,6 +105,7 @@ func NewRegistry(ctx context.Context, cfg RegistryConfig) (*Registry, error) {
 		leaseTTL:             ttl,
 		terminalRunRetention: cfg.TerminalRunRetention,
 		dedupeRetention:      cfg.DedupeRetention,
+		capabilities:         cfg.Capabilities,
 	}
 	if err := reg.reclaimExpiredLeasesLocked(ctx, reg.now().UTC()); err != nil {
 		return nil, err
@@ -573,6 +612,25 @@ func (r *Registry) resolveDueLocked(job Job, trigger Trigger, now time.Time) (Ru
 			return run, decision
 		}
 	}
+	// hp-8gq: pre-dispatch capability gate. Job declarations are the
+	// scheduling-time contract — if a required capability is missing
+	// (probe failed), blocked by policy (operator opted out),
+	// untested (probe never ran), or unknown to the wired registry,
+	// dispatch is refused and an audited OutcomeBlockedByCapability
+	// decision is recorded in place of the started run. Degraded
+	// statuses still dispatch — they mirror plan.md §2.8's "available
+	// but reduced" semantics. The check is gated on a non-nil
+	// CapabilityChecker so legacy wiring without a registry stays
+	// pre-hp-8gq behavior.
+	if r.capabilities != nil {
+		if reasons := r.evaluateRequiredCapabilitiesLocked(job); len(reasons) > 0 {
+			run, decision := r.recordSkipLocked(job, trigger, OutcomeBlockedByCapability, strings.Join(reasons, "; "), now)
+			r.state.Runs[run.ID] = run
+			r.advanceJobAfterDecisionLocked(&job, now)
+			r.state.Jobs[job.Definition.ID] = job
+			return run, decision
+		}
+	}
 	run := r.newRunLocked(job, trigger, OutcomeStarted, now)
 	lease := Lease{Holder: r.leaseHolder, ExpiresAt: now.Add(r.leaseTTL)}
 	started := now
@@ -599,6 +657,56 @@ func (r *Registry) resolveDueLocked(job Job, trigger Trigger, now time.Time) (Ru
 		r.state.Metrics.LongestQueuedDelay = delay
 	}
 	return run, *job.LastDecision
+}
+
+// evaluateRequiredCapabilitiesLocked walks job.Definition.CapabilitiesRequired
+// against the wired CapabilityChecker. Returns a slice of human-readable
+// reasons — one per failing required capability — for inclusion in the
+// audited OutcomeBlockedByCapability decision. Empty slice means every
+// required capability is OK or degraded (both acceptable for dispatch).
+//
+// The status precedence follows capabilities.Registry.Determine:
+//   - blocked-by-policy → block (operator opt-out)
+//   - missing → block (probe never succeeded)
+//   - untested → block (probe never ran; conservative)
+//   - unknown ref (LookupCapabilityStatus returns ok=false) → block
+//   - degraded → permitted (matches "Available with degraded annotation")
+//   - ok → permitted
+//
+// Caller must hold r.mu so the LookupCapabilityStatus walk happens
+// against a consistent set of declared capabilities. The
+// CapabilityChecker's own concurrency is its responsibility — the
+// production wiring (capabilities.Registry) takes its own RWMutex; it
+// does not call back into the scheduler so there is no inversion.
+func (r *Registry) evaluateRequiredCapabilitiesLocked(job Job) []string {
+	if r.capabilities == nil || len(job.Definition.CapabilitiesRequired) == 0 {
+		return nil
+	}
+	var reasons []string
+	for _, capRef := range job.Definition.CapabilitiesRequired {
+		ref := strings.TrimSpace(capRef)
+		if ref == "" {
+			continue
+		}
+		status, ok := r.capabilities.LookupCapabilityStatus(ref)
+		if !ok {
+			reasons = append(reasons, fmt.Sprintf("required capability %q is unknown to the registry", ref))
+			continue
+		}
+		switch status {
+		case CapabilityStatusOK, CapabilityStatusDegraded:
+			// Permitted to dispatch.
+		case CapabilityStatusBlockedByPolicy:
+			reasons = append(reasons, fmt.Sprintf("required capability %q is blocked by policy", ref))
+		case CapabilityStatusMissing:
+			reasons = append(reasons, fmt.Sprintf("required capability %q is missing", ref))
+		case CapabilityStatusUntested:
+			reasons = append(reasons, fmt.Sprintf("required capability %q is untested", ref))
+		default:
+			reasons = append(reasons, fmt.Sprintf("required capability %q has unrecognized status %q", ref, status))
+		}
+	}
+	return reasons
 }
 
 func (r *Registry) recordSkipLocked(job Job, trigger Trigger, outcome Outcome, reason string, now time.Time) (Run, Decision) {

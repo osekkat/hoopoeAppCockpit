@@ -1310,6 +1310,260 @@ func TestRegistryPrunesSkipRunsFromRunNowPausedJob(t *testing.T) {
 	}
 }
 
+// TestRegistryDispatchesWhenAllRequiredCapabilitiesOK guards hp-8gq:
+// the OK branch of the pre-dispatch capability gate. Required caps
+// resolved as StatusOK must produce OutcomeStarted exactly as
+// pre-hp-8gq behavior — the gate is opt-in via Config.Capabilities,
+// not a behavior change for healthy runs.
+func TestRegistryDispatchesWhenAllRequiredCapabilitiesOK(t *testing.T) {
+	t.Parallel()
+	clock := newTestClock(time.Date(2026, 5, 4, 16, 0, 0, 0, time.UTC))
+	checker := newFakeCapabilityChecker()
+	checker.set("br.issues.read", CapabilityStatusOK)
+	checker.set("git.status.read", CapabilityStatusOK)
+	registry := newCapabilityTestRegistry(t, clock, checker)
+
+	def := testDefinition("ok-job", Schedule{Type: ScheduleOnDemand})
+	def.CapabilitiesRequired = []string{"br.issues.read", "git.status.read"}
+	if _, err := registry.ImportDefinition(context.Background(), def); err != nil {
+		t.Fatalf("ImportDefinition: %v", err)
+	}
+
+	run, decision, err := registry.RunNow(context.Background(), "ok-job")
+	if err != nil {
+		t.Fatalf("RunNow: %v", err)
+	}
+	if decision.Outcome != OutcomeStarted {
+		t.Fatalf("decision.Outcome = %s, want %s", decision.Outcome, OutcomeStarted)
+	}
+	if run.Status != RunStatusRunning {
+		t.Fatalf("run.Status = %s, want %s", run.Status, RunStatusRunning)
+	}
+}
+
+// TestRegistryDispatchesWhenRequiredCapabilityDegraded documents that
+// degraded capabilities are permitted to dispatch — matches plan.md §2.8
+// "available with reduced functionality" semantics. The status is
+// surfaced to subscribers via /v1/capabilities; the scheduler does not
+// re-impose a degraded-blocks-dispatch policy.
+func TestRegistryDispatchesWhenRequiredCapabilityDegraded(t *testing.T) {
+	t.Parallel()
+	clock := newTestClock(time.Date(2026, 5, 4, 16, 1, 0, 0, time.UTC))
+	checker := newFakeCapabilityChecker()
+	checker.set("br.issues.read", CapabilityStatusDegraded)
+	registry := newCapabilityTestRegistry(t, clock, checker)
+
+	def := testDefinition("degraded-job", Schedule{Type: ScheduleOnDemand})
+	def.CapabilitiesRequired = []string{"br.issues.read"}
+	if _, err := registry.ImportDefinition(context.Background(), def); err != nil {
+		t.Fatalf("ImportDefinition: %v", err)
+	}
+
+	_, decision, err := registry.RunNow(context.Background(), "degraded-job")
+	if err != nil {
+		t.Fatalf("RunNow: %v", err)
+	}
+	if decision.Outcome != OutcomeStarted {
+		t.Fatalf("decision.Outcome = %s, want %s (degraded must dispatch)", decision.Outcome, OutcomeStarted)
+	}
+}
+
+// TestRegistryBlocksDispatchWhenRequiredCapabilityMissing covers the
+// primary hp-8gq path: a job declares a required capability, the probe
+// reports it missing, the scheduler refuses dispatch and records an
+// audited OutcomeBlockedByCapability decision instead of starting the
+// run. The reason carries the capability ref so audit consumers can
+// trace which cap blocked.
+func TestRegistryBlocksDispatchWhenRequiredCapabilityMissing(t *testing.T) {
+	t.Parallel()
+	clock := newTestClock(time.Date(2026, 5, 4, 16, 2, 0, 0, time.UTC))
+	checker := newFakeCapabilityChecker()
+	checker.set("br.issues.read", CapabilityStatusMissing)
+	registry := newCapabilityTestRegistry(t, clock, checker)
+
+	def := testDefinition("missing-job", Schedule{Type: ScheduleOnDemand})
+	def.CapabilitiesRequired = []string{"br.issues.read"}
+	def.AuditAlways = true
+	if _, err := registry.ImportDefinition(context.Background(), def); err != nil {
+		t.Fatalf("ImportDefinition: %v", err)
+	}
+
+	run, decision, err := registry.RunNow(context.Background(), "missing-job")
+	if err != nil {
+		t.Fatalf("RunNow: %v", err)
+	}
+	if decision.Outcome != OutcomeBlockedByCapability {
+		t.Fatalf("decision.Outcome = %s, want %s", decision.Outcome, OutcomeBlockedByCapability)
+	}
+	if run.Status != RunStatusSkipped {
+		t.Fatalf("run.Status = %s, want %s", run.Status, RunStatusSkipped)
+	}
+	if !strings.Contains(decision.Reason, "br.issues.read") {
+		t.Fatalf("decision.Reason = %q, want it to name the missing capability", decision.Reason)
+	}
+	if !strings.Contains(decision.Reason, "missing") {
+		t.Fatalf("decision.Reason = %q, want it to identify status as missing", decision.Reason)
+	}
+	// AuditAlways jobs must propagate the Audit flag to the
+	// blocked-by-capability decision so Guardrail 10 holds.
+	if !decision.Audit {
+		t.Fatal("decision.Audit = false; audit must always fire on blocked-by-capability decisions")
+	}
+}
+
+// TestRegistryBlocksDispatchWhenRequiredCapabilityBlockedByPolicy
+// covers the policy-block branch: an operator opt-out in the registry
+// translates directly to a refused dispatch. Distinct from the missing
+// branch so audit consumers can tell "cap not available" from "operator
+// said no".
+func TestRegistryBlocksDispatchWhenRequiredCapabilityBlockedByPolicy(t *testing.T) {
+	t.Parallel()
+	clock := newTestClock(time.Date(2026, 5, 4, 16, 3, 0, 0, time.UTC))
+	checker := newFakeCapabilityChecker()
+	checker.set("git.push", CapabilityStatusBlockedByPolicy)
+	registry := newCapabilityTestRegistry(t, clock, checker)
+
+	def := testDefinition("blocked-job", Schedule{Type: ScheduleOnDemand})
+	def.CapabilitiesRequired = []string{"git.push"}
+	if _, err := registry.ImportDefinition(context.Background(), def); err != nil {
+		t.Fatalf("ImportDefinition: %v", err)
+	}
+
+	_, decision, err := registry.RunNow(context.Background(), "blocked-job")
+	if err != nil {
+		t.Fatalf("RunNow: %v", err)
+	}
+	if decision.Outcome != OutcomeBlockedByCapability {
+		t.Fatalf("decision.Outcome = %s, want %s", decision.Outcome, OutcomeBlockedByCapability)
+	}
+	if !strings.Contains(decision.Reason, "blocked by policy") {
+		t.Fatalf("decision.Reason = %q, want 'blocked by policy'", decision.Reason)
+	}
+}
+
+// TestRegistryBlocksDispatchWhenRequiredCapabilityUntested mirrors the
+// conservative-default branch: an unprobed capability is treated as
+// not-yet-known-good and blocks dispatch. Otherwise a daemon that
+// hasn't run its first probe sweep would dispatch every job blindly.
+func TestRegistryBlocksDispatchWhenRequiredCapabilityUntested(t *testing.T) {
+	t.Parallel()
+	clock := newTestClock(time.Date(2026, 5, 4, 16, 4, 0, 0, time.UTC))
+	checker := newFakeCapabilityChecker()
+	checker.set("ntm.snapshot", CapabilityStatusUntested)
+	registry := newCapabilityTestRegistry(t, clock, checker)
+
+	def := testDefinition("untested-job", Schedule{Type: ScheduleOnDemand})
+	def.CapabilitiesRequired = []string{"ntm.snapshot"}
+	if _, err := registry.ImportDefinition(context.Background(), def); err != nil {
+		t.Fatalf("ImportDefinition: %v", err)
+	}
+
+	_, decision, err := registry.RunNow(context.Background(), "untested-job")
+	if err != nil {
+		t.Fatalf("RunNow: %v", err)
+	}
+	if decision.Outcome != OutcomeBlockedByCapability {
+		t.Fatalf("decision.Outcome = %s, want %s", decision.Outcome, OutcomeBlockedByCapability)
+	}
+	if !strings.Contains(decision.Reason, "untested") {
+		t.Fatalf("decision.Reason = %q, want 'untested'", decision.Reason)
+	}
+}
+
+// TestRegistryBlocksDispatchWhenRequiredCapabilityUnknown covers the
+// unknown-ref branch: a job declares a capability the wired registry
+// has no knowledge of (typo, removed adapter, stale fixture).
+// Dispatch is refused — an unknown ref is structurally distinct from
+// "definitely missing" only in source, but the operational answer is
+// the same: don't run.
+func TestRegistryBlocksDispatchWhenRequiredCapabilityUnknown(t *testing.T) {
+	t.Parallel()
+	clock := newTestClock(time.Date(2026, 5, 4, 16, 5, 0, 0, time.UTC))
+	checker := newFakeCapabilityChecker() // empty; lookups return ok=false
+	registry := newCapabilityTestRegistry(t, clock, checker)
+
+	def := testDefinition("typo-job", Schedule{Type: ScheduleOnDemand})
+	def.CapabilitiesRequired = []string{"br.issues.read.typo"}
+	if _, err := registry.ImportDefinition(context.Background(), def); err != nil {
+		t.Fatalf("ImportDefinition: %v", err)
+	}
+
+	_, decision, err := registry.RunNow(context.Background(), "typo-job")
+	if err != nil {
+		t.Fatalf("RunNow: %v", err)
+	}
+	if decision.Outcome != OutcomeBlockedByCapability {
+		t.Fatalf("decision.Outcome = %s, want %s", decision.Outcome, OutcomeBlockedByCapability)
+	}
+	if !strings.Contains(decision.Reason, "unknown") {
+		t.Fatalf("decision.Reason = %q, want 'unknown'", decision.Reason)
+	}
+}
+
+// TestRegistryDispatchesWithoutCheckerWhenCapabilitiesRequired confirms
+// the legacy / opt-in property: when Config.Capabilities is nil, the
+// gate is disabled entirely and pre-hp-8gq behavior is preserved. A
+// job declaring required capabilities still dispatches (the daemon
+// hasn't wired a registry yet — failing closed would brick every run
+// during partial rollouts).
+func TestRegistryDispatchesWithoutCheckerWhenCapabilitiesRequired(t *testing.T) {
+	t.Parallel()
+	clock := newTestClock(time.Date(2026, 5, 4, 16, 6, 0, 0, time.UTC))
+	registry := newCapabilityTestRegistry(t, clock, nil)
+
+	def := testDefinition("legacy-job", Schedule{Type: ScheduleOnDemand})
+	def.CapabilitiesRequired = []string{"some.capability"}
+	if _, err := registry.ImportDefinition(context.Background(), def); err != nil {
+		t.Fatalf("ImportDefinition: %v", err)
+	}
+
+	_, decision, err := registry.RunNow(context.Background(), "legacy-job")
+	if err != nil {
+		t.Fatalf("RunNow: %v", err)
+	}
+	if decision.Outcome != OutcomeStarted {
+		t.Fatalf("decision.Outcome = %s, want %s (gate must be opt-in)", decision.Outcome, OutcomeStarted)
+	}
+}
+
+// fakeCapabilityChecker is a test-only CapabilityChecker. Returns
+// (status, true) for refs that have been .set()'d; (StatusMissing,
+// false) for unknown refs to simulate an unknown reference.
+type fakeCapabilityChecker struct {
+	statuses map[string]CapabilityStatus
+}
+
+func newFakeCapabilityChecker() *fakeCapabilityChecker {
+	return &fakeCapabilityChecker{statuses: map[string]CapabilityStatus{}}
+}
+
+func (f *fakeCapabilityChecker) set(ref string, status CapabilityStatus) {
+	f.statuses[ref] = status
+}
+
+func (f *fakeCapabilityChecker) LookupCapabilityStatus(ref string) (CapabilityStatus, bool) {
+	status, ok := f.statuses[ref]
+	if !ok {
+		return CapabilityStatusMissing, false
+	}
+	return status, true
+}
+
+func newCapabilityTestRegistry(t *testing.T, clock *testClock, checker CapabilityChecker) *Registry {
+	t.Helper()
+	registry, err := NewRegistry(context.Background(), RegistryConfig{
+		Store:        NewMemoryStore(),
+		Now:          clock.Now,
+		LeaseHolder:  "capability-test-daemon",
+		LeaseTTL:     time.Minute,
+		Capabilities: checker,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return registry
+}
+
 func newTestRegistry(t *testing.T, clock *testClock) *Registry {
 	t.Helper()
 	registry, err := NewRegistry(context.Background(), RegistryConfig{

@@ -292,6 +292,13 @@ const (
 	OutcomeLeasedElsewhere        Outcome = "leased_elsewhere"
 	OutcomeDeadLettered           Outcome = "dead_lettered"
 	OutcomeSchedulerError         Outcome = "scheduler_error"
+	// OutcomeBlockedByCapability is recorded when the registry's
+	// pre-dispatch capability check refuses to start a run because one
+	// or more of the job's CapabilitiesRequired references is missing,
+	// blocked by policy, untested, or unknown to the wired capability
+	// checker. Distinct from OutcomeSkippedByPolicy so audit consumers
+	// can tell capability gaps apart from operator pauses.
+	OutcomeBlockedByCapability Outcome = "blocked_by_capability"
 )
 
 type Lease struct {
