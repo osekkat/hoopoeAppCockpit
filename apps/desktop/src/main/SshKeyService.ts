@@ -84,7 +84,61 @@ export interface SshKeyServiceOptions {
   readonly homeDir?: string;
   readonly sshKeygenBin?: string;
   readonly run?: ChildProcessRunner;
+  /** hp-ig3r: optional audit sink. Production wiring routes events
+   *  into the structured logger; tests inject a spy. The sink MUST
+   *  NOT throw — the service swallows sink errors so a bad logger
+   *  cannot block key generation. */
+  readonly audit?: SshKeyAuditSink;
+  /** hp-ig3r: clock for the `at` timestamp on audit events.
+   *  Defaults to `() => new Date()`. */
+  readonly now?: () => Date;
 }
+
+/** hp-ig3r: events emitted by SshKeyService.generateKey so the audit log
+ *  can show when a wizard run created (or refused, or failed to create)
+ *  an SSH key. Private key bytes and passphrases never reach the sink —
+ *  generateKey runs ssh-keygen with `-N ""` (no passphrase) and the only
+ *  sensitive material is the on-disk private key file, which is not
+ *  read back into the audit payload. The success event carries the
+ *  PUBLIC fingerprint (already a SHA256:base64 hash). */
+export type SshKeyAuditEvent =
+  | {
+      readonly kind: "ssh.key_generation_succeeded";
+      readonly at: string;
+      readonly runId: string;
+      readonly keyName: string;
+      readonly algorithm: SshKeyAlgorithm | "unknown";
+      readonly fingerprint: string;
+    }
+  | {
+      readonly kind: "ssh.key_generation_refused";
+      readonly at: string;
+      /** The raw runId from the renderer — validation may have rejected
+       *  it as malformed, but it's not secret material. */
+      readonly runId: string;
+      readonly errorCode: SshKeyServiceErrorCode;
+      readonly errorMessage: string;
+    }
+  | {
+      readonly kind: "ssh.key_generation_failed";
+      readonly at: string;
+      readonly runId: string;
+      readonly errorCode: SshKeyServiceErrorCode;
+      readonly errorMessage: string;
+    };
+
+export type SshKeyAuditSink = (event: SshKeyAuditEvent) => void;
+
+/** Classify an SshKeyServiceErrorCode into the refused vs failed audit
+ *  bucket. Refused = validation/precondition rejection driven by input
+ *  shape or filesystem state; failed = external tool / system error.
+ *  Used by generateKey's catch handler to pick the right event kind. */
+const REFUSED_CODES: ReadonlySet<SshKeyServiceErrorCode> = new Set([
+  "ssh.runId-invalid",
+  "ssh.comment-invalid",
+  "ssh.path-escape",
+  "ssh.key-already-exists",
+]);
 
 export interface ChildProcessRunner {
   (
@@ -131,12 +185,16 @@ export class SshKeyService {
   readonly #sshDir: string;
   readonly #bin: string;
   readonly #run: ChildProcessRunner;
+  readonly #audit: SshKeyAuditSink | undefined;
+  readonly #now: () => Date;
 
   constructor(options: SshKeyServiceOptions = {}) {
     this.#home = options.homeDir ?? DEFAULT_HOME;
     this.#sshDir = join(this.#home, ".ssh");
     this.#bin = options.sshKeygenBin ?? DEFAULT_BIN;
     this.#run = options.run ?? defaultRunner;
+    this.#audit = options.audit;
+    this.#now = options.now ?? (() => new Date());
   }
 
   /** Resolved `~/.ssh/` directory, exposed for tests + diagnostics. */
@@ -201,7 +259,37 @@ export class SshKeyService {
   }
 
   async generateKey(input: GenerateKeyInput): Promise<GeneratedSshKey> {
-    const runId = String(input.runId ?? "").trim();
+    const rawRunId = String(input.runId ?? "").trim();
+    try {
+      const generated = await this.#generateKeyImpl(rawRunId, input);
+      this.#emitAudit({
+        kind: "ssh.key_generation_succeeded",
+        at: this.#now().toISOString(),
+        runId: rawRunId,
+        keyName: basename(generated.privatePath),
+        algorithm: generated.algorithm,
+        fingerprint: generated.fingerprint,
+      });
+      return generated;
+    } catch (err) {
+      if (err instanceof SshKeyServiceError) {
+        this.#emitAudit({
+          kind: REFUSED_CODES.has(err.code)
+            ? "ssh.key_generation_refused"
+            : "ssh.key_generation_failed",
+          at: this.#now().toISOString(),
+          runId: rawRunId,
+          errorCode: err.code,
+          errorMessage: err.message,
+        });
+      }
+      throw err;
+    }
+  }
+
+  /** Inner generateKey body — separated so the public method can wrap a
+   *  single try/catch around the success and error audit emissions. */
+  async #generateKeyImpl(runId: string, input: GenerateKeyInput): Promise<GeneratedSshKey> {
     if (!RUN_ID_RE.test(runId)) {
       throw new SshKeyServiceError(
         "ssh.runId-invalid",
@@ -284,6 +372,16 @@ export class SshKeyService {
       bits: fingerprint.bits,
       hasPrivateKey: true,
     };
+  }
+
+  #emitAudit(event: SshKeyAuditEvent): void {
+    if (!this.#audit) return;
+    try {
+      this.#audit(event);
+    } catch {
+      // Defensive: a sink that throws cannot block key generation.
+      // Production wiring uses a logger that doesn't throw.
+    }
   }
 
   async #fingerprintFile(publicPath: string): Promise<{

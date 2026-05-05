@@ -7,6 +7,7 @@ import {
   SshKeyServiceError,
   parseSshKeygenLine,
   type ChildProcessRunner,
+  type SshKeyAuditEvent,
 } from "./SshKeyService.ts";
 
 interface CallLog {
@@ -202,6 +203,167 @@ describe("hp-pl8h :: SshKeyService.generateKey", () => {
     await expect(service.generateKey({ runId: "abcd1234efgh" })).rejects.toMatchObject({
       code: "ssh-keygen-not-installed",
     });
+  });
+
+  test("hp-ig3r: succeeded path emits ssh.key_generation_succeeded with public fingerprint", async () => {
+    const audit: SshKeyAuditEvent[] = [];
+    const { runner } = makeRunner(async (call) => {
+      if (call.args[0] === "-l") {
+        return {
+          code: 0,
+          stdout: "256 SHA256:GENERATED hoopoe-vps-abcd1234efgh (ED25519)\n",
+          stderr: "",
+        };
+      }
+      const fileFlagIndex = call.args.indexOf("-f");
+      const targetPath = call.args[fileFlagIndex + 1] ?? "";
+      if (targetPath) {
+        await writeFile(targetPath, "PRIVATE\n");
+        await writeFile(`${targetPath}.pub`, "ssh-ed25519 AAA hoopoe-vps-abcd1234efgh\n");
+      }
+      return { code: 0, stdout: "", stderr: "" };
+    });
+    const service = new SshKeyService({
+      homeDir,
+      run: runner,
+      audit: (event) => audit.push(event),
+      now: () => new Date("2026-05-04T01:02:03.456Z"),
+    });
+
+    await service.generateKey({ runId: "abcd1234efgh" });
+
+    expect(audit).toEqual([
+      {
+        kind: "ssh.key_generation_succeeded",
+        at: "2026-05-04T01:02:03.456Z",
+        runId: "abcd1234efgh",
+        keyName: "hoopoe-vps-abcd1234efgh",
+        algorithm: "ed25519",
+        fingerprint: "SHA256:GENERATED",
+      },
+    ]);
+  });
+
+  test("hp-ig3r: invalid runId emits ssh.key_generation_refused with the rejected runId", async () => {
+    const audit: SshKeyAuditEvent[] = [];
+    const { runner } = makeRunner(async () => ({ code: 0, stdout: "", stderr: "" }));
+    const service = new SshKeyService({
+      homeDir,
+      run: runner,
+      audit: (event) => audit.push(event),
+      now: () => new Date("2026-05-04T01:02:03.456Z"),
+    });
+
+    await expect(service.generateKey({ runId: "../etc/shadow" })).rejects.toBeInstanceOf(
+      SshKeyServiceError,
+    );
+
+    expect(audit).toHaveLength(1);
+    expect(audit[0]).toMatchObject({
+      kind: "ssh.key_generation_refused",
+      at: "2026-05-04T01:02:03.456Z",
+      runId: "../etc/shadow",
+      errorCode: "ssh.runId-invalid",
+    });
+  });
+
+  test("hp-ig3r: existing key path emits ssh.key_generation_refused with key-already-exists", async () => {
+    const audit: SshKeyAuditEvent[] = [];
+    await mkdir(join(homeDir, ".ssh"), { mode: 0o700 });
+    await writeFile(join(homeDir, ".ssh", "hoopoe-vps-abcd1234efgh"), "PRIVATE\n");
+    const { runner } = makeRunner(async () => ({ code: 0, stdout: "", stderr: "" }));
+    const service = new SshKeyService({
+      homeDir,
+      run: runner,
+      audit: (event) => audit.push(event),
+    });
+
+    await expect(service.generateKey({ runId: "abcd1234efgh" })).rejects.toMatchObject({
+      code: "ssh.key-already-exists",
+    });
+
+    expect(audit).toHaveLength(1);
+    expect(audit[0]!.kind).toBe("ssh.key_generation_refused");
+    if (audit[0]!.kind === "ssh.key_generation_refused") {
+      expect(audit[0]!.errorCode).toBe("ssh.key-already-exists");
+      expect(audit[0]!.runId).toBe("abcd1234efgh");
+    }
+  });
+
+  test("hp-ig3r: ssh-keygen non-zero exit emits ssh.key_generation_failed (not refused)", async () => {
+    const audit: SshKeyAuditEvent[] = [];
+    const { runner } = makeRunner(async () => ({
+      code: 1,
+      stdout: "",
+      stderr: "ssh-keygen: bad permissions",
+    }));
+    const service = new SshKeyService({
+      homeDir,
+      run: runner,
+      audit: (event) => audit.push(event),
+    });
+
+    await expect(service.generateKey({ runId: "abcd1234efgh" })).rejects.toMatchObject({
+      code: "ssh-keygen-exit",
+    });
+
+    expect(audit).toHaveLength(1);
+    expect(audit[0]!.kind).toBe("ssh.key_generation_failed");
+    if (audit[0]!.kind === "ssh.key_generation_failed") {
+      expect(audit[0]!.errorCode).toBe("ssh-keygen-exit");
+      expect(audit[0]!.errorMessage).toContain("bad permissions");
+    }
+  });
+
+  test("hp-ig3r: missing ssh-keygen binary emits ssh.key_generation_failed with not-installed code", async () => {
+    const audit: SshKeyAuditEvent[] = [];
+    const runner: ChildProcessRunner = async () => {
+      throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+    };
+    const service = new SshKeyService({
+      homeDir,
+      run: runner,
+      audit: (event) => audit.push(event),
+    });
+
+    await expect(service.generateKey({ runId: "abcd1234efgh" })).rejects.toMatchObject({
+      code: "ssh-keygen-not-installed",
+    });
+
+    expect(audit).toHaveLength(1);
+    expect(audit[0]!.kind).toBe("ssh.key_generation_failed");
+    if (audit[0]!.kind === "ssh.key_generation_failed") {
+      expect(audit[0]!.errorCode).toBe("ssh-keygen-not-installed");
+    }
+  });
+
+  test("hp-ig3r: a throwing audit sink does not derail key generation", async () => {
+    const { runner } = makeRunner(async (call) => {
+      if (call.args[0] === "-l") {
+        return {
+          code: 0,
+          stdout: "256 SHA256:OK hoopoe-vps-abcd1234efgh (ED25519)\n",
+          stderr: "",
+        };
+      }
+      const fileFlagIndex = call.args.indexOf("-f");
+      const targetPath = call.args[fileFlagIndex + 1] ?? "";
+      if (targetPath) {
+        await writeFile(targetPath, "PRIVATE\n");
+        await writeFile(`${targetPath}.pub`, "ssh-ed25519 AAA hoopoe-vps-abcd1234efgh\n");
+      }
+      return { code: 0, stdout: "", stderr: "" };
+    });
+    const service = new SshKeyService({
+      homeDir,
+      run: runner,
+      audit: () => {
+        throw new Error("audit sink exploded");
+      },
+    });
+
+    const result = await service.generateKey({ runId: "abcd1234efgh" });
+    expect(result.fingerprint).toBe("SHA256:OK");
   });
 });
 
