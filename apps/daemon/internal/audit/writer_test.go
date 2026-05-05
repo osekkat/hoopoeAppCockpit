@@ -580,3 +580,128 @@ func TestQueryDoesNotRereadFileAfterAppend(t *testing.T) {
 		t.Fatalf("Query saw out-of-band file write — index rescan regression. entries=%+v", entries)
 	}
 }
+
+// FuzzDecodeEntry guards hp-54bp: audit logs are append-only boundary
+// artifacts. Replay or corruption of a JSONL line must surface as a
+// wrapped "audit: ..." error, never a panic, and successful decodes
+// must normalize the schema version (legacy v1 → current) and
+// projectID (empty → GlobalProjectID) before the entry leaves
+// DecodeEntry. Run with:
+//
+//	go test -fuzz=FuzzDecodeEntry -fuzztime=20s ./apps/daemon/internal/audit/
+func FuzzDecodeEntry(f *testing.F) {
+	// Current-schema entry (v2).
+	f.Add([]byte(`{"schemaVersion":2,"eventId":"evt-1","seq":1,"time":"2026-01-01T00:00:00Z","projectId":"proj-1","actor":{"kind":"user","id":"u1"},"action":"x.test","result":"success"}`))
+	// Legacy v1 entry (must migrate to v2 with GlobalProjectID).
+	f.Add([]byte(`{"schemaVersion":1,"eventId":"evt-2","type":"x.legacy","time":"2026-01-01T00:00:00Z","actor":{"kind":"user","id":"u2"}}`))
+	// Empty / whitespace-only — must error cleanly.
+	f.Add([]byte(""))
+	f.Add([]byte("   \t  \n"))
+	// Malformed JSON.
+	f.Add([]byte("{not json"))
+	f.Add([]byte(`{"schemaVersion":2,`))
+	// Wrong type for schemaVersion.
+	f.Add([]byte(`{"schemaVersion":"two"}`))
+	// Unsupported schema version.
+	f.Add([]byte(`{"schemaVersion":99,"eventId":"future"}`))
+	// Schema 2 with empty projectID — should normalize to GlobalProjectID.
+	f.Add([]byte(`{"schemaVersion":2,"eventId":"e","projectId":""}`))
+	// Deeply nested data field.
+	f.Add([]byte(`{"schemaVersion":2,"eventId":"e","data":{"a":{"b":{"c":["x",1,null,true]}}}}`))
+	// Larger array data — exercises decoder buffer growth without
+	// approaching the 4 MiB scanner cap (which is enforced upstream
+	// in readEntriesFrom, not in DecodeEntry itself).
+	bigArr := append([]byte(`{"schemaVersion":2,"eventId":"big","data":{"items":[`), bytes.Repeat([]byte(`"x",`), 2048)...)
+	bigArr = append(bigArr, []byte(`"x"]}}`)...)
+	f.Add(bigArr)
+	// JSON-escaped control chars (null, backspace, form-feed, tab) in
+	// string fields — the JSON spec allows these as \uXXXX / \b / \f
+	// escapes; the decoder must round-trip them without panic.
+	f.Add([]byte("{\"schemaVersion\":2,\"eventId\":\"e\",\"action\":\"x\\u0000y\",\"reason\":\"\\b\\f\\t\"}"))
+	// Unicode action / actor.id.
+	f.Add([]byte(`{"schemaVersion":2,"eventId":"e","action":"漢字","actor":{"kind":"user","id":"αβγ"}}`))
+	// Negative schemaVersion.
+	f.Add([]byte(`{"schemaVersion":-1}`))
+	// Float schemaVersion (should fail the int header decode cleanly).
+	f.Add([]byte(`{"schemaVersion":2.5}`))
+
+	f.Fuzz(func(t *testing.T, line []byte) {
+		entry, err := DecodeEntry(line)
+		if err != nil {
+			// Errors must be wrapped with the "audit:" prefix; never
+			// panic, never a bare json error.
+			if !strings.Contains(err.Error(), "audit:") {
+				t.Fatalf("DecodeEntry returned an unwrapped error for input %q: %v", line, err)
+			}
+			return
+		}
+		// Successful decodes must have a normalized schema version and
+		// non-empty projectID (legacy migration → GlobalProjectID;
+		// empty v2 → GlobalProjectID).
+		if entry.SchemaVersion != SchemaVersion {
+			t.Fatalf("decoded entry has SchemaVersion=%d, want %d (normalize)", entry.SchemaVersion, SchemaVersion)
+		}
+		if entry.ProjectID == "" {
+			t.Fatalf("decoded entry has empty ProjectID; normalize should fall back to %q", GlobalProjectID)
+		}
+		// Round-trip: the decoded Entry must re-marshal without panic.
+		// A fuzz finding that produced an unmarshalable Data field (e.g.
+		// json.Number that can't round-trip) would surface here.
+		if _, marshalErr := json.Marshal(entry); marshalErr != nil {
+			t.Fatalf("decoded entry not re-marshalable: %v (input=%q, entry=%+v)", marshalErr, line, entry)
+		}
+	})
+}
+
+// TestReadEntriesFromRespectsMaxAuditLineBytes guards the scanner-side
+// invariant from hp-54bp: a corrupted append that produces a line
+// longer than maxAuditLineBytes (4 MiB) must surface as a clean
+// "audit: scan: ..." error from readEntriesFrom rather than crashing
+// or silently truncating.
+func TestReadEntriesFromRespectsMaxAuditLineBytes(t *testing.T) {
+	t.Parallel()
+	// One line larger than maxAuditLineBytes followed by a newline so
+	// the scanner is forced to attempt a single Scan over the entire
+	// oversized payload.
+	oversized := bytes.Repeat([]byte("x"), maxAuditLineBytes+512)
+	oversized = append(oversized, '\n')
+	_, err := readEntriesFrom(bytes.NewReader(oversized))
+	if err == nil {
+		t.Fatal("readEntriesFrom accepted a line > maxAuditLineBytes; want a wrapped scan error")
+	}
+	if !strings.Contains(err.Error(), "audit: scan") {
+		t.Fatalf("err = %v, want a wrapped 'audit: scan: ...' error", err)
+	}
+}
+
+// TestReadEntriesFromAcceptsLineUpToMaxAuditLineBytes confirms the
+// boundary case in the opposite direction: a line at — but not over —
+// the cap is accepted. This pins down the exact threshold so a future
+// edit that lowers the cap or off-by-ones the scanner buffer is caught.
+func TestReadEntriesFromAcceptsLineUpToMaxAuditLineBytes(t *testing.T) {
+	t.Parallel()
+	// Build a valid entry padded with a long action string to land just
+	// under the cap. Reserve headroom for the JSON envelope and the
+	// newline.
+	prefix := []byte(`{"schemaVersion":2,"eventId":"e","projectId":"p","action":"`)
+	suffix := []byte(`"}` + "\n")
+	// bufio.Scanner returns ErrTooLong when a token is *larger* than
+	// the max buffer size. A token equal to the cap is admissible.
+	headroom := maxAuditLineBytes - len(prefix) - len(suffix)
+	if headroom <= 0 {
+		t.Skip("test envelope larger than maxAuditLineBytes; adjust prefix/suffix")
+	}
+	line := append([]byte{}, prefix...)
+	line = append(line, bytes.Repeat([]byte("a"), headroom)...)
+	line = append(line, suffix...)
+	if len(line) > maxAuditLineBytes+1 {
+		t.Fatalf("test built oversized line: len=%d", len(line))
+	}
+	entries, err := readEntriesFrom(bytes.NewReader(line))
+	if err != nil {
+		t.Fatalf("readEntriesFrom rejected at-cap line: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("got %d entries, want 1", len(entries))
+	}
+}
