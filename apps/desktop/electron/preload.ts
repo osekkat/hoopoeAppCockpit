@@ -23,10 +23,7 @@
 import { randomUUID } from "node:crypto";
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 import {
-  IpcContractError,
   PRELOAD_IPC_CHANNELS,
-  isDaemonRequestMethod,
-  isDaemonSubscribeTopic,
   type DaemonRequestMethod,
   type DaemonSubscribeTopic,
   type PowerAssertionAcquireInput,
@@ -34,6 +31,10 @@ import {
   type PowerAssertionSnapshot,
 } from "../src/shared/ipc-contract.ts";
 import type { BootstrapStepBridge } from "../src/shared/bootstrap-bridge.ts";
+import {
+  createDaemonBridge,
+  type DaemonSubscribeOptions,
+} from "../src/shared/daemon-bridge.ts";
 import { createPowerBridge } from "../src/shared/power-bridge.ts";
 
 // ── Channel names ──────────────────────────────────────────────────────────
@@ -81,9 +82,13 @@ export interface HoopoeBridge {
      *  `src/shared/ipc-contract.ts`. Unknown methods are rejected at the
      *  preload boundary BEFORE main IPC sees them. */
     readonly request: (method: DaemonRequestMethod, body: unknown) => Promise<unknown>;
+    /** hp-7bj1: pass `options.onError` to observe main-side
+     *  subscribe/unsubscribe failures without changing the
+     *  synchronous-unsubscribe return type. */
     readonly subscribe: (
       topic: DaemonSubscribeTopic,
       listener: (payload: unknown) => void,
+      options?: DaemonSubscribeOptions,
     ) => () => void;
   };
   readonly settings: {
@@ -154,36 +159,7 @@ export interface HoopoeBridge {
 }
 
 export const hoopoeBridge: HoopoeBridge = {
-  daemon: {
-    request: (method, body) => {
-      // hp-n5za defense-in-depth: even though the type system constrains
-      // `method` to DaemonRequestMethod, a non-TS renderer (e.g., a future
-      // bundle from a third-party renderer plugin) could still pass an
-      // arbitrary string. Runtime check refuses unknown methods before
-      // they reach main.
-      if (!isDaemonRequestMethod(method)) {
-        return Promise.reject(new IpcContractError({ kind: "method", attempted: String(method) }));
-      }
-      return invoke(CHANNELS.daemonRequest, { method, body });
-    },
-    subscribe: (topic, listener) => {
-      if (!isDaemonSubscribeTopic(topic)) {
-        throw new IpcContractError({ kind: "topic", attempted: String(topic) });
-      }
-      // Subscription IDs are crypto-random (RFC 4122 v4 UUID) so a malicious
-      // or buggy renderer can't predict/collide channel names. The `topic`
-      // is included for diagnostics only — the actual channel is bound to
-      // the random suffix, not the topic.
-      const subscriptionId = randomUUID();
-      const channel = `${CHANNELS.daemonSubscribe}.${subscriptionId}`;
-      void invoke(CHANNELS.daemonSubscribe, { topic, subscriptionId });
-      const unsubscribe = subscribe(channel, listener);
-      return () => {
-        unsubscribe();
-        void invoke(CHANNELS.daemonUnsubscribe, { subscriptionId });
-      };
-    },
-  },
+  daemon: createDaemonBridge(invoke, subscribe, { subscriptionId: randomUUID }),
   settings: {
     get: () => invoke(CHANNELS.settingsGet, {}),
     set: (partial) => invokeVoid(CHANNELS.settingsSet, partial),
