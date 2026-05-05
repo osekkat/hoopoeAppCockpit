@@ -14,7 +14,11 @@ import {
   type ActivityEvent,
   type ActivityEventKind,
 } from "./types.ts";
-import { TimelineList } from "./TimelineList.tsx";
+import {
+  CONTEXT_ACTIONS,
+  TimelineList,
+  reduceContextMenuKey,
+} from "./TimelineList.tsx";
 
 const T = (n: number) => `2026-05-04T00:0${n}:00Z`;
 
@@ -318,6 +322,84 @@ describe("TimelineList empty states", () => {
     expect(emptyMarkup).toContain("orchestrator");
     expect(filteredMarkup).toContain("No matching events");
     expect(filteredMarkup).toContain("Clear filters");
+  });
+});
+
+describe("reduceContextMenuKey (hp-0xm3)", () => {
+  const TOTAL = CONTEXT_ACTIONS.length;
+
+  test("ArrowDown wraps from last to first", () => {
+    expect(reduceContextMenuKey("ArrowDown", TOTAL - 1, TOTAL)).toEqual({
+      type: "move",
+      nextIndex: 0,
+    });
+  });
+
+  test("ArrowDown advances by one in the middle", () => {
+    expect(reduceContextMenuKey("ArrowDown", 1, TOTAL)).toEqual({
+      type: "move",
+      nextIndex: 2,
+    });
+  });
+
+  test("ArrowUp wraps from first to last", () => {
+    expect(reduceContextMenuKey("ArrowUp", 0, TOTAL)).toEqual({
+      type: "move",
+      nextIndex: TOTAL - 1,
+    });
+  });
+
+  test("ArrowUp moves backwards by one in the middle", () => {
+    expect(reduceContextMenuKey("ArrowUp", 2, TOTAL)).toEqual({
+      type: "move",
+      nextIndex: 1,
+    });
+  });
+
+  test("Home jumps to first; PageUp also jumps to first", () => {
+    expect(reduceContextMenuKey("Home", 2, TOTAL)).toEqual({ type: "move", nextIndex: 0 });
+    expect(reduceContextMenuKey("PageUp", 2, TOTAL)).toEqual({ type: "move", nextIndex: 0 });
+  });
+
+  test("End jumps to last; PageDown also jumps to last", () => {
+    expect(reduceContextMenuKey("End", 0, TOTAL)).toEqual({
+      type: "move",
+      nextIndex: TOTAL - 1,
+    });
+    expect(reduceContextMenuKey("PageDown", 0, TOTAL)).toEqual({
+      type: "move",
+      nextIndex: TOTAL - 1,
+    });
+  });
+
+  test("Enter activates the focused item", () => {
+    expect(reduceContextMenuKey("Enter", 1, TOTAL)).toEqual({ type: "activate", index: 1 });
+  });
+
+  test("Space (' ') and 'Spacebar' both activate the focused item", () => {
+    expect(reduceContextMenuKey(" ", 0, TOTAL)).toEqual({ type: "activate", index: 0 });
+    expect(reduceContextMenuKey("Spacebar", 3, TOTAL)).toEqual({ type: "activate", index: 3 });
+  });
+
+  test("Escape dismisses", () => {
+    expect(reduceContextMenuKey("Escape", 1, TOTAL)).toEqual({ type: "dismiss" });
+  });
+
+  test("Tab dismisses (closes the menu rather than trapping focus)", () => {
+    expect(reduceContextMenuKey("Tab", 1, TOTAL)).toEqual({ type: "dismiss" });
+  });
+
+  test("non-navigation keys return null (do not consume the event)", () => {
+    expect(reduceContextMenuKey("a", 0, TOTAL)).toBeNull();
+    expect(reduceContextMenuKey("ArrowLeft", 0, TOTAL)).toBeNull();
+    expect(reduceContextMenuKey("ArrowRight", 0, TOTAL)).toBeNull();
+  });
+
+  test("empty menu still allows dismiss but ignores movement keys", () => {
+    expect(reduceContextMenuKey("Escape", 0, 0)).toEqual({ type: "dismiss" });
+    expect(reduceContextMenuKey("Tab", 0, 0)).toEqual({ type: "dismiss" });
+    expect(reduceContextMenuKey("ArrowDown", 0, 0)).toBeNull();
+    expect(reduceContextMenuKey("Enter", 0, 0)).toBeNull();
   });
 });
 

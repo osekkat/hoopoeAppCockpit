@@ -2,7 +2,15 @@
 // TimelineRow with an ActivityEvent → TimelineRowProps adapter and adds
 // click-to-pivot / right-click context menu hooks.
 
-import { useCallback, useMemo, useState, type CSSProperties } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import {
   getTimelineRowModel,
   type TimelineRowProps,
@@ -99,6 +107,7 @@ interface TimelineEntryProps {
 
 function TimelineEntry({ event, onEventClick, onContextAction }: TimelineEntryProps) {
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
+  const rowRef = useRef<HTMLButtonElement>(null);
 
   const props: TimelineRowProps = useMemo(() => {
     return {
@@ -151,6 +160,7 @@ function TimelineEntry({ event, onEventClick, onContextAction }: TimelineEntryPr
         data-unread={!event.read}
         onClick={handleClick}
         onContextMenu={handleContextMenu}
+        ref={rowRef}
         role="listitem"
         type="button"
       >
@@ -190,7 +200,10 @@ function TimelineEntry({ event, onEventClick, onContextAction }: TimelineEntryPr
           x={menuPos.x}
           y={menuPos.y}
           onAction={handleAction}
-          onDismiss={() => setMenuPos(null)}
+          onDismiss={() => {
+            setMenuPos(null);
+            rowRef.current?.focus();
+          }}
         />
       )}
     </>
@@ -204,15 +217,97 @@ interface ContextMenuProps {
   readonly onDismiss: () => void;
 }
 
-const CONTEXT_ACTIONS: ReadonlyArray<{ id: ActivityContextAction; label: string }> = [
+export const CONTEXT_ACTIONS: ReadonlyArray<{ id: ActivityContextAction; label: string }> = [
   { id: "reply-as-overseer", label: "Reply as human overseer" },
   { id: "broadcast-to-swarm", label: "Broadcast to swarm" },
   { id: "create-bead-from-message", label: "Create bead from message" },
   { id: "mark-acknowledged", label: "Mark acknowledged" },
 ];
 
+/** Pure WAI-ARIA menu keyboard reducer. Returns the next state given the
+ *  current focused index, the total number of items, and the key pressed.
+ *
+ *  hp-0xm3: extracted as a pure helper so the keyboard contract can be
+ *  unit-tested with bun:test (the renderer has no DOM environment) and
+ *  so the same logic can be reused if a second menu surface lands.
+ *
+ *  Pattern reference: https://www.w3.org/WAI/ARIA/apg/patterns/menu/ */
+export type ContextMenuKeyAction =
+  | { readonly type: "move"; readonly nextIndex: number }
+  | { readonly type: "activate"; readonly index: number }
+  | { readonly type: "dismiss" }
+  | null;
+
+export function reduceContextMenuKey(
+  key: string,
+  currentIndex: number,
+  total: number,
+): ContextMenuKeyAction {
+  if (total <= 0) {
+    if (key === "Escape" || key === "Tab") return { type: "dismiss" };
+    return null;
+  }
+  switch (key) {
+    case "ArrowDown":
+      return { type: "move", nextIndex: (currentIndex + 1) % total };
+    case "ArrowUp":
+      return { type: "move", nextIndex: (currentIndex - 1 + total) % total };
+    case "Home":
+    case "PageUp":
+      return { type: "move", nextIndex: 0 };
+    case "End":
+    case "PageDown":
+      return { type: "move", nextIndex: total - 1 };
+    case "Enter":
+    case " ":
+    case "Spacebar":
+      return { type: "activate", index: currentIndex };
+    case "Escape":
+    case "Tab":
+      return { type: "dismiss" };
+    default:
+      return null;
+  }
+}
+
 function ContextMenu({ x, y, onAction, onDismiss }: ContextMenuProps) {
   const style: CSSProperties = { position: "fixed", left: x, top: y };
+  const [focusedIndex, setFocusedIndex] = useState(0);
+  const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
+
+  // hp-0xm3: focus the first menuitem on mount so keyboard users land
+  // inside the menu immediately. Do it after the next paint to let React
+  // commit DOM positioning first.
+  useEffect(() => {
+    const handle = window.requestAnimationFrame(() => {
+      itemRefs.current[0]?.focus();
+    });
+    return () => window.cancelAnimationFrame(handle);
+  }, []);
+
+  // Keep the focused element in sync with focusedIndex when the user
+  // navigates via Arrow keys.
+  useEffect(() => {
+    itemRefs.current[focusedIndex]?.focus();
+  }, [focusedIndex]);
+
+  const handleKeyDown = (e: ReactKeyboardEvent<HTMLUListElement>) => {
+    const action = reduceContextMenuKey(e.key, focusedIndex, CONTEXT_ACTIONS.length);
+    if (!action) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (action.type === "move") {
+      setFocusedIndex(action.nextIndex);
+      return;
+    }
+    if (action.type === "activate") {
+      const item = CONTEXT_ACTIONS[action.index];
+      if (item) onAction(item.id);
+      return;
+    }
+    onDismiss();
+  };
+
   return (
     <>
       <button
@@ -223,17 +318,23 @@ function ContextMenu({ x, y, onAction, onDismiss }: ContextMenuProps) {
         type="button"
       />
       <ul
+        aria-label="Activity event actions"
         className="hh-activity-context-menu"
+        onKeyDown={handleKeyDown}
         role="menu"
         style={style}
-        aria-label="Activity event actions"
       >
-        {CONTEXT_ACTIONS.map((a) => (
+        {CONTEXT_ACTIONS.map((a, i) => (
           <li key={a.id} role="none">
             <button
               className="hh-activity-context-item"
+              data-focused={i === focusedIndex ? "true" : undefined}
               onClick={() => onAction(a.id)}
+              ref={(el) => {
+                itemRefs.current[i] = el;
+              }}
               role="menuitem"
+              tabIndex={i === focusedIndex ? 0 : -1}
               type="button"
             >
               {a.label}
