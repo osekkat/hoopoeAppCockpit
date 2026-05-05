@@ -275,6 +275,102 @@ func TestRefreshRunsProbeAndThrottlesConcurrentRefreshes(t *testing.T) {
 	}
 }
 
+// hp-8jjw: a tight POST loop on /v1/inventory/tools/refresh used to drive
+// registry.Probe() on every call, holding the registry write lock across
+// every CLI fan-out and starving Snapshot/LookupCapabilityStatus readers.
+// The MinRefreshInterval gate coalesces calls inside the window down to a
+// single Probe so concurrent readers stay unblocked.
+func TestRefreshCoalescesProbesWithinMinRefreshInterval(t *testing.T) {
+	base := time.Date(2026, 5, 5, 1, 0, 0, 0, time.UTC)
+	registry := capabilities.New("v1")
+	registry.SetClock(func() time.Time { return base })
+	var calls atomic.Int64
+	if err := registry.RegisterProbe(capabilities.ToolBR, func() (*capabilities.ToolReport, error) {
+		calls.Add(1)
+		return okReport(capabilities.ToolBR, "br.issues.read", base), nil
+	}); err != nil {
+		t.Fatalf("register probe: %v", err)
+	}
+	current := base
+	service := NewService(Config{
+		Registry:           registry,
+		CAAM:               &fakeCAAM{list: &caam.ListResponse{}, status: &caam.StatusResponse{}, limits: &caam.LimitsResponse{}, detect: &caam.DetectResponse{}},
+		Now:                func() time.Time { return current },
+		MinRefreshInterval: time.Second,
+	})
+
+	// First Refresh fires Probe.
+	if _, err := service.Refresh(context.Background()); err != nil {
+		t.Fatalf("first Refresh: %v", err)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("after first Refresh: probe calls = %d, want 1", got)
+	}
+
+	// Within window: Probe must NOT fire — but Refresh still returns a
+	// snapshot rather than erroring, so callers see the existing registry
+	// state without forcing another sweep.
+	current = base.Add(100 * time.Millisecond)
+	snap, err := service.Refresh(context.Background())
+	if err != nil {
+		t.Fatalf("second Refresh: %v", err)
+	}
+	if snap == nil {
+		t.Fatalf("second Refresh returned nil snapshot inside window")
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("inside window: probe calls = %d, want 1 (Probe should be coalesced)", got)
+	}
+
+	// Boundary: exactly minRefreshInterval must allow the next Probe.
+	current = base.Add(time.Second)
+	if _, err := service.Refresh(context.Background()); err != nil {
+		t.Fatalf("third Refresh: %v", err)
+	}
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("after window: probe calls = %d, want 2", got)
+	}
+}
+
+func TestRefreshNegativeMinRefreshIntervalDisablesGate(t *testing.T) {
+	base := time.Date(2026, 5, 5, 1, 5, 0, 0, time.UTC)
+	registry := capabilities.New("v1")
+	registry.SetClock(func() time.Time { return base })
+	var calls atomic.Int64
+	if err := registry.RegisterProbe(capabilities.ToolBR, func() (*capabilities.ToolReport, error) {
+		calls.Add(1)
+		return okReport(capabilities.ToolBR, "br.issues.read", base), nil
+	}); err != nil {
+		t.Fatalf("register probe: %v", err)
+	}
+	service := NewService(Config{
+		Registry:           registry,
+		CAAM:               &fakeCAAM{list: &caam.ListResponse{}, status: &caam.StatusResponse{}, limits: &caam.LimitsResponse{}, detect: &caam.DetectResponse{}},
+		Now:                func() time.Time { return base },
+		MinRefreshInterval: -1, // documented escape hatch
+	})
+
+	for i := 0; i < 3; i++ {
+		if _, err := service.Refresh(context.Background()); err != nil {
+			t.Fatalf("Refresh #%d: %v", i, err)
+		}
+	}
+	if got := calls.Load(); got != 3 {
+		t.Fatalf("with gate disabled: probe calls = %d, want 3", got)
+	}
+}
+
+func TestRefreshDefaultMinRefreshIntervalIsFiveSeconds(t *testing.T) {
+	// Boundary: a Config with MinRefreshInterval == 0 must pick up the 5s
+	// default. Pre-hp-8jjw the field didn't exist; making sure the zero
+	// value doesn't accidentally disable the gate.
+	registry := capabilities.New("v1")
+	service := NewService(Config{Registry: registry})
+	if service.minRefreshInterval != defaultMinRefreshInterval {
+		t.Fatalf("minRefreshInterval = %s, want %s", service.minRefreshInterval, defaultMinRefreshInterval)
+	}
+}
+
 func testRegistry(t *testing.T, now time.Time) *capabilities.Registry {
 	t.Helper()
 	registry := capabilities.New("v1")

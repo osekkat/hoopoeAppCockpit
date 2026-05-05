@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/adapters/caam"
@@ -26,14 +27,27 @@ type Config struct {
 	CAAM               CAAMClient
 	Now                func() time.Time
 	RefreshConcurrency int
+	// MinRefreshInterval is the minimum gap between two registry.Probe()
+	// invocations driven by Service.Refresh. Tight POST loops on
+	// /v1/inventory/tools/refresh are coalesced inside this window —
+	// callers within the window receive the existing registry snapshot
+	// without forcing another Probe sweep. Default 5s; set < 0 to disable
+	// rate-limiting (every Refresh probes). Cross-ref: hp-8jjw.
+	MinRefreshInterval time.Duration
 }
+
+const defaultMinRefreshInterval = 5 * time.Second
 
 type Service struct {
 	registry *capabilities.Registry
 	caam     CAAMClient
 	now      func() time.Time
 
-	refreshSem chan struct{}
+	refreshSem         chan struct{}
+	minRefreshInterval time.Duration
+
+	probeMu     sync.Mutex
+	lastProbeAt time.Time
 }
 
 func NewService(cfg Config) *Service {
@@ -45,11 +59,16 @@ func NewService(cfg Config) *Service {
 	if concurrency <= 0 {
 		concurrency = 1
 	}
+	interval := cfg.MinRefreshInterval
+	if interval == 0 {
+		interval = defaultMinRefreshInterval
+	}
 	return &Service{
-		registry:   cfg.Registry,
-		caam:       cfg.CAAM,
-		now:        now,
-		refreshSem: make(chan struct{}, concurrency),
+		registry:           cfg.Registry,
+		caam:               cfg.CAAM,
+		now:                now,
+		refreshSem:         make(chan struct{}, concurrency),
+		minRefreshInterval: interval,
 	}
 }
 
@@ -86,8 +105,31 @@ func (s *Service) Refresh(ctx context.Context) (*Snapshot, error) {
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
-	s.registry.Probe()
+	if s.reserveProbe(s.now()) {
+		s.registry.Probe()
+	}
 	return s.Snapshot(ctx)
+}
+
+// reserveProbe atomically decides whether the caller should call
+// registry.Probe(). It returns true exactly once per minRefreshInterval
+// window (and always on the first call after construction). Concurrent
+// callers race on probeMu — the first to win the mutex stamps lastProbeAt
+// and returns true; the rest see the just-stamped time and return false.
+//
+// Negative minRefreshInterval disables the gate entirely (every call
+// returns true), matching the documented escape hatch in Config.
+func (s *Service) reserveProbe(now time.Time) bool {
+	if s.minRefreshInterval < 0 {
+		return true
+	}
+	s.probeMu.Lock()
+	defer s.probeMu.Unlock()
+	if !s.lastProbeAt.IsZero() && now.Sub(s.lastProbeAt) < s.minRefreshInterval {
+		return false
+	}
+	s.lastProbeAt = now
+	return true
 }
 
 func buildTools(snapshot *capabilities.CapabilityRegistry) []Tool {
