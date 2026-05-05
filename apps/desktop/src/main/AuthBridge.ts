@@ -33,6 +33,11 @@ export interface AuthBridgeOptions {
    *  forever. Compare `vendored/t3code/backendReadiness.ts` which uses
    *  the same `AbortController` pattern for the readiness probe. */
   readonly requestTimeoutMs?: number;
+  /** hp-q1a8: clock provider for the bearer-refresh-window check.
+   *  Defaults to `() => new Date()`. Tests inject a fixed clock so the
+   *  24h window assertion does not depend on wall-clock-vs-fixture
+   *  drift. */
+  readonly now?: () => Date;
 }
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
@@ -109,6 +114,7 @@ export class AuthBridge {
   private readonly options: AuthBridgeOptions;
   private readonly requestTimeoutMs: number;
   private readonly refreshWindowMs: number;
+  private readonly nowProvider: () => Date;
   private secretRotationState: SecretRotationRecoveryState = "normal";
   private readonly secretRotationTrace: SecretRotationTransition[] = [];
   constructor(options: AuthBridgeOptions) {
@@ -116,6 +122,7 @@ export class AuthBridge {
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
     this.refreshWindowMs = DEFAULT_BEARER_REFRESH_WINDOW_MS;
+    this.nowProvider = options.now ?? (() => new Date());
   }
 
   async exchangePairingForBearer(input: ExchangePairingForBearerInput): Promise<BearerSession> {
@@ -167,7 +174,7 @@ export class AuthBridge {
     });
   }
 
-  shouldRefreshBearer(expiresAt: string, now: Date = new Date()): boolean {
+  shouldRefreshBearer(expiresAt: string, now: Date = this.nowProvider()): boolean {
     const expiresAtMs = Date.parse(expiresAt);
     if (!Number.isFinite(expiresAtMs)) return true;
     return expiresAtMs - now.getTime() <= this.refreshWindowMs;

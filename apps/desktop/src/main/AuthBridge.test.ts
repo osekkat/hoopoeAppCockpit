@@ -300,12 +300,18 @@ test("AuthBridge: captures pairing token from bootstrap stdout without returning
 });
 
 test("AuthBridge: bearer refresh is skipped until the 24h refresh window", async () => {
+  // hp-q1a8: pin `now` so the 24h-window assertion does not depend on
+  // the wall clock relative to the fixture's expiresAt. Without the
+  // injected clock, real-time drift past 2026-05-05T00:00:00Z would
+  // push the seeded session into the refresh window and fail the
+  // "fetchImpl should not be called" stub.
   const auth = new AuthBridge({
     registryPath,
     secretStorage: new InMemorySecretStorage(),
     fetchImpl: (() => {
       throw new Error("refresh should not be called");
     }) as unknown as typeof fetch,
+    now: () => new Date("2026-05-04T00:00:00Z"),
   });
   const session = bearerSession({ expiresAt: "2026-05-06T00:00:00Z" });
   await expect(
