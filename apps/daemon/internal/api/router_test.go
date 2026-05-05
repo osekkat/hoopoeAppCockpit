@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/approvals"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/audit"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/capabilities"
 	jobstore "github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/jobs"
 	projectstore "github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/projects"
@@ -1962,4 +1963,179 @@ func readWebSocketJSON(t *testing.T, ctx context.Context, conn *websocket.Conn, 
 	if err := json.Unmarshal(body, target); err != nil {
 		t.Fatalf("decode websocket message %s: %v", string(body), err)
 	}
+}
+
+// hp-snmn: /v1/health is no longer a 200-OK stub. The response now
+// carries a real per-instance DaemonId, an aggregated Status derived
+// from per-subsystem checks, an Adapters map, and UptimeSeconds.
+
+// TestHandleHealthSurfacesDegradedSubsystems guards that a daemon
+// with at least one missing required subsystem reports overall
+// Status=degraded AND lists the missing subsystem in the Adapters
+// map. The fix this test pins down: the pre-hp-snmn handler returned
+// Status=ok unconditionally, so the desktop wizard would walk past
+// Stage 0 even when audit/capabilities/events were unwired.
+func TestHandleHealthSurfacesDegradedSubsystems(t *testing.T) {
+	// No Audit, no Capabilities, no Approvals, no Telemetry.
+	// MissingJobsReader is the auto-substituted fallback when no jobs
+	// reader is configured — also unhealthy.
+	router := NewRouter(Config{})
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/health", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (liveness probe is always 200); body=%s",
+			rec.Code, rec.Body.String())
+	}
+	var resp schemas.HealthResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode health response: %v", err)
+	}
+	if resp.Status != schemas.Degraded {
+		t.Fatalf("Status = %q, want degraded; body=%s", resp.Status, rec.Body.String())
+	}
+	if resp.Adapters == nil {
+		t.Fatalf("Adapters map missing; body=%s", rec.Body.String())
+	}
+	for _, name := range []string{"events", "audit", "jobs", "capabilities", "approvals", "telemetry"} {
+		if _, ok := (*resp.Adapters)[name]; !ok {
+			t.Fatalf("Adapters missing key %q: %+v", name, resp.Adapters)
+		}
+	}
+	// audit was not wired → must surface as missing in the map.
+	if got := (*resp.Adapters)["audit"]; got != schemas.HealthResponseAdaptersMissing {
+		t.Fatalf("audit subsystem status = %q, want missing", got)
+	}
+	if got := (*resp.Adapters)["jobs"]; got != schemas.HealthResponseAdaptersMissing {
+		t.Fatalf("jobs subsystem status = %q, want missing (MissingJobsReader fallback)", got)
+	}
+}
+
+// TestHandleHealthDaemonIDIsUniquePerProcess pins down the
+// per-process UUID component: two daemons constructed with identical
+// build metadata MUST report DaemonId values that differ in their
+// instanceID suffix. Pre-hp-snmn this would have shipped both
+// daemons with the literal string "daemon-dev".
+func TestHandleHealthDaemonIDIsUniquePerProcess(t *testing.T) {
+	build := BuildInfo{Version: "1.2.3", Commit: "abc", BuildDate: "2026-01-01T00:00:00Z", APIVersion: "v1"}
+	router1 := NewRouter(Config{Build: build})
+	router2 := NewRouter(Config{Build: build})
+
+	id1 := decodeDaemonID(t, router1)
+	id2 := decodeDaemonID(t, router2)
+
+	if id1 == id2 {
+		t.Fatalf("two daemons with identical build returned identical DaemonId %q", id1)
+	}
+	if !strings.HasPrefix(id1, "1.2.3+") {
+		t.Fatalf("DaemonId %q missing build-version prefix", id1)
+	}
+	if !strings.HasPrefix(id2, "1.2.3+") {
+		t.Fatalf("DaemonId %q missing build-version prefix", id2)
+	}
+}
+
+// TestHandleHealthDaemonIDStableAcrossRequests confirms the
+// instanceID is captured ONCE at NewRouter and reused across
+// requests — not regenerated per request, which would defeat the
+// distinguishing-between-instances goal.
+func TestHandleHealthDaemonIDStableAcrossRequests(t *testing.T) {
+	router := NewRouter(Config{Build: BuildInfo{Version: "9.9.9"}})
+	id1 := decodeDaemonID(t, router)
+	id2 := decodeDaemonID(t, router)
+	if id1 != id2 {
+		t.Fatalf("DaemonId changed between requests: %q vs %q", id1, id2)
+	}
+}
+
+// TestHandleReadinessReturns503WhenSubsystemUnhealthy validates the
+// readiness probe contract: when a required subsystem (events or
+// audit) is unwired, /v1/readiness must respond 503 even though
+// /v1/health stays 200. Pre-hp-snmn there was no readiness endpoint
+// and /v1/health was the only signal; consumers couldn't gate on
+// "ready to serve traffic" vs "HTTP server is up."
+func TestHandleReadinessReturns503WhenSubsystemUnhealthy(t *testing.T) {
+	// No Audit → readiness should refuse.
+	router := NewRouter(Config{})
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/readiness", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("readiness status = %d, want %d; body=%s",
+			rec.Code, http.StatusServiceUnavailable, rec.Body.String())
+	}
+	// Body still decodes as a HealthResponse.
+	var resp schemas.HealthResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode readiness response: %v", err)
+	}
+	if resp.Adapters == nil || (*resp.Adapters)["audit"] != schemas.HealthResponseAdaptersMissing {
+		t.Fatalf("audit subsystem must be missing; adapters=%+v", resp.Adapters)
+	}
+}
+
+// TestHandleReadinessReturns200WhenRequiredSubsystemsOk confirms the
+// happy path: a router with audit + events wired (events is
+// auto-defaulted to NewEventHub) returns 200 even if optional
+// subsystems are missing. capabilities is intentionally not in
+// readinessRequiredSubsystems (cold-start would otherwise block the
+// wizard for the first probe sweep).
+func TestHandleReadinessReturns200WhenRequiredSubsystemsOk(t *testing.T) {
+	now := time.Date(2026, 5, 5, 0, 0, 0, 0, time.UTC)
+	writer, err := audit.NewWriter(audit.Config{Writer: nopSyncWriter{}, Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatalf("new audit writer: %v", err)
+	}
+	router := NewRouter(Config{Audit: writer})
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/readiness", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("readiness status = %d, want %d; body=%s",
+			rec.Code, http.StatusOK, rec.Body.String())
+	}
+}
+
+// TestHandleHealthIncludesUptime sanity-checks the uptime field:
+// a request issued shortly after NewRouter must see UptimeSeconds
+// >= 0 (never negative), and the field must round-trip the
+// HealthResponse JSON.
+func TestHandleHealthIncludesUptime(t *testing.T) {
+	router := NewRouter(Config{})
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/health", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	var resp schemas.HealthResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode health response: %v", err)
+	}
+	if resp.UptimeSeconds == nil {
+		t.Fatalf("UptimeSeconds missing; body=%s", rec.Body.String())
+	}
+	if *resp.UptimeSeconds < 0 {
+		t.Fatalf("UptimeSeconds = %d, want >= 0", *resp.UptimeSeconds)
+	}
+}
+
+// decodeDaemonID is a small helper that issues a /v1/health request
+// and returns the DaemonId field. Used to keep the daemon-id tests
+// terse.
+func decodeDaemonID(t *testing.T, router http.Handler) string {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/v1/health", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	var resp schemas.HealthResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode health response: %v", err)
+	}
+	return resp.DaemonId
 }

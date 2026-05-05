@@ -4,6 +4,8 @@ package api
 import (
 	"bufio"
 	"context"
+	cryptorand "crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -108,6 +110,15 @@ type server struct {
 	telemetry    *telemetry.Service
 	auditLog     AuditLog
 	now          func() time.Time
+	// hp-snmn: per-process identifier appended to DaemonId so the desktop
+	// can distinguish between two daemons that share the same build
+	// version (e.g., in dev or after a redeploy that didn't bump the
+	// version). Generated once via crypto/rand at NewRouter; stable for
+	// the daemon's lifetime.
+	instanceID string
+	// hp-snmn: NewRouter timestamp, used to compute UptimeSeconds in the
+	// /v1/health response.
+	bootedAt time.Time
 }
 
 type AuditLog interface {
@@ -141,6 +152,7 @@ func NewRouter(cfg Config) http.Handler {
 
 	r.Get("/health", s.handleLegacyHealth)
 	r.Get("/v1/health", s.handleHealth)
+	r.Get("/v1/readiness", s.handleReadiness)
 	r.Get("/v1/version", s.handleVersion)
 	r.Get("/v1/jobs", s.handleJobs)
 	r.Get("/v1/events/replay", s.handleEventReplay)
@@ -278,7 +290,22 @@ func normalizeConfig(cfg Config) *server {
 		telemetry:    telemetryService,
 		auditLog:     cfg.Audit,
 		now:          now,
+		instanceID:   newDaemonInstanceID(),
+		bootedAt:     now(),
 	}
+}
+
+// newDaemonInstanceID returns 8 bytes of crypto/rand encoded as hex —
+// 16 chars, sufficient to disambiguate concurrent daemons in audit and
+// pairing flows. Falls back to a deterministic timestamp string if the
+// OS RNG is unavailable (extremely rare; logs a warning at the call
+// site is overkill for a startup-time fallback).
+func newDaemonInstanceID() string {
+	var b [8]byte
+	if _, err := cryptorand.Read(b[:]); err != nil {
+		return fmt.Sprintf("fallback-%d", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(b[:])
 }
 
 func (s *server) requestLogMiddleware(next http.Handler) http.Handler {
@@ -331,7 +358,28 @@ func (r *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 }
 
 func (s *server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	// hp-snmn: /v1/health is the LIVENESS probe — always 200 when the
+	// HTTP server is responsive enough to reach this handler. Per-
+	// subsystem health surfaces in the response body's `adapters` map
+	// + overall `status` field; clients that want a strict gate use
+	// /v1/readiness instead.
 	writeJSON(w, http.StatusOK, s.healthResponse())
+}
+
+func (s *server) handleReadiness(w http.ResponseWriter, r *http.Request) {
+	// hp-snmn: /v1/readiness is the STRICT readiness probe. Returns
+	// 200 with the same HealthResponse shape as /v1/health when every
+	// required subsystem is ok; returns 503 (Service Unavailable) with
+	// the same shape when any required subsystem is missing or
+	// degraded. Modeled on the kubelet readinessProbe convention so
+	// load balancers / pairing flows can refuse to route traffic to a
+	// half-functional daemon.
+	resp := s.healthResponse()
+	status := http.StatusOK
+	if resp.Adapters == nil || !readinessOK(*resp.Adapters) {
+		status = http.StatusServiceUnavailable
+	}
+	writeJSON(w, status, resp)
 }
 
 func (s *server) handleLegacyHealth(w http.ResponseWriter, r *http.Request) {
