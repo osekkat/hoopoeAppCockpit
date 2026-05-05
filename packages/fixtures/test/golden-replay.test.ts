@@ -1,4 +1,4 @@
-import { describe, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { Buffer } from "node:buffer";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, relative } from "node:path";
@@ -54,6 +54,54 @@ describe("Mock Flywheel scenario golden artifacts", () => {
       );
     });
   }
+});
+
+// hp-18wq: runtime determinism guard for the golden generators. The
+// existing per-scenario tests above only enforce parity with the
+// committed on-disk golden — useful, but a regression that produces
+// the SAME nondeterministic output the first time would still slip
+// through (whoever runs HOOPOE_UPDATE_GOLDENS=1 commits whatever
+// the first run produced). This block catches drift earlier by
+// running each generator twice in-process and asserting byte
+// identity between runs. Failures here are deterministic
+// nondeterminism — Math.random / Date.now leaks, unsorted Map
+// iteration, async race in startReplay, or any future generator
+// that picks up wall-clock state.
+describe("Mock Flywheel scenario determinism baseline", () => {
+  test("repeated generation is byte-identical across runs (no Math.random / Date.now / iteration-order leaks)", async () => {
+    for (const scenarioId of SCENARIOS) {
+      const scenarioA = loadTendingScenario(scenarioId);
+      const scenarioB = loadTendingScenario(scenarioId);
+
+      const sourceA = canonicalJson(scenarioSourceGolden(scenarioA));
+      const sourceB = canonicalJson(scenarioSourceGolden(scenarioB));
+      if (sourceA !== sourceB) {
+        throw new Error(
+          `scenario-source nondeterministic for ${scenarioId}\n${firstDiff(sourceA, sourceB)}`,
+        );
+      }
+
+      const streamA = await eventStreamGolden(scenarioA);
+      const streamB = await eventStreamGolden(scenarioB);
+      if (streamA !== streamB) {
+        throw new Error(
+          `event-stream nondeterministic for ${scenarioId}\n${firstDiff(streamA, streamB)}`,
+        );
+      }
+
+      const daemonA = canonicalJson(await mockDaemonGolden(scenarioA));
+      const daemonB = canonicalJson(await mockDaemonGolden(scenarioB));
+      if (daemonA !== daemonB) {
+        throw new Error(
+          `mock-daemon nondeterministic for ${scenarioId}\n${firstDiff(daemonA, daemonB)}`,
+        );
+      }
+
+      // Sanity expect so the test count reflects the per-scenario
+      // assertion even when all three are equal.
+      expect(sourceA).toBe(sourceB);
+    }
+  });
 });
 
 function scenarioSourceGolden(scenario: LoadedScenario): unknown {
