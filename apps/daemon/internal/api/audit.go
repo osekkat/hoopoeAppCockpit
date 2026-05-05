@@ -46,6 +46,18 @@ type auditAppender interface {
 	Append(entry audit.Entry) (audit.Entry, []redaction.TraceEvent, error)
 }
 
+// ErrAuditAppendUnavailable is returned by appendAudit when the
+// configured AuditLog does not satisfy the auditAppender interface
+// (i.e., the concrete type can Query but not Append). Pre-hp-nlk8
+// this case silently returned nil from appendAudit — a misconfigured
+// auditLog (read-only adapter, type drift after refactor) silently
+// disabled every audit write, defeating Guardrail 10's "audit ALWAYS
+// fires" intent. Callers can now branch on this sentinel to surface a
+// problem envelope or refuse the operation; NewRouter additionally
+// logs a structured warning at construction so the misconfiguration
+// is visible at boot rather than hidden behind every write.
+var ErrAuditAppendUnavailable = errors.New("audit: configured AuditLog does not satisfy auditAppender (Append method missing)")
+
 type auditQueryResponse struct {
 	SchemaVersion int                  `json:"schemaVersion"`
 	Items         []auditEntryResponse `json:"items"`
@@ -538,9 +550,20 @@ func (s *server) queryAudit(query audit.Query) ([]audit.Entry, error) {
 }
 
 func (s *server) appendAudit(action string, result audit.Result, projectID string, approvalID string, data map[string]any) error {
-	appender, ok := s.auditLog.(auditAppender)
-	if !ok {
+	// hp-nlk8: pre-fix this method did the type-assertion fresh on every
+	// call and silently swallowed the !ok branch as `return nil`, hiding
+	// any misconfiguration where AuditLog could Query but not Append.
+	// The assertion is now lifted to NewRouter (s.auditLogAppender) so
+	// the runtime path is allocation-free AND a misconfiguration returns
+	// a sentinel error the caller can surface to the operator.
+	if s.auditLog == nil {
+		// No audit log configured at all — production builds always
+		// wire one, but a few constructor-test paths leave it nil and
+		// rely on this no-op shape. Preserve that contract.
 		return nil
+	}
+	if s.auditLogAppender == nil {
+		return ErrAuditAppendUnavailable
 	}
 	entry := audit.Entry{
 		ProjectID:  projectID,
@@ -550,7 +573,7 @@ func (s *server) appendAudit(action string, result audit.Result, projectID strin
 		ApprovalID: approvalID,
 		Data:       data,
 	}
-	_, _, err := appender.Append(entry)
+	_, _, err := s.auditLogAppender.Append(entry)
 	return err
 }
 

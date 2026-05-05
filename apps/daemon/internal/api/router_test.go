@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1489,6 +1490,119 @@ func TestPublishSubstitutesSentinelForUnmarshalableActor(t *testing.T) {
 	}
 	if _, err := json.Marshal(poisoned); err != nil {
 		t.Fatalf("poisoned event still does not marshal: %v", err)
+	}
+}
+
+// hp-nlk8: appendAudit used to silently swallow the type-assertion
+// failure case — a configured AuditLog that could Query but not
+// Append disabled every mutating-route audit write without any
+// surface signal. Lift the assertion to NewRouter time + return
+// ErrAuditAppendUnavailable from runtime.
+
+// queryOnlyAuditLog implements AuditLog.Query but NOT auditAppender.Append.
+// Used to drive the misconfiguration path in TestAppendAuditQueryOnlyAuditLog
+// + TestNewRouterLogsAuditAppenderMisconfiguration.
+type queryOnlyAuditLog struct{}
+
+func (queryOnlyAuditLog) Query(audit.Query) ([]audit.Entry, error) {
+	return nil, nil
+}
+
+// recordingLogger captures Error calls so tests can assert that
+// NewRouter logged the auditAppender misconfiguration.
+type recordingLogger struct {
+	mu       sync.Mutex
+	infos    []recordedLogEntry
+	errors   []recordedLogEntry
+}
+
+type recordedLogEntry struct {
+	message string
+	fields  map[string]any
+}
+
+func (r *recordingLogger) Info(_ context.Context, message string, fields map[string]any) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.infos = append(r.infos, recordedLogEntry{message: message, fields: fields})
+}
+
+func (r *recordingLogger) Error(_ context.Context, message string, fields map[string]any) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.errors = append(r.errors, recordedLogEntry{message: message, fields: fields})
+}
+
+func TestAppendAuditReturnsErrAuditAppendUnavailableForQueryOnlyAuditLog(t *testing.T) {
+	router := NewRouter(Config{Audit: queryOnlyAuditLog{}})
+	// Drive the production path that calls appendAudit at the very first
+	// step (audit.export_started) — POST /v1/audit/export with a narrow
+	// body that passes parsing. Pre-hp-nlk8 the export started cleanly
+	// and returned the empty result set with `redacted: true`. Post-fix
+	// the appendAudit returns ErrAuditAppendUnavailable and the handler
+	// short-circuits with a problem envelope rather than the silent
+	// success.
+	req := httptest.NewRequest(http.MethodPost, "/v1/audit/export",
+		strings.NewReader(`{"projectId":"p","correlationId":"corr_a"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code == http.StatusOK {
+		t.Fatalf("status = 200 with query-only AuditLog; want failure (ErrAuditAppendUnavailable)\nbody=%s", rec.Body.String())
+	}
+}
+
+func TestNewRouterLogsAuditAppenderMisconfiguration(t *testing.T) {
+	logger := &recordingLogger{}
+	NewRouter(Config{Audit: queryOnlyAuditLog{}, Logger: logger})
+
+	logger.mu.Lock()
+	defer logger.mu.Unlock()
+	if len(logger.errors) == 0 {
+		t.Fatalf("NewRouter did not log an error for a query-only AuditLog (regression of hp-nlk8 boot warning)")
+	}
+	found := false
+	for _, e := range logger.errors {
+		if strings.Contains(e.message, "auditAppender") || strings.Contains(e.message, "ErrAuditAppendUnavailable") {
+			if e.fields["subsystem"] == "api.audit" {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected an api.audit Error log mentioning auditAppender; got %+v", logger.errors)
+	}
+}
+
+func TestNewRouterDoesNotLogWhenAuditLogSupportsAppend(t *testing.T) {
+	logger := &recordingLogger{}
+	now := time.Date(2026, 5, 5, 0, 0, 0, 0, time.UTC)
+	writer, err := audit.NewWriter(audit.Config{Writer: nopSyncWriter{}, Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatalf("new audit writer: %v", err)
+	}
+	NewRouter(Config{Audit: writer, Logger: logger})
+
+	logger.mu.Lock()
+	defer logger.mu.Unlock()
+	for _, e := range logger.errors {
+		if strings.Contains(e.message, "auditAppender") {
+			t.Fatalf("NewRouter logged an audit-appender error for a writer that DOES satisfy the interface: %+v", e)
+		}
+	}
+}
+
+func TestNewRouterDoesNotLogWhenAuditLogIsNil(t *testing.T) {
+	logger := &recordingLogger{}
+	NewRouter(Config{Logger: logger})
+
+	logger.mu.Lock()
+	defer logger.mu.Unlock()
+	for _, e := range logger.errors {
+		if strings.Contains(e.message, "auditAppender") {
+			t.Fatalf("NewRouter logged an audit-appender error for nil AuditLog: %+v", e)
+		}
 	}
 }
 

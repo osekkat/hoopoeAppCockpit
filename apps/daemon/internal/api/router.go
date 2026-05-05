@@ -109,6 +109,11 @@ type server struct {
 	metrics      *daemonmetrics.Registry
 	telemetry    *telemetry.Service
 	auditLog     AuditLog
+	// hp-nlk8: type-assert AuditLog → auditAppender ONCE at construction
+	// so appendAudit doesn't repeat the assertion per call AND a
+	// misconfigured AuditLog (Query-only) is detectable at boot. nil
+	// when auditLog is nil OR doesn't satisfy auditAppender.
+	auditLogAppender auditAppender
 	now          func() time.Time
 	// hp-snmn: per-process identifier appended to DaemonId so the desktop
 	// can distinguish between two daemons that share the same build
@@ -269,29 +274,50 @@ func normalizeConfig(cfg Config) *server {
 	if telemetryService == nil {
 		telemetryService, _ = telemetry.NewService(telemetry.Config{Now: now})
 	}
+	// hp-nlk8: lift the auditAppender type assertion to NewRouter time.
+	// If cfg.Audit was provided but doesn't satisfy auditAppender,
+	// emit a structured Error so operators see the misconfiguration
+	// at boot — pre-fix this case silently disabled every audit write.
+	// (Logger has Info/Error but no Warn; Error is appropriate here
+	// because the runtime consequence is "every mutating audit write
+	// returns ErrAuditAppendUnavailable" which IS an error condition.)
+	var auditLogAppender auditAppender
+	if cfg.Audit != nil {
+		if appender, ok := cfg.Audit.(auditAppender); ok {
+			auditLogAppender = appender
+		} else {
+			logger.Error(context.Background(),
+				"api.NewRouter: configured AuditLog does not satisfy auditAppender; mutating-route audit writes will surface ErrAuditAppendUnavailable",
+				map[string]any{
+					"subsystem":    "api.audit",
+					"auditLogType": fmt.Sprintf("%T", cfg.Audit),
+				})
+		}
+	}
 	return &server{
-		build:        build,
-		events:       events,
-		jobs:         jobs,
-		projects:     cfg.Projects,
-		plans:        cfg.Plans,
-		beads:        cfg.Beads,
-		providers:    cfg.Providers,
-		logger:       logger,
-		redactor:     redactor,
-		wsValidator:  wsValidator,
-		capabilities: cfg.Capabilities,
-		inventory:    inventory,
-		onboarding:   cfg.Onboarding,
-		authConfig:   cfg.Auth,
-		approvals:    cfg.Approvals,
-		upgrade:      cfg.Upgrade,
-		metrics:      metrics,
-		telemetry:    telemetryService,
-		auditLog:     cfg.Audit,
-		now:          now,
-		instanceID:   newDaemonInstanceID(),
-		bootedAt:     now(),
+		build:            build,
+		events:           events,
+		jobs:             jobs,
+		projects:         cfg.Projects,
+		plans:            cfg.Plans,
+		beads:            cfg.Beads,
+		providers:        cfg.Providers,
+		logger:           logger,
+		redactor:         redactor,
+		wsValidator:      wsValidator,
+		capabilities:     cfg.Capabilities,
+		inventory:        inventory,
+		onboarding:       cfg.Onboarding,
+		authConfig:       cfg.Auth,
+		approvals:        cfg.Approvals,
+		upgrade:          cfg.Upgrade,
+		metrics:          metrics,
+		telemetry:        telemetryService,
+		auditLog:         cfg.Audit,
+		auditLogAppender: auditLogAppender,
+		now:              now,
+		instanceID:       newDaemonInstanceID(),
+		bootedAt:         now(),
 	}
 }
 
