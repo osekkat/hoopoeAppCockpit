@@ -130,6 +130,46 @@ describe("br adapter contract conformance", () => {
     });
   });
 
+  test("high-volume fixture degrades br high-volume capability and flags truncation", () => {
+    // hp-6lr: br dump-everything-style output that exceeds
+    // ENVELOPE_MAX_BYTES must surface a degraded capability so the
+    // daemon falls back to paginated reads instead of replaying a
+    // truncated stdout body. Mirrors the timeout test pattern; the
+    // distinct invariants are truncated=true, stderrBytes==0
+    // (success exit + truncation, NOT a process error), and the
+    // pagination-required note on the capability.
+    const fixture = readJSON<GoldenOutputFixture>(goldenOutputPath("br", "high-volume"));
+
+    expect(fixture.meta).toMatchObject({
+      adapter: "br",
+      state: "high-volume",
+    });
+    expect(fixture.argv).toEqual(["br", "--json", "dump-everything"]);
+    // High-volume captures are deliberately exit=0: the process
+    // succeeded, but the envelope wrapper hit its byte cap. A non-
+    // zero exit would be a different state (failure / timeout) and
+    // belongs to a different fixture.
+    expect(fixture.exit).toBe(0);
+    expect(fixture.truncated).toBe(true);
+    expect(fixture.redacted).toBe(false);
+    // stderr is empty: br itself didn't error, the envelope just
+    // wrapped over its cap. This pins down the contract that the
+    // adapter must NOT swallow truncation by writing a fake stderr
+    // diagnostic.
+    expect(fixture.stderrBytes ?? 0).toBe(0);
+    expect(fixture.stderrText ?? "").toBe("");
+    // stdoutBytes must reflect at-or-above the envelope cap. The
+    // 1 MiB constant in the committed fixture mirrors plan.md
+    // §18.3's ENVELOPE_MAX_BYTES guidance; a regression that
+    // shrinks the cap silently would change this number.
+    expect(fixture.stdoutBytes).toBeGreaterThanOrEqual(1024 * 1024);
+    expect(fixture.tags ?? []).toEqual(expect.arrayContaining(["high-volume", "truncated"]));
+    expect(fixture.capabilities?.["br._highVolume"]).toMatchObject({
+      status: "degraded",
+      notes: "stdout exceeded ENVELOPE_MAX_BYTES; pagination required (per integration contract)",
+    });
+  });
+
   test("mapBrToBeadListResponse rewrites raw br --json into BeadListResponse shape", () => {
     // hp-b6r2: the conformance harness now validates the *daemon-facing*
     // BeadListResponse contract; the mapper is what bridges raw br stdout
