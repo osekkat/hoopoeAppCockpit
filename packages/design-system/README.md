@@ -86,13 +86,16 @@ must not be imported into the default Swarm UI.
 
 ## Storybook And Verification
 
-- `src/**/*.stories.ts` contains DOM-rendered stories for tokens and every
-  exported component state set.
-- `bun run --cwd packages/design-system storybook` is the package-local
-  story surface command; it remains dependency-light until the monorepo
-  Storybook runner is wired.
+- `src/**/*.stories.ts` contains static, framework-neutral DOM-rendered
+  story files for tokens and every exported component state set. No
+  Storybook runner (`storybook dev`/`storybook build`) is wired yet — the
+  stories double as fixtures consumed by `bun run test` until the monorepo
+  Storybook runner lands.
+- `bun run --cwd packages/design-system storybook` prints a status message
+  pointing to this section. It is **not** an executable Storybook server
+  today; treat it as a placeholder.
 - `bun run --cwd packages/design-system test` exercises model invariants,
   accessibility labels, state coverage, command-palette filtering, and
-  Guardrail 12 enforcement.
+  Guardrail 12 enforcement against the same `*.stories.ts` modules.
 - `bun run --cwd packages/design-system typecheck` and `build` run the
   package TypeScript contract.

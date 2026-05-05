@@ -12,7 +12,7 @@
   },
   "scripts": {
     "build": "tsc --noEmit -p tsconfig.json",
-    "storybook": "echo 'Storybook runner dependencies land with component scaffolding; token stories live in src/**/*.stories.ts'",
+    "storybook": "echo 'No Storybook runner is wired yet. Static stories live in src/**/*.stories.ts and are exercised by `bun run test`. See packages/design-system/README.md `Storybook And Verification` section.'",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "bun test"
   },
