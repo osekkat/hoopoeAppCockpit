@@ -56,8 +56,8 @@ t3code source notice. They must stay clearly marked as Hoopoe-owned:
   `updateMachine.ts`, `updateChannels.ts`, `updateState.ts`,
   `runtimeArch.ts`, `syncShellEnvironment.ts`, `windowReveal.ts`,
   `confirmDialog.ts`, `appBranding.ts`).
-- **hp-191** — build-pipeline scripts under
-  `apps/desktop/scripts/vendored/t3code/` and project root
-  `scripts/vendored/t3code/`.
+- **hp-191** — build-pipeline lift landed outside this directory:
+  `scripts/build-desktop-artifact.ts`, `scripts/mock-update-server.ts`, and
+  `.github/workflows/release.yml`.
 - **hp-rth** — keybindings AST + last-rule-wins source.
 - **hp-4bt** — three-store settings + atomic-write + PubSub source.

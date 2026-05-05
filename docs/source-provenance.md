@@ -49,8 +49,11 @@ notice, and must be clearly marked as Hoopoe-owned:
 
 ### File inventory
 
-The authoritative file inventory lives in `plan.md` Appendix B. Files are
-lifted incrementally across Phase 1 beads:
+The authoritative file inventory lives in `plan.md` Appendix B. The current
+on-disk vendored tree is exactly the copied/adapted files under
+`apps/desktop/src/vendored/t3code/`, the verbatim `LICENSE`, plus the
+Hoopoe-owned support files listed above. Files are lifted incrementally across
+Phase 1 beads:
 
 - **hp-xru** (this bead) — clone, pin SHA, scaffold monorepo skeleton, copy
   the verbatim `LICENSE` into `apps/desktop/src/vendored/t3code/LICENSE`.
@@ -59,15 +62,28 @@ lifted incrementally across Phase 1 beads:
   `desktopSettings.ts`, `updateMachine.ts`, `updateChannels.ts`,
   `updateState.ts`, `runtimeArch.ts`, `syncShellEnvironment.ts`,
   `windowReveal.ts`, `confirmDialog.ts`, `appBranding.ts`).
-- **hp-191** — vendor build pipeline (`scripts/build-desktop-artifact.ts`,
-  `scripts/mock-update-server.ts`, `scripts/release-smoke.ts`,
-  `.github/workflows/release.yml`).
+- **hp-191** — vendor build pipeline files that exist on disk today:
+  `scripts/build-desktop-artifact.ts`, `scripts/mock-update-server.ts`, and
+  `.github/workflows/release.yml`. `scripts/release-smoke.ts` is intentionally
+  not lifted; Hoopoe uses its Bun/Playwright smoke suites and
+  `scripts/e2e/run-e2e.ts` instead. The electron-builder config is synthesized
+  in `scripts/build-desktop-artifact.ts` from `apps/desktop/package.json`
+  instead of stored in a separate `build.yml`.
 - **hp-rth** — vendor keybindings + AST + last-rule-wins; add command
-  registry layer.
-- **hp-4bt** — vendor three-store settings system + atomic-write + PubSub.
+  registry layer. The vendored files are
+  `apps/desktop/src/vendored/t3code/keybindings/{parser,evaluator,types}.ts`;
+  matching `*.test.ts` files are Hoopoe-authored regression tests.
+- **hp-4bt** — vendor three-store settings helpers. The lifted helper files
+  are `settings/atomicWrite.ts` and `settings/stripDefaults.ts`; the
+  `settings/index.ts` barrel is Hoopoe-owned support code.
 - **hp-zir** — decompose the 2,175-line `apps/desktop/src/main.ts` into
   `BackendLifecycle`, `UpdateMachine`, `IpcRegistry`, `WindowManager`,
   `SettingsBridge`, `AuthBridge` modules under `apps/desktop/src/main/`.
+
+The t3code desktop script wrappers
+`apps/desktop/scripts/{dev-electron,start-electron,smoke-test}.mjs` are not
+lifted. Hoopoe uses the plain `vite`, `tsdown`, and `playwright` commands wired
+through `apps/desktop/package.json` instead.
 
 ### Files we explicitly do NOT lift
 
