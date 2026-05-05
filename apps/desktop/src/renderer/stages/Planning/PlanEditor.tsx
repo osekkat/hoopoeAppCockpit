@@ -114,12 +114,18 @@ export function PlanEditor({
     const view = viewRef.current;
     if (!view) return;
     if (view.state.doc.toString() === initialContent) return;
+    // hp-pjsi: never overwrite an unsaved user buffer when the parent pushes
+    // a new initialContent (e.g., server-side plan refresh). Letting the
+    // dispatch run here would silently destroy unsaved edits and call
+    // setDirty(false), hiding the loss. The buffer wins until the user
+    // explicitly saves or the editor remounts via the artifactPath key.
+    if (dirty) return;
     view.dispatch({
       changes: { from: 0, to: view.state.doc.length, insert: initialContent },
     });
     initialContentRef.current = initialContent;
     setDirty(false);
-  }, [initialContent]);
+  }, [initialContent, dirty]);
 
   return (
     <div className="hh-plan-editor" data-testid="plan-editor">
