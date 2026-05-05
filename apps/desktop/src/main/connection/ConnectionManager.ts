@@ -310,11 +310,82 @@ export type HostVerificationResult =
   | { readonly ok: true; readonly trustedFirstUse: boolean; readonly fingerprint: string }
   | { readonly ok: false; readonly expected: string; readonly actual: string };
 
+/** hp-ejx7: events emitted by KnownHostStore so the audit log can show
+ *  when a host fingerprint was first trusted, re-verified, refused on
+ *  mismatch, or when the store failed to read/write. Fingerprints are
+ *  already SHA256:base64 (see `fingerprintHostKey`) — no raw key bytes
+ *  ever leave this layer. The redactor still scrubs anything routed
+ *  through the structured logger; the discriminator is stable so
+ *  downstream consumers can branch on it without parsing strings. */
+export type KnownHostAuditEvent =
+  | {
+      readonly kind: "tunnel.known-host.trusted_first_use";
+      readonly at: string;
+      readonly profileId: string;
+      readonly host: string;
+      readonly port: number;
+      readonly fingerprint: string;
+    }
+  | {
+      readonly kind: "tunnel.known-host.verified_existing";
+      readonly at: string;
+      readonly profileId: string;
+      readonly host: string;
+      readonly port: number;
+      readonly fingerprint: string;
+    }
+  | {
+      readonly kind: "tunnel.known-host.mismatch_refused";
+      readonly at: string;
+      readonly profileId: string;
+      readonly host: string;
+      readonly port: number;
+      readonly expected: string;
+      readonly actual: string;
+    }
+  | {
+      readonly kind: "tunnel.known-host.store_read_failed";
+      readonly at: string;
+      readonly profileId: string;
+      readonly host: string;
+      readonly port: number;
+      readonly errorCode: string;
+      readonly errorMessage: string;
+    }
+  | {
+      readonly kind: "tunnel.known-host.store_write_failed";
+      readonly at: string;
+      readonly profileId: string;
+      readonly host: string;
+      readonly port: number;
+      readonly fingerprint: string;
+      readonly errorCode: string;
+      readonly errorMessage: string;
+    };
+
+export type KnownHostAuditSink = (event: KnownHostAuditEvent) => void;
+
+export interface KnownHostStoreOptions {
+  readonly filePath: string;
+  /** hp-ejx7: optional audit sink. Omitted in test fixtures that
+   *  don't care about audit events. The sink MUST NOT throw — the
+   *  store wraps it in a swallowing try/catch so a bad sink can
+   *  never demote a trusted-first-use to a refusal. */
+  readonly audit?: KnownHostAuditSink;
+  /** hp-ejx7: clock for the `at` timestamp on audit events. Defaults
+   *  to `() => new Date()`; tests inject a fixed clock. */
+  readonly now?: () => Date;
+}
+
 export class KnownHostStore {
   private readonly filePath: string;
+  private readonly auditSink: KnownHostAuditSink | undefined;
+  private readonly nowProvider: () => Date;
 
-  constructor(input: { readonly filePath: string }) {
+  constructor(input: KnownHostStoreOptions) {
     this.filePath = input.filePath;
+    this.auditSink = input.audit;
+    this.nowProvider = input.now ?? (() => new Date());
   }
 
   async verifyKey(profile: SshProfile, key: Buffer): Promise<HostVerificationResult> {
@@ -323,19 +394,81 @@ export class KnownHostStore {
 
   async verifyFingerprint(profile: SshProfile, fingerprint: string): Promise<HostVerificationResult> {
     const key = knownHostKey(profile);
-    const file = await this.readFile();
+    let file: KnownHostFile;
+    try {
+      file = await this.readFile();
+    } catch (err) {
+      this.emitAudit({
+        kind: "tunnel.known-host.store_read_failed",
+        at: this.nowProvider().toISOString(),
+        profileId: profile.id,
+        host: profile.host,
+        port: profile.port,
+        ...redactError(err),
+      });
+      throw err;
+    }
     const expected = file.hosts[key];
     if (expected === undefined) {
-      await this.writeFile({
-        schemaVersion: 1,
-        hosts: { ...file.hosts, [key]: fingerprint },
+      try {
+        await this.writeFile({
+          schemaVersion: 1,
+          hosts: { ...file.hosts, [key]: fingerprint },
+        });
+      } catch (err) {
+        this.emitAudit({
+          kind: "tunnel.known-host.store_write_failed",
+          at: this.nowProvider().toISOString(),
+          profileId: profile.id,
+          host: profile.host,
+          port: profile.port,
+          fingerprint,
+          ...redactError(err),
+        });
+        throw err;
+      }
+      this.emitAudit({
+        kind: "tunnel.known-host.trusted_first_use",
+        at: this.nowProvider().toISOString(),
+        profileId: profile.id,
+        host: profile.host,
+        port: profile.port,
+        fingerprint,
       });
       return { ok: true, trustedFirstUse: true, fingerprint };
     }
     if (expected !== fingerprint) {
+      this.emitAudit({
+        kind: "tunnel.known-host.mismatch_refused",
+        at: this.nowProvider().toISOString(),
+        profileId: profile.id,
+        host: profile.host,
+        port: profile.port,
+        expected,
+        actual: fingerprint,
+      });
       return { ok: false, expected, actual: fingerprint };
     }
+    this.emitAudit({
+      kind: "tunnel.known-host.verified_existing",
+      at: this.nowProvider().toISOString(),
+      profileId: profile.id,
+      host: profile.host,
+      port: profile.port,
+      fingerprint,
+    });
     return { ok: true, trustedFirstUse: false, fingerprint };
+  }
+
+  private emitAudit(event: KnownHostAuditEvent): void {
+    if (!this.auditSink) return;
+    try {
+      this.auditSink(event);
+    } catch {
+      // Defensive: a sink that throws cannot block trust decisions.
+      // Drop the event silently — production wiring uses a logger
+      // that doesn't throw.
+    }
   }
 
   private async readFile(): Promise<KnownHostFile> {
@@ -366,6 +499,22 @@ export class KnownHostStore {
       contents: `${JSON.stringify(file, null, 2)}\n`,
     });
   }
+}
+
+/** Pull a redacted (code, message) pair off an arbitrary thrown value
+ *  for inclusion in audit events. ConnectionManagerError carries an
+ *  explicit `code`; everything else uses the constructor name as a
+ *  stable, low-cardinality discriminator. The `message` is whatever
+ *  the thrower passed — the redactor downstream of the audit log
+ *  scrubs anything that looks like a secret. */
+function redactError(err: unknown): { errorCode: string; errorMessage: string } {
+  if (err instanceof ConnectionManagerError) {
+    return { errorCode: err.code, errorMessage: err.message };
+  }
+  if (err instanceof Error) {
+    return { errorCode: err.name || "Error", errorMessage: err.message };
+  }
+  return { errorCode: "unknown", errorMessage: String(err) };
 }
 
 function emptyKnownHostFile(): KnownHostFile {

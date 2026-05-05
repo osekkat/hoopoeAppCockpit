@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -9,6 +9,7 @@ import {
   SshProfileManager,
   fingerprintHostKey,
   retryDelayMs,
+  type KnownHostAuditEvent,
   type SshProfile,
   type TunnelDriver,
   type TunnelHandle,
@@ -186,6 +187,139 @@ describe("hp-e7k :: KnownHostStore", () => {
         filePath,
         reason: "expected schemaVersion 1 with a string fingerprint map",
       },
+    });
+  });
+
+  test("hp-ejx7: emits audit events for trust, re-verify, and mismatch decisions", async () => {
+    const audit: KnownHostAuditEvent[] = [];
+    const store = new KnownHostStore({
+      filePath: join(workDir, "known_hosts.json"),
+      audit: (event) => audit.push(event),
+      now: () => new Date("2026-05-04T01:02:03.456Z"),
+    });
+    const profile = fixtureProfile(join(workDir, "id_ed25519"));
+    const firstKey = Buffer.from("host-key-one", "utf8");
+    const secondKey = Buffer.from("host-key-two", "utf8");
+    const firstFingerprint = fingerprintHostKey(firstKey);
+    const secondFingerprint = fingerprintHostKey(secondKey);
+
+    await store.verifyKey(profile, firstKey); // first use
+    await store.verifyKey(profile, firstKey); // re-verify
+    await store.verifyKey(profile, secondKey); // mismatch
+
+    expect(audit).toEqual([
+      {
+        kind: "tunnel.known-host.trusted_first_use",
+        at: "2026-05-04T01:02:03.456Z",
+        profileId: profile.id,
+        host: profile.host,
+        port: profile.port,
+        fingerprint: firstFingerprint,
+      },
+      {
+        kind: "tunnel.known-host.verified_existing",
+        at: "2026-05-04T01:02:03.456Z",
+        profileId: profile.id,
+        host: profile.host,
+        port: profile.port,
+        fingerprint: firstFingerprint,
+      },
+      {
+        kind: "tunnel.known-host.mismatch_refused",
+        at: "2026-05-04T01:02:03.456Z",
+        profileId: profile.id,
+        host: profile.host,
+        port: profile.port,
+        expected: firstFingerprint,
+        actual: secondFingerprint,
+      },
+    ]);
+  });
+
+  test("hp-ejx7: emits store_read_failed before re-throwing on malformed store", async () => {
+    const filePath = join(workDir, "known_hosts.json");
+    const audit: KnownHostAuditEvent[] = [];
+    const store = new KnownHostStore({
+      filePath,
+      audit: (event) => audit.push(event),
+      now: () => new Date("2026-05-04T01:02:03.456Z"),
+    });
+    const profile = fixtureProfile(join(workDir, "id_ed25519"));
+
+    await writeFile(filePath, "{", "utf8");
+    await expect(store.verifyFingerprint(profile, "SHA256:first")).rejects.toMatchObject({
+      code: "known-hosts.store-malformed",
+    });
+
+    expect(audit).toHaveLength(1);
+    expect(audit[0]).toMatchObject({
+      kind: "tunnel.known-host.store_read_failed",
+      profileId: profile.id,
+      host: profile.host,
+      port: profile.port,
+      errorCode: "known-hosts.store-malformed",
+    });
+    // The redacted message is the throw text from malformedStoreError —
+    // matches the human-readable form, not the bare code, since
+    // ConnectionManagerError.message is what the catch handler sees.
+    expect(audit[0]!.errorMessage).toContain("invalid JSON");
+  });
+
+  test("hp-ejx7: emits store_write_failed before re-throwing on first-use persist error", async () => {
+    const audit: KnownHostAuditEvent[] = [];
+    // Force write failure by chmod'ing the parent directory read-only
+    // AFTER ensuring read returns empty (ENOENT). On the next write
+    // attempt, mkdir succeeds (dir already exists) but
+    // writeFileStringAtomically cannot create the temp file.
+    const roDir = join(workDir, "ro");
+    await mkdir(roDir);
+    const filePath = join(roDir, "known_hosts.json");
+    await chmod(roDir, 0o500);
+    try {
+      const store = new KnownHostStore({
+        filePath,
+        audit: (event) => audit.push(event),
+        now: () => new Date("2026-05-04T01:02:03.456Z"),
+      });
+      const profile = fixtureProfile(join(workDir, "id_ed25519"));
+      const firstKey = Buffer.from("host-key-one", "utf8");
+      const fingerprint = fingerprintHostKey(firstKey);
+
+      await expect(store.verifyKey(profile, firstKey)).rejects.toBeDefined();
+
+      expect(audit).toHaveLength(1);
+      expect(audit[0]).toMatchObject({
+        kind: "tunnel.known-host.store_write_failed",
+        profileId: profile.id,
+        host: profile.host,
+        port: profile.port,
+        fingerprint,
+      });
+      expect(typeof audit[0]!.errorCode).toBe("string");
+      expect(typeof audit[0]!.errorMessage).toBe("string");
+    } finally {
+      // Restore writable mode so afterEach cleanup can delete the dir.
+      await chmod(roDir, 0o700);
+    }
+  });
+
+  test("hp-ejx7: a throwing audit sink does not derail trust decisions", async () => {
+    const store = new KnownHostStore({
+      filePath: join(workDir, "known_hosts.json"),
+      audit: () => {
+        throw new Error("audit sink exploded");
+      },
+    });
+    const profile = fixtureProfile(join(workDir, "id_ed25519"));
+    const key = Buffer.from("host-key-one", "utf8");
+
+    // The store's own contract is the trust decision. A throwing sink
+    // must not flip a successful trusted-first-use into a refusal.
+    const result = await store.verifyKey(profile, key);
+    expect(result).toEqual({
+      ok: true,
+      trustedFirstUse: true,
+      fingerprint: fingerprintHostKey(key),
     });
   });
 });
