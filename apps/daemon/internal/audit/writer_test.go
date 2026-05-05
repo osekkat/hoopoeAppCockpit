@@ -374,6 +374,69 @@ func (s *syncBuffer) Sync() error {
 	return nil
 }
 
+// BenchmarkWriterAppend pins the cost of a single audit Append on the
+// in-memory writer (no file IO) so future regressions in the redaction
+// path or index update are visible. hp-239z baseline.
+func BenchmarkWriterAppend(b *testing.B) {
+	now := time.Unix(2026, 0).UTC()
+	writer, err := NewWriter(Config{
+		Writer: nopSyncWriter{},
+		Now:    func() time.Time { return now },
+	})
+	if err != nil {
+		b.Fatalf("new writer: %v", err)
+	}
+	entry := Entry{
+		ProjectID: "proj_bench",
+		Action:    "bench.append",
+		Actor:     Actor{Kind: ActorSystem, ID: "bench"},
+		Result:    ResultSuccess,
+		Data:      map[string]any{"k": "v"},
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, _, err := writer.Append(entry); err != nil {
+			b.Fatalf("Append: %v", err)
+		}
+	}
+}
+
+// BenchmarkWriterQuery pins the cost of an audit Query post-hp-1hwb.
+// Pre-hp-1hwb every Query took the writer mutex AND re-read the file;
+// the new path delegates to the in-memory index under RLock. This
+// benchmark establishes the baseline so we notice if anyone reverts.
+func BenchmarkWriterQuery(b *testing.B) {
+	now := time.Unix(2026, 0).UTC()
+	writer, err := NewWriter(Config{
+		Writer: nopSyncWriter{},
+		Now:    func() time.Time { return now },
+	})
+	if err != nil {
+		b.Fatalf("new writer: %v", err)
+	}
+	for i := 0; i < 1000; i++ {
+		if _, _, err := writer.Append(Entry{
+			ProjectID: "proj_bench",
+			Action:    "bench.seed",
+			Actor:     Actor{Kind: ActorSystem, ID: "bench"},
+		}); err != nil {
+			b.Fatalf("seed Append: %v", err)
+		}
+	}
+	query := Query{ProjectID: "proj_bench", Limit: 50}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := writer.Query(query); err != nil {
+			b.Fatalf("Query: %v", err)
+		}
+	}
+}
+
+type nopSyncWriter struct{}
+
+func (nopSyncWriter) Write(p []byte) (int, error) { return len(p), nil }
+func (nopSyncWriter) Sync() error                 { return nil }
+
 func TestQueryAndAppendInterleaveWithoutDeadlockOrTearing(t *testing.T) {
 	// hp-1hwb: Writer.Query no longer takes the writer mutex or re-reads
 	// the file. Concurrent Queries + Appends must complete without

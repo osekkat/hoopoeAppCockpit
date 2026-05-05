@@ -451,6 +451,60 @@ func TestProbeMergesInsteadOfReplacingPreservesConcurrentlyRegisteredTool(t *tes
 	}
 }
 
+// BenchmarkRegistrySnapshot pins the cost of cloning the in-memory registry
+// state for serialization. Snapshot is on the hot path for /v1/capabilities,
+// every daemon-API gate check via LookupCapabilityStatus, and the renderer's
+// Diagnostics page. Post-hp-10kh, Probe runs lock-free so this Snapshot is
+// always served from a stable map without contending with in-flight CLI
+// calls. hp-239z baseline.
+func BenchmarkRegistrySnapshot(b *testing.B) {
+	r := New(fixedDaemonAPI)
+	r.SetClock(fixedClock("2026-05-04T00:00:00Z"))
+	for _, tool := range []ToolID{ToolGit, ToolBV, ToolNTM, ToolBR, ToolJSM} {
+		caps := make(map[string]Capability, 12)
+		for i := 0; i < 12; i++ {
+			caps[string(tool)+".bench."+itoa(i)] = Capability{Status: StatusOK}
+		}
+		if err := r.SetReport(&ToolReport{
+			Tool:          tool,
+			Source:        "bench",
+			Capabilities:  caps,
+			LastCheckedAt: "2026-05-04T00:00:00Z",
+		}); err != nil {
+			b.Fatalf("SetReport: %v", err)
+		}
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = r.Snapshot()
+	}
+}
+
+// BenchmarkRegistryLookupCapabilityStatus pins the cost of the gate path
+// that every daemon-API route taps before serving (see seed_contract.go's
+// requireProjectCapabilities and vps/http.go's gateRead). With many
+// concurrent requests this is the most-called read path. hp-239z baseline.
+func BenchmarkRegistryLookupCapabilityStatus(b *testing.B) {
+	r := New(fixedDaemonAPI)
+	r.SetClock(fixedClock("2026-05-04T00:00:00Z"))
+	if err := r.SetReport(&ToolReport{
+		Tool:   ToolGit,
+		Source: "bench",
+		Capabilities: map[string]Capability{
+			"git.status.read":   {Status: StatusOK},
+			"git.diff.read":     {Status: StatusOK},
+			"git.unpushed.list": {Status: StatusOK},
+		},
+		LastCheckedAt: "2026-05-04T00:00:00Z",
+	}); err != nil {
+		b.Fatalf("SetReport: %v", err)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = r.LookupCapabilityStatus("git.status.read")
+	}
+}
+
 func itoa(i int) string {
 	const digits = "0123456789"
 	if i == 0 {
