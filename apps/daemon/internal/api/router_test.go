@@ -2139,3 +2139,150 @@ func decodeDaemonID(t *testing.T, router http.Handler) string {
 	}
 	return resp.DaemonId
 }
+
+// hp-sfd: API router benchmark coverage. Pre-existing perf coverage in
+// the daemon was just internal/auth.BenchmarkVerifyBearer; the router
+// itself had zero benchmarks despite being on every request's hot path.
+// The benchmarks below pin allocation budgets for the middleware
+// pipeline + the cheapest representative handlers (health, version,
+// not-found, audit query) so a regression in request logging,
+// redaction, metric labeling, JSON encode/decode, or chi route matching
+// is visible in the bench output.
+//
+// Run with:
+//
+//	go test -bench=. -benchmem ./internal/api/
+
+func benchRouter(b *testing.B) http.Handler {
+	b.Helper()
+	now := time.Date(2026, 5, 5, 0, 0, 0, 0, time.UTC)
+	writer, err := audit.NewWriter(audit.Config{Writer: nopSyncWriter{}, Now: func() time.Time { return now }})
+	if err != nil {
+		b.Fatalf("new audit writer: %v", err)
+	}
+	return NewRouter(Config{Audit: writer, Now: func() time.Time { return now }})
+}
+
+func BenchmarkHandleHealth(b *testing.B) {
+	router := benchRouter(b)
+	req := httptest.NewRequest(http.MethodGet, "/v1/health", nil)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			b.Fatalf("status = %d, want 200", rec.Code)
+		}
+	}
+}
+
+func BenchmarkHandleLegacyHealth(b *testing.B) {
+	// /health is the cheapest possible response — a hand-rolled map
+	// without the subsystem walk. Keeping it as a control measurement
+	// for the cost of pure middleware + JSON encode (no schema struct).
+	router := benchRouter(b)
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			b.Fatalf("status = %d, want 200", rec.Code)
+		}
+	}
+}
+
+func BenchmarkHandleReadiness(b *testing.B) {
+	router := benchRouter(b)
+	req := httptest.NewRequest(http.MethodGet, "/v1/readiness", nil)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			b.Fatalf("status = %d, want 200", rec.Code)
+		}
+	}
+}
+
+func BenchmarkHandleVersion(b *testing.B) {
+	router := benchRouter(b)
+	req := httptest.NewRequest(http.MethodGet, "/v1/version", nil)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			b.Fatalf("status = %d, want 200", rec.Code)
+		}
+	}
+}
+
+func BenchmarkRouteNotFound(b *testing.B) {
+	// Exercises the chi NotFound handler + writeProblemCode JSON
+	// envelope. Worst-case path-matching is independent of the route
+	// surface; this benchmark catches regressions in the
+	// problem-envelope encode path specifically.
+	router := benchRouter(b)
+	req := httptest.NewRequest(http.MethodGet, "/v1/no-such-route", nil)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusNotFound {
+			b.Fatalf("status = %d, want 404", rec.Code)
+		}
+	}
+}
+
+func BenchmarkHandleAuditQueryEmpty(b *testing.B) {
+	// Exercises auditQueryFromRequest's full parser-helper chain
+	// (parseAuditLookupToken × 2, parseAuditFilterToken × 5,
+	// parseAuditLimit, parseOptionalAuditTime × 2, parseAuditSearch)
+	// + audit.Query construction + audit.Writer.Query traversal of an
+	// empty entry list. A regression in any helper or the Query path
+	// shows up here as a per-op allocation bump.
+	router := benchRouter(b)
+	req := httptest.NewRequest(http.MethodGet, "/v1/audit/query", nil)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			b.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+		}
+	}
+}
+
+func BenchmarkHandleAuditQueryWithFilters(b *testing.B) {
+	// Same path but with every query parameter populated. Catches
+	// cost regressions in the per-field parsing chain (the new
+	// parseAuditFilterToken × 5 from hp-kjy in particular).
+	router := benchRouter(b)
+	req := httptest.NewRequest(http.MethodGet,
+		"/v1/audit/query?projectId=proj_a&actorKind=agent&actorId=agent_1&action=swarm.halt"+
+			"&outcome=failure&q=rate&from=2026-01-01T00:00:00Z&to=2026-01-02T00:00:00Z&limit=100",
+		nil)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			b.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+		}
+	}
+}
