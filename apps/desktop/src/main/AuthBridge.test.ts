@@ -6,6 +6,7 @@ import {
   AuthBridge,
   AuthBridgeRedactedError,
   capturePairingTokenFromBootstrapOutput,
+  type AuthBridgeAuditEvent,
   type BearerSession,
 } from "./AuthBridge.ts";
 import type { DesktopSecretStorage } from "../vendored/t3code/clientPersistence.ts";
@@ -468,6 +469,163 @@ test("AuthBridge: non-rotation auth failures do not clear bearer", () => {
   expect(handled).toBe(false);
   expect(auth.loadBearer(ENV_ID)).toBe("fixture-bearer");
   expect(auth.getSecretRotationRecoveryState()).toBe("normal");
+});
+
+test("hp-rr9m: persistBearer + forgetBearer + secret rotation emit audit events", () => {
+  const audit: AuthBridgeAuditEvent[] = [];
+  const auth = new AuthBridge({
+    registryPath,
+    settingsPath,
+    secretStorage: new InMemorySecretStorage(),
+    fetchImpl: (() => {
+      throw new Error("fetch should not be called");
+    }) as unknown as typeof fetch,
+    audit: (event) => audit.push(event),
+    now: () => new Date("2026-05-04T01:02:03.456Z"),
+  });
+
+  // Successful persist with a session emits both bearer_persisted and
+  // session_metadata_written (settings path is set).
+  expect(auth.persistBearer(ENV_ID, bearerSession())).toBe(true);
+  // Successful forget emits bearer_forgotten.
+  auth.forgetBearer(ENV_ID);
+  // Secret-rotation transitions emit secret_rotation_transition for each
+  // distinct state change.
+  auth.handleAuthFailure(
+    new Response("revoked", {
+      status: 401,
+      headers: { "X-Hoopoe-Revocation-Cause": "secret_rotation" },
+    }),
+    ENV_ID,
+  );
+
+  const kinds = audit.map((event) => event.kind);
+  expect(kinds).toContain("auth.bearer_persisted");
+  expect(kinds).toContain("auth.session_metadata_written");
+  // handleAuthFailure -> forgetBearer -> bearer_forgotten fires twice
+  // (once explicit, once through the rotation flow). Both are real
+  // operations on the secret store and both should be auditable.
+  expect(kinds.filter((k) => k === "auth.bearer_forgotten").length).toBeGreaterThanOrEqual(1);
+  // All four secret-rotation transitions should fire.
+  const rotationTransitions = audit.filter(
+    (event): event is Extract<AuthBridgeAuditEvent, { kind: "auth.secret_rotation_transition" }> =>
+      event.kind === "auth.secret_rotation_transition",
+  );
+  expect(rotationTransitions.map((e) => e.to)).toEqual([
+    "secret_rotation_detected",
+    "bearer_cleared",
+    "pairing_screen",
+    "awaiting_token",
+  ]);
+
+  const persistedEvent = audit.find((e) => e.kind === "auth.bearer_persisted");
+  expect(persistedEvent).toMatchObject({
+    kind: "auth.bearer_persisted",
+    at: "2026-05-04T01:02:03.456Z",
+    environmentId: ENV_ID,
+    sessionId: "sid-owner-1",
+    expiresAt: "2026-06-03T00:00:00Z",
+    persisted: true,
+  });
+  const sessionEvent = audit.find((e) => e.kind === "auth.session_metadata_written");
+  expect(sessionEvent).toMatchObject({
+    kind: "auth.session_metadata_written",
+    at: "2026-05-04T01:02:03.456Z",
+    environmentId: ENV_ID,
+    sessionId: "sid-owner-1",
+    expiresAt: "2026-06-03T00:00:00Z",
+    serverId: null,
+  });
+});
+
+test("hp-rr9m: persist with unavailable encryption emits bearer_persisted with persisted=false", () => {
+  class NoEncryptionStorage implements DesktopSecretStorage {
+    isEncryptionAvailable(): boolean {
+      return false;
+    }
+    encryptString(): Buffer {
+      throw new Error("never called");
+    }
+    decryptString(): string {
+      throw new Error("never called");
+    }
+  }
+  const audit: AuthBridgeAuditEvent[] = [];
+  const auth = new AuthBridge({
+    registryPath,
+    secretStorage: new NoEncryptionStorage(),
+    fetchImpl: (() => {
+      throw new Error("fetch should not be called");
+    }) as unknown as typeof fetch,
+    audit: (event) => audit.push(event),
+    now: () => new Date("2026-05-04T01:02:03.456Z"),
+  });
+
+  expect(auth.persistBearer(ENV_ID, "raw-bearer-token")).toBe(false);
+
+  expect(audit).toHaveLength(1);
+  expect(audit[0]).toMatchObject({
+    kind: "auth.bearer_persisted",
+    environmentId: ENV_ID,
+    sessionId: null,
+    expiresAt: null,
+    persisted: false,
+  });
+});
+
+test("hp-rr9m: persist failure emits bearer_persist_failed before re-throwing", () => {
+  const audit: AuthBridgeAuditEvent[] = [];
+  const boom = new Error("registry write blew up");
+  class ThrowingStorage implements DesktopSecretStorage {
+    isEncryptionAvailable(): boolean {
+      return true;
+    }
+    encryptString(): Buffer {
+      throw boom;
+    }
+    decryptString(): string {
+      throw new Error("never called");
+    }
+  }
+  const auth = new AuthBridge({
+    registryPath,
+    secretStorage: new ThrowingStorage(),
+    fetchImpl: (() => {
+      throw new Error("fetch should not be called");
+    }) as unknown as typeof fetch,
+    audit: (event) => audit.push(event),
+    now: () => new Date("2026-05-04T01:02:03.456Z"),
+  });
+
+  expect(() => auth.persistBearer(ENV_ID, bearerSession())).toThrow();
+
+  expect(audit).toHaveLength(1);
+  expect(audit[0]).toMatchObject({
+    kind: "auth.bearer_persist_failed",
+    environmentId: ENV_ID,
+    errorCode: "Error",
+    errorMessage: "registry write blew up",
+  });
+});
+
+test("hp-rr9m: a throwing audit sink does not derail persist or forget", () => {
+  const auth = new AuthBridge({
+    registryPath,
+    settingsPath,
+    secretStorage: new InMemorySecretStorage(),
+    fetchImpl: (() => {
+      throw new Error("fetch should not be called");
+    }) as unknown as typeof fetch,
+    audit: () => {
+      throw new Error("audit sink exploded");
+    },
+  });
+
+  // Both calls must succeed even though the sink throws on every event.
+  expect(auth.persistBearer(ENV_ID, bearerSession())).toBe(true);
+  expect(auth.loadBearer(ENV_ID)).toBe("fixture-bearer");
+  expect(() => auth.forgetBearer(ENV_ID)).not.toThrow();
+  expect(auth.loadBearer(ENV_ID)).toBeNull();
 });
 
 function bearerSession(overrides: Partial<BearerSession> = {}): BearerSession {

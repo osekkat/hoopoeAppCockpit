@@ -38,6 +38,11 @@ export interface AuthBridgeOptions {
    *  24h window assertion does not depend on wall-clock-vs-fixture
    *  drift. */
   readonly now?: () => Date;
+  /** hp-rr9m: optional audit sink. Production wiring routes these
+   *  events into the structured logger; tests inject a spy. The sink
+   *  MUST NOT throw — the bridge swallows sink errors so a bad logger
+   *  cannot demote a successful persist into a perceived failure. */
+  readonly audit?: AuthBridgeAuditSink;
 }
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
@@ -109,12 +114,68 @@ export interface CompleteSecretRotationRepairInput extends ExchangePairingForBea
   readonly environmentId: string;
 }
 
+/** hp-rr9m: events emitted by AuthBridge so the audit log can show
+ *  bearer persist / forget / session-metadata / secret-rotation
+ *  side effects that were previously invisible. Token material is
+ *  never on these payloads — only environment id, session id (if a
+ *  session was provided), expiresAt (a public ISO date), serverId
+ *  (an opaque identifier exposed elsewhere in the API), and error
+ *  codes/messages routed through `redactAuthError`. */
+export type AuthBridgeAuditEvent =
+  | {
+      readonly kind: "auth.bearer_persisted";
+      readonly at: string;
+      readonly environmentId: string;
+      readonly sessionId: string | null;
+      readonly expiresAt: string | null;
+      /** False when secret storage encryption is unavailable or the
+       *  saved-environment registry has no record for `environmentId`. */
+      readonly persisted: boolean;
+    }
+  | {
+      readonly kind: "auth.bearer_persist_failed";
+      readonly at: string;
+      readonly environmentId: string;
+      readonly errorCode: string;
+      readonly errorMessage: string;
+    }
+  | {
+      readonly kind: "auth.session_metadata_written";
+      readonly at: string;
+      readonly environmentId: string;
+      readonly sessionId: string;
+      readonly expiresAt: string;
+      readonly serverId: string | null;
+    }
+  | {
+      readonly kind: "auth.bearer_forgotten";
+      readonly at: string;
+      readonly environmentId: string;
+    }
+  | {
+      readonly kind: "auth.bearer_forget_failed";
+      readonly at: string;
+      readonly environmentId: string;
+      readonly errorCode: string;
+      readonly errorMessage: string;
+    }
+  | {
+      readonly kind: "auth.secret_rotation_transition";
+      readonly at: string;
+      readonly from: SecretRotationRecoveryState;
+      readonly to: SecretRotationRecoveryState;
+      readonly reason: string;
+    };
+
+export type AuthBridgeAuditSink = (event: AuthBridgeAuditEvent) => void;
+
 export class AuthBridge {
   private readonly fetchImpl: typeof fetch;
   private readonly options: AuthBridgeOptions;
   private readonly requestTimeoutMs: number;
   private readonly refreshWindowMs: number;
   private readonly nowProvider: () => Date;
+  private readonly auditSink: AuthBridgeAuditSink | undefined;
   private secretRotationState: SecretRotationRecoveryState = "normal";
   private readonly secretRotationTrace: SecretRotationTransition[] = [];
   constructor(options: AuthBridgeOptions) {
@@ -123,6 +184,7 @@ export class AuthBridge {
     this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
     this.refreshWindowMs = DEFAULT_BEARER_REFRESH_WINDOW_MS;
     this.nowProvider = options.now ?? (() => new Date());
+    this.auditSink = options.audit;
   }
 
   async exchangePairingForBearer(input: ExchangePairingForBearerInput): Promise<BearerSession> {
@@ -266,11 +328,30 @@ export class AuthBridge {
 
   persistBearer(environmentId: string, bearer: string | BearerSession): boolean {
     const bearerToken = typeof bearer === "string" ? bearer : bearer.bearerToken;
-    const persisted = writeSavedEnvironmentSecret({
-      registryPath: this.options.registryPath,
+    let persisted: boolean;
+    try {
+      persisted = writeSavedEnvironmentSecret({
+        registryPath: this.options.registryPath,
+        environmentId,
+        secret: bearerToken,
+        secretStorage: this.options.secretStorage,
+      });
+    } catch (err) {
+      this.emitAudit({
+        kind: "auth.bearer_persist_failed",
+        at: this.nowProvider().toISOString(),
+        environmentId,
+        ...redactAuthError(err),
+      });
+      throw err;
+    }
+    this.emitAudit({
+      kind: "auth.bearer_persisted",
+      at: this.nowProvider().toISOString(),
       environmentId,
-      secret: bearerToken,
-      secretStorage: this.options.secretStorage,
+      sessionId: typeof bearer === "string" ? null : bearer.sessionId,
+      expiresAt: typeof bearer === "string" ? null : bearer.expiresAt,
+      persisted,
     });
     if (persisted && typeof bearer !== "string") {
       this.persistSessionMetadata(environmentId, bearer);
@@ -287,8 +368,23 @@ export class AuthBridge {
   }
 
   forgetBearer(environmentId: string): void {
-    removeSavedEnvironmentSecret({
-      registryPath: this.options.registryPath,
+    try {
+      removeSavedEnvironmentSecret({
+        registryPath: this.options.registryPath,
+        environmentId,
+      });
+    } catch (err) {
+      this.emitAudit({
+        kind: "auth.bearer_forget_failed",
+        at: this.nowProvider().toISOString(),
+        environmentId,
+        ...redactAuthError(err),
+      });
+      throw err;
+    }
+    this.emitAudit({
+      kind: "auth.bearer_forgotten",
+      at: this.nowProvider().toISOString(),
       environmentId,
     });
   }
@@ -318,19 +414,60 @@ export class AuthBridge {
         },
       },
     });
+    this.emitAudit({
+      kind: "auth.session_metadata_written",
+      at: this.nowProvider().toISOString(),
+      environmentId,
+      sessionId: session.sessionId,
+      expiresAt: session.expiresAt,
+      serverId: session.serverId,
+    });
   }
 
   private transitionSecretRotation(to: SecretRotationRecoveryState, reason: string): void {
     const from = this.secretRotationState;
     if (from === to) return;
     this.secretRotationState = to;
+    const at = this.nowProvider().toISOString();
     this.secretRotationTrace.push({
       from,
       to,
       reason,
-      at: new Date().toISOString(),
+      at,
+    });
+    this.emitAudit({
+      kind: "auth.secret_rotation_transition",
+      at,
+      from,
+      to,
+      reason,
     });
   }
+
+  private emitAudit(event: AuthBridgeAuditEvent): void {
+    if (!this.auditSink) return;
+    try {
+      this.auditSink(event);
+    } catch {
+      // Defensive: a sink that throws cannot block credential lifecycle
+      // operations. Drop the event silently — production wiring uses a
+      // logger that doesn't throw.
+    }
+  }
+}
+
+/** Pull a redacted (code, message) pair off an arbitrary thrown value
+ *  for inclusion in audit events. AuthBridgeRedactedError already
+ *  carries a redacted message (token material scrubbed); other errors
+ *  use the constructor name as a stable, low-cardinality discriminator. */
+function redactAuthError(err: unknown): { errorCode: string; errorMessage: string } {
+  if (err instanceof AuthBridgeRedactedError) {
+    return { errorCode: "AuthBridgeRedactedError", errorMessage: err.message };
+  }
+  if (err instanceof Error) {
+    return { errorCode: err.name || "Error", errorMessage: err.message };
+  }
+  return { errorCode: "unknown", errorMessage: String(err) };
 }
 
 export function capturePairingTokenFromBootstrapOutput(stdout: string): CapturedPairingToken | null {
