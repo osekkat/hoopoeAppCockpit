@@ -286,6 +286,15 @@ func (h *EventHub) Publish(input PublishInput) Event {
 // and activity.ActivityData need their typed Go shape preserved so existing
 // callers, tests, and replay-buffer consumers keep the expected struct
 // identity — re-decode the redacted map back into the source type via JSON.
+//
+// hp-zhmu: each fallback path that drops typed-struct identity now logs
+// loudly. Pre-fix the degradation was silent; subscribers expecting a
+// typed payload type-asserted and missed without any daemon-side trace.
+// The Event.Data still ships safely-redacted (correctness preserved); the
+// log is the forensic surface for tracking down redactor/struct contract
+// drift. Routes through the same PanicSink path as hp-a6lx when wired,
+// otherwise falls back to log.Printf — same pattern as
+// reportInternalPanic.
 func (h *EventHub) redactData(value any) any {
 	if h.redactor == nil || value == nil {
 		return value
@@ -300,17 +309,45 @@ func (h *EventHub) redactData(value any) any {
 	}
 	redactedMap, ok := redacted.(map[string]any)
 	if !ok {
+		h.reportRedactDegraded("non-map-result", rt, fmt.Errorf("redactor returned %T, expected map[string]any", redacted))
 		return redacted
 	}
 	body, err := json.Marshal(redactedMap)
 	if err != nil {
+		h.reportRedactDegraded("marshal-failed", rt, err)
 		return redacted
 	}
 	target := reflect.New(rt)
 	if err := json.Unmarshal(body, target.Interface()); err != nil {
+		h.reportRedactDegraded("unmarshal-failed", rt, err)
 		return redacted
 	}
 	return target.Elem().Interface()
+}
+
+// reportRedactDegraded surfaces a typed-struct → map[string]any
+// degradation in the redactData round-trip. hp-zhmu: pre-fix these
+// paths returned silently and downstream subscribers type-asserted
+// against the original struct type and silently missed. The
+// degradation is still safe (the redacted map is delivered) but
+// operators need a forensic surface to debug "subscribers expecting
+// CommitCreatedPayload aren't seeing the data" symptoms.
+//
+// Reuses the PanicSink wiring from hp-a6lx — different event names
+// keep the diagnostic streams differentiated. No sink wired falls
+// back to log.Printf so the diagnostic isn't a complete black hole.
+func (h *EventHub) reportRedactDegraded(stage string, rt reflect.Type, cause error) {
+	typeName := "<nil>"
+	if rt != nil {
+		typeName = rt.String()
+	}
+	msg := fmt.Sprintf("redact.%s on %s: %v", stage, typeName, cause)
+	if h.panicSink != nil {
+		defer func() { _ = recover() }()
+		h.panicSink("redact.degraded", msg)
+		return
+	}
+	log.Printf("eventhub: redactData degraded (%s) on %s: %v", stage, typeName, cause)
 }
 
 func isStructLike(rt reflect.Type) bool {

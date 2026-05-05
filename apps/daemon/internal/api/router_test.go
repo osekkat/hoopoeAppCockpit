@@ -1254,6 +1254,82 @@ func TestEventHubSubscribeWatcherPanicReportsViaPanicSink(t *testing.T) {
 	}
 }
 
+// TestEventHubRedactDataDegradationReportedViaPanicSink guards hp-zhmu:
+// the redactData round-trip silently degraded typed Data to
+// map[string]any when json.Marshal or json.Unmarshal failed.
+// Subscribers expecting a typed payload type-asserted and missed with
+// no daemon-side trace. The fix routes degradation events through the
+// same PanicSink wiring as hp-a6lx with a distinct event name.
+//
+// Provoking the degradation deterministically: feed a struct whose
+// JSON marshal would normally succeed, but whose redactor output
+// fails to unmarshal back. The simplest path is a struct with a
+// time.Time field that the redactor mangles into a non-RFC3339 string.
+// Easier: use a struct with an unexported field reachable only via
+// a custom MarshalJSON that emits an int where the source declares
+// a string. But the test should NOT depend on internal redactor
+// behavior — instead, use a struct with a json tag that produces
+// content the redactor's pattern matchers transform into a value
+// the struct's UnmarshalJSON rejects.
+//
+// Cleanest: use a struct with an embedded type the redactor doesn't
+// know about, then assert the diagnostic surface fires. We can
+// just construct the case directly via redactDataTestStruct below.
+func TestEventHubRedactDataDegradationReportedViaPanicSink(t *testing.T) {
+	type sinkCall struct {
+		event   string
+		message string
+	}
+	calls := make(chan sinkCall, 4)
+
+	hub := NewEventHub(EventHubConfig{
+		Redactor: redaction.NewDefault(),
+		PanicSink: func(event string, message string) {
+			calls <- sinkCall{event: event, message: message}
+		},
+	})
+
+	// degradeOnUnmarshal is a struct whose UnmarshalJSON ALWAYS fails.
+	// The redactor will produce a map, json.Marshal of the map will
+	// succeed, but json.Unmarshal of that body into *degradeOnUnmarshal
+	// will fail — exactly the unmarshal-failed branch.
+	hub.Publish(PublishInput{
+		Channel: "test",
+		Type:    "degraded",
+		Data:    degradeOnUnmarshal{Value: "anything"},
+	})
+
+	select {
+	case call := <-calls:
+		if call.event != "redact.degraded" {
+			t.Fatalf("sink event = %q, want %q", call.event, "redact.degraded")
+		}
+		if !strings.Contains(call.message, "unmarshal-failed") {
+			t.Fatalf("sink message did not name the stage: %q", call.message)
+		}
+		if !strings.Contains(call.message, "degradeOnUnmarshal") {
+			t.Fatalf("sink message did not include the source type: %q", call.message)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("PanicSink not invoked within 1s — redactData degradation was silent")
+	}
+}
+
+// degradeOnUnmarshal forces the unmarshal-failed branch of redactData
+// by rejecting any JSON input. MarshalJSON returns a benign object so
+// the Marshal half of the round-trip succeeds.
+type degradeOnUnmarshal struct {
+	Value string `json:"value"`
+}
+
+func (degradeOnUnmarshal) MarshalJSON() ([]byte, error) {
+	return []byte(`{"value":"anything"}`), nil
+}
+
+func (*degradeOnUnmarshal) UnmarshalJSON([]byte) error {
+	return fmt.Errorf("degradeOnUnmarshal: forced failure for hp-zhmu test")
+}
+
 // TestEventHubSubscribeWatcherPanicFallsBackToLogWhenNoSink covers the
 // nil-PanicSink path: if no sink is wired, the EventHub still reports
 // the panic via the standard logger so the daemon doesn't silently
