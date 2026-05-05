@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -380,4 +381,194 @@ func TestAuditExportFailsWhenCompletedAuditAppendFails(t *testing.T) {
 			t.Fatalf("appended actions = %v, missing %q", gotActions, want)
 		}
 	}
+}
+
+// FuzzAuditQueryFromRequest guards hp-bjm3: /v1/audit/query parses
+// untrusted URL query parameters for projectId, actorKind, actorId,
+// action, outcome, correlationId, causationId, q, from, and limit.
+// The parser helpers (parseAuditLimit, parseOptionalAuditTime,
+// parseAuditLookupToken, parseAuditSearch) enforce length, charset,
+// and timestamp invariants. A panic at this boundary corrupts the
+// read path; a missed length cap lets a malicious caller drive O(n²)
+// substring scans across audit entries via a giant `q`. Run with:
+//
+//	go test -fuzz=FuzzAuditQueryFromRequest -fuzztime=20s ./apps/daemon/internal/api/
+func FuzzAuditQueryFromRequest(f *testing.F) {
+	// Realistic shapes.
+	f.Add("projectId=p&limit=10")
+	f.Add("from=2026-01-01T00:00:00Z&to=2026-01-02T00:00:00Z")
+	f.Add("actorKind=agent&actorId=a1&action=swarm.halt&outcome=failure")
+	// Limit boundaries.
+	f.Add("limit=1")
+	f.Add("limit=1000")
+	f.Add("limit=0")
+	f.Add("limit=1001")
+	f.Add("limit=-1")
+	f.Add("limit=abc")
+	f.Add("limit=999999999999999999999")
+	// Timestamp shapes.
+	f.Add("from=2026-01-01T00:00:00.123456789Z")
+	f.Add("from=not-a-time")
+	f.Add("from=2026-01-01")
+	f.Add("from=2026-01-01T00:00:00+05:30")
+	// Lookup-token charset / length.
+	f.Add("correlationId=" + strings.Repeat("a", 160))
+	f.Add("correlationId=" + strings.Repeat("a", 161))
+	f.Add("correlationId=abc%20def") // URL-decoded space — must reject.
+	f.Add("causationId=αβγ")         // unicode — must reject.
+	f.Add("correlationId=foo/bar.baz:qux-1_2")
+	// Search length / unicode / control bytes.
+	f.Add("q=" + strings.Repeat("x", 256))
+	f.Add("q=" + strings.Repeat("x", 257))
+	f.Add("q=漢字")
+	f.Add("q=" + string([]byte{0x00, 0x01, 0x02, 0x03}))
+	// URL-encoded weirdness.
+	f.Add("q=hello%20world")
+	f.Add("q=%E6%BC%A2%E5%AD%97")
+	// Repeated keys (URL allows; only first is consumed).
+	f.Add("limit=10&limit=999999")
+	// Empty / pathological.
+	f.Add("")
+	f.Add("&&&&")
+	f.Add("=")
+	f.Add("?=&")
+	f.Add("&=&=")
+
+	srv := &server{}
+
+	f.Fuzz(func(t *testing.T, query string) {
+		// Construct *http.Request directly: httptest.NewRequest +
+		// http.NewRequest both reject control characters in the URL by
+		// panicking / erroring before the handler runs, but
+		// auditQueryFromRequest reads r.URL.Query() which is exactly
+		// the boundary we want to fuzz. By feeding RawQuery directly,
+		// we exercise the production code path with bytes that a
+		// permissive frontend (proxies, instrumentation, custom
+		// transports) could plausibly forward through.
+		req := &http.Request{
+			Method: http.MethodGet,
+			URL:    &url.URL{Path: "/v1/audit/query", RawQuery: query},
+			Header: http.Header{},
+		}
+		rec := httptest.NewRecorder()
+
+		result, ok := srv.auditQueryFromRequest(rec, req)
+		if !ok {
+			// Parse failure: must surface as a 400 problem+json envelope.
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("auditQueryFromRequest failed but status = %d, want %d; body=%s",
+					rec.Code, http.StatusBadRequest, rec.Body.String())
+			}
+			return
+		}
+
+		// Success path invariants ─────────────────────────────────────────
+		if result.Limit < 1 || result.Limit > maxAuditQueryLimit {
+			t.Fatalf("Limit=%d outside [1, %d] for query=%q", result.Limit, maxAuditQueryLimit, query)
+		}
+		if !result.From.IsZero() && result.From.Location() != time.UTC {
+			t.Fatalf("From not UTC-normalized: %v (loc=%v) for query=%q",
+				result.From, result.From.Location(), query)
+		}
+		if !result.To.IsZero() && result.To.Location() != time.UTC {
+			t.Fatalf("To not UTC-normalized: %v (loc=%v) for query=%q",
+				result.To, result.To.Location(), query)
+		}
+		if len(result.CorrelationID) > 160 {
+			t.Fatalf("CorrelationID len=%d > 160 for query=%q", len(result.CorrelationID), query)
+		}
+		if len(result.CausationID) > 160 {
+			t.Fatalf("CausationID len=%d > 160 for query=%q", len(result.CausationID), query)
+		}
+		if len(result.Search) > maxAuditSearchQueryLen {
+			t.Fatalf("Search len=%d > %d for query=%q",
+				len(result.Search), maxAuditSearchQueryLen, query)
+		}
+		// Lookup tokens must satisfy isAuditLookupRune (no control bytes,
+		// no non-ASCII): the parser is the gate, so a successful return
+		// is a claim that this holds.
+		for _, r := range result.CorrelationID {
+			if !isAuditLookupRune(r) {
+				t.Fatalf("CorrelationID admits non-lookup rune %q for query=%q", r, query)
+			}
+		}
+		for _, r := range result.CausationID {
+			if !isAuditLookupRune(r) {
+				t.Fatalf("CausationID admits non-lookup rune %q for query=%q", r, query)
+			}
+		}
+	})
+}
+
+// FuzzAuditQueryFromExportRequest guards hp-bjm3 for the typed export
+// surface: POST /v1/audit/export accepts a JSON body whose fields are
+// fed through the same parser helpers as the URL query. The invariants
+// are identical (no panic, length/charset bounded, UTC timestamps), but
+// the input shape is structured so the fuzzer mutates each field
+// independently. Run with:
+//
+//	go test -fuzz=FuzzAuditQueryFromExportRequest -fuzztime=20s ./apps/daemon/internal/api/
+func FuzzAuditQueryFromExportRequest(f *testing.F) {
+	f.Add("p", "user", "u1", "x.test", "success", "corr_a", "caus_b", "rate", "2026-01-01T00:00:00Z", "2026-01-02T00:00:00Z")
+	f.Add("", "", "", "", "", "", "", "", "", "")
+	f.Add("p", "agent", "a1", "swarm.halt", "failure", strings.Repeat("a", 161), "", "", "", "")
+	f.Add("p", "agent", "a1", "swarm.halt", "failure", "", "αβγ", "", "", "")
+	f.Add("p", "agent", "a1", "swarm.halt", "failure", "", "", strings.Repeat("x", 257), "", "")
+	f.Add("p", "agent", "a1", "swarm.halt", "failure", "", "", "", "not-a-time", "")
+	f.Add("p", "agent", "a1", "swarm.halt", "failure", "", "", string([]byte{0x00, 0x01}), "", "")
+
+	f.Fuzz(func(t *testing.T,
+		projectID, actorKind, actorID, action, outcome,
+		correlationID, causationID, search, from, to string,
+	) {
+		req := auditExportRequest{
+			ProjectID:     projectID,
+			ActorKind:     actorKind,
+			ActorID:       actorID,
+			Action:        action,
+			Outcome:       outcome,
+			CorrelationID: correlationID,
+			CausationID:   causationID,
+			Query:         search,
+			From:          from,
+			To:            to,
+		}
+		query, err := auditQueryFromExportRequest(req)
+		if err != nil {
+			// All error paths are explicit parser-helper failures —
+			// never a panic, never a bare json error. The error must be
+			// a non-nil Go error; nothing else to assert here (callers
+			// surface it via writeProblemCode at the HTTP layer).
+			return
+		}
+		// Success-path invariants — identical to the URL query target.
+		if query.Limit < 1 || query.Limit > maxAuditQueryLimit {
+			t.Fatalf("Limit=%d outside [1, %d]", query.Limit, maxAuditQueryLimit)
+		}
+		if !query.From.IsZero() && query.From.Location() != time.UTC {
+			t.Fatalf("From not UTC-normalized: %v (loc=%v)", query.From, query.From.Location())
+		}
+		if !query.To.IsZero() && query.To.Location() != time.UTC {
+			t.Fatalf("To not UTC-normalized: %v (loc=%v)", query.To, query.To.Location())
+		}
+		if len(query.CorrelationID) > 160 {
+			t.Fatalf("CorrelationID len=%d > 160", len(query.CorrelationID))
+		}
+		if len(query.CausationID) > 160 {
+			t.Fatalf("CausationID len=%d > 160", len(query.CausationID))
+		}
+		if len(query.Search) > maxAuditSearchQueryLen {
+			t.Fatalf("Search len=%d > %d", len(query.Search), maxAuditSearchQueryLen)
+		}
+		for _, r := range query.CorrelationID {
+			if !isAuditLookupRune(r) {
+				t.Fatalf("CorrelationID admits non-lookup rune %q", r)
+			}
+		}
+		for _, r := range query.CausationID {
+			if !isAuditLookupRune(r) {
+				t.Fatalf("CausationID admits non-lookup rune %q", r)
+			}
+		}
+	})
 }
