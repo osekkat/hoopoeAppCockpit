@@ -23,6 +23,14 @@ import (
 const (
 	maxAuditQueryLimit                 = 1000
 	maxAuditSearchQueryLen             = 256
+	// hp-kjy: per-filter cap for the categorical filter fields
+	// (projectId, actorKind, actorId, action, outcome). These are
+	// matched against canonical audit-entry fields; an unbounded
+	// filter would re-open the O(entries × |filter|) work hp-fbz
+	// closed for q. 128 bytes is intentionally tighter than the
+	// 160-byte lookup-token cap because these are categorical, not
+	// arbitrary correlation strings.
+	maxAuditFilterTokenLen = 128
 	auditExportApprovalActionKind      = "audit.export"
 	auditExportApprovalHeader          = "X-Hoopoe-Approval-Id"
 	auditExportApprovalMaxAge          = 2 * time.Minute
@@ -399,6 +407,34 @@ func (s *server) auditQueryFromRequest(w http.ResponseWriter, r *http.Request) (
 		s.writeProblemCode(w, auditHTTPStatusBadRequest, "audit.invalid_causation", "invalid causation id", err.Error())
 		return audit.Query{}, false
 	}
+	// hp-kjy: cap the categorical filter fields at maxAuditFilterTokenLen
+	// so an unbounded projectId/actorId/etc. cannot reopen the
+	// O(entries × |filter|) DoS that hp-fbz closed for q.
+	projectID, err := parseAuditFilterToken(values.Get("projectId"), "projectId")
+	if err != nil {
+		s.writeProblemCode(w, auditHTTPStatusBadRequest, "audit.invalid_project", "invalid project id", err.Error())
+		return audit.Query{}, false
+	}
+	actorKind, err := parseAuditFilterToken(values.Get("actorKind"), "actorKind")
+	if err != nil {
+		s.writeProblemCode(w, auditHTTPStatusBadRequest, "audit.invalid_actor_kind", "invalid actor kind", err.Error())
+		return audit.Query{}, false
+	}
+	actorID, err := parseAuditFilterToken(values.Get("actorId"), "actorId")
+	if err != nil {
+		s.writeProblemCode(w, auditHTTPStatusBadRequest, "audit.invalid_actor_id", "invalid actor id", err.Error())
+		return audit.Query{}, false
+	}
+	action, err := parseAuditFilterToken(values.Get("action"), "action")
+	if err != nil {
+		s.writeProblemCode(w, auditHTTPStatusBadRequest, "audit.invalid_action", "invalid action", err.Error())
+		return audit.Query{}, false
+	}
+	outcome, err := parseAuditFilterToken(values.Get("outcome"), "outcome")
+	if err != nil {
+		s.writeProblemCode(w, auditHTTPStatusBadRequest, "audit.invalid_outcome", "invalid outcome", err.Error())
+		return audit.Query{}, false
+	}
 	limit, err := parseAuditLimit(values.Get("limit"))
 	if err != nil {
 		s.writeProblemCode(w, auditHTTPStatusBadRequest, "audit.invalid_limit", "invalid audit limit", err.Error())
@@ -420,11 +456,11 @@ func (s *server) auditQueryFromRequest(w http.ResponseWriter, r *http.Request) (
 		return audit.Query{}, false
 	}
 	return audit.Query{
-		ProjectID:     strings.TrimSpace(values.Get("projectId")),
-		ActorKind:     audit.ActorKind(strings.TrimSpace(values.Get("actorKind"))),
-		ActorID:       strings.TrimSpace(values.Get("actorId")),
-		Action:        strings.TrimSpace(values.Get("action")),
-		Result:        audit.Result(strings.TrimSpace(values.Get("outcome"))),
+		ProjectID:     projectID,
+		ActorKind:     audit.ActorKind(actorKind),
+		ActorID:       actorID,
+		Action:        action,
+		Result:        audit.Result(outcome),
 		CorrelationID: correlationID,
 		CausationID:   causationID,
 		Search:        search,
@@ -444,6 +480,28 @@ func auditQueryFromExportRequest(request auditExportRequest) (audit.Query, error
 	if err != nil {
 		return audit.Query{}, err
 	}
+	// hp-kjy: same categorical filter caps as the GET /v1/audit/query
+	// path, applied to the typed export request body.
+	projectID, err := parseAuditFilterToken(request.ProjectID, "projectId")
+	if err != nil {
+		return audit.Query{}, err
+	}
+	actorKind, err := parseAuditFilterToken(request.ActorKind, "actorKind")
+	if err != nil {
+		return audit.Query{}, err
+	}
+	actorID, err := parseAuditFilterToken(request.ActorID, "actorId")
+	if err != nil {
+		return audit.Query{}, err
+	}
+	action, err := parseAuditFilterToken(request.Action, "action")
+	if err != nil {
+		return audit.Query{}, err
+	}
+	outcome, err := parseAuditFilterToken(request.Outcome, "outcome")
+	if err != nil {
+		return audit.Query{}, err
+	}
 	from, err := parseOptionalAuditTime(request.From)
 	if err != nil {
 		return audit.Query{}, err
@@ -457,11 +515,11 @@ func auditQueryFromExportRequest(request auditExportRequest) (audit.Query, error
 		return audit.Query{}, err
 	}
 	return audit.Query{
-		ProjectID:     strings.TrimSpace(request.ProjectID),
-		ActorKind:     audit.ActorKind(strings.TrimSpace(request.ActorKind)),
-		ActorID:       strings.TrimSpace(request.ActorID),
-		Action:        strings.TrimSpace(request.Action),
-		Result:        audit.Result(strings.TrimSpace(request.Outcome)),
+		ProjectID:     projectID,
+		ActorKind:     audit.ActorKind(actorKind),
+		ActorID:       actorID,
+		Action:        action,
+		Result:        audit.Result(outcome),
 		CorrelationID: correlationID,
 		CausationID:   causationID,
 		Search:        search,
@@ -565,6 +623,38 @@ func parseAuditLookupToken(value string, field string) (string, error) {
 			continue
 		}
 		return "", fmt.Errorf("%s contains unsupported character %q", field, r)
+	}
+	return value, nil
+}
+
+// parseAuditFilterToken bounds the categorical filter fields
+// (projectId, actorKind, actorId, action, outcome) at maxAuditFilterTokenLen
+// and rejects control bytes. It is intentionally MORE permissive than
+// parseAuditLookupToken — these fields can carry slugs and arbitrary
+// canonical-tool identifiers (e.g., a project slug with `:`, an action
+// like "swarm.halt") without being correlation tokens — but it still
+// blocks null bytes and other ASCII control characters that have no
+// place in a query parameter.
+//
+// hp-kjy: hp-fbz capped q at 256 but left these five sibling filters
+// entirely unbounded; entryMatchesQuery walks ~12 fields per entry × Limit
+// (≤1000) entries, so a 50KB actorId or projectId reopened the same
+// O(entries × |filter|) work the q cap closed.
+func parseAuditFilterToken(value string, field string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", nil
+	}
+	if len(value) > maxAuditFilterTokenLen {
+		return "", fmt.Errorf("%s is too long (max %d bytes)", field, maxAuditFilterTokenLen)
+	}
+	for _, r := range value {
+		// Reject ASCII control characters (NUL, BEL, BS, VT, etc.) and
+		// the DEL byte. Tabs and printable bytes (including non-ASCII
+		// UTF-8) are admissible.
+		if r < 0x20 || r == 0x7f {
+			return "", fmt.Errorf("%s contains unsupported control character", field)
+		}
 	}
 	return value, nil
 }

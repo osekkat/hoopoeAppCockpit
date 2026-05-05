@@ -268,6 +268,106 @@ func TestAuditQueryAcceptsBoundedSearch(t *testing.T) {
 	}
 }
 
+// TestAuditQueryRejectsOverlongFilters guards hp-kjy: hp-fbz capped q
+// at 256 bytes but left projectId, actorKind, actorId, action, and
+// outcome unbounded. parseAuditFilterToken now caps each at
+// maxAuditFilterTokenLen (128) and rejects control bytes; sending an
+// overlong value through either /v1/audit/query (GET) or the typed
+// /v1/audit/export (POST) body must surface as a 400 with the
+// per-field problem code.
+func TestAuditQueryRejectsOverlongFilters(t *testing.T) {
+	now := time.Date(2026, 5, 4, 8, 0, 0, 0, time.UTC)
+	overlong := strings.Repeat("a", maxAuditFilterTokenLen+1)
+
+	cases := []struct {
+		field        string
+		queryParam   string
+		exportField  string
+		problemCode  string
+	}{
+		{field: "ProjectID", queryParam: "projectId", exportField: "projectId", problemCode: "audit.invalid_project"},
+		{field: "ActorKind", queryParam: "actorKind", exportField: "actorKind", problemCode: "audit.invalid_actor_kind"},
+		{field: "ActorID", queryParam: "actorId", exportField: "actorId", problemCode: "audit.invalid_actor_id"},
+		{field: "Action", queryParam: "action", exportField: "action", problemCode: "audit.invalid_action"},
+		{field: "Outcome", queryParam: "outcome", exportField: "outcome", problemCode: "audit.invalid_outcome"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.field, func(t *testing.T) {
+			writer, err := audit.NewWriter(audit.Config{Writer: nopSyncWriter{}, Now: func() time.Time { return now }})
+			if err != nil {
+				t.Fatalf("new audit writer: %v", err)
+			}
+			router := NewRouter(Config{Audit: writer})
+
+			// GET path.
+			req := httptest.NewRequest(http.MethodGet, "/v1/audit/query?"+tc.queryParam+"="+overlong, nil)
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("GET status = %d, want %d; body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+			}
+			if !strings.Contains(rec.Body.String(), tc.problemCode) {
+				t.Fatalf("GET body missing %q: %s", tc.problemCode, rec.Body.String())
+			}
+
+			// POST /v1/audit/export path — same validator applies.
+			body := `{"` + tc.exportField + `":"` + overlong + `"}`
+			exportReq := httptest.NewRequest(http.MethodPost, "/v1/audit/export", strings.NewReader(body))
+			exportReq.Header.Set("Content-Type", "application/json")
+			exportRec := httptest.NewRecorder()
+			router.ServeHTTP(exportRec, exportReq)
+			if exportRec.Code != http.StatusBadRequest {
+				t.Fatalf("POST status = %d, want %d; body=%s", exportRec.Code, http.StatusBadRequest, exportRec.Body.String())
+			}
+		})
+	}
+}
+
+// TestAuditQueryRejectsControlBytesInFilters complements the length
+// gate: control characters (NUL, BEL, etc.) in any of the five
+// categorical filters are refused with a 400. URL-encoded so the
+// request itself is valid.
+func TestAuditQueryRejectsControlBytesInFilters(t *testing.T) {
+	now := time.Date(2026, 5, 4, 8, 0, 0, 0, time.UTC)
+	writer, err := audit.NewWriter(audit.Config{Writer: nopSyncWriter{}, Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatalf("new audit writer: %v", err)
+	}
+	router := NewRouter(Config{Audit: writer})
+
+	// %00 = NUL — must be rejected.
+	req := httptest.NewRequest(http.MethodGet, "/v1/audit/query?actorId=ag%00ent", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "audit.invalid_actor_id") {
+		t.Fatalf("body missing audit.invalid_actor_id: %s", rec.Body.String())
+	}
+}
+
+// TestAuditQueryAcceptsBoundedFilters confirms the boundary case: a
+// filter at maxAuditFilterTokenLen bytes (128) is accepted. Pins down
+// the exact threshold so an off-by-one regression in the cap is caught.
+func TestAuditQueryAcceptsBoundedFilters(t *testing.T) {
+	now := time.Date(2026, 5, 4, 8, 0, 0, 0, time.UTC)
+	writer, err := audit.NewWriter(audit.Config{Writer: nopSyncWriter{}, Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatalf("new audit writer: %v", err)
+	}
+	router := NewRouter(Config{Audit: writer})
+
+	atMax := strings.Repeat("a", maxAuditFilterTokenLen)
+	req := httptest.NewRequest(http.MethodGet, "/v1/audit/query?actorId="+atMax, nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("at-max query status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func createApprovedAuditExportApproval(t *testing.T, queue *approvals.Queue, now time.Time, projectID string) string {
 	t.Helper()
 	approval, _, err := queue.Request(context.Background(), approvals.Request{
