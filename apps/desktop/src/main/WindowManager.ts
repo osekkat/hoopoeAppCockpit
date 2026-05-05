@@ -104,6 +104,18 @@ function applyNavigationGuards(window: BrowserWindow, navigationPolicy: Navigati
       event.preventDefault();
     }
   });
+  // hp-3roi: layered defense for iframe (subframe) navigation. CSP
+  // `default-src 'self'` already blocks non-self iframe loads at the
+  // network layer, but listening to `will-frame-navigate` matches the
+  // top-level `will-navigate` policy so a future CSP relaxation or
+  // explicit `frame-src` directive doesn't silently widen the renderer's
+  // reach. Refuses any iframe navigation that isn't in the same
+  // allowlist applied to top-level navigation.
+  window.webContents.on("will-frame-navigate", (event) => {
+    if (!isAllowedNavigationUrl(event.url, navigationPolicy)) {
+      event.preventDefault();
+    }
+  });
   window.webContents.setWindowOpenHandler(() => {
     return { action: "deny" };
   });
