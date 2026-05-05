@@ -25,6 +25,7 @@ points to.
 | `capabilities.md` | Capability registry and degraded-mode contract. |
 | `observability.md` | Structured logs, metrics, and visibility contracts. |
 | `operations.md` | Operator-facing daemon/system operations notes. |
+| `development/desktop-helper-process-boundary.md` | Allowed desktop helper-process exceptions to the VPS-owned job boundary. |
 | `integration-contracts/` | Tool adapter contracts captured from robot/API surfaces. |
 | `research-spike/` | Phase 0 research notes and gotchas. |
 | `adr/` | Architecture decision records. |
