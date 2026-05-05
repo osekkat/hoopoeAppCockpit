@@ -416,6 +416,22 @@ export interface CloneProjectIdInput {
   readonly projectId: string;
 }
 
+/** hp-z7k: input for `cloneOpenInTerminal`. The desktop local clone is
+ *  a read-only sync mirror (Guardrail 3 / plan.md §1.7 + §7.7), so a
+ *  terminal opened there is a potential mutation surface — git commits
+ *  / pushes / branch mutations from that terminal will NOT propagate
+ *  to origin or the VPS clone. Setting `diagnostics: true` tells main
+ *  the caller surfaced an explicit warning to the user (Diagnostics
+ *  screen opt-in); when absent or false, the audit event carries a
+ *  read-only-mirror notice so log readers can see the user reached the
+ *  terminal from a non-Diagnostics surface. The action proceeds either
+ *  way today; a future bead may flip this to a hard refuse once
+ *  renderer surfaces adopt the flag. */
+export interface CloneOpenInTerminalInput {
+  readonly projectId: string;
+  readonly diagnostics?: boolean;
+}
+
 export interface CloneCapsOverride {
   readonly softCapBytes: number;
   readonly hardCapBytes: number;
@@ -523,7 +539,7 @@ export const PRELOAD_IPC_CHANNEL_CONTRACTS = {
   },
   cloneOpenInTerminal: {
     channel: PRELOAD_IPC_CHANNELS.cloneOpenInTerminal,
-    input: "CloneProjectIdInput",
+    input: "CloneOpenInTerminalInput",
     output: "EmptyObject",
   },
   cloneSetCapOverride: {

@@ -12,6 +12,7 @@ import {
 import {
   CloneActionsService,
   CloneActionsServiceError,
+  TERMINAL_READONLY_MIRROR_NOTICE,
   type CloneActionsAuditEvent,
   validateCaps,
 } from "./CloneActionsService.ts";
@@ -155,6 +156,42 @@ describe("CloneActionsService.openInTerminal", () => {
       expect((err as CloneActionsServiceError).code).toBe("actions.projectId-invalid");
     }
     expect(fx.terminalCalls).toEqual([]);
+  });
+
+  test("hp-z7k: non-diagnostics open emits read-only mirror warning in audit message", async () => {
+    const fx = makeService();
+    await fx.service.openInTerminal({ projectId: "demo-app" });
+
+    expect(fx.audit[0]?.action).toBe("open-in-terminal");
+    expect(fx.audit[0]?.outcome).toBe("ok");
+    expect(fx.audit[0]?.mirrorReadOnly).toBe(true);
+    expect(fx.audit[0]?.diagnostics).toBe(false);
+    expect(fx.audit[0]?.message).toBe(TERMINAL_READONLY_MIRROR_NOTICE);
+  });
+
+  test("hp-z7k: diagnostics=true suppresses the warning message but keeps mirrorReadOnly=true", async () => {
+    const fx = makeService();
+    await fx.service.openInTerminal({ projectId: "demo-app", diagnostics: true });
+
+    expect(fx.audit[0]?.outcome).toBe("ok");
+    expect(fx.audit[0]?.mirrorReadOnly).toBe(true);
+    expect(fx.audit[0]?.diagnostics).toBe(true);
+    // Diagnostics surface acknowledged the constraint — the warning
+    // message is not duplicated into the audit.
+    expect(fx.audit[0]?.message).toBeUndefined();
+  });
+
+  test("hp-z7k: failed terminal open with diagnostics=false carries mirrorReadOnly=true", async () => {
+    const fx = makeService({ terminalError: new Error("no terminal app") });
+    try {
+      await fx.service.openInTerminal({ projectId: "demo-app" });
+      throw new Error("expected throw");
+    } catch (err) {
+      expect((err as CloneActionsServiceError).code).toBe("actions.terminal-failed");
+    }
+    expect(fx.audit[0]?.outcome).toBe("failed");
+    expect(fx.audit[0]?.mirrorReadOnly).toBe(true);
+    expect(fx.audit[0]?.diagnostics).toBe(false);
   });
 });
 

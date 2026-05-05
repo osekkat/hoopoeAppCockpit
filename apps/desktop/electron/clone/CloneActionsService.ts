@@ -50,6 +50,17 @@ export type CloneActionsServiceErrorCode =
 
 export type CloneActionKind = "reveal-in-finder" | "open-in-terminal" | "set-cap-override";
 
+/** hp-z7k: explicit warning attached to every `open-in-terminal` audit
+ *  event. The desktop local clone under Library/Application Support is a
+ *  read-only sync mirror of origin (Guardrail 3 / plan.md §1.7 + §7.7).
+ *  A terminal opened there gives the user shell access — git commits,
+ *  pushes, branch mutations from that terminal will NOT propagate to
+ *  origin or the VPS clone. Spelling that out in the audit log makes
+ *  any later "why did my changes vanish?" investigation deterministic. */
+export const TERMINAL_READONLY_MIRROR_NOTICE =
+  "Desktop local clone is a read-only sync mirror; git commits / pushes / branch " +
+  "mutations from this terminal will NOT propagate to origin or the VPS clone.";
+
 /** Audit event payload. Mirrors CloneDiscardAuditEvent shape so audit
  *  trails across the four clone-action channels are uniformly queryable. */
 export interface CloneActionsAuditEvent {
@@ -61,6 +72,18 @@ export interface CloneActionsAuditEvent {
   readonly reasonCode: string;
   readonly message?: string;
   readonly capsOverride?: CloneCapConfig | null;
+  /** hp-z7k: true on every successful `open-in-terminal` audit so log
+   *  consumers can grep for terminal opens against the read-only mirror.
+   *  Combined with `diagnostics`, lets a reader distinguish "wizard
+   *  surface" terminal opens (read-only warning expected) from an
+   *  explicit Diagnostics-screen opt-in. */
+  readonly mirrorReadOnly?: boolean;
+  /** hp-z7k: true when the caller explicitly opted in via the Diagnostics
+   *  surface (`{ diagnostics: true }` on the openInTerminal input). The
+   *  warning is suppressed in the audit message but `mirrorReadOnly`
+   *  stays true — the constraint doesn't go away just because the user
+   *  acknowledged it. */
+  readonly diagnostics?: boolean;
   readonly at: string;
 }
 
@@ -150,9 +173,21 @@ export class CloneActionsService {
     });
   }
 
-  async openInTerminal(input: { readonly projectId: string }): Promise<void> {
+  async openInTerminal(input: {
+    readonly projectId: string;
+    /** hp-z7k: set true when the caller has surfaced an explicit
+     *  Diagnostics-screen warning to the user (Guardrail 3 — desktop
+     *  clone is a read-only mirror). When false/absent, the audit
+     *  event carries a read-only-mirror warning string so the log
+     *  shows the user reached the terminal from a non-Diagnostics
+     *  surface. The action proceeds either way today; a future bead
+     *  may flip this to a hard refuse once renderer surfaces adopt
+     *  the flag. */
+    readonly diagnostics?: boolean;
+  }): Promise<void> {
     const projectId = this.#requireProjectId(input.projectId, "open-in-terminal");
     const cloneRepoPath = this.#resolveCloneRepoPath(projectId);
+    const diagnostics = input.diagnostics === true;
     try {
       await this.#openInTerminal(cloneRepoPath);
     } catch (err) {
@@ -164,6 +199,8 @@ export class CloneActionsService {
         outcome: "failed",
         reasonCode: "actions.terminal-failed",
         message,
+        mirrorReadOnly: true,
+        diagnostics,
       });
       throw new CloneActionsServiceError("actions.terminal-failed", message, {
         projectId,
@@ -176,6 +213,14 @@ export class CloneActionsService {
       cloneRepoPath,
       outcome: "ok",
       reasonCode: "ok",
+      // hp-z7k: the warning is on every non-diagnostics open. When
+      // diagnostics is true, the user acknowledged the constraint
+      // through the Diagnostics surface so the message is suppressed,
+      // but `mirrorReadOnly: true` still stamps the audit so log
+      // consumers can grep terminal opens against the mirror.
+      ...(diagnostics ? {} : { message: TERMINAL_READONLY_MIRROR_NOTICE }),
+      mirrorReadOnly: true,
+      diagnostics,
     });
   }
 

@@ -125,8 +125,16 @@ export interface HoopoeBridge {
      *  only the projectId. */
     readonly revealInFinder: (input: { projectId: string }) => Promise<void>;
     /** hp-5bhy: Open the project's local clone in the user's default
-     *  terminal app. Main resolves the path; safe argv. */
-    readonly openInTerminal: (input: { projectId: string }) => Promise<void>;
+     *  terminal app. Main resolves the path; safe argv.
+     *  hp-z7k: pass `diagnostics: true` from the Diagnostics surface
+     *  after explicitly warning the user that the desktop clone is a
+     *  read-only mirror; mutations from the opened terminal will not
+     *  propagate. When absent or false, main emits a read-only-mirror
+     *  warning into the audit log. */
+    readonly openInTerminal: (input: {
+      projectId: string;
+      diagnostics?: boolean;
+    }) => Promise<void>;
     /** hp-5bhy: Persist a per-project cap override into clone-state.json.
      *  Pass `capsOverride: null` to clear the override and fall back to
      *  the global cap config. */

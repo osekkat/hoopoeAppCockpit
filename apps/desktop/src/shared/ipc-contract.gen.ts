@@ -191,7 +191,7 @@ export const PRELOAD_IPC_CHANNEL_CONTRACTS = {
   },
   cloneOpenInTerminal: {
     channel: PRELOAD_IPC_CHANNELS.cloneOpenInTerminal,
-    input: "CloneProjectIdInput",
+    input: "CloneOpenInTerminalInput",
     output: "EmptyObject",
   },
   cloneSetCapOverride: {

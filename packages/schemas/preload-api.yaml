@@ -563,7 +563,7 @@ preloadChannelContracts:
     output: EmptyObject
   cloneOpenInTerminal:
     channel: cloneOpenInTerminal
-    input: CloneProjectIdInput
+    input: CloneOpenInTerminalInput
     output: EmptyObject
   cloneSetCapOverride:
     channel: cloneSetCapOverride
