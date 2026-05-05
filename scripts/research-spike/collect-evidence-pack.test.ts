@@ -51,7 +51,12 @@ describe("hp-vtwm evidence pack scripts", () => {
     expect(verify.status).toBe(0);
     expect(verify.stdout).toContain("PASS hp-vtwm evidence pack verifier");
     expect(verify.stdout).toContain("[PASS] secret scan clean");
-  }, 30_000);
+    // Combined collector + verifier wall time on this dev box is ~27s
+    // (collector ~16s, verifier ~11s; the verifier walks 75 checks
+    // including a per-file secret scan). 30 s is too close to that
+    // total to be reliable on slower CI workers, so the timeout sits at
+    // 90 s to leave a comfortable margin for slow disks / contention.
+  }, 90_000);
 });
 
 function evidenceTarPath(stdout: string): string | null {
