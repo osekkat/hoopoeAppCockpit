@@ -89,7 +89,20 @@ type Config struct {
 	Path     string
 	Redactor *redaction.Redactor
 	Now      func() time.Time
+	// MaxIndexEntries caps the in-memory Index window. Zero means use
+	// the package default (defaultIndexMaxEntries). Set to a negative
+	// value to opt out of bounded retention entirely (the in-memory
+	// Index will grow O(audit history); not recommended for long-running
+	// daemons). hp-ae4p.
+	MaxIndexEntries int
 }
+
+// defaultIndexMaxEntries is the package default cap for the in-memory
+// Index. ~50k entries × ~1KB average = ~50MB peak — well below the
+// pressure point the bead's evidence calls out (~1.8 GB at 5y of 1k/day).
+// Older queries fall back to LoadIndex(path) which re-reads the full
+// JSONL from disk.
+const defaultIndexMaxEntries = 50_000
 
 type Writer struct {
 	mu       sync.Mutex
@@ -146,6 +159,14 @@ func NewWriter(cfg Config) (*Writer, error) {
 	if out == nil {
 		return nil, fmt.Errorf("audit: writer or path is required")
 	}
+	indexCfg := IndexConfig{MaxEntries: cfg.MaxIndexEntries}
+	if indexCfg.MaxEntries == 0 {
+		indexCfg.MaxEntries = defaultIndexMaxEntries
+	} else if indexCfg.MaxEntries < 0 {
+		// Negative is the explicit opt-out for the unbounded legacy
+		// behavior. Translate to 0 (= unbounded) for the Index layer.
+		indexCfg.MaxEntries = 0
+	}
 	writer := &Writer{
 		out:      out,
 		closer:   closer,
@@ -154,7 +175,7 @@ func NewWriter(cfg Config) (*Writer, error) {
 		redactor: redactor,
 		now:      now,
 		seqs:     make(map[string]uint64),
-		index:    NewIndex(nil),
+		index:    NewIndexWithConfig(nil, indexCfg),
 	}
 	if writer.path != "" {
 		if err := writer.lockFile(); err != nil {
@@ -171,7 +192,7 @@ func NewWriter(cfg Config) (*Writer, error) {
 			_ = writer.Close()
 			return nil, unlockErr
 		}
-		writer.index = NewIndex(entries)
+		writer.index = NewIndexWithConfig(entries, indexCfg)
 		for _, entry := range entries {
 			writer.recordSequenceLocked(entry.ProjectID, entry.Seq)
 		}
@@ -360,11 +381,26 @@ type Query struct {
 // for its own audit-log path, so an in-memory index is sufficient for
 // runtime reads.
 type Index struct {
-	mu        sync.RWMutex
-	entries   []Entry
-	byProject map[string][]int
-	byActor   map[string][]int
-	byAction  map[string][]int
+	mu         sync.RWMutex
+	entries    []Entry
+	byProject  map[string][]int
+	byActor    map[string][]int
+	byAction   map[string][]int
+	maxEntries int
+}
+
+// IndexConfig controls how the in-memory Index behaves. MaxEntries == 0
+// means unbounded (the legacy default — Index grows O(audit history)).
+// Production callers should set a positive value to bound RSS; the Writer
+// applies a sensible default via Config.MaxIndexEntries.
+type IndexConfig struct {
+	// MaxEntries caps the number of Entry values held in memory. When the
+	// cap is exceeded, the oldest entries are evicted from the slice and
+	// the secondary maps (byProject/byActor/byAction) are rewritten to
+	// drop the corresponding indexes. The on-disk JSONL is NEVER touched
+	// by eviction — older queries can still resolve via LoadIndex(path)
+	// + Query, which re-reads the full file. hp-ae4p.
+	MaxEntries int
 }
 
 func LoadIndex(path string) (*Index, error) {
@@ -375,12 +411,28 @@ func LoadIndex(path string) (*Index, error) {
 	return NewIndex(entries), nil
 }
 
+// NewIndex builds an Index with no retention cap (legacy default). Use
+// NewIndexWithConfig for bounded retention.
 func NewIndex(entries []Entry) *Index {
+	return NewIndexWithConfig(entries, IndexConfig{})
+}
+
+// NewIndexWithConfig builds an Index with the given retention config.
+// If MaxEntries > 0 and len(entries) exceeds it, only the most recent
+// MaxEntries are retained at construction time.
+func NewIndexWithConfig(entries []Entry, cfg IndexConfig) *Index {
 	index := &Index{
-		entries:   make([]Entry, 0, len(entries)),
-		byProject: make(map[string][]int),
-		byActor:   make(map[string][]int),
-		byAction:  make(map[string][]int),
+		entries:    make([]Entry, 0, len(entries)),
+		byProject:  make(map[string][]int),
+		byActor:    make(map[string][]int),
+		byAction:   make(map[string][]int),
+		maxEntries: cfg.MaxEntries,
+	}
+	// If we're going to evict to a window anyway, skip ahead so we
+	// don't pay the indexing cost on entries that will immediately be
+	// dropped.
+	if index.maxEntries > 0 && len(entries) > index.maxEntries {
+		entries = entries[len(entries)-index.maxEntries:]
 	}
 	// Single-goroutine bootstrap; bypass the lock to avoid the defer/Unlock
 	// overhead on potentially many entries.
@@ -456,6 +508,50 @@ func (i *Index) addLocked(entry Entry) {
 	for _, key := range actorIndexKeys(entry.Actor.Kind, entry.Actor.ID) {
 		i.byActor[key] = append(i.byActor[key], pos)
 	}
+	i.evictBeyondMaxLocked()
+}
+
+// evictBeyondMaxLocked enforces the IndexConfig.MaxEntries window.
+// When len(entries) exceeds the cap, the oldest excess entries are
+// dropped from the slice AND every secondary map is rewritten so its
+// stored indexes match the new slice positions. Indexes that pointed
+// at evicted entries (i.e., that would now be < 0) are dropped; keys
+// that become empty are removed entirely so the maps don't slowly
+// accumulate ghost entries. hp-ae4p.
+func (i *Index) evictBeyondMaxLocked() {
+	if i.maxEntries <= 0 {
+		return
+	}
+	excess := len(i.entries) - i.maxEntries
+	if excess <= 0 {
+		return
+	}
+	// Build a fresh entries slice with capacity == cap so the old
+	// backing array can be GC'd. Leaving capacity == len(old)-excess
+	// would retain references to the evicted entries.
+	retained := make([]Entry, len(i.entries)-excess)
+	copy(retained, i.entries[excess:])
+	i.entries = retained
+
+	rewriteIndexes := func(m map[string][]int) {
+		for key, indexes := range m {
+			kept := indexes[:0]
+			for _, idx := range indexes {
+				adjusted := idx - excess
+				if adjusted >= 0 {
+					kept = append(kept, adjusted)
+				}
+			}
+			if len(kept) == 0 {
+				delete(m, key)
+			} else {
+				m[key] = kept
+			}
+		}
+	}
+	rewriteIndexes(i.byProject)
+	rewriteIndexes(i.byActor)
+	rewriteIndexes(i.byAction)
 }
 
 func (i *Index) candidateIndexesLocked(query Query) []int {

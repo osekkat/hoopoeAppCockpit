@@ -421,6 +421,136 @@ func TestSetLegacyDecodeRedactorOverride(t *testing.T) {
 	}
 }
 
+// hp-ae4p: Index MaxEntries retention. Pre-fix the in-memory Index
+// grew O(audit history) for the lifetime of the Writer; on a long-
+// running tending fleet that's RSS pressure scaling with every
+// recorded event. The fix bounds the Index at MaxEntries (default
+// 50_000); older queries fall back to LoadIndex(path) which re-reads
+// the full JSONL from disk.
+
+func TestIndexEvictsOldestBeyondMaxEntries(t *testing.T) {
+	const max = 5
+	idx := NewIndexWithConfig(nil, IndexConfig{MaxEntries: max})
+	for i := 0; i < max*2; i++ {
+		idx.add(Entry{
+			ProjectID: "p",
+			Action:    "x",
+			Actor:     Actor{Kind: ActorSystem, ID: "daemon"},
+			Time:      time.Unix(int64(i), 0).UTC(),
+			Data:      map[string]any{"i": i},
+		})
+	}
+	got := idx.Entries()
+	if len(got) != max {
+		t.Fatalf("Entries len = %d, want %d", len(got), max)
+	}
+	for i, entry := range got {
+		want := max + i
+		if entry.Data["i"] != want {
+			t.Fatalf("Entries[%d].Data.i = %v, want %d", i, entry.Data["i"], want)
+		}
+	}
+}
+
+func TestIndexEvictionRepairsSecondaryMaps(t *testing.T) {
+	const max = 4
+	idx := NewIndexWithConfig(nil, IndexConfig{MaxEntries: max})
+	for i := 0; i < max*2; i++ {
+		project := "p_a"
+		if i%2 == 0 {
+			project = "p_b"
+		}
+		actor := Actor{Kind: ActorSystem, ID: "daemon"}
+		if i%3 == 0 {
+			actor = Actor{Kind: ActorAgent, ID: "agent_1"}
+		}
+		action := "x.first"
+		if i%2 == 1 {
+			action = "x.second"
+		}
+		idx.add(Entry{
+			ProjectID: project,
+			Action:    action,
+			Actor:     actor,
+			Time:      time.Unix(int64(i), 0).UTC(),
+		})
+	}
+	for _, q := range []Query{
+		{ProjectID: "p_a"},
+		{ProjectID: "p_b"},
+		{ActorKind: ActorSystem, ActorID: "daemon"},
+		{ActorKind: ActorAgent, ActorID: "agent_1"},
+		{Action: "x.first"},
+		{Action: "x.second"},
+	} {
+		got := idx.Query(q)
+		if len(got) > max {
+			t.Fatalf("Query %+v returned %d entries; cap is %d", q, len(got), max)
+		}
+	}
+	combined := idx.Query(Query{})
+	if len(combined) != max {
+		t.Fatalf("unfiltered Query len = %d, want %d", len(combined), max)
+	}
+}
+
+func TestIndexUnboundedWhenMaxEntriesZero(t *testing.T) {
+	idx := NewIndex(nil)
+	for i := 0; i < 100; i++ {
+		idx.add(Entry{
+			ProjectID: "p",
+			Action:    "x",
+			Actor:     Actor{Kind: ActorSystem, ID: "d"},
+			Time:      time.Unix(int64(i), 0).UTC(),
+		})
+	}
+	if got := idx.Entries(); len(got) != 100 {
+		t.Fatalf("unbounded Entries len = %d, want 100", len(got))
+	}
+}
+
+func TestIndexBootstrapAlreadyOverCapTrimsToWindow(t *testing.T) {
+	const max = 10
+	entries := make([]Entry, max*2)
+	for i := range entries {
+		entries[i] = Entry{
+			ProjectID: "p",
+			Action:    "x",
+			Actor:     Actor{Kind: ActorSystem, ID: "d"},
+			Time:      time.Unix(int64(i), 0).UTC(),
+			Data:      map[string]any{"i": i},
+		}
+	}
+	idx := NewIndexWithConfig(entries, IndexConfig{MaxEntries: max})
+	got := idx.Entries()
+	if len(got) != max {
+		t.Fatalf("Entries len = %d, want %d", len(got), max)
+	}
+	if got[0].Data["i"] != max {
+		t.Fatalf("Entries[0].Data.i = %v, want %d (oldest after trim)", got[0].Data["i"], max)
+	}
+}
+
+func TestWriterAppliesDefaultMaxIndexEntries(t *testing.T) {
+	w, err := NewWriter(Config{Writer: nopSyncWriter{}})
+	if err != nil {
+		t.Fatalf("new writer: %v", err)
+	}
+	if got := w.index.maxEntries; got != defaultIndexMaxEntries {
+		t.Fatalf("index.maxEntries = %d, want default %d", got, defaultIndexMaxEntries)
+	}
+}
+
+func TestWriterNegativeMaxIndexEntriesOptsOutOfBoundedRetention(t *testing.T) {
+	w, err := NewWriter(Config{Writer: nopSyncWriter{}, MaxIndexEntries: -1})
+	if err != nil {
+		t.Fatalf("new writer: %v", err)
+	}
+	if got := w.index.maxEntries; got != 0 {
+		t.Fatalf("index.maxEntries = %d, want 0 (unbounded)", got)
+	}
+}
+
 func decodeLines(t *testing.T, body string) []map[string]any {
 	t.Helper()
 	var out []map[string]any
