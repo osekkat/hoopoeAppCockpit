@@ -212,6 +212,18 @@ function parseYaml(text: string): PreloadApi {
   return result;
 }
 
+// hp-3zc: every direct preload channel must declare typed input/output —
+// EXCEPT for the multiplexers and the subscribe-only watch channel, which
+// are not invoke-style request/response and carry their payload typing in
+// §1 daemonRequestMethods + §2 daemonSubscribeTopics. Adding a new direct
+// channel without a corresponding contract entry should fail the build.
+const PRELOAD_CHANNELS_WITHOUT_DIRECT_CONTRACT: ReadonlySet<string> = new Set([
+  "daemonRequest",
+  "daemonSubscribe",
+  "daemonUnsubscribe",
+  "settingsWatch",
+]);
+
 function assertValidPreloadContracts(api: PreloadApi): void {
   for (const [key, contract] of Object.entries(api.preloadChannelContracts)) {
     if (!contract.channel || !contract.input || !contract.output) {
@@ -227,6 +239,24 @@ function assertValidPreloadContracts(api: PreloadApi): void {
         `preloadChannelContracts.${key}.channel references unknown preloadChannels key ${contract.channel}`,
       );
     }
+  }
+  // Coverage gate (hp-3zc): every direct (invoke-style) preload channel must
+  // appear in preloadChannelContracts. Forgetting an entry is a documented
+  // contract gap that the codegen + drift gate should reject.
+  const missingContracts: string[] = [];
+  for (const channelKey of Object.keys(api.preloadChannels)) {
+    if (PRELOAD_CHANNELS_WITHOUT_DIRECT_CONTRACT.has(channelKey)) continue;
+    if (!(channelKey in api.preloadChannelContracts)) {
+      missingContracts.push(channelKey);
+    }
+  }
+  if (missingContracts.length > 0) {
+    throw new Error(
+      `preloadChannelContracts is missing entries for direct preload channels: ${missingContracts.join(", ")}. ` +
+        "Add a {channel, input, output} contract entry per channel, or extend " +
+        "PRELOAD_CHANNELS_WITHOUT_DIRECT_CONTRACT in this script if the channel " +
+        "is not invoke-style.",
+    );
   }
 }
 

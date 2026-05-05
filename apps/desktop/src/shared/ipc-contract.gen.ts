@@ -114,6 +114,91 @@ export function isPreloadIpcChannel(value: unknown): value is PreloadIpcChannelV
 }
 
 export const PRELOAD_IPC_CHANNEL_CONTRACTS = {
+  settingsGet: {
+    channel: PRELOAD_IPC_CHANNELS.settingsGet,
+    input: "SettingsGetInput",
+    output: "SettingsGetOutput",
+  },
+  settingsSet: {
+    channel: PRELOAD_IPC_CHANNELS.settingsSet,
+    input: "SettingsSetInput",
+    output: "SettingsSetOutput",
+  },
+  keybindingsCompile: {
+    channel: PRELOAD_IPC_CHANNELS.keybindingsCompile,
+    input: "KeybindingsCompileInput",
+    output: "KeybindingsCompileOutput",
+  },
+  keybindingsDispatch: {
+    channel: PRELOAD_IPC_CHANNELS.keybindingsDispatch,
+    input: "KeybindingsDispatchInput",
+    output: "KeybindingsDispatchOutput",
+  },
+  approvalsList: {
+    channel: PRELOAD_IPC_CHANNELS.approvalsList,
+    input: "ApprovalsListInput",
+    output: "ApprovalsListOutput",
+  },
+  approvalsApprove: {
+    channel: PRELOAD_IPC_CHANNELS.approvalsApprove,
+    input: "ApprovalsDecisionInput",
+    output: "ApprovalsDecisionOutput",
+  },
+  approvalsDeny: {
+    channel: PRELOAD_IPC_CHANNELS.approvalsDeny,
+    input: "ApprovalsDecisionInput",
+    output: "ApprovalsDecisionOutput",
+  },
+  approvalsExtend: {
+    channel: PRELOAD_IPC_CHANNELS.approvalsExtend,
+    input: "ApprovalsExtendInput",
+    output: "ApprovalsDecisionOutput",
+  },
+  filesOpenExternal: {
+    channel: PRELOAD_IPC_CHANNELS.filesOpenExternal,
+    input: "FilesOpenExternalInput",
+    output: "EmptyObject",
+  },
+  filesRevealInFinder: {
+    channel: PRELOAD_IPC_CHANNELS.filesRevealInFinder,
+    input: "FilesRevealInFinderInput",
+    output: "EmptyObject",
+  },
+  filesRipgrep: {
+    channel: PRELOAD_IPC_CHANNELS.filesRipgrep,
+    input: "FilesRipgrepInput",
+    output: "FilesRipgrepOutput",
+  },
+  sshListKeys: {
+    channel: PRELOAD_IPC_CHANNELS.sshListKeys,
+    input: "EmptyObject",
+    output: "SshListKeysOutput",
+  },
+  sshGenerateKey: {
+    channel: PRELOAD_IPC_CHANNELS.sshGenerateKey,
+    input: "SshGenerateKeyInput",
+    output: "SshGenerateKeyOutput",
+  },
+  cloneDiscardLocalChanges: {
+    channel: PRELOAD_IPC_CHANNELS.cloneDiscardLocalChanges,
+    input: "CloneProjectIdInput",
+    output: "CloneDiscardOutput",
+  },
+  cloneRevealInFinder: {
+    channel: PRELOAD_IPC_CHANNELS.cloneRevealInFinder,
+    input: "CloneProjectIdInput",
+    output: "EmptyObject",
+  },
+  cloneOpenInTerminal: {
+    channel: PRELOAD_IPC_CHANNELS.cloneOpenInTerminal,
+    input: "CloneProjectIdInput",
+    output: "EmptyObject",
+  },
+  cloneSetCapOverride: {
+    channel: PRELOAD_IPC_CHANNELS.cloneSetCapOverride,
+    input: "CloneSetCapOverrideInput",
+    output: "CloneSetCapOverrideOutput",
+  },
   powerAcquire: {
     channel: PRELOAD_IPC_CHANNELS.powerAcquire,
     input: "PowerAssertionAcquireInput",

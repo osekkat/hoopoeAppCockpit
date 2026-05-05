@@ -11,6 +11,7 @@ import {
   INTERNAL_IPC_COMMANDS,
   IpcContractError,
   MOCK_FLYWHEEL_COMMANDS,
+  PRELOAD_CHANNELS_WITHOUT_DIRECT_CONTRACT,
   PRELOAD_IPC_CHANNELS,
   PRELOAD_IPC_CHANNEL_CONTRACTS,
   isAllowedRegistryCommandId,
@@ -18,6 +19,8 @@ import {
   isDaemonSubscribeTopic,
   isInternalIpcCommand,
   isPreloadIpcChannel,
+  preloadChannelRequiresDirectContract,
+  type PreloadIpcChannelKey,
 } from "./ipc-contract.ts";
 import {
   DAEMON_REQUEST_METHODS as GENERATED_DAEMON_REQUEST_METHODS,
@@ -133,6 +136,41 @@ test("power assertion preload contracts pin payload and response type names", ()
   });
   for (const contract of Object.values(PRELOAD_IPC_CHANNEL_CONTRACTS)) {
     expect(isPreloadIpcChannel(contract.channel)).toBe(true);
+  }
+});
+
+test("hp-3zc: every invoke-style preload channel has a direct contract entry", () => {
+  // Coverage gate: any new channel added to PRELOAD_IPC_CHANNELS must either
+  // (a) declare a contract entry here, or (b) opt out via
+  // PRELOAD_CHANNELS_WITHOUT_DIRECT_CONTRACT (which is reserved for the
+  // multiplexers and the subscribe-only watch channel).
+  const missing: PreloadIpcChannelKey[] = [];
+  for (const channelKey of Object.keys(PRELOAD_IPC_CHANNELS) as PreloadIpcChannelKey[]) {
+    if (!preloadChannelRequiresDirectContract(channelKey)) continue;
+    if (!(channelKey in PRELOAD_IPC_CHANNEL_CONTRACTS)) {
+      missing.push(channelKey);
+    }
+  }
+  expect(missing).toEqual([]);
+});
+
+test("hp-3zc: opt-out list only contains multiplexers + watch channel", () => {
+  // The codegen mirrors this set in
+  // packages/schemas/scripts/gen-preload-contract.ts; the two MUST agree or
+  // a future channel can sneak in without a contract entry. Encode the
+  // intent here so a refactor of either side trips the test.
+  expect(new Set(PRELOAD_CHANNELS_WITHOUT_DIRECT_CONTRACT)).toEqual(
+    new Set(["daemonRequest", "daemonSubscribe", "daemonUnsubscribe", "settingsWatch"]),
+  );
+});
+
+test("hp-3zc: every direct contract entry's channel matches its key + lives in PRELOAD_IPC_CHANNELS", () => {
+  for (const [key, contract] of Object.entries(PRELOAD_IPC_CHANNEL_CONTRACTS)) {
+    expect(PRELOAD_IPC_CHANNELS[key as PreloadIpcChannelKey]).toBe(contract.channel);
+    expect(typeof contract.input).toBe("string");
+    expect(contract.input.length).toBeGreaterThan(0);
+    expect(typeof contract.output).toBe("string");
+    expect(contract.output.length).toBeGreaterThan(0);
   }
 });
 

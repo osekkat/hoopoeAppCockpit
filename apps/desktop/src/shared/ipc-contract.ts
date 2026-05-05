@@ -189,6 +189,29 @@ export function isPreloadIpcChannel(value: unknown): value is PreloadIpcChannelV
 
 export type EmptyObject = Record<string, never>;
 
+// ── 3a. Direct preload channel payload types ──────────────────────────────
+//
+// hp-3zc: every invoke-style direct preload channel exposed through
+// `window.hoopoe.<group>.<method>` carries a typed input + output that the
+// main-side IpcRegistry handler is required to validate at the boundary
+// (`apps/desktop/src/main/IpcRegistry.ts:182-194` rejects renderer-facing
+// registrations without `validateInput`/`validateOutput`).
+//
+// The interfaces below are the SOURCE OF TRUTH for the contract type names
+// listed in `PRELOAD_IPC_CHANNEL_CONTRACTS` below. Validators registered by
+// each domain owner (settings/keybindings/approvals/files/ssh/clone) must
+// narrow the untrusted renderer payload to one of these shapes — concrete
+// per-domain wiring lands in the follow-up beads filed alongside this
+// commit (hp-3zc-{settings,keybindings,approvals,files,ssh,clone}).
+//
+// Where a domain already exports a richer type elsewhere
+// (e.g. `SshKeyService.ListedSshKey`, `keybindings/types.KeybindingRule`),
+// the per-domain follow-up either makes that file re-import from here OR
+// keeps its own type and structurally satisfies the contract. The contract
+// names here are the boundary; nothing else may cross.
+
+// Power assertion (hp-6gs4 / hp-ey3) ----------------------------------------
+
 export type PowerAssertionLevel = "display" | "app-suspension" | "system";
 
 export type PowerAssertionMechanism = "powersaveblocker" | "nsprocessinfo" | "caffeinate";
@@ -224,7 +247,282 @@ export interface PowerAssertionSnapshot {
   readonly acquiredAt: string | null;
 }
 
+// Settings (settingsGet / settingsSet) -------------------------------------
+
+export type SettingsScope = "user" | "project" | "merged";
+export type SettingsTier = "user" | "project";
+
+export interface SettingsGetInput {
+  readonly scope?: SettingsScope;
+}
+
+/** Tier-resolved settings tree. Keys/values are intentionally open-ended at
+ *  the boundary; the renderer narrows with `HoopoeSettings` from
+ *  `apps/desktop/src/main/SettingsBridge.ts`. */
+export type SettingsGetOutput = Readonly<Record<string, unknown>>;
+
+export interface SettingsSetInput {
+  readonly tier: SettingsTier;
+  readonly key: string;
+  readonly value: unknown;
+}
+
+export interface SettingsSetOutput {
+  readonly ok: boolean;
+}
+
+// Keybindings (keybindingsCompile / keybindingsDispatch) -------------------
+
+export interface KeybindingsCompileInput {
+  /** Unparsed rule list as authored by the user. The compile handler
+   *  delegates to `apps/desktop/src/vendored/t3code/keybindings/parser.ts`
+   *  which narrows + validates each rule. */
+  readonly rules: ReadonlyArray<unknown>;
+}
+
+export interface KeybindingsCompileError {
+  readonly ruleIndex: number;
+  readonly code: string;
+  readonly message: string;
+}
+
+export interface KeybindingsCompileOutput {
+  readonly resolved: ReadonlyArray<unknown>;
+  readonly errors: ReadonlyArray<KeybindingsCompileError>;
+}
+
+export interface KeybindingsDispatchInput {
+  readonly key: string;
+  readonly modifiers?: ReadonlyArray<string>;
+  readonly contextKeys?: ReadonlyArray<string>;
+}
+
+export interface KeybindingsDispatchOutput {
+  readonly handled: boolean;
+  readonly commandId?: string;
+  readonly error?: { readonly code: string; readonly message: string };
+}
+
+// Approvals (approvalsList / approvalsApprove / approvalsDeny / approvalsExtend) -
+
+export interface ApprovalsListInput {
+  readonly projectId: string;
+}
+
+export type ApprovalStatus = "pending" | "approved" | "denied" | "expired";
+
+export interface ApprovalSummary {
+  readonly approvalId: string;
+  readonly projectId: string;
+  readonly status: ApprovalStatus;
+  readonly createdAt: string;
+  readonly expiresAt?: string;
+  readonly note?: string;
+}
+
+export interface ApprovalsListOutput {
+  readonly items: ReadonlyArray<ApprovalSummary>;
+}
+
+export interface ApprovalsDecisionInput {
+  readonly projectId: string;
+  readonly approvalId: string;
+  readonly note?: string;
+}
+
+export type ApprovalsDecisionOutput = ApprovalSummary;
+
+export interface ApprovalsExtendInput extends ApprovalsDecisionInput {
+  /** Bounded by the daemon RPC contract (`approvals.extend`: 60–86400). */
+  readonly additionalSeconds: number;
+}
+
+// Files (filesOpenExternal / filesRevealInFinder / filesRipgrep) -----------
+
+export interface FilesOpenExternalInput {
+  readonly url: string;
+}
+
+export interface FilesRevealInFinderInput {
+  readonly path: string;
+}
+
+export interface FilesRipgrepInput {
+  readonly projectId: string;
+  readonly query: string;
+  readonly globs?: ReadonlyArray<string>;
+  readonly caseSensitive?: boolean;
+  readonly maxMatches?: number;
+}
+
+export interface FilesRipgrepHit {
+  readonly path: string;
+  readonly line: number;
+  readonly column?: number;
+  readonly preview: string;
+}
+
+export interface FilesRipgrepOutput {
+  readonly hits: ReadonlyArray<FilesRipgrepHit>;
+  readonly truncated: boolean;
+}
+
+// SSH (sshListKeys / sshGenerateKey) ---------------------------------------
+//
+// hp-pl8h: the renderer NEVER supplies a file path or comment string
+// verbatim — main derives both from the runId so a malicious renderer
+// cannot write outside `~/.ssh/` or inject ssh-keygen flags. The contract
+// reflects that: input is `runId` + optional comment, NOT a free-form
+// path/argv.
+
+export type SshKeyAlgorithm = "ed25519" | "rsa" | "ecdsa" | "dsa";
+
+export interface SshKeyDescriptor {
+  readonly name: string;
+  readonly path: string;
+  readonly algorithm: SshKeyAlgorithm;
+  readonly fingerprint: string;
+}
+
+export interface SshListKeysOutput {
+  readonly keys: ReadonlyArray<SshKeyDescriptor>;
+}
+
+export interface SshGenerateKeyInput {
+  readonly runId: string;
+  readonly comment?: string;
+}
+
+export interface SshGenerateKeyOutput {
+  readonly key: SshKeyDescriptor;
+}
+
+// Clone (cloneDiscardLocalChanges / cloneRevealInFinder / cloneOpenInTerminal /
+//        cloneSetCapOverride) -------------------------------------------------
+//
+// hp-58wp/hp-5bhy: the renderer carries ONLY the projectId; main resolves
+// the local-clone path from the project registry. Audit fires on every
+// invocation regardless of outcome (Guardrail 10).
+
+export interface CloneProjectIdInput {
+  readonly projectId: string;
+}
+
+export interface CloneCapsOverride {
+  readonly softCapBytes: number;
+  readonly hardCapBytes: number;
+}
+
+export interface CloneSetCapOverrideInput {
+  readonly projectId: string;
+  /** `null` clears the per-project override and falls back to the global
+   *  cap config. */
+  readonly capsOverride: CloneCapsOverride | null;
+}
+
+export interface CloneSetCapOverrideOutput {
+  readonly projectId: string;
+  readonly capsOverride: CloneCapsOverride | null;
+}
+
+export type CloneDiscardOutcome = "refused-readonly" | "discarded";
+
+export interface CloneDiscardOutput {
+  readonly projectId: string;
+  /** Guardrail 3 makes "refused-readonly" the steady-state outcome — the
+   *  desktop local clone is a sync-driven mirror, not a write target. */
+  readonly outcome: CloneDiscardOutcome;
+  readonly auditId: string;
+}
+
+// ── Channel ↔ contract registry ───────────────────────────────────────────
+
 export const PRELOAD_IPC_CHANNEL_CONTRACTS = {
+  settingsGet: {
+    channel: PRELOAD_IPC_CHANNELS.settingsGet,
+    input: "SettingsGetInput",
+    output: "SettingsGetOutput",
+  },
+  settingsSet: {
+    channel: PRELOAD_IPC_CHANNELS.settingsSet,
+    input: "SettingsSetInput",
+    output: "SettingsSetOutput",
+  },
+  keybindingsCompile: {
+    channel: PRELOAD_IPC_CHANNELS.keybindingsCompile,
+    input: "KeybindingsCompileInput",
+    output: "KeybindingsCompileOutput",
+  },
+  keybindingsDispatch: {
+    channel: PRELOAD_IPC_CHANNELS.keybindingsDispatch,
+    input: "KeybindingsDispatchInput",
+    output: "KeybindingsDispatchOutput",
+  },
+  approvalsList: {
+    channel: PRELOAD_IPC_CHANNELS.approvalsList,
+    input: "ApprovalsListInput",
+    output: "ApprovalsListOutput",
+  },
+  approvalsApprove: {
+    channel: PRELOAD_IPC_CHANNELS.approvalsApprove,
+    input: "ApprovalsDecisionInput",
+    output: "ApprovalsDecisionOutput",
+  },
+  approvalsDeny: {
+    channel: PRELOAD_IPC_CHANNELS.approvalsDeny,
+    input: "ApprovalsDecisionInput",
+    output: "ApprovalsDecisionOutput",
+  },
+  approvalsExtend: {
+    channel: PRELOAD_IPC_CHANNELS.approvalsExtend,
+    input: "ApprovalsExtendInput",
+    output: "ApprovalsDecisionOutput",
+  },
+  filesOpenExternal: {
+    channel: PRELOAD_IPC_CHANNELS.filesOpenExternal,
+    input: "FilesOpenExternalInput",
+    output: "EmptyObject",
+  },
+  filesRevealInFinder: {
+    channel: PRELOAD_IPC_CHANNELS.filesRevealInFinder,
+    input: "FilesRevealInFinderInput",
+    output: "EmptyObject",
+  },
+  filesRipgrep: {
+    channel: PRELOAD_IPC_CHANNELS.filesRipgrep,
+    input: "FilesRipgrepInput",
+    output: "FilesRipgrepOutput",
+  },
+  sshListKeys: {
+    channel: PRELOAD_IPC_CHANNELS.sshListKeys,
+    input: "EmptyObject",
+    output: "SshListKeysOutput",
+  },
+  sshGenerateKey: {
+    channel: PRELOAD_IPC_CHANNELS.sshGenerateKey,
+    input: "SshGenerateKeyInput",
+    output: "SshGenerateKeyOutput",
+  },
+  cloneDiscardLocalChanges: {
+    channel: PRELOAD_IPC_CHANNELS.cloneDiscardLocalChanges,
+    input: "CloneProjectIdInput",
+    output: "CloneDiscardOutput",
+  },
+  cloneRevealInFinder: {
+    channel: PRELOAD_IPC_CHANNELS.cloneRevealInFinder,
+    input: "CloneProjectIdInput",
+    output: "EmptyObject",
+  },
+  cloneOpenInTerminal: {
+    channel: PRELOAD_IPC_CHANNELS.cloneOpenInTerminal,
+    input: "CloneProjectIdInput",
+    output: "EmptyObject",
+  },
+  cloneSetCapOverride: {
+    channel: PRELOAD_IPC_CHANNELS.cloneSetCapOverride,
+    input: "CloneSetCapOverrideInput",
+    output: "CloneSetCapOverrideOutput",
+  },
   powerAcquire: {
     channel: PRELOAD_IPC_CHANNELS.powerAcquire,
     input: "PowerAssertionAcquireInput",
@@ -248,6 +546,28 @@ export const PRELOAD_IPC_CHANNEL_CONTRACTS = {
     readonly output: string;
   }
 >;
+
+/** Channels that are excluded from the direct contract section because they
+ *  are not invoke-style request/response. The codegen + parity tests use
+ *  this set to verify completeness of `PRELOAD_IPC_CHANNEL_CONTRACTS`. */
+export const PRELOAD_CHANNELS_WITHOUT_DIRECT_CONTRACT = [
+  "daemonRequest",
+  "daemonSubscribe",
+  "daemonUnsubscribe",
+  "settingsWatch",
+] as const satisfies ReadonlyArray<PreloadIpcChannelKey>;
+
+const PRELOAD_CHANNELS_WITHOUT_DIRECT_CONTRACT_SET: ReadonlySet<string> = new Set(
+  PRELOAD_CHANNELS_WITHOUT_DIRECT_CONTRACT,
+);
+
+/** True when the given channel key MUST appear in
+ *  `PRELOAD_IPC_CHANNEL_CONTRACTS`. */
+export function preloadChannelRequiresDirectContract(
+  channelKey: PreloadIpcChannelKey,
+): boolean {
+  return !PRELOAD_CHANNELS_WITHOUT_DIRECT_CONTRACT_SET.has(channelKey);
+}
 
 // ── 4. IpcContract error type ─────────────────────────────────────────────
 //

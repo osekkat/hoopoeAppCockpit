@@ -472,12 +472,98 @@ preloadChannels:
 
 # ── 3a. Typed direct preload channel contracts ────────────────────────────
 #
-# These entries pin direct renderer → preload → main channel payload/response
-# type names for channels whose payloads are already validated by main-side
-# IpcRegistry handlers. hp-3zc will expand this section to cover every direct
-# preload channel; hp-ey3 starts with the security-sensitive power assertion
-# surface so preload-api.yaml cannot drift from the manual/generated contract.
+# Every entry in `preloadChannels` that is INVOKE-style (renderer asks main
+# something, awaits a response) MUST also appear here with declared input and
+# output type names. The names point at TypeScript interfaces in
+# `apps/desktop/src/shared/ipc-contract.ts`; main-side IpcRegistry handlers
+# are required to register `validateInput`/`validateOutput` validators that
+# narrow untrusted renderer payloads to those exact shapes (see
+# `apps/desktop/src/main/IpcRegistry.ts:182-194` — registration without both
+# validators throws).
+#
+# Channels intentionally absent from this section (the codegen gate
+# in `gen-preload-contract.ts:assertValidPreloadContracts` enumerates them):
+#   - daemonRequest / daemonSubscribe / daemonUnsubscribe — multiplexers; payload
+#     types live in §1 daemonRequestMethods + §2 daemonSubscribeTopics.
+#   - settingsWatch — subscribe-style (main pushes events to renderer); not
+#     request/response.
+#
+# Adding a new direct preload channel requires extending this section, or
+# the codegen run + parity test fail and the build is blocked.
+#
+# History: hp-ey3 introduced the section for the three power assertion
+# channels; hp-3zc widened it to cover settings/keybindings/approvals/files/
+# ssh/clone, lifted the gate from "powerAcquire-shaped" to "covers every
+# invoke-style channel", and pinned matching TS interfaces in ipc-contract.ts.
 preloadChannelContracts:
+  settingsGet:
+    channel: settingsGet
+    input: SettingsGetInput
+    output: SettingsGetOutput
+  settingsSet:
+    channel: settingsSet
+    input: SettingsSetInput
+    output: SettingsSetOutput
+  keybindingsCompile:
+    channel: keybindingsCompile
+    input: KeybindingsCompileInput
+    output: KeybindingsCompileOutput
+  keybindingsDispatch:
+    channel: keybindingsDispatch
+    input: KeybindingsDispatchInput
+    output: KeybindingsDispatchOutput
+  approvalsList:
+    channel: approvalsList
+    input: ApprovalsListInput
+    output: ApprovalsListOutput
+  approvalsApprove:
+    channel: approvalsApprove
+    input: ApprovalsDecisionInput
+    output: ApprovalsDecisionOutput
+  approvalsDeny:
+    channel: approvalsDeny
+    input: ApprovalsDecisionInput
+    output: ApprovalsDecisionOutput
+  approvalsExtend:
+    channel: approvalsExtend
+    input: ApprovalsExtendInput
+    output: ApprovalsDecisionOutput
+  filesOpenExternal:
+    channel: filesOpenExternal
+    input: FilesOpenExternalInput
+    output: EmptyObject
+  filesRevealInFinder:
+    channel: filesRevealInFinder
+    input: FilesRevealInFinderInput
+    output: EmptyObject
+  filesRipgrep:
+    channel: filesRipgrep
+    input: FilesRipgrepInput
+    output: FilesRipgrepOutput
+  sshListKeys:
+    channel: sshListKeys
+    input: EmptyObject
+    output: SshListKeysOutput
+  sshGenerateKey:
+    channel: sshGenerateKey
+    input: SshGenerateKeyInput
+    output: SshGenerateKeyOutput
+  cloneDiscardLocalChanges:
+    channel: cloneDiscardLocalChanges
+    input: CloneProjectIdInput
+    output: CloneDiscardOutput
+  cloneRevealInFinder:
+    channel: cloneRevealInFinder
+    input: CloneProjectIdInput
+    output: EmptyObject
+  cloneOpenInTerminal:
+    channel: cloneOpenInTerminal
+    input: CloneProjectIdInput
+    output: EmptyObject
+  cloneSetCapOverride:
+    channel: cloneSetCapOverride
+    input: CloneSetCapOverrideInput
+    output: CloneSetCapOverrideOutput
   powerAcquire:
     channel: powerAcquire
     input: PowerAssertionAcquireInput
