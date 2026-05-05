@@ -324,25 +324,40 @@ Phase 13 — Provider automation and production polish
 
 ## CI/CD Pipeline
 
-CI does not exist yet — the workflows will be lifted from t3code in Phase 1 (plan.md §11, Appendix B). When you add CI:
+CI exists. Three workflows live in `.github/workflows/`:
 
-- Strip Linux/Windows from the matrix (Mac-only for v1; keep code paths under flags).
-- Update secrets (CSC_LINK, APPLE_API_KEY, GH_TOKEN).
-- Rename workflows to Hoopoe.
-- Add the provider-SDK-import lint rule (Guardrail 11) as a hard CI gate.
-- Capability tests assert `/v1/capabilities` (plan.md §2.8), not just parser success.
+- **`ci.yml`** — PR-blocking gate on push to `master` and pull requests to `master`. Two jobs on `ubuntu-latest`:
+  - `lint-typecheck-test`: `bun install --frozen-lockfile`, then `bun run lint`, `bun run typecheck`, `bun run test`.
+  - `e2e` (depends on the lint job): installs Playwright + system deps, then `bun run e2e` (smoke + hp-j30 suites). Uploads HTML reports as artifacts on every run.
+- **`release.yml`** — tag-triggered (`v*.*.*`) + `workflow_dispatch` (channel: stable | nightly). macOS-only (`macos-14`). Three sequential jobs: `preflight` (lint + typecheck + test + version metadata) → `build` (matrix: macOS arm64 + macOS x64; signed/notarized DMG via `bun scripts/build-desktop-artifact.ts`; required secrets: `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_API_KEY`, `APPLE_API_KEY_ID`, `APPLE_API_ISSUER`) → `release` (publishes the GitHub Release with DMGs + blockmaps + electron-updater manifests, using `GH_TOKEN`). Originally lifted from t3code (commit `460d9c3`) and adapted for Hoopoe's Mac-only v1.
+- **`schemas-codegen-drift.yml`** — focused codegen-drift gate, path-filtered to `packages/schemas/**` and `apps/desktop/src/shared/ipc-contract.gen.ts`. Validates TS codegen, Go codegen, and the preload-API contract drift; runs schemas typecheck + tests; vets and builds the generated Go module. Surfaces `*.drift` artifacts on failure.
+
+The provider-SDK-import lint rule (Guardrail 11) **is** a hard CI gate today — `bun run lint` chains `lint:provider-sdks`, `lint:renderer-isolation`, `lint:codex-shape-scrub`, `lint:no-raw-logging`, `lint:redact-drift` before `oxlint`, and `bun run test` runs the corresponding `*.test.ts` for each lint script before `turbo run test`. All five gates run in `ci.yml` and `release.yml`'s preflight.
+
+The daemon's `go vet ./...` and `go test ./...` reach CI through Turbo: `apps/daemon/package.json` exposes them as `typecheck` and `test`, and `bun run typecheck` / `bun run test` fan out via `turbo run typecheck` / `turbo run test`.
+
+Open follow-ups (per plan.md §11, Appendix B):
+
+- `golangci-lint run` is documented under "Verification After Changes" but is not wired into any workflow yet. Add it to `ci.yml` (or the daemon's Turbo `lint` task) so PRs fail on the same lint rules a developer runs locally.
+- Capability tests need to assert `/v1/capabilities` (plan.md §2.8), not just parser success — partial coverage today; expand as Phase 3 ACFS onboarding adapters land.
 
 ---
 
 ## Release Process
 
-Release infrastructure is forward-looking; it ships in Phase 1 (DMG signing/notarization, auto-update via electron-updater + GitHub Releases) and Phase 2 (Go daemon binary with checksum/signature/provenance attestation). Until then, treat any "release" command as TBD.
+The desktop release surface has landed (Phase 1). The daemon-binary release surface is still forward-looking (Phase 2).
 
-When the release surface lands (per plan.md §11):
+**Shipped — desktop (`release.yml`):**
 
-- **Desktop:** macOS signed/notarized DMG (arm64 + x64). `electron-updater` against GitHub Releases with `latest` / `nightly` channels. `--publish never` on builder; manual upload in CI.
-- **Daemon:** single static Go binary, signed release URL, checksum + signature + provenance attestation verified at install. SBOM + minimum compatible desktop/API version recorded in the release manifest.
-- **Tool version pinning:** ACFS/tool versions recorded; warn on unsupported versions; user controls upgrade.
+- macOS signed/notarized DMG (`arm64` + `x64`) built by `bun scripts/build-desktop-artifact.ts`.
+- `electron-updater` against GitHub Releases. Stable channel triggers on `v*.*.*` tag pushes; the `nightly` channel is reachable via `workflow_dispatch` and produces `0.0.0-nightly.<YYYYMMDD>.<run>` versions marked as prereleases.
+- Required secrets: `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_API_KEY`, `APPLE_API_KEY_ID`, `APPLE_API_ISSUER`, and a `GH_TOKEN` for publishing. The build job hard-fails if signing/notarization secrets are missing.
+- Publishes `*.dmg`, `*.zip`, `*.blockmap`, and the `*-mac.yml` electron-updater manifests; `release-publish/*-mac.yml` is suffixed with the architecture for the x64 variant so both feeds coexist.
+
+**Forward-looking — daemon (per plan.md §11):**
+
+- Single static Go binary, signed release URL, checksum + signature + provenance attestation verified at install. SBOM + minimum compatible desktop/API version recorded in the release manifest.
+- Tool version pinning: ACFS/tool versions recorded; warn on unsupported versions; user controls upgrade.
 
 ---
 
