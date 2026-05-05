@@ -3,7 +3,7 @@
 // gen-preload-contract.ts — regenerate the renderer ↔ preload ↔ main IPC
 // contract TS module from `packages/schemas/preload-api.yaml`.
 //
-// Output: `apps/desktop/src/shared/ipc-contract.gen.ts`
+// Default output: `apps/desktop/src/shared/ipc-contract.gen.ts`
 //
 // The existing manual `apps/desktop/src/shared/ipc-contract.ts` is the
 // hand-rolled hp-n5za hardening pass. When the apps/desktop owner switches
@@ -15,7 +15,7 @@
 // Run locally: `bun run --cwd packages/schemas generate:preload`
 // CI gate:     `bun run --cwd packages/schemas validate:preload`
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -23,7 +23,12 @@ const here = dirname(fileURLToPath(import.meta.url));
 const pkgRoot = resolve(here, "..");
 const repoRoot = resolve(pkgRoot, "..", "..");
 const yamlPath = resolve(pkgRoot, "preload-api.yaml");
-const outPath = resolve(repoRoot, "apps/desktop/src/shared/ipc-contract.gen.ts");
+const defaultOutPath = resolve(repoRoot, "apps/desktop/src/shared/ipc-contract.gen.ts");
+
+type GeneratorOptions = {
+  outPath: string | null;
+  stdout: boolean;
+};
 
 interface PreloadApi {
   schemaVersion: number;
@@ -350,12 +355,79 @@ export function isInternalIpcCommand(value: unknown): value is InternalIpcComman
 `;
 }
 
+function usage(): string {
+  return [
+    "Usage: bun scripts/gen-preload-contract.ts [--out <path> | --stdout]",
+    "",
+    "Options:",
+    "  --out <path>  Write generated TypeScript to the given path.",
+    "  --stdout      Write generated TypeScript to stdout without touching files.",
+    "  -h, --help    Print this help.",
+  ].join("\n");
+}
+
+function parseArgs(args: readonly string[]): GeneratorOptions {
+  const options: GeneratorOptions = {
+    outPath: defaultOutPath,
+    stdout: false,
+  };
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index] ?? "";
+    if (arg === "--help" || arg === "-h") {
+      process.stdout.write(`${usage()}\n`);
+      process.exit(0);
+    }
+    if (arg === "--stdout") {
+      if (options.outPath !== defaultOutPath) {
+        throw new Error("--stdout cannot be combined with --out");
+      }
+      options.stdout = true;
+      options.outPath = null;
+      continue;
+    }
+    if (arg === "--out") {
+      if (options.stdout) {
+        throw new Error("--out cannot be combined with --stdout");
+      }
+      const next = args[index + 1];
+      if (next === undefined || next.startsWith("--")) {
+        throw new Error("--out requires a path argument");
+      }
+      options.outPath = resolve(process.cwd(), next);
+      index += 1;
+      continue;
+    }
+    throw new Error(`Unknown argument: ${arg}`);
+  }
+
+  return options;
+}
+
+function writeGeneratedOutput(ts: string, options: GeneratorOptions): string {
+  if (options.stdout) {
+    process.stdout.write(ts);
+    return "stdout";
+  }
+
+  if (options.outPath === null) {
+    throw new Error("Internal error: no output path configured");
+  }
+
+  mkdirSync(dirname(options.outPath), { recursive: true });
+  writeFileSync(options.outPath, ts);
+  return options.outPath;
+}
+
 const yamlText = readFileSync(yamlPath, "utf8");
 const api = parseYaml(yamlText);
 assertValidPreloadContracts(api);
 const ts = generateTs(api);
-writeFileSync(outPath, ts);
+const options = parseArgs(process.argv.slice(2));
+const output = writeGeneratedOutput(ts, options);
 
-process.stdout.write(
-  `[gen-preload-contract] OK — wrote ${outPath} (${Object.keys(api.daemonRequestMethods).length} methods, ${Object.keys(api.daemonSubscribeTopics).length} topics, ${Object.keys(api.preloadChannels).length} channels, ${Object.keys(api.mockFlywheelCommands).length + Object.keys(api.internalCommands).length} internal commands)\n`,
-);
+if (!options.stdout) {
+  process.stdout.write(
+    `[gen-preload-contract] OK — wrote ${output} (${Object.keys(api.daemonRequestMethods).length} methods, ${Object.keys(api.daemonSubscribeTopics).length} topics, ${Object.keys(api.preloadChannels).length} channels, ${Object.keys(api.mockFlywheelCommands).length + Object.keys(api.internalCommands).length} internal commands)\n`,
+  );
+}

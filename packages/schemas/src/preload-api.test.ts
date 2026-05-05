@@ -6,13 +6,25 @@
 // vs generated-TS mismatch separately.
 
 import { expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { spawnSync } from "node:child_process";
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const pkgRoot = resolve(here, "..");
 const yamlPath = resolve(pkgRoot, "preload-api.yaml");
+const generatorPath = resolve(pkgRoot, "scripts", "gen-preload-contract.ts");
+const validatorPath = resolve(pkgRoot, "scripts", "validate-preload-codegen.ts");
 const generatedPath = resolve(
   pkgRoot,
   "..",
@@ -26,6 +38,22 @@ const generatedPath = resolve(
 
 const yamlText = readFileSync(yamlPath, "utf8");
 const generatedText = readFileSync(generatedPath, "utf8");
+
+function generatedSnapshot(): { text: string; mtimeMs: number } {
+  return {
+    text: readFileSync(generatedPath, "utf8"),
+    mtimeMs: statSync(generatedPath).mtimeMs,
+  };
+}
+
+function runBunScript(args: string[], env?: NodeJS.ProcessEnv) {
+  return spawnSync("bun", args, {
+    cwd: pkgRoot,
+    stdio: ["ignore", "pipe", "pipe"],
+    encoding: "utf8",
+    env: env === undefined ? process.env : env,
+  });
+}
 
 test("preload-api.yaml header documents threat model + parity gate", () => {
   expect(yamlText).toContain("preload-api.yaml");
@@ -100,4 +128,58 @@ test("generated TS carries the DO-NOT-EDIT marker", () => {
   expect(generatedText).toContain("GENERATED — DO NOT EDIT");
   expect(generatedText).toContain("packages/schemas/preload-api.yaml");
   expect(generatedText).toContain("packages/schemas/scripts/gen-preload-contract.ts");
+});
+
+test("gen-preload-contract --out writes only the requested file", () => {
+  const tmpDir = mkdtempSync(join(tmpdir(), "hoopoe-preload-gen-test-"));
+  try {
+    const before = generatedSnapshot();
+    const outPath = join(tmpDir, "ipc-contract.gen.ts");
+    const result = runBunScript([generatorPath, "--out", outPath]);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain(`[gen-preload-contract] OK — wrote ${outPath}`);
+    expect(readFileSync(outPath, "utf8")).toBe(before.text);
+    expect(generatedSnapshot()).toEqual(before);
+  } finally {
+    rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("validate-preload-codegen is read-only on success", () => {
+  const before = generatedSnapshot();
+  const result = runBunScript([validatorPath]);
+
+  expect(result.status).toBe(0);
+  expect(result.stdout).toContain("[validate-preload-codegen] OK");
+  expect(generatedSnapshot()).toEqual(before);
+  expect(existsSync(`${generatedPath}.drift`)).toBe(false);
+});
+
+test("validate-preload-codegen is read-only when the generator fails", () => {
+  const tmpDir = mkdtempSync(join(tmpdir(), "hoopoe-preload-failing-bun-"));
+  try {
+    const fakeBun = join(tmpDir, "bun");
+    writeFileSync(fakeBun, "#!/bin/sh\necho fake generator failure >&2\nexit 42\n");
+    chmodSync(fakeBun, 0o755);
+
+    const before = generatedSnapshot();
+    const result = spawnSync(process.execPath, [validatorPath], {
+      cwd: pkgRoot,
+      stdio: ["ignore", "pipe", "pipe"],
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: `${tmpDir}${delimiter}${process.env.PATH ?? ""}`,
+      },
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("[validate-preload-codegen] generator failed");
+    expect(result.stderr).toContain("fake generator failure");
+    expect(generatedSnapshot()).toEqual(before);
+    expect(existsSync(`${generatedPath}.drift`)).toBe(false);
+  } finally {
+    rmSync(tmpDir, { recursive: true, force: true });
+  }
 });

@@ -12,12 +12,10 @@
 
 import { spawnSync } from "node:child_process";
 import {
-  copyFileSync,
   existsSync,
   mkdtempSync,
   readFileSync,
   rmSync,
-  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -154,22 +152,14 @@ if (!existsSync(manual)) {
 }
 
 const tmpDir = mkdtempSync(join(tmpdir(), "hoopoe-preload-validate-"));
-// The generator writes to a fixed absolute path under apps/desktop. To
-// validate without touching the committed file, we save its current
-// contents, run the generator (which overwrites), capture the fresh
-// output, and restore the original from backup.
-const backup = join(tmpDir, "ipc-contract.gen.ts.backup");
 const freshGenerated = join(tmpDir, "ipc-contract.gen.ts");
-copyFileSync(committed, backup);
 
 try {
-  const result = spawnSync("bun", [generator], {
+  const result = spawnSync("bun", [generator, "--out", freshGenerated], {
     stdio: ["ignore", "pipe", "pipe"],
     encoding: "utf8",
   });
   if (result.status !== 0) {
-    // Restore backup before exiting on generator error.
-    copyFileSync(backup, committed);
     process.stderr.write(
       `[validate-preload-codegen] generator failed (exit ${result.status})\n` +
         `stdout:\n${result.stdout}\nstderr:\n${result.stderr}\n`,
@@ -177,11 +167,8 @@ try {
     process.exit(1);
   }
 
-  const want = readFileSync(backup, "utf8");
-  const got = readFileSync(committed, "utf8");
-  writeFileSync(freshGenerated, got);
-  // Restore committed file no matter what.
-  copyFileSync(backup, committed);
+  const want = readFileSync(committed, "utf8");
+  const got = readFileSync(freshGenerated, "utf8");
 
   const manualContract = await importContract(manual, "apps/desktop/src/shared/ipc-contract.ts");
   const generatedContract = await importContract(
@@ -199,11 +186,9 @@ try {
 
   const messages: string[] = [];
   if (want !== got) {
-    const driftPath = `${committed}.drift`;
-    writeFileSync(driftPath, got);
     messages.push(
       "[validate-preload-codegen] DRIFT — preload-api.yaml and ipc-contract.gen.ts disagree.",
-      `Fresh codegen written to ${driftPath} for inspection.`,
+      "No working-tree files were modified by this validation check.",
       "Fix: run `bun run --cwd packages/schemas generate:preload` and commit the result.",
     );
   }
