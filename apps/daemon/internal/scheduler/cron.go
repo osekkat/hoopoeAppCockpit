@@ -13,6 +13,17 @@ type cronExpr struct {
 	dayOfMonth cronField
 	month      cronField
 	dayOfWeek  cronField
+	// dayOfMonthRestricted / dayOfWeekRestricted track whether the raw
+	// cron token was anything other than "*". POSIX/Vixie cron specifies
+	// that when BOTH day fields are restricted, the expression matches a
+	// day satisfying EITHER field (UNION), not both (intersection). The
+	// asterisk-wildcard form is treated as "no day-side restriction" so
+	// '0 12 * * 1' (every Monday at 12:00) and '0 12 15 * *' (15th at
+	// 12:00) keep their natural single-axis semantics. Step (`*/N`) and
+	// explicit ranges/lists count as restricted, matching Vixie cron's
+	// asterisk check on the source token (not on map fullness).
+	dayOfMonthRestricted bool
+	dayOfWeekRestricted  bool
 }
 
 type cronField struct {
@@ -49,7 +60,15 @@ func parseCron(expr string) (cronExpr, error) {
 	if err := validateDayMonthCombination(dom, month); err != nil {
 		return cronExpr{}, fmt.Errorf("%w: %v", ErrInvalidDefinition, err)
 	}
-	return cronExpr{minute: minute, hour: hour, dayOfMonth: dom, month: month, dayOfWeek: dow}, nil
+	return cronExpr{
+		minute:               minute,
+		hour:                 hour,
+		dayOfMonth:           dom,
+		month:                month,
+		dayOfWeek:            dow,
+		dayOfMonthRestricted: strings.TrimSpace(parts[2]) != "*",
+		dayOfWeekRestricted:  strings.TrimSpace(parts[4]) != "*",
+	}, nil
 }
 
 // validateDayMonthCombination rejects expressions like '* * 31 2 *'
@@ -150,9 +169,26 @@ func (c cronExpr) Next(after time.Time) time.Time {
 }
 
 func (c cronExpr) matches(t time.Time) bool {
-	return c.minute.allowed[t.Minute()] &&
-		c.hour.allowed[t.Hour()] &&
-		c.dayOfMonth.allowed[t.Day()] &&
-		c.month.allowed[int(t.Month())] &&
-		c.dayOfWeek.allowed[int(t.Weekday())]
+	if !c.minute.allowed[t.Minute()] {
+		return false
+	}
+	if !c.hour.allowed[t.Hour()] {
+		return false
+	}
+	if !c.month.allowed[int(t.Month())] {
+		return false
+	}
+	domMatch := c.dayOfMonth.allowed[t.Day()]
+	dowMatch := c.dayOfWeek.allowed[int(t.Weekday())]
+	// POSIX/Vixie semantics: when both day fields are restricted (raw
+	// token != "*"), the expression matches a day satisfying EITHER
+	// field. Otherwise the unrestricted side is trivially true and the
+	// match degenerates to the single restricted axis. Without this
+	// branch '0 12 15 * 1' silently meant 'the 15th AND a Monday'
+	// (~once a year) instead of 'every Monday OR the 15th' (~every
+	// 4 days).
+	if c.dayOfMonthRestricted && c.dayOfWeekRestricted {
+		return domMatch || dowMatch
+	}
+	return domMatch && dowMatch
 }

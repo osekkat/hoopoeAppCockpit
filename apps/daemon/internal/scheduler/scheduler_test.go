@@ -1031,6 +1031,90 @@ func TestParseCronRejectsImpossibleDayMonthCombinations(t *testing.T) {
 	_ = start
 }
 
+// TestCronDayOfMonthDayOfWeekUnionSemantics guards hp-bpyg: when both
+// day-of-month and day-of-week fields are restricted (raw token != "*"),
+// POSIX/Vixie cron specifies the expression matches a day satisfying
+// EITHER field. Before the fix, '0 12 15 * 1' silently meant '15th
+// AND a Monday' (~once a year) instead of 'every Monday OR the 15th'
+// (~every 4 days).
+func TestCronDayOfMonthDayOfWeekUnionSemantics(t *testing.T) {
+	t.Parallel()
+	// 2026-05 calendar: 15th = Friday; Mondays = 4, 11, 18, 25.
+	// '0 12 15 * 1' should fire on each Monday (4, 11, 18, 25) AND on
+	// the 15th (a Friday). Eight matches total in May 2026.
+	c, err := parseCron("0 12 15 * 1")
+	if err != nil {
+		t.Fatalf("parseCron(0 12 15 * 1): %v", err)
+	}
+	mayStart := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	mayEnd := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	hits := []time.Time{}
+	cursor := mayStart.Add(-time.Minute)
+	for {
+		next := c.Next(cursor)
+		if next.IsZero() || !next.Before(mayEnd) {
+			break
+		}
+		hits = append(hits, next)
+		cursor = next
+	}
+	wantDays := []int{4, 11, 15, 18, 25}
+	if len(hits) != len(wantDays) {
+		t.Fatalf("hits = %d, want %d (Mondays + the 15th in May 2026)", len(hits), len(wantDays))
+	}
+	for i, hit := range hits {
+		if hit.Day() != wantDays[i] {
+			t.Errorf("hits[%d].Day() = %d, want %d", i, hit.Day(), wantDays[i])
+		}
+		if hit.Hour() != 12 || hit.Minute() != 0 {
+			t.Errorf("hits[%d] = %s, want 12:00", i, hit.Format(time.RFC3339))
+		}
+	}
+}
+
+// TestCronDayFieldRestrictionAxes covers the three single-axis variants
+// adjacent to hp-bpyg's UNION case so the semantics stay coherent:
+// - both day fields '*': minute-by-minute every day (no day-side restriction).
+// - only DOM restricted: fires only on those days (DOW '*' is trivially true).
+// - only DOW restricted: fires only on those weekdays (DOM '*' is trivially true).
+func TestCronDayFieldRestrictionAxes(t *testing.T) {
+	t.Parallel()
+	day1 := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC) // Friday
+
+	// Only DOM restricted: '0 12 15 * *' fires on the 15th only.
+	domOnly, err := parseCron("0 12 15 * *")
+	if err != nil {
+		t.Fatalf("parseCron domOnly: %v", err)
+	}
+	hit := domOnly.Next(day1)
+	if hit.Day() != 15 || hit.Month() != 5 {
+		t.Errorf("domOnly first hit = %s, want 2026-05-15", hit.Format(time.RFC3339))
+	}
+
+	// Only DOW restricted: '0 12 * * 1' fires every Monday.
+	dowOnly, err := parseCron("0 12 * * 1")
+	if err != nil {
+		t.Fatalf("parseCron dowOnly: %v", err)
+	}
+	hit = dowOnly.Next(day1)
+	if hit.Weekday() != time.Monday {
+		t.Errorf("dowOnly first hit = %s (%s), want a Monday", hit.Format(time.RFC3339), hit.Weekday())
+	}
+	if hit.Day() != 4 {
+		t.Errorf("dowOnly first hit Day = %d, want 4 (first Monday after 2026-05-01)", hit.Day())
+	}
+
+	// Both day fields '*': '0 12 * * *' fires every day at 12:00.
+	allDays, err := parseCron("0 12 * * *")
+	if err != nil {
+		t.Fatalf("parseCron allDays: %v", err)
+	}
+	hit = allDays.Next(day1)
+	if hit.Day() != 1 || hit.Month() != 5 || hit.Hour() != 12 {
+		t.Errorf("allDays first hit = %s, want 2026-05-01T12:00", hit.Format(time.RFC3339))
+	}
+}
+
 // TestRegistryPrunesTerminalRunsBeyondRetention guards hp-dqm8: with
 // TerminalRunRetention set, every CompleteRun must keep the in-memory
 // state.Runs population at the configured cap by evicting the oldest
