@@ -13,7 +13,12 @@ import * as Path from "node:path";
 import Electron from "electron";
 import { spawnBackend, type BackendHandle } from "./main/BackendLifecycle.ts";
 import { createUpdateMachine, type UpdateMachine } from "./main/UpdateMachine.ts";
-import { IpcRegistry } from "./main/IpcRegistry.ts";
+import {
+  IpcRegistry,
+  attachIpcRegistryToElectron,
+  type AttachIpcRegistryHandle,
+  type IpcMainLike,
+} from "./main/IpcRegistry.ts";
 import {
   SettingsBridge,
   defaultUserSettingsPath,
@@ -130,6 +135,10 @@ export interface DesktopBootstrapInput {
   readonly runningUnderArm64Translation?: boolean;
   readonly powerSaveBlocker?: PowerSaveBlockerLike;
   readonly nativeActivity?: NativeActivityBridge;
+  /** hp-vd9: test seam for the Electron `ipcMain` surface. Defaults to
+   *  `electron.ipcMain` in production. Tests inject a stub to assert
+   *  every registered command lands a `ipcMain.handle` binding. */
+  readonly ipcMain?: IpcMainLike;
 }
 
 export interface DesktopBootstrapHandle {
@@ -177,6 +186,14 @@ export async function bootstrapDesktop(
       appendPowerAssertionAuditEvent(defaultSettingsAuditPath(input.homeDir), event),
   });
   registerPowerAssertionIpc(ipc, powerAssertions);
+  // hp-vd9: now that handlers are registered with the IpcRegistry, wire
+  // them through `ipcMain.handle` so renderer `ipcRenderer.invoke()`
+  // calls actually reach the typed dispatch path. Without this step the
+  // registry is just an in-memory map and Electron returns "no handler
+  // registered" for every renderer IPC call.
+  const ipcAttachment: AttachIpcRegistryHandle = attachIpcRegistryToElectron(ipc, {
+    ipcMain: input.ipcMain ?? Electron.ipcMain,
+  });
   const powerSettingsSubscription = settings.subscribe((event) => {
     if (event.changedKeys.includes("desktop.disablePowerAssertions")) {
       powerAssertions.setDisabled(event.resolved.desktop.disablePowerAssertions);
@@ -203,6 +220,10 @@ export async function bootstrapDesktop(
     powerAssertions,
     shutdown: async () => {
       powerSettingsSubscription.unsubscribe();
+      // hp-vd9: detach ipcMain.handle bindings before tearing down the
+      // power assertions so a hot-reload or test re-bootstrap doesn't
+      // leak stale handlers (Electron throws on duplicate handle()).
+      ipcAttachment.detach();
       powerAssertions.shutdown();
       await backend.stop();
     },

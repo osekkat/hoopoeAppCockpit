@@ -295,4 +295,80 @@ export class IpcRegistry {
   size(): number {
     return this.registrations.size;
   }
+
+  /** hp-vd9: snapshot of currently-registered command ids. Used by
+   *  `attachIpcRegistryToElectron` to wire `ipcMain.handle` for each
+   *  command at attach time. New registrations after attach require
+   *  explicit re-attach (the production composition root registers all
+   *  handlers BEFORE bootstrap calls the attacher; tests follow the
+   *  same order). */
+  registeredCommandIds(): readonly string[] {
+    return Array.from(this.registrations.keys());
+  }
+}
+
+/** hp-vd9: minimal Electron `ipcMain` surface the registry needs. The real
+ *  Electron `IpcMain` matches this; tests inject a stub. We deliberately
+ *  do not depend on the full `IpcMain` interface because importing
+ *  `electron` from this file would prevent bun:test from loading it. */
+export interface IpcMainLike {
+  handle(channel: string, listener: (event: unknown, ...args: unknown[]) => Promise<unknown> | unknown): void;
+  removeHandler(channel: string): void;
+}
+
+export interface AttachIpcRegistryOptions {
+  /** Override `electron.ipcMain` for tests. */
+  readonly ipcMain: IpcMainLike;
+  /** Optional dispatch context (e.g. for when-clause gating). */
+  readonly context?: IpcDispatchContext;
+}
+
+export interface AttachIpcRegistryHandle {
+  readonly attachedCommandIds: readonly string[];
+  /** Remove every `ipcMain.handle` binding this attach call installed.
+   *  Idempotent — calling twice is safe. */
+  readonly detach: () => void;
+}
+
+/** hp-vd9: wire each registered command in `ipc` to a matching
+ *  `ipcMain.handle(commandId, ...)` so renderer `ipcRenderer.invoke()`
+ *  calls reach the registry's typed dispatch path. Without this step
+ *  the IpcRegistry is just an in-memory map and renderer calls hit
+ *  Electron's "no handler registered" default error.
+ *
+ *  Call AFTER all production handlers have registered (e.g., after
+ *  `registerPowerAssertionIpc(ipc, ...)` in bootstrapDesktop). The
+ *  attacher takes a snapshot of registered ids at call time; commands
+ *  registered later won't be visible to the renderer until the next
+ *  attach pass. The `shutdown()` flow MUST call the returned
+ *  `detach()` so `ipcMain.handle` doesn't leak across hot-reload or
+ *  test runs. */
+export function attachIpcRegistryToElectron(
+  ipc: IpcRegistry,
+  options: AttachIpcRegistryOptions,
+): AttachIpcRegistryHandle {
+  const ids = ipc.registeredCommandIds();
+  const context = options.context ?? {};
+  for (const commandId of ids) {
+    options.ipcMain.handle(commandId, async (_event: unknown, payload: unknown) => {
+      return await ipc.dispatch(commandId, payload, context);
+    });
+  }
+  let detached = false;
+  return {
+    attachedCommandIds: ids,
+    detach: () => {
+      if (detached) return;
+      detached = true;
+      for (const commandId of ids) {
+        try {
+          options.ipcMain.removeHandler(commandId);
+        } catch {
+          // removeHandler can throw if the handler was already removed
+          // (e.g., a hot-reload partial flow). Swallow — detach is
+          // idempotent by contract.
+        }
+      }
+    },
+  };
 }

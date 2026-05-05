@@ -5,6 +5,8 @@ import {
   IpcRegistry,
   MissingIpcValidatorError,
   UnknownIpcCommandError,
+  attachIpcRegistryToElectron,
+  type IpcMainLike,
   type IpcValueValidator,
 } from "./IpcRegistry.ts";
 import {
@@ -150,6 +152,141 @@ test("IpcRegistry: output validation catches renderer-facing handler drift", asy
   await expect(
     registry.dispatch(PRELOAD_IPC_CHANNELS.filesOpenExternal, { url: "https://example.com" }),
   ).rejects.toBeInstanceOf(IpcPayloadValidationError);
+});
+
+// hp-vd9 — attachIpcRegistryToElectron tests.
+
+interface RecordedHandle {
+  readonly channel: string;
+  readonly listener: (event: unknown, ...args: unknown[]) => Promise<unknown> | unknown;
+}
+
+function makeIpcMainStub(): {
+  readonly ipcMain: IpcMainLike;
+  readonly handles: RecordedHandle[];
+  readonly removed: string[];
+} {
+  const handles: RecordedHandle[] = [];
+  const removed: string[] = [];
+  const ipcMain: IpcMainLike = {
+    handle(channel, listener) {
+      handles.push({ channel, listener });
+    },
+    removeHandler(channel) {
+      removed.push(channel);
+    },
+  };
+  return { ipcMain, handles, removed };
+}
+
+test("attachIpcRegistryToElectron: registers an ipcMain.handle for every registered command", () => {
+  const registry = new IpcRegistry();
+  registry.register({
+    id: INTERNAL_IPC_COMMANDS.swarmSendMarchingOrders,
+    handler: { handle: () => ({ ok: true }) },
+  });
+  registry.register({
+    id: PRELOAD_IPC_CHANNELS.filesOpenExternal,
+    validateInput: passthrough,
+    validateOutput: passthrough,
+    handler: { handle: () => ({}) },
+  });
+  const { ipcMain, handles } = makeIpcMainStub();
+
+  const handle = attachIpcRegistryToElectron(registry, { ipcMain });
+
+  expect(handles.map((h) => h.channel).toSorted()).toEqual(
+    [
+      INTERNAL_IPC_COMMANDS.swarmSendMarchingOrders,
+      PRELOAD_IPC_CHANNELS.filesOpenExternal,
+    ].toSorted(),
+  );
+  expect(handle.attachedCommandIds.length).toBe(2);
+});
+
+test("attachIpcRegistryToElectron: ipcMain handler delegates to registry.dispatch with the wire payload", async () => {
+  const registry = new IpcRegistry();
+  registry.register({
+    id: INTERNAL_IPC_COMMANDS.swarmSendMarchingOrders,
+    handler: {
+      handle: (input: { readonly orderText: string }) =>
+        Promise.resolve({ accepted: true, len: input.orderText.length }),
+    },
+  });
+  const { ipcMain, handles } = makeIpcMainStub();
+  attachIpcRegistryToElectron(registry, { ipcMain });
+
+  // Simulate Electron invoking the registered handler with (event, payload).
+  const handler = handles[0]!.listener;
+  const result = (await handler(/* event */ {}, { orderText: "stand down" })) as {
+    accepted: boolean;
+    len: number;
+  };
+
+  expect(result).toEqual({ accepted: true, len: 10 });
+});
+
+test("attachIpcRegistryToElectron: detach() removes every handler this attach call installed", () => {
+  const registry = new IpcRegistry();
+  registry.register({
+    id: INTERNAL_IPC_COMMANDS.swarmSendMarchingOrders,
+    handler: { handle: () => null },
+  });
+  registry.register({
+    id: INTERNAL_IPC_COMMANDS.testShadow,
+    handler: { handle: () => null },
+  });
+  const { ipcMain, removed } = makeIpcMainStub();
+  const handle = attachIpcRegistryToElectron(registry, { ipcMain });
+
+  handle.detach();
+
+  expect(removed.toSorted()).toEqual(
+    [
+      INTERNAL_IPC_COMMANDS.swarmSendMarchingOrders,
+      INTERNAL_IPC_COMMANDS.testShadow,
+    ].toSorted(),
+  );
+
+  // Second detach is a no-op.
+  handle.detach();
+  expect(removed.length).toBe(2);
+});
+
+test("attachIpcRegistryToElectron: removeHandler errors during detach are swallowed (idempotent)", () => {
+  const registry = new IpcRegistry();
+  registry.register({
+    id: INTERNAL_IPC_COMMANDS.swarmSendMarchingOrders,
+    handler: { handle: () => null },
+  });
+  const ipcMain: IpcMainLike = {
+    handle: () => undefined,
+    removeHandler: () => {
+      throw new Error("removeHandler boom");
+    },
+  };
+  const handle = attachIpcRegistryToElectron(registry, { ipcMain });
+
+  expect(() => handle.detach()).not.toThrow();
+});
+
+test("attachIpcRegistryToElectron: snapshot is taken at attach time — later registrations are not visible", () => {
+  const registry = new IpcRegistry();
+  registry.register({
+    id: INTERNAL_IPC_COMMANDS.swarmSendMarchingOrders,
+    handler: { handle: () => null },
+  });
+  const { ipcMain, handles } = makeIpcMainStub();
+  attachIpcRegistryToElectron(registry, { ipcMain });
+  expect(handles.length).toBe(1);
+
+  // Register a second command AFTER attach.
+  registry.register({
+    id: INTERNAL_IPC_COMMANDS.testShadow,
+    handler: { handle: () => null },
+  });
+  // The second handler is NOT auto-wired — caller must re-attach.
+  expect(handles.length).toBe(1);
 });
 
 const passthrough: IpcValueValidator<unknown> = (value) => value;
