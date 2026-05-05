@@ -29,7 +29,7 @@
     "e2e": "bun scripts/e2e/run-e2e.ts",
     "e2e:desktop:smoke": "playwright test -c playwright.config.ts",
     "e2e:desktop:phase1": "bun run --cwd apps/desktop e2e:phase1",
-    "mock-flywheel": "bun test packages/fixtures/test/golden-replay.test.ts apps/desktop/src/main/MockFlywheelMode.test.ts apps/desktop/src/main/LocalDemoBootstrap.test.ts apps/desktop/tests/unit/hp-j30-phase1.test.ts",
+    "mock-flywheel": "bun test packages/fixtures/test/golden-replay.test.ts packages/fixtures/tests/scenario-invariants.test.ts apps/desktop/src/main/MockFlywheelMode.test.ts apps/desktop/src/main/LocalDemoBootstrap.test.ts apps/desktop/tests/unit/hp-j30-phase1.test.ts",
     "typecheck": "turbo run typecheck",
     "test": "bun run test:provider-sdks && bun run test:renderer-isolation && bun run test:codex-shape-scrub && bun run test:desktop-helper-boundary && bun run test:no-raw-logging && bun run test:redact-drift && turbo run test",
     "test:desktop:release": "bun test apps/desktop/tests/release/*.test.ts",
