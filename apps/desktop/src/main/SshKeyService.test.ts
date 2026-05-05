@@ -40,11 +40,15 @@ describe("hp-pl8h :: SshKeyService.listKeys", () => {
     await rm(homeDir, { recursive: true, force: true });
   });
 
-  test("returns an empty list when ~/.ssh/ does not exist", async () => {
+  test("returns an empty result when ~/.ssh/ does not exist", async () => {
     await rm(join(homeDir, ".ssh"), { recursive: true });
     const { runner } = makeRunner(async () => ({ code: 0, stdout: "", stderr: "" }));
     const service = new SshKeyService({ homeDir, run: runner });
-    expect(await service.listKeys()).toEqual([]);
+    expect(await service.listKeys()).toEqual({
+      keys: [],
+      truncated: false,
+      totalCandidates: 0,
+    });
   });
 
   test("lists *.pub files; ignores private keys; reports algorithm + fingerprint + comment", async () => {
@@ -72,17 +76,19 @@ describe("hp-pl8h :: SshKeyService.listKeys", () => {
     });
 
     const service = new SshKeyService({ homeDir, run: runner });
-    const keys = await service.listKeys();
-    expect(keys.map((k) => k.name)).toEqual(["id_ed25519.pub", "id_rsa.pub"]);
+    const result = await service.listKeys();
+    expect(result.truncated).toBe(false);
+    expect(result.totalCandidates).toBe(2);
+    expect(result.keys.map((k) => k.name)).toEqual(["id_ed25519.pub", "id_rsa.pub"]);
 
-    const ed = keys[0]!;
+    const ed = result.keys[0]!;
     expect(ed.algorithm).toBe("ed25519");
     expect(ed.fingerprint).toBe("SHA256:HASHED-ED25519");
     expect(ed.comment).toBe("user@host");
     expect(ed.bits).toBe(256);
     expect(ed.hasPrivateKey).toBe(true);
 
-    const rsa = keys[1]!;
+    const rsa = result.keys[1]!;
     expect(rsa.algorithm).toBe("rsa");
     expect(rsa.bits).toBe(2048);
     expect(rsa.hasPrivateKey).toBe(false);
@@ -106,11 +112,86 @@ describe("hp-pl8h :: SshKeyService.listKeys", () => {
       };
     });
     const service = new SshKeyService({ homeDir, run: runner });
-    const keys = await service.listKeys();
-    expect(keys).toHaveLength(2);
-    const broken = keys.find((k) => k.name === "broken.pub")!;
+    const result = await service.listKeys();
+    expect(result.keys).toHaveLength(2);
+    expect(result.truncated).toBe(false);
+    const broken = result.keys.find((k) => k.name === "broken.pub")!;
     expect(broken.algorithm).toBe("unknown");
     expect(broken.fingerprint).toBe("");
+  });
+
+  test("hp-kqtt: caps fingerprint calls at maxListedKeys and reports truncated=true", async () => {
+    // Seed 5 *.pub files; cap at 2. The runner will be invoked at
+    // most 2 times (once per kept entry); the remaining 3 must NOT
+    // trigger ssh-keygen child processes.
+    for (let i = 0; i < 5; i += 1) {
+      await writeFile(join(homeDir, ".ssh", `id_${i}.pub`), `ssh-ed25519 AAA key-${i}\n`);
+    }
+    const fingerprintCalls: string[] = [];
+    const { runner } = makeRunner(async (call) => {
+      const path = call.args[2] ?? "";
+      fingerprintCalls.push(path);
+      return {
+        code: 0,
+        stdout: `256 SHA256:HASHED-${path} demo@host (ED25519)\n`,
+        stderr: "",
+      };
+    });
+    const service = new SshKeyService({ homeDir, run: runner, maxListedKeys: 2 });
+
+    const result = await service.listKeys();
+
+    expect(result.truncated).toBe(true);
+    expect(result.totalCandidates).toBe(5);
+    expect(result.keys).toHaveLength(2);
+    // Sort is deterministic — first two of [id_0..id_4].pub are kept.
+    expect(result.keys.map((k) => k.name)).toEqual(["id_0.pub", "id_1.pub"]);
+    // Crucially: only 2 child processes spawned, not 5.
+    expect(fingerprintCalls).toHaveLength(2);
+  });
+
+  test("hp-kqtt: corrupted entries inside the cap stay surfaced as 'unknown' (cap doesn't suppress them)", async () => {
+    // Sort order is "a-bad.pub" < "b-good.pub" < "z-extra.pub" — cap of
+    // 2 keeps the first two, so the test asserts behavior on a corrupted
+    // entry that landed INSIDE the cap (a-bad.pub).
+    await writeFile(join(homeDir, ".ssh", "a-bad.pub"), "garbage\n");
+    await writeFile(join(homeDir, ".ssh", "b-good.pub"), "ssh-ed25519 AAA ok\n");
+    await writeFile(join(homeDir, ".ssh", "z-extra.pub"), "ssh-ed25519 AAA ok\n");
+
+    const { runner } = makeRunner(async (call) => {
+      const path = call.args[2] ?? "";
+      if (path.endsWith("a-bad.pub")) {
+        return { code: 255, stdout: "", stderr: "not a valid key" };
+      }
+      return {
+        code: 0,
+        stdout: "256 SHA256:OK demo@host (ED25519)\n",
+        stderr: "",
+      };
+    });
+    const service = new SshKeyService({ homeDir, run: runner, maxListedKeys: 2 });
+
+    const result = await service.listKeys();
+
+    expect(result.truncated).toBe(true);
+    expect(result.totalCandidates).toBe(3);
+    expect(result.keys.map((k) => k.name)).toEqual(["a-bad.pub", "b-good.pub"]);
+    const broken = result.keys.find((k) => k.name === "a-bad.pub")!;
+    expect(broken.algorithm).toBe("unknown");
+    expect(broken.fingerprint).toBe("");
+  });
+
+  test("hp-kqtt: rejects non-positive maxListedKeys at construction", () => {
+    const { runner } = makeRunner(async () => ({ code: 0, stdout: "", stderr: "" }));
+    expect(
+      () => new SshKeyService({ homeDir, run: runner, maxListedKeys: 0 }),
+    ).toThrow();
+    expect(
+      () => new SshKeyService({ homeDir, run: runner, maxListedKeys: -1 }),
+    ).toThrow();
+    expect(
+      () => new SshKeyService({ homeDir, run: runner, maxListedKeys: 1.5 }),
+    ).toThrow();
   });
 });
 

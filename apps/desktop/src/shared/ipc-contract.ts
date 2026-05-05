@@ -386,6 +386,14 @@ export interface SshKeyDescriptor {
 
 export interface SshListKeysOutput {
   readonly keys: ReadonlyArray<SshKeyDescriptor>;
+  /** hp-kqtt: true when `~/.ssh/` contained more `*.pub` candidates
+   *  than the per-call fingerprinting cap. Renderer surfaces a
+   *  "showing first N of M" hint when set. */
+  readonly truncated: boolean;
+  /** hp-kqtt: total `*.pub` count BEFORE the cap was applied. Lets
+   *  the renderer show a precise truncation count without re-listing
+   *  the directory itself. */
+  readonly totalCandidates: number;
 }
 
 export interface SshGenerateKeyInput {

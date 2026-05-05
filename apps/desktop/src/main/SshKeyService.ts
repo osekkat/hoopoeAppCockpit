@@ -92,6 +92,24 @@ export interface SshKeyServiceOptions {
   /** hp-ig3r: clock for the `at` timestamp on audit events.
    *  Defaults to `() => new Date()`. */
   readonly now?: () => Date;
+  /** hp-kqtt: cap on the number of `*.pub` entries fingerprinted by
+   *  `listKeys()` per call. Defaults to `DEFAULT_MAX_LISTED_SSH_KEYS`
+   *  (64). Tests inject a smaller cap to exercise the truncation
+   *  path. */
+  readonly maxListedKeys?: number;
+}
+
+/** hp-kqtt: shape returned by `SshKeyService.listKeys()`. The
+ *  `truncated` flag tells the renderer the wizard saw more `*.pub`
+ *  candidates than the cap allowed; the renderer can render a
+ *  "too many keys, showing first N" hint without re-listing the
+ *  directory itself. `totalCandidates` reports the raw `*.pub`
+ *  count BEFORE the cap so the wizard can show a precise number
+ *  in the truncation hint. */
+export interface SshListKeysResult {
+  readonly keys: readonly ListedSshKey[];
+  readonly truncated: boolean;
+  readonly totalCandidates: number;
 }
 
 /** hp-ig3r: events emitted by SshKeyService.generateKey so the audit log
@@ -155,6 +173,15 @@ const KEY_NAME_RE = /^hoopoe-vps-[A-Za-z0-9-]{8,64}$/;
 const DEFAULT_HOME = homedir();
 const DEFAULT_BIN = "ssh-keygen";
 
+/** hp-kqtt: hard cap on the number of `*.pub` entries `listKeys()`
+ *  fingerprints in a single call. A normal user has 1-10 keys; a
+ *  power user 30-40. Anything beyond is suspect — a hostile or
+ *  oversized `~/.ssh/` directory would otherwise turn a wizard
+ *  refresh into an unbounded sequence of `ssh-keygen` child
+ *  processes. The renderer can still surface "truncated" state via
+ *  `SshListKeysResult.truncated`. */
+export const DEFAULT_MAX_LISTED_SSH_KEYS = 64;
+
 /** Default child-process runner — `spawn` with explicit argv, no shell. */
 export const defaultRunner: ChildProcessRunner = (command, args, options) =>
   new Promise((resolvePromise, rejectPromise) => {
@@ -187,6 +214,7 @@ export class SshKeyService {
   readonly #run: ChildProcessRunner;
   readonly #audit: SshKeyAuditSink | undefined;
   readonly #now: () => Date;
+  readonly #maxListedKeys: number;
 
   constructor(options: SshKeyServiceOptions = {}) {
     this.#home = options.homeDir ?? DEFAULT_HOME;
@@ -195,6 +223,11 @@ export class SshKeyService {
     this.#run = options.run ?? defaultRunner;
     this.#audit = options.audit;
     this.#now = options.now ?? (() => new Date());
+    const requestedCap = options.maxListedKeys ?? DEFAULT_MAX_LISTED_SSH_KEYS;
+    if (!Number.isInteger(requestedCap) || requestedCap < 1) {
+      throw new Error(`SshKeyService maxListedKeys must be a positive integer (got ${requestedCap})`);
+    }
+    this.#maxListedKeys = requestedCap;
   }
 
   /** Resolved `~/.ssh/` directory, exposed for tests + diagnostics. */
@@ -202,12 +235,14 @@ export class SshKeyService {
     return this.#sshDir;
   }
 
-  async listKeys(): Promise<readonly ListedSshKey[]> {
+  async listKeys(): Promise<SshListKeysResult> {
     let entries: readonly string[];
     try {
       entries = await fs.readdir(this.#sshDir);
     } catch (err) {
-      if (isErrnoCode(err, "ENOENT")) return [];
+      if (isErrnoCode(err, "ENOENT")) {
+        return { keys: [], truncated: false, totalCandidates: 0 };
+      }
       throw new SshKeyServiceError(
         "ssh.dir-not-readable",
         `Cannot read ${this.#sshDir}: ${(err as Error).message}`,
@@ -218,8 +253,17 @@ export class SshKeyService {
       .filter((entry) => entry.endsWith(".pub"))
       .toSorted();
 
+    // hp-kqtt: cap the fingerprinting budget BEFORE spawning child
+    // processes. A hostile or oversized `~/.ssh/` would otherwise
+    // turn the wizard refresh into an unbounded sequence of
+    // `ssh-keygen` invocations and block the main-process work
+    // queue. Sort first so the cap is deterministic across runs.
+    const totalCandidates = pubFiles.length;
+    const cappedPubFiles = pubFiles.slice(0, this.#maxListedKeys);
+    const truncated = pubFiles.length > cappedPubFiles.length;
+
     const results: ListedSshKey[] = [];
-    for (const entry of pubFiles) {
+    for (const entry of cappedPubFiles) {
       const fullPath = join(this.#sshDir, entry);
       const containment = ensureContainedIn(fullPath, this.#sshDir);
       if (!containment.contained) continue;
@@ -255,7 +299,7 @@ export class SshKeyService {
         throw err;
       }
     }
-    return results;
+    return { keys: results, truncated, totalCandidates };
   }
 
   async generateKey(input: GenerateKeyInput): Promise<GeneratedSshKey> {
