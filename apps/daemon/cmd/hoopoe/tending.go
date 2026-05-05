@@ -20,14 +20,15 @@ import (
 )
 
 type tendingIO struct {
-	Stdout         io.Writer
-	Stderr         io.Writer
-	Stdin          io.Reader
-	Now            func() time.Time
-	StatePath      string
-	DefinitionsDir string
-	AuditPath      string
-	Editor         string
+	Stdout          io.Writer
+	Stderr          io.Writer
+	Stdin           io.Reader
+	Now             func() time.Time
+	StatePath       string
+	DefinitionsDir  string
+	AuditPath       string
+	IdempotencyPath string
+	Editor          string
 }
 
 func runTending(ctx context.Context, args []string, io *tendingIO) error {
@@ -77,7 +78,7 @@ func (io *tendingIO) setDefaults() error {
 	if io.Now == nil {
 		io.Now = time.Now
 	}
-	if io.StatePath != "" && io.DefinitionsDir != "" && io.AuditPath != "" {
+	if io.StatePath != "" && io.DefinitionsDir != "" && io.AuditPath != "" && io.IdempotencyPath != "" {
 		return nil
 	}
 	home, err := os.UserHomeDir()
@@ -93,6 +94,13 @@ func (io *tendingIO) setDefaults() error {
 	}
 	if io.AuditPath == "" {
 		io.AuditPath = filepath.Join(base, "audit.jsonl")
+	}
+	if io.IdempotencyPath == "" {
+		// hp-cjmc: per-action idempotency log lives under tending/
+		// alongside scheduler-state.json. JSONL append-only so the
+		// daemon can crash mid-tick and still replay correctly on
+		// restart instead of re-executing already-completed actions.
+		io.IdempotencyPath = filepath.Join(base, "tending", "idempotency.jsonl")
 	}
 	return nil
 }
@@ -443,6 +451,7 @@ func newTendingFlagSet(name string, io *tendingIO) *flag.FlagSet {
 	flags.StringVar(&io.StatePath, "state", io.StatePath, "scheduler state path")
 	flags.StringVar(&io.DefinitionsDir, "definitions", io.DefinitionsDir, "job definitions directory")
 	flags.StringVar(&io.AuditPath, "audit", io.AuditPath, "audit JSONL path")
+	flags.StringVar(&io.IdempotencyPath, "idempotency", io.IdempotencyPath, "agent action idempotency JSONL path")
 	return flags
 }
 
@@ -482,6 +491,17 @@ func newTendingPrescriptRunner(io *tendingIO, registry *scheduler.Registry) (*pr
 	executor := agent.NewExecutor()
 	executor.Now = io.Now
 	executor.Audit = tendingAgentAuditSink{io: io}
+	// hp-cjmc: swap the default in-memory idempotency store for the
+	// file-backed one so action-level idempotency survives daemon
+	// restart. Without this, an ActionPlan that crashes mid-tick
+	// would replay from "first time" on the next dispatch and
+	// duplicate any mutating side effects (mail sends, br creates,
+	// commits).
+	idempotency, err := agent.NewFileIdempotencyStore(io.IdempotencyPath)
+	if err != nil {
+		return nil, fmt.Errorf("tending: open idempotency store: %w", err)
+	}
+	executor.Idempotency = idempotency
 	runtime := &agent.Runtime{
 		Runner:   tendingAgentRunner{},
 		Executor: executor,

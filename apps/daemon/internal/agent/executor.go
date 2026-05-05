@@ -1,8 +1,12 @@
 package agent
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -174,6 +178,140 @@ func (s *MemoryIdempotencyStore) RecordActionResult(_ context.Context, key strin
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.results == nil {
+		s.results = make(map[string]ActionResult)
+	}
+	s.results[key] = cloneActionResult(result)
+	return nil
+}
+
+// FileIdempotencyStore persists action results to an append-only JSONL
+// file so idempotency survives daemon restart (hp-cjmc). Each line is
+// a {key, result} envelope; on construction the file is read end-to-
+// end and the in-memory map is rebuilt with last-write-wins on
+// duplicate keys. Lookups are O(1) via the map; writes append a line,
+// fsync, and update the map under mu. The file grows append-only —
+// duplicate keys produce extra lines but only the most recent value
+// is observable. A future compaction pass can rewrite the file from
+// the in-memory map; the format is forward-compatible with that.
+//
+// Mirrors hp-b7rx's bearer-revocation persistence shape: the on-disk
+// log is the source of truth across restarts; the in-memory map is a
+// read-cache rebuilt on every NewFileIdempotencyStore call.
+type FileIdempotencyStore struct {
+	mu      sync.Mutex
+	path    string
+	results map[string]ActionResult
+}
+
+type idempotencyEntry struct {
+	Key    string       `json:"key"`
+	Result ActionResult `json:"result"`
+}
+
+// idempotencyMaxLineBytes caps per-line JSONL parsing so a corrupted
+// idempotency log cannot OOM the daemon at boot. 4 MiB matches the
+// audit log cap and is several orders of magnitude larger than any
+// realistic ActionResult — a runaway entry would point at upstream
+// bug, not legitimate state.
+const idempotencyMaxLineBytes = 4 * 1024 * 1024
+
+// NewFileIdempotencyStore opens (or creates) the file at path and
+// rebuilds the in-memory map from any existing entries. Empty path
+// is a programmer error — callers that don't want persistence should
+// use NewMemoryIdempotencyStore directly.
+func NewFileIdempotencyStore(path string) (*FileIdempotencyStore, error) {
+	if strings.TrimSpace(path) == "" {
+		return nil, fmt.Errorf("agent: FileIdempotencyStore requires a non-empty path")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nil, fmt.Errorf("agent: mkdir %s: %w", filepath.Dir(path), err)
+	}
+	s := &FileIdempotencyStore{
+		path:    path,
+		results: make(map[string]ActionResult),
+	}
+	if err := s.loadFromDisk(); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+func (s *FileIdempotencyStore) loadFromDisk() error {
+	f, err := os.Open(s.path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("agent: open idempotency log %s: %w", s.path, err)
+	}
+	defer f.Close()
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), idempotencyMaxLineBytes)
+	lineNo := 0
+	for scanner.Scan() {
+		lineNo++
+		raw := scanner.Bytes()
+		if len(strings.TrimSpace(string(raw))) == 0 {
+			continue
+		}
+		var entry idempotencyEntry
+		if err := json.Unmarshal(raw, &entry); err != nil {
+			return fmt.Errorf("agent: decode idempotency log line %d: %w", lineNo, err)
+		}
+		if strings.TrimSpace(entry.Key) == "" {
+			continue
+		}
+		s.results[entry.Key] = entry.Result
+	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("agent: scan idempotency log: %w", err)
+	}
+	return nil
+}
+
+func (s *FileIdempotencyStore) LookupActionResult(_ context.Context, key string) (ActionResult, bool, error) {
+	if s == nil {
+		return ActionResult{}, false, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	result, ok := s.results[key]
+	if !ok {
+		return ActionResult{}, false, nil
+	}
+	return cloneActionResult(result), true, nil
+}
+
+func (s *FileIdempotencyStore) RecordActionResult(_ context.Context, key string, result ActionResult) error {
+	if s == nil {
+		return nil
+	}
+	if strings.TrimSpace(key) == "" {
+		return fmt.Errorf("agent: empty idempotency key")
+	}
+	body, err := json.Marshal(idempotencyEntry{Key: key, Result: result})
+	if err != nil {
+		return fmt.Errorf("agent: encode idempotency entry: %w", err)
+	}
+	body = append(body, '\n')
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	f, err := os.OpenFile(s.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return fmt.Errorf("agent: open idempotency log for append: %w", err)
+	}
+	if _, writeErr := f.Write(body); writeErr != nil {
+		_ = f.Close()
+		return fmt.Errorf("agent: write idempotency entry: %w", writeErr)
+	}
+	if syncErr := f.Sync(); syncErr != nil {
+		_ = f.Close()
+		return fmt.Errorf("agent: sync idempotency log: %w", syncErr)
+	}
+	if closeErr := f.Close(); closeErr != nil {
+		return fmt.Errorf("agent: close idempotency log: %w", closeErr)
+	}
 	if s.results == nil {
 		s.results = make(map[string]ActionResult)
 	}

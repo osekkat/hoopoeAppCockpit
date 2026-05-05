@@ -2,6 +2,8 @@ package agent
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -317,4 +319,151 @@ func killAction(key string) schemas.Action {
 
 func fixedNow() time.Time {
 	return time.Date(2026, 5, 4, 1, 0, 0, 0, time.UTC)
+}
+
+// TestFileIdempotencyStorePersistsAcrossRestart guards hp-cjmc: action
+// idempotency must survive a daemon restart. Pre-fix, NewExecutor()
+// defaulted to MemoryIdempotencyStore, so a mid-tick crash followed
+// by restart would replay an already-completed mutating action and
+// duplicate its side effects (mail sends, br creates, commits).
+func TestFileIdempotencyStorePersistsAcrossRestart(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "tending", "idempotency.jsonl")
+
+	plan := basePlan()
+	plan.Actions = []schemas.Action{askStatusAction("hp-cjmc-restart")}
+	handler := &countingHandler{}
+
+	// First daemon lifetime: execute the plan against a file-backed
+	// idempotency store.
+	store, err := NewFileIdempotencyStore(path)
+	if err != nil {
+		t.Fatalf("NewFileIdempotencyStore (boot 1): %v", err)
+	}
+	exec := NewExecutor()
+	exec.Capabilities = AllowAllCapabilities{}
+	exec.Handlers = map[schemas.ActionKind]ActionHandler{
+		schemas.AgentAskStatus: handler,
+	}
+	exec.Idempotency = store
+	report, err := exec.Execute(context.Background(), plan)
+	if err != nil {
+		t.Fatalf("execute (boot 1): %v", err)
+	}
+	if len(report.Results) != 1 || report.Results[0].Status != ActionStatusExecuted {
+		t.Fatalf("boot 1 expected executed, got %+v", report.Results)
+	}
+	if handler.executes != 1 {
+		t.Fatalf("boot 1 executes = %d, want 1", handler.executes)
+	}
+
+	// Simulate restart: drop the in-process store reference + executor,
+	// reopen the same path, run the same plan. The persistent store
+	// must report ActionStatusIdempotentReplay and the handler must
+	// not re-execute.
+	store2, err := NewFileIdempotencyStore(path)
+	if err != nil {
+		t.Fatalf("NewFileIdempotencyStore (boot 2): %v", err)
+	}
+	exec2 := NewExecutor()
+	exec2.Capabilities = AllowAllCapabilities{}
+	exec2.Handlers = map[schemas.ActionKind]ActionHandler{
+		schemas.AgentAskStatus: handler,
+	}
+	exec2.Idempotency = store2
+	replay, err := exec2.Execute(context.Background(), plan)
+	if err != nil {
+		t.Fatalf("execute (boot 2): %v", err)
+	}
+	if len(replay.Results) != 1 || replay.Results[0].Status != ActionStatusIdempotentReplay {
+		t.Fatalf("boot 2 expected idempotent replay, got %+v — hp-cjmc regression: idempotency was lost across restart", replay.Results)
+	}
+	if handler.executes != 1 {
+		t.Fatalf("boot 2 re-executed handler: executes = %d, want 1 (memory-only-store regression)", handler.executes)
+	}
+}
+
+// TestFileIdempotencyStoreLastWriteWinsOnDuplicateKeys covers the
+// reload semantics: duplicate JSONL entries for the same key must
+// resolve to the most recent value after reload. The store is
+// append-only by design so duplicate keys are a normal consequence of
+// retries; the in-memory map must reflect last-write-wins.
+func TestFileIdempotencyStoreLastWriteWinsOnDuplicateKeys(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "idempotency.jsonl")
+
+	store, err := NewFileIdempotencyStore(path)
+	if err != nil {
+		t.Fatalf("NewFileIdempotencyStore: %v", err)
+	}
+	first := ActionResult{Kind: schemas.AgentAskStatus, IdempotencyKey: "k", Status: ActionStatusExecuted, Error: "first"}
+	second := ActionResult{Kind: schemas.AgentAskStatus, IdempotencyKey: "k", Status: ActionStatusExecuted, Error: "second"}
+	if err := store.RecordActionResult(context.Background(), "k", first); err != nil {
+		t.Fatalf("Record first: %v", err)
+	}
+	if err := store.RecordActionResult(context.Background(), "k", second); err != nil {
+		t.Fatalf("Record second: %v", err)
+	}
+
+	// Drop the in-process store and reopen — the JSONL has both
+	// entries; the reload must keep the second one.
+	reloaded, err := NewFileIdempotencyStore(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	got, ok, err := reloaded.LookupActionResult(context.Background(), "k")
+	if err != nil {
+		t.Fatalf("LookupActionResult after reload: %v", err)
+	}
+	if !ok {
+		t.Fatal("LookupActionResult after reload: missing key")
+	}
+	if got.Error != "second" {
+		t.Fatalf("reload Error = %q, want %q (last-write-wins regression)", got.Error, "second")
+	}
+}
+
+// TestFileIdempotencyStoreRejectsCorruptLogAtBoot pins down the
+// boot-time validation contract: a corrupted JSONL line surfaces a
+// wrapped error from NewFileIdempotencyStore rather than panicking
+// or silently losing all entries past the corruption point. An
+// operator hitting this error has a clear signal to inspect the log.
+func TestFileIdempotencyStoreRejectsCorruptLogAtBoot(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "idempotency.jsonl")
+	if err := os.WriteFile(path, []byte(`{"key":"k","result":{"kind":"agent.ask_status"}}`+"\n"+`{not json`+"\n"), 0o600); err != nil {
+		t.Fatalf("seed corrupt log: %v", err)
+	}
+	_, err := NewFileIdempotencyStore(path)
+	if err == nil {
+		t.Fatal("NewFileIdempotencyStore accepted a corrupt log; want a wrapped decode error")
+	}
+	if !strings.Contains(err.Error(), "agent: decode idempotency log line 2") {
+		t.Fatalf("err = %v, want a 'decode idempotency log line 2' wrap", err)
+	}
+}
+
+// TestFileIdempotencyStoreEmptyKeyRejected pins the contract that an
+// empty idempotency key is a programmer error: callers must always
+// generate a deterministic key per ActionPlan.BuildActionPlan
+// derivation. Empty would silently coalesce all anonymous actions
+// into one slot and produce false replays.
+func TestFileIdempotencyStoreEmptyKeyRejected(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "idempotency.jsonl")
+	store, err := NewFileIdempotencyStore(path)
+	if err != nil {
+		t.Fatalf("NewFileIdempotencyStore: %v", err)
+	}
+	err = store.RecordActionResult(context.Background(), "", ActionResult{Kind: schemas.AgentAskStatus, Status: ActionStatusExecuted})
+	if err == nil {
+		t.Fatal("RecordActionResult accepted an empty key")
+	}
+	if !strings.Contains(err.Error(), "empty idempotency key") {
+		t.Fatalf("err = %v, want 'empty idempotency key'", err)
+	}
 }
