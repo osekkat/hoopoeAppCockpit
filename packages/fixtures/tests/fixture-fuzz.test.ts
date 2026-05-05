@@ -57,6 +57,10 @@ const VALID_META = JSON.stringify({
   source: "fuzz harness",
 });
 
+const PROTOTYPE_POLLUTION_META =
+  '{"kind":"synthetic","fixturesVersion":"fuzz","capturedAt":"2026-05-03T00:00:00Z",' +
+  '"source":"fuzz","__proto__":{"polluted":true},"constructor":{"polluted":true}}';
+
 const VALID_EVENT_LINE = JSON.stringify({
   channel: "swarm",
   seq: 1,
@@ -113,13 +117,7 @@ describe("loadTendingScenario fuzz (review Round 3)", () => {
     const corpus = isolatedCorpus();
     try {
       const dir = buildBaseScenario(corpus, "proto", {
-        "meta.json": JSON.stringify({
-          kind: "synthetic",
-          fixturesVersion: "fuzz",
-          capturedAt: "2026-05-03T00:00:00Z",
-          source: "fuzz",
-          __proto__: { polluted: true },
-        }),
+        "meta.json": PROTOTYPE_POLLUTION_META,
         "bv-triage.json": "{}",
         "br-list.json": "{}",
         "ntm-snapshot.json": "{}",
@@ -321,14 +319,7 @@ describe("validateCorpus fuzz (review Round 3)", () => {
       mkdirSync(join(corpus, "scenarios", "healthy-hour", "build-logs"), { recursive: true });
       writeFileSync(
         join(corpus, "scenarios", "healthy-hour", "meta.json"),
-        JSON.stringify({
-          kind: "synthetic",
-          fixturesVersion: "fuzz",
-          capturedAt: "2026-05-03T00:00:00Z",
-          source: "fuzz",
-          __proto__: { polluted: true },
-          constructor: { polluted: true },
-        }),
+        PROTOTYPE_POLLUTION_META,
       );
       const before = ({} as Record<string, unknown>).polluted;
       validateCorpus(corpus);
@@ -371,6 +362,38 @@ describe("validateCorpus fuzz (review Round 3)", () => {
       const result = validateCorpus(corpus);
       const ndjsonFindings = result.findings.filter((f) => f.rule === "scenario.unparseable-jsonl");
       expect(ndjsonFindings.length).toBeGreaterThanOrEqual(1);
+    } finally {
+      rmSync(corpus, { recursive: true, force: true });
+    }
+  });
+
+  test("scenario .goldens artifacts are included in the secret scan", () => {
+    const corpus = isolatedCorpus();
+    try {
+      const dir = buildBaseScenario(corpus, "healthy-hour", {
+        "meta.json": VALID_META,
+        "bv-triage.json": "{}",
+        "br-list.json": "{}",
+        "ntm-snapshot.json": "{}",
+        "agent-mail-dump.json": "{}",
+        "reservations.json": "{}",
+        "events.jsonl": "",
+        "capabilities.json": "{}",
+        "expected-outcome.json": "{}",
+      });
+      const leakedToken = "sk-" + "f".repeat(24);
+      mkdirSync(join(dir, ".goldens"), { recursive: true });
+      writeFileSync(
+        join(dir, ".goldens", "mock-daemon.responses.json"),
+        JSON.stringify({ replayPayload: leakedToken }),
+      );
+
+      const result = validateCorpus(corpus);
+      const secretFindings = result.findings.filter((f) => f.rule === "secret.found");
+      const hasGoldenSecretFinding = secretFindings.some(
+        (f) => f.path === "scenarios/healthy-hour/.goldens/mock-daemon.responses.json",
+      );
+      expect(hasGoldenSecretFinding).toBe(true);
     } finally {
       rmSync(corpus, { recursive: true, force: true });
     }

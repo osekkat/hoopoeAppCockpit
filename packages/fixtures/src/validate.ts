@@ -444,7 +444,13 @@ function scanForSecrets(ctx: ValidatorContext, root: string): void {
       return;
     }
     for (const name of entries) {
-      if (name === "node_modules" || name === ".turbo" || name.startsWith(".")) continue;
+      if (
+        name === "node_modules" ||
+        name === ".turbo" ||
+        (name.startsWith(".") && name !== ".goldens")
+      ) {
+        continue;
+      }
       const fp = join(dir, name);
       if (isDir(fp)) {
         walk(fp);
