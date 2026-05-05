@@ -20,7 +20,7 @@ import {
   projectSettingsPath,
 } from "./main/SettingsBridge.ts";
 import { createJsonlBatchAuditSink, type SettingsActor } from "./main/SettingsAuditTrail.ts";
-import { AuthBridge } from "./main/AuthBridge.ts";
+import { AuthBridge, type AuthBridgeAuditEvent } from "./main/AuthBridge.ts";
 import {
   createNSProcessInfoBridge,
   PowerAssertionManager,
@@ -45,6 +45,19 @@ function appendPowerAssertionAuditEvent(filePath: string, event: PowerAssertionA
   FS.appendFileSync(
     filePath,
     `${JSON.stringify({ entry: "power_assertion", actor: DESKTOP_MAIN_DEFAULT_ACTOR, ...event })}\n`,
+    { encoding: "utf8" },
+  );
+}
+
+/** hp-4qzh: production sink for AuthBridge events shipped in hp-rr9m
+ *  (bearer persist / forget / session-metadata / secret-rotation).
+ *  Mirrors `appendPowerAssertionAuditEvent` shape so the JSONL file
+ *  remains a single audit stream consumers can grep by `entry`. */
+function appendAuthBridgeAuditEvent(filePath: string, event: AuthBridgeAuditEvent): void {
+  FS.mkdirSync(Path.dirname(filePath), { recursive: true });
+  FS.appendFileSync(
+    filePath,
+    `${JSON.stringify({ entry: "auth_bridge", actor: DESKTOP_MAIN_DEFAULT_ACTOR, ...event })}\n`,
     { encoding: "utf8" },
   );
 }
@@ -81,6 +94,25 @@ export function composeProductionSettingsBridge(
     }),
     defaultActor: DESKTOP_MAIN_DEFAULT_ACTOR,
     ...(input.relaunch ? { relaunch: input.relaunch } : {}),
+  });
+}
+
+export interface ComposedAuthBridgeInput {
+  readonly homeDir: string;
+  readonly secretStorage: DesktopSecretStorage;
+}
+
+/** hp-4qzh: compose the production AuthBridge with the durable JSONL audit
+ *  sink and the desktop-main default actor. Extracted so `bootstrapDesktop`
+ *  and the bootstrap-integration test exercise the same wiring; mirrors the
+ *  composeProductionSettingsBridge / PowerAssertionManager pattern. */
+export function composeProductionAuthBridge(input: ComposedAuthBridgeInput): AuthBridge {
+  const registryPath = Path.join(input.homeDir, ".hoopoe", "userdata", "saved-environments.json");
+  return new AuthBridge({
+    registryPath,
+    secretStorage: input.secretStorage,
+    audit: (event) =>
+      appendAuthBridgeAuditEvent(defaultSettingsAuditPath(input.homeDir), event),
   });
 }
 
@@ -128,9 +160,8 @@ export async function bootstrapDesktop(
     ...(input.relaunch ? { relaunch: input.relaunch } : {}),
   });
 
-  const registryPath = Path.join(input.homeDir, ".hoopoe", "userdata", "saved-environments.json");
-  const auth = new AuthBridge({
-    registryPath,
+  const auth = composeProductionAuthBridge({
+    homeDir: input.homeDir,
     secretStorage: input.secretStorage,
   });
 
