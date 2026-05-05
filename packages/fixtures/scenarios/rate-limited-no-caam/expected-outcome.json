@@ -26,11 +26,20 @@
   ],
   "wakeAgent": true,
   "actionPlan": {
+    "schemaVersion": 1,
+    "jobId": "tend-swarm",
+    "runId": "run-rate-limited-no-caam-2026-05-02",
+    "summary": "Pause GreenBear until the provider rate-limit window expires because no CAAM alternative is available.",
+    "riskClass": "low",
+    "requiresApproval": false,
     "actions": [
       {
-        "type": "agent.pause",
+        "kind": "agent.pause",
+        "target": {
+          "agentId": "GreenBear"
+        },
+        "idempotencyKey": "tend-swarm:GreenBear:rate-limited-no-caam:2026-05-02T19:58:00Z",
         "args": {
-          "agent": "GreenBear",
           "until": "2026-05-02T20:28:00Z",
           "reason": "claude rate limit; no alternative account"
         }

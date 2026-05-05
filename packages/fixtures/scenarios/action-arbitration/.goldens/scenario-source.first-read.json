@@ -517,6 +517,7 @@
             "reason": "safety threshold crossed while recovery was in flight"
           },
           "idempotencyKey": "watch-safety-thresholds:hoopoeAppCockpit:safety-supersession:2026-05-04T17:55:00Z",
+          "kind": "swarm.halt",
           "postconditions": [
             "recovery plan plan-recovery-001 is recorded as superseded_by plan-safety-halt-001",
             "ntm reports hoopoeAppCockpit state=HALTED",
@@ -524,14 +525,15 @@
           ],
           "target": {
             "swarmId": "hoopoeAppCockpit"
-          },
-          "type": "swarm.halt"
+          }
         }
       ],
-      "actor": "pre_script:watch-safety-thresholds",
       "jobId": "watch-safety-thresholds",
       "requiresApproval": false,
-      "riskClass": "safety"
+      "riskClass": "critical",
+      "runId": "safety-run-001",
+      "schemaVersion": 1,
+      "summary": "Safety halt supersedes the in-flight recovery ActionPlan for the same swarm."
     },
     "activityBehavior": "surface",
     "approvalsRequested": [],

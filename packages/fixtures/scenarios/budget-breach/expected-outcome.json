@@ -27,13 +27,15 @@
   ],
   "wakeAgent": false,
   "actionPlan": {
+    "schemaVersion": 1,
     "jobId": "watch-safety-thresholds",
-    "actor": "pre_script:watch-safety-thresholds",
+    "runId": "run-budget-breach-2026-05-04",
+    "summary": "Halt the swarm because the daily provider spend cap is exhausted.",
     "riskClass": "high",
     "requiresApproval": false,
     "actions": [
       {
-        "type": "swarm.halt",
+        "kind": "swarm.halt",
         "idempotencyKey": "watch-safety-thresholds:hoopoeAppCockpit:budget-breach:2026-05-04",
         "target": {
           "swarmId": "hoopoeAppCockpit"

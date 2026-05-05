@@ -4413,13 +4413,22 @@
       "actions": [
         {
           "args": {
-            "agent": "GreenBear",
             "reason": "claude rate limit; no alternative account",
             "until": "2026-05-02T20:28:00Z"
           },
-          "type": "agent.pause"
+          "idempotencyKey": "tend-swarm:GreenBear:rate-limited-no-caam:2026-05-02T19:58:00Z",
+          "kind": "agent.pause",
+          "target": {
+            "agentId": "GreenBear"
+          }
         }
-      ]
+      ],
+      "jobId": "tend-swarm",
+      "requiresApproval": false,
+      "riskClass": "low",
+      "runId": "run-rate-limited-no-caam-2026-05-02",
+      "schemaVersion": 1,
+      "summary": "Pause GreenBear until the provider rate-limit window expires because no CAAM alternative is available."
     },
     "activityBehavior": "surface",
     "approvalsRequested": [],

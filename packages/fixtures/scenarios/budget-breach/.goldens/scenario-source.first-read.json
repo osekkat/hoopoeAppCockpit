@@ -389,6 +389,7 @@
             "reason": "budget-breach: daily provider cap exceeded"
           },
           "idempotencyKey": "watch-safety-thresholds:hoopoeAppCockpit:budget-breach:2026-05-04",
+          "kind": "swarm.halt",
           "postconditions": [
             "swarm.session reports state=halted",
             "every agent in the swarm is paused or terminated per policy",
@@ -397,14 +398,15 @@
           ],
           "target": {
             "swarmId": "hoopoeAppCockpit"
-          },
-          "type": "swarm.halt"
+          }
         }
       ],
-      "actor": "pre_script:watch-safety-thresholds",
       "jobId": "watch-safety-thresholds",
       "requiresApproval": false,
-      "riskClass": "high"
+      "riskClass": "high",
+      "runId": "run-budget-breach-2026-05-04",
+      "schemaVersion": 1,
+      "summary": "Halt the swarm because the daily provider spend cap is exhausted."
     },
     "activityBehavior": "surface",
     "approvalsRequested": [],

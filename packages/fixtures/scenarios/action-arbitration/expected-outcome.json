@@ -34,13 +34,15 @@
   ],
   "wakeAgent": false,
   "actionPlan": {
+    "schemaVersion": 1,
     "jobId": "watch-safety-thresholds",
-    "actor": "pre_script:watch-safety-thresholds",
-    "riskClass": "safety",
+    "runId": "safety-run-001",
+    "summary": "Safety halt supersedes the in-flight recovery ActionPlan for the same swarm.",
+    "riskClass": "critical",
     "requiresApproval": false,
     "actions": [
       {
-        "type": "swarm.halt",
+        "kind": "swarm.halt",
         "idempotencyKey": "watch-safety-thresholds:hoopoeAppCockpit:safety-supersession:2026-05-04T17:55:00Z",
         "target": {
           "swarmId": "hoopoeAppCockpit"

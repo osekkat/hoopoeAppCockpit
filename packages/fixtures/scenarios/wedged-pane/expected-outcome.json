@@ -26,25 +26,42 @@
   ],
   "wakeAgent": true,
   "actionPlan": {
+    "schemaVersion": 1,
+    "jobId": "tend-swarm",
+    "runId": "run-wedged-pane-2026-05-02",
+    "summary": "Probe GreenBear, kill the wedged process if it stays silent, then force-release its held reservation.",
+    "riskClass": "high",
+    "requiresApproval": true,
     "actions": [
       {
-        "type": "agent.ask_status",
+        "kind": "agent.ask_status",
+        "target": {
+          "agentId": "GreenBear"
+        },
+        "idempotencyKey": "tend-swarm:GreenBear:ask-status:2026-05-02T19:58:00Z",
         "args": {
-          "agent": "GreenBear",
+          "prompt": "Status check: no pane output for 18 minutes while a tool call appears stuck.",
           "timeout_s": 60
         }
       },
       {
-        "type": "agent.kill_wedged_process",
+        "kind": "agent.kill_wedged_process",
+        "target": {
+          "agentId": "GreenBear"
+        },
+        "idempotencyKey": "tend-swarm:GreenBear:kill-wedged:2026-05-02T19:59:00Z",
         "args": {
-          "agent": "GreenBear",
+          "graceSeconds": 5,
           "reason": "no response after ask_status"
         }
       },
       {
-        "type": "reservation.force_release",
+        "kind": "reservation.force_release",
+        "target": {
+          "reservationId": "99"
+        },
+        "idempotencyKey": "tend-swarm:reservation.force_release:99:2026-05-02T20:00:00Z",
         "args": {
-          "reservation_id": 99,
           "reason": "owner agent killed"
         }
       }

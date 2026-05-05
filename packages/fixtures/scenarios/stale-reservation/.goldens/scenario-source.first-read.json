@@ -496,12 +496,21 @@
               "agent_mail.reservations",
               "ntm.robot.snapshot"
             ],
-            "reason": "expired reservation owner absent for 65m",
-            "reservation_id": 144
+            "reason": "expired reservation owner absent for 65m"
           },
-          "type": "reservation.force_release"
+          "idempotencyKey": "tend-swarm:reservation.force_release:144:2026-05-02T20:10:00Z",
+          "kind": "reservation.force_release",
+          "target": {
+            "reservationId": "144"
+          }
         }
-      ]
+      ],
+      "jobId": "tend-swarm",
+      "requiresApproval": true,
+      "riskClass": "high",
+      "runId": "run-stale-reservation-2026-05-02",
+      "schemaVersion": 1,
+      "summary": "Force-release the expired reservation after confirming the owning agent is absent."
     },
     "activityBehavior": "surface",
     "approvalsRequested": [

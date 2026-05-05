@@ -20,19 +20,21 @@
   ],
   "wakeAgent": false,
   "actionPlan": {
+    "schemaVersion": 1,
+    "jobId": "drift-check",
+    "runId": "run-skill-drift-2026-05-04",
+    "summary": "Pause GreenBear while the operator decides whether to repin the drifted vibing-with-ntm skill.",
+    "riskClass": "low",
+    "requiresApproval": false,
     "actions": [
       {
-        "type": "agent.pause",
+        "kind": "agent.pause",
+        "target": {
+          "agentId": "GreenBear"
+        },
+        "idempotencyKey": "drift-check:GreenBear:pause:skill-drift:2026-05-04T17:14:00Z",
         "args": {
-          "agent": "GreenBear",
           "reason": "skill-drift"
-        }
-      },
-      {
-        "type": "approval.request",
-        "args": {
-          "scope": "jsm.repin",
-          "summary": "Approve repin of vibing-with-ntm to the new SHA-256, or hold to investigate."
         }
       }
     ]

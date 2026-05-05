@@ -27,19 +27,22 @@
   ],
   "wakeAgent": true,
   "actionPlan": {
+    "schemaVersion": 1,
+    "jobId": "tend-swarm",
+    "runId": "run-rate-limited-with-caam-2026-05-02",
+    "summary": "Switch GreenBear to the available CAAM backup account after the primary account is rate-limited.",
+    "riskClass": "medium",
+    "requiresApproval": true,
     "actions": [
       {
-        "type": "caam.switch_account",
+        "kind": "caam.switch_account",
+        "target": {
+          "agentId": "GreenBear",
+          "targetAccountId": "backup"
+        },
+        "idempotencyKey": "tend-swarm:GreenBear:caam-switch:backup:2026-05-02T19:58:00Z",
         "args": {
-          "to": "backup",
           "reason": "primary at 100%"
-        }
-      },
-      {
-        "type": "agent.resume",
-        "args": {
-          "agent": "GreenBear",
-          "reason": "post-switch retry"
         }
       }
     ]

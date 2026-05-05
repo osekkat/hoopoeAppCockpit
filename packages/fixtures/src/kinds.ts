@@ -207,9 +207,34 @@ export interface ExpectedOutcome {
   detections: Array<{ kind: string; payload?: unknown }>;
   /** Whether the pre-script should wake the LLM tending agent. */
   wakeAgent: boolean;
-  /** If wakeAgent=true, the typed ActionPlan the agent should propose (`plan.md` §8.3.1). */
+  /** Typed ActionPlan the tending job should propose or execute (`plan.md` §8.3.1). */
   actionPlan?: {
-    actions: Array<{ type: string; args: Record<string, unknown> }>;
+    schemaVersion: 1;
+    jobId: string;
+    runId: string;
+    summary: string;
+    riskClass: "low" | "medium" | "high" | "critical";
+    requiresApproval?: boolean;
+    evidenceRefs?: string[];
+    actions: Array<{
+      kind:
+        | "agent.ask_status"
+        | "agent.send_marching_orders"
+        | "agent.pause"
+        | "agent.kill_wedged_process"
+        | "reservation.force_release"
+        | "caam.switch_account"
+        | "casr.resume_session"
+        | "git.push_branch"
+        | "swarm.halt"
+        | "review.propose_flip"
+        | "bead.create_blocker";
+      target: Record<string, unknown>;
+      args?: Record<string, unknown>;
+      idempotencyKey: string;
+      preconditions?: string[];
+      postconditions?: string[];
+    }>;
   };
   /** Approvals the daemon should raise before executing. */
   approvalsRequested: Array<{ scope: string; reason: string }>;

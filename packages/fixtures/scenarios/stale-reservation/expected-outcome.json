@@ -39,11 +39,20 @@
   ],
   "wakeAgent": true,
   "actionPlan": {
+    "schemaVersion": 1,
+    "jobId": "tend-swarm",
+    "runId": "run-stale-reservation-2026-05-02",
+    "summary": "Force-release the expired reservation after confirming the owning agent is absent.",
+    "riskClass": "high",
+    "requiresApproval": true,
     "actions": [
       {
-        "type": "reservation.force_release",
+        "kind": "reservation.force_release",
+        "target": {
+          "reservationId": "144"
+        },
+        "idempotencyKey": "tend-swarm:reservation.force_release:144:2026-05-02T20:10:00Z",
         "args": {
-          "reservation_id": 144,
           "reason": "expired reservation owner absent for 65m",
           "evidence": [
             "agent_mail.reservations",

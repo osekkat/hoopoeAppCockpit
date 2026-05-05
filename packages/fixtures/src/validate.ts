@@ -82,6 +82,22 @@ const FORBIDDEN_SECRET_PATTERNS: ReadonlyArray<{ name: string; rx: RegExp }> = [
   { name: "PEM private key block", rx: /-----BEGIN [A-Z ]*PRIVATE KEY-----/ },
 ];
 
+const ACTION_PLAN_RISK_CLASSES = new Set(["low", "medium", "high", "critical"]);
+
+const ACTION_KINDS = new Set([
+  "agent.ask_status",
+  "agent.send_marching_orders",
+  "agent.pause",
+  "agent.kill_wedged_process",
+  "reservation.force_release",
+  "caam.switch_account",
+  "casr.resume_session",
+  "git.push_branch",
+  "swarm.halt",
+  "review.propose_flip",
+  "bead.create_blocker",
+]);
+
 /** Severity levels for validator findings. */
 export type FindingSeverity = "error" | "warning";
 
@@ -135,6 +151,14 @@ function isFile(p: string): boolean {
   } catch {
     return false;
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
 
 function tryParseJson(path: string): unknown | null {
@@ -349,6 +373,108 @@ function validateExpectedOutcomeShape(ctx: ValidatorContext, scenarioDir: string
       path,
       "expected-outcome: wakeAgent=false but actionPlan is present (intentional?)",
     );
+  }
+  if (parsed.actionPlan !== null && parsed.actionPlan !== undefined) {
+    validateActionPlanShape(ctx, path, parsed.actionPlan);
+  }
+}
+
+function validateActionPlanShape(
+  ctx: ValidatorContext,
+  path: string,
+  actionPlan: unknown,
+): void {
+  if (!isRecord(actionPlan)) {
+    pushError(ctx, "outcome.bad-action-plan", path, "actionPlan must be a JSON object");
+    return;
+  }
+
+  const requiredStringKeys = ["jobId", "runId", "summary", "riskClass"];
+  if (actionPlan.schemaVersion !== 1) {
+    pushError(ctx, "outcome.bad-action-plan", path, "actionPlan.schemaVersion must be 1");
+  }
+  for (const key of requiredStringKeys) {
+    if (typeof actionPlan[key] !== "string" || (actionPlan[key] as string).length === 0) {
+      pushError(ctx, "outcome.bad-action-plan", path, `actionPlan.${key} must be a non-empty string`);
+    }
+  }
+  if (
+    typeof actionPlan.riskClass === "string" &&
+    !ACTION_PLAN_RISK_CLASSES.has(actionPlan.riskClass)
+  ) {
+    pushError(
+      ctx,
+      "outcome.bad-action-plan",
+      path,
+      `actionPlan.riskClass must be low|medium|high|critical (got '${actionPlan.riskClass}')`,
+    );
+  }
+  if (
+    actionPlan.requiresApproval !== undefined &&
+    typeof actionPlan.requiresApproval !== "boolean"
+  ) {
+    pushError(ctx, "outcome.bad-action-plan", path, "actionPlan.requiresApproval must be boolean");
+  }
+  if (actionPlan.evidenceRefs !== undefined && !isStringArray(actionPlan.evidenceRefs)) {
+    pushError(ctx, "outcome.bad-action-plan", path, "actionPlan.evidenceRefs must be string[]");
+  }
+  if (!Array.isArray(actionPlan.actions) || actionPlan.actions.length === 0) {
+    pushError(ctx, "outcome.bad-action-plan", path, "actionPlan.actions must be a non-empty array");
+    return;
+  }
+
+  for (let i = 0; i < actionPlan.actions.length; i++) {
+    const action = actionPlan.actions[i];
+    if (!isRecord(action)) {
+      pushError(ctx, "outcome.bad-action", path, `actionPlan.actions[${i}] must be an object`);
+      continue;
+    }
+    if ("type" in action) {
+      pushError(
+        ctx,
+        "outcome.legacy-action-type",
+        path,
+        `actionPlan.actions[${i}] uses legacy 'type'; use 'kind'`,
+      );
+    }
+    if (typeof action.kind !== "string" || !ACTION_KINDS.has(action.kind)) {
+      pushError(
+        ctx,
+        "outcome.bad-action",
+        path,
+        `actionPlan.actions[${i}].kind must be a known tending action kind`,
+      );
+    }
+    if (!isRecord(action.target)) {
+      pushError(ctx, "outcome.bad-action", path, `actionPlan.actions[${i}].target must be an object`);
+    }
+    if (typeof action.idempotencyKey !== "string" || action.idempotencyKey.length === 0) {
+      pushError(
+        ctx,
+        "outcome.bad-action",
+        path,
+        `actionPlan.actions[${i}].idempotencyKey must be a non-empty string`,
+      );
+    }
+    if (action.args !== undefined && !isRecord(action.args)) {
+      pushError(ctx, "outcome.bad-action", path, `actionPlan.actions[${i}].args must be an object`);
+    }
+    if (action.preconditions !== undefined && !isStringArray(action.preconditions)) {
+      pushError(
+        ctx,
+        "outcome.bad-action",
+        path,
+        `actionPlan.actions[${i}].preconditions must be string[]`,
+      );
+    }
+    if (action.postconditions !== undefined && !isStringArray(action.postconditions)) {
+      pushError(
+        ctx,
+        "outcome.bad-action",
+        path,
+        `actionPlan.actions[${i}].postconditions must be string[]`,
+      );
+    }
   }
 }
 
