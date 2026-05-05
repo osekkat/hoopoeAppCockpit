@@ -37,6 +37,12 @@ export type ActivityContextAction =
   | "create-bead-from-message"
   | "mark-acknowledged";
 
+interface OpenContextMenuState {
+  readonly event: ActivityEvent;
+  readonly x: number;
+  readonly y: number;
+}
+
 export function TimelineList({
   emptyReason = "filtered",
   events,
@@ -44,6 +50,41 @@ export function TimelineList({
   onContextAction,
   onResetFilters,
 }: TimelineListProps) {
+  // hp-tg0s: keep ContextMenu state at the parent so AT MOST ONE menu is
+  // rendered across the whole timeline. The previous per-row state let two
+  // menus stack when the user right-clicked row A then row B without
+  // dismissing A. Hooks must be called unconditionally — declare them
+  // before the empty-state early return.
+  const [openMenu, setOpenMenu] = useState<OpenContextMenuState | null>(null);
+  const openerRef = useRef<HTMLButtonElement | null>(null);
+
+  const handleOpenMenu = useCallback(
+    (event: ActivityEvent, x: number, y: number, opener: HTMLButtonElement) => {
+      openerRef.current = opener;
+      setOpenMenu({ event, x, y });
+    },
+    [],
+  );
+
+  const dismissMenu = useCallback(() => {
+    const opener = openerRef.current;
+    openerRef.current = null;
+    setOpenMenu(null);
+    opener?.focus();
+  }, []);
+
+  const handleAction = useCallback(
+    (action: ActivityContextAction) => {
+      const target = openMenu;
+      openerRef.current = null;
+      setOpenMenu(null);
+      // Don't restore focus on action — the action handler may itself open
+      // another surface (composer, modal, navigation) that owns focus.
+      if (target && onContextAction) onContextAction(target.event, action);
+    },
+    [openMenu, onContextAction],
+  );
+
   if (events.length === 0) {
     const noEvents = emptyReason === "no-events";
     return (
@@ -91,10 +132,18 @@ export function TimelineList({
         <TimelineEntry
           key={event.id}
           event={event}
+          onOpenContextMenu={handleOpenMenu}
           {...(onEventClick ? { onEventClick } : {})}
-          {...(onContextAction ? { onContextAction } : {})}
         />
       ))}
+      {openMenu && (
+        <ContextMenu
+          x={openMenu.x}
+          y={openMenu.y}
+          onAction={handleAction}
+          onDismiss={dismissMenu}
+        />
+      )}
     </div>
   );
 }
@@ -102,11 +151,15 @@ export function TimelineList({
 interface TimelineEntryProps {
   readonly event: ActivityEvent;
   readonly onEventClick?: (event: ActivityEvent, pivot: ActivityPivot | null) => void;
-  readonly onContextAction?: (event: ActivityEvent, action: ActivityContextAction) => void;
+  readonly onOpenContextMenu: (
+    event: ActivityEvent,
+    x: number,
+    y: number,
+    opener: HTMLButtonElement,
+  ) => void;
 }
 
-function TimelineEntry({ event, onEventClick, onContextAction }: TimelineEntryProps) {
-  const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
+function TimelineEntry({ event, onEventClick, onOpenContextMenu }: TimelineEntryProps) {
   const rowRef = useRef<HTMLButtonElement>(null);
 
   const props: TimelineRowProps = useMemo(() => {
@@ -138,75 +191,56 @@ function TimelineEntry({ event, onEventClick, onContextAction }: TimelineEntryPr
   const handleContextMenu = useCallback(
     (e: React.MouseEvent<HTMLButtonElement>) => {
       e.preventDefault();
-      setMenuPos({ x: e.clientX, y: e.clientY });
+      if (rowRef.current) {
+        onOpenContextMenu(event, e.clientX, e.clientY, rowRef.current);
+      }
     },
-    [],
-  );
-
-  const handleAction = useCallback(
-    (action: ActivityContextAction) => {
-      setMenuPos(null);
-      if (onContextAction) onContextAction(event, action);
-    },
-    [event, onContextAction],
+    [event, onOpenContextMenu],
   );
 
   return (
-    <>
-      <button
-        aria-label={model.ariaLabel}
-        className="hh-activity-row"
-        data-importance={event.importance}
-        data-unread={!event.read}
-        onClick={handleClick}
-        onContextMenu={handleContextMenu}
-        ref={rowRef}
-        role="listitem"
-        type="button"
-      >
-        <span className="hh-activity-row-marker" aria-hidden="true">
-          {model.kindMarker}
+    <button
+      aria-label={model.ariaLabel}
+      className="hh-activity-row"
+      data-importance={event.importance}
+      data-unread={!event.read}
+      onClick={handleClick}
+      onContextMenu={handleContextMenu}
+      ref={rowRef}
+      role="listitem"
+      type="button"
+    >
+      <span className="hh-activity-row-marker" aria-hidden="true">
+        {model.kindMarker}
+      </span>
+      <span className="hh-activity-row-body">
+        <span className="hh-activity-row-meta">
+          <strong>{event.actor.displayName}</strong>
+          <span className="hh-activity-row-kind">{model.kindLabel}</span>
+          <time dateTime={event.timestamp}>{model.timestampLabel}</time>
         </span>
-        <span className="hh-activity-row-body">
-          <span className="hh-activity-row-meta">
-            <strong>{event.actor.displayName}</strong>
-            <span className="hh-activity-row-kind">{model.kindLabel}</span>
-            <time dateTime={event.timestamp}>{model.timestampLabel}</time>
-          </span>
-          <p className="hh-activity-row-summary">{event.summary}</p>
-          {event.inlinePreview && (
-            <p className="hh-activity-row-preview">{event.inlinePreview}</p>
-          )}
-          {event.pills && event.pills.length > 0 && (
-            <span className="hh-activity-row-pills">
-              {event.pills.map((p) => (
-                <span
-                  className="hh-activity-row-pill"
-                  data-tone={p.tone ?? "muted"}
-                  key={p.id}
-                >
-                  {p.label}
-                </span>
-              ))}
-            </span>
-          )}
-        </span>
-        {!event.read && (
-          <span className="hh-activity-row-unread" aria-label="Unread" />
+        <p className="hh-activity-row-summary">{event.summary}</p>
+        {event.inlinePreview && (
+          <p className="hh-activity-row-preview">{event.inlinePreview}</p>
         )}
-      </button>
-      {menuPos && (
-        <ContextMenu
-          x={menuPos.x}
-          y={menuPos.y}
-          onAction={handleAction}
-          onDismiss={() => {
-            setMenuPos(null);
-            rowRef.current?.focus();
-          }}
-        />
+        {event.pills && event.pills.length > 0 && (
+          <span className="hh-activity-row-pills">
+            {event.pills.map((p) => (
+              <span
+                className="hh-activity-row-pill"
+                data-tone={p.tone ?? "muted"}
+                key={p.id}
+              >
+                {p.label}
+              </span>
+            ))}
+          </span>
+        )}
+      </span>
+      {!event.read && (
+        <span className="hh-activity-row-unread" aria-label="Unread" />
       )}
-    </>
+    </button>
   );
 }
 

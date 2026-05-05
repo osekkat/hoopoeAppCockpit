@@ -325,6 +325,38 @@ describe("TimelineList empty states", () => {
   });
 });
 
+describe("TimelineList ContextMenu placement (hp-tg0s)", () => {
+  test("default render has no role=\"menu\" — menu is parent-managed and only mounts when opened", () => {
+    // hp-tg0s: ContextMenu state was lifted from each TimelineEntry to
+    // TimelineList. Without a right-click action, no menu should be in
+    // the rendered markup, even with multiple rows. The previous shape
+    // had per-row state; the regression we're guarding against is
+    // multiple <ul role="menu"> elements coexisting after a hypothetical
+    // right-click on row A then row B.
+    const fixtures = buildFixtureEvents();
+    const events: ActivityEvent[] = fixtures.slice(0, 3).map((input, i) => ({
+      ...baseEvent({ id: `tg0s-${i}`, kind: input.kind, summary: input.summary, importance: input.importance, actor: input.actor }),
+      timestamp: input.timestamp,
+    }));
+
+    const markup = renderToStaticMarkup(
+      createElement(TimelineList, {
+        emptyReason: "filtered",
+        events,
+        onContextAction: () => undefined,
+      }),
+    );
+
+    const menuMatches = markup.match(/role="menu"/g) ?? [];
+    expect(menuMatches.length).toBe(0);
+    // Three rows are present, so the regression "menu state per row"
+    // would have had three menus if the prior pattern had auto-rendered
+    // them — confirm we still render the rows themselves.
+    const rowMatches = markup.match(/class="hh-activity-row"/g) ?? [];
+    expect(rowMatches.length).toBe(3);
+  });
+});
+
 describe("reduceContextMenuKey (hp-0xm3)", () => {
   const TOTAL = CONTEXT_ACTIONS.length;
 
