@@ -7,17 +7,147 @@ import {
   Wrench,
   Workflow,
 } from "lucide-react";
-import { useState } from "react";
+import { type KeyboardEvent, type Ref, useRef, useState } from "react";
 import { useBeadsStageQuery } from "../../data/stage-data.ts";
 import { StateSurface } from "../../state-view/index.ts";
 import { BeadsDagView } from "./BeadsDagView.tsx";
 import "./BeadsStage.css";
 
-type BeadView = "list" | "dag";
+export type BeadView = "list" | "dag";
 
-export function BeadsStage({ projectId }: { readonly projectId: string }) {
+const BEAD_VIEW_ORDER: readonly BeadView[] = ["list", "dag"];
+
+export const BEAD_VIEW_TAB_IDS: Record<BeadView, string> = {
+  list: "hh-beads-view-tab-list",
+  dag: "hh-beads-view-tab-dag",
+};
+
+export const BEAD_VIEW_PANEL_IDS: Record<BeadView, string> = {
+  list: "hh-beads-view-panel-list",
+  dag: "hh-beads-view-panel-dag",
+};
+
+type BeadsViewKeyEvent = Pick<KeyboardEvent<HTMLButtonElement>, "key" | "preventDefault">;
+
+export function nextBeadsViewForTabKey(current: BeadView, key: string): BeadView | null {
+  const currentIndex = BEAD_VIEW_ORDER.indexOf(current);
+
+  if (key === "ArrowRight") {
+    return BEAD_VIEW_ORDER[(currentIndex + 1) % BEAD_VIEW_ORDER.length] ?? current;
+  }
+
+  if (key === "ArrowLeft") {
+    return BEAD_VIEW_ORDER[(currentIndex - 1 + BEAD_VIEW_ORDER.length) % BEAD_VIEW_ORDER.length] ?? current;
+  }
+
+  if (key === "Home") {
+    return BEAD_VIEW_ORDER[0] ?? current;
+  }
+
+  if (key === "End") {
+    return BEAD_VIEW_ORDER[BEAD_VIEW_ORDER.length - 1] ?? current;
+  }
+
+  return null;
+}
+
+export function handleBeadsViewTabKeyDown(
+  current: BeadView,
+  event: BeadsViewKeyEvent,
+  onSelect: (view: BeadView) => void,
+  onFocusTab?: (view: BeadView) => void,
+): void {
+  const nextView = nextBeadsViewForTabKey(current, event.key);
+  if (!nextView) {
+    return;
+  }
+
+  event.preventDefault();
+  onSelect(nextView);
+  onFocusTab?.(nextView);
+}
+
+export function beadsViewPanelA11yProps(view: BeadView): {
+  readonly id: string;
+  readonly role: "tabpanel";
+  readonly tabIndex: 0;
+  readonly "aria-labelledby": string;
+} {
+  return {
+    id: BEAD_VIEW_PANEL_IDS[view],
+    role: "tabpanel",
+    tabIndex: 0,
+    "aria-labelledby": BEAD_VIEW_TAB_IDS[view],
+  };
+}
+
+export function BeadsViewTabs({
+  view,
+  onSelect,
+  onFocusTab,
+  listTabRef,
+  dagTabRef,
+}: {
+  readonly view: BeadView;
+  readonly onSelect: (view: BeadView) => void;
+  readonly onFocusTab?: (view: BeadView) => void;
+  readonly listTabRef?: Ref<HTMLButtonElement>;
+  readonly dagTabRef?: Ref<HTMLButtonElement>;
+}) {
+  return (
+    <section className="hh-beads-view-toggle" role="tablist" aria-label="Bead view">
+      <button
+        ref={listTabRef}
+        id={BEAD_VIEW_TAB_IDS.list}
+        type="button"
+        role="tab"
+        aria-controls={BEAD_VIEW_PANEL_IDS.list}
+        aria-selected={view === "list"}
+        tabIndex={view === "list" ? 0 : -1}
+        className={`hh-beads-view-tab${view === "list" ? " hh-beads-view-tab-active" : ""}`}
+        onClick={() => onSelect("list")}
+        onKeyDown={(event) => handleBeadsViewTabKeyDown("list", event, onSelect, onFocusTab)}
+        data-testid="beads-view-list"
+      >
+        <ListChecks size={13} strokeWidth={2.1} />
+        <span>List</span>
+      </button>
+      <button
+        ref={dagTabRef}
+        id={BEAD_VIEW_TAB_IDS.dag}
+        type="button"
+        role="tab"
+        aria-controls={BEAD_VIEW_PANEL_IDS.dag}
+        aria-selected={view === "dag"}
+        tabIndex={view === "dag" ? 0 : -1}
+        className={`hh-beads-view-tab${view === "dag" ? " hh-beads-view-tab-active" : ""}`}
+        onClick={() => onSelect("dag")}
+        onKeyDown={(event) => handleBeadsViewTabKeyDown("dag", event, onSelect, onFocusTab)}
+        data-testid="beads-view-dag"
+      >
+        <Workflow size={13} strokeWidth={2.1} />
+        <span>DAG</span>
+      </button>
+    </section>
+  );
+}
+
+export function BeadsStage({
+  projectId,
+  initialView = "list",
+}: {
+  readonly projectId: string;
+  readonly initialView?: BeadView;
+}) {
   const query = useBeadsStageQuery(projectId);
-  const [view, setView] = useState<BeadView>("list");
+  const [view, setView] = useState<BeadView>(initialView);
+  const listTabRef = useRef<HTMLButtonElement>(null);
+  const dagTabRef = useRef<HTMLButtonElement>(null);
+
+  const focusBeadsViewTab = (nextView: BeadView) => {
+    const nextTab = nextView === "list" ? listTabRef.current : dagTabRef.current;
+    nextTab?.focus();
+  };
 
   if (query.isLoading) {
     return (
@@ -79,33 +209,20 @@ export function BeadsStage({ projectId }: { readonly projectId: string }) {
         ))}
       </section>
 
-      <section className="hh-beads-view-toggle" role="tablist" aria-label="Bead view">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={view === "list"}
-          className={`hh-beads-view-tab${view === "list" ? " hh-beads-view-tab-active" : ""}`}
-          onClick={() => setView("list")}
-          data-testid="beads-view-list"
-        >
-          <ListChecks size={13} strokeWidth={2.1} />
-          <span>List</span>
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={view === "dag"}
-          className={`hh-beads-view-tab${view === "dag" ? " hh-beads-view-tab-active" : ""}`}
-          onClick={() => setView("dag")}
-          data-testid="beads-view-dag"
-        >
-          <Workflow size={13} strokeWidth={2.1} />
-          <span>DAG</span>
-        </button>
-      </section>
+      <BeadsViewTabs
+        view={view}
+        onSelect={setView}
+        onFocusTab={focusBeadsViewTab}
+        listTabRef={listTabRef}
+        dagTabRef={dagTabRef}
+      />
 
       {view === "list" ? (
-        <section className="hh-beads-list" aria-label="Mock Flywheel bead list">
+        <section
+          {...beadsViewPanelA11yProps("list")}
+          className="hh-beads-list"
+          aria-label="Mock Flywheel bead list"
+        >
           <div className="hh-stage-section-title">
             <ListChecks size={17} strokeWidth={2.1} />
             <h2>Bead board</h2>
@@ -157,7 +274,11 @@ export function BeadsStage({ projectId }: { readonly projectId: string }) {
           )}
         </section>
       ) : (
-        <section className="hh-beads-dag-container" aria-label="Mock Flywheel bead DAG">
+        <section
+          {...beadsViewPanelA11yProps("dag")}
+          className="hh-beads-dag-container"
+          aria-label="Mock Flywheel bead DAG"
+        >
           {hasBeads ? (
             <BeadsDagView beads={data.beads} />
           ) : (
