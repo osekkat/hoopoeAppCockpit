@@ -312,6 +312,25 @@ describe("validateCorpus fuzz (review Round 3)", () => {
     }
   });
 
+  test("scenario directory without meta.json is an error, not a skipped stub", () => {
+    const corpus = isolatedCorpus();
+    try {
+      mkdirSync(join(corpus, "scenarios", "healthy-hour"), { recursive: true });
+      mkdirSync(join(corpus, "phase0-2026-05-02", "scenarios", "fresh"), { recursive: true });
+      mkdirSync(join(corpus, "phase0-2026-05-02", "scenarios", "active"), { recursive: true });
+      mkdirSync(join(corpus, "phase0-2026-05-02", "scenarios", "failure"), { recursive: true });
+      mkdirSync(join(corpus, "golden-outputs"), { recursive: true });
+
+      const result = validateCorpus(corpus);
+      const stubFinding = result.findings.find((f) => f.rule === "scenario.stub");
+
+      expect(stubFinding).toBeDefined();
+      expect(stubFinding?.severity).toBe("error");
+    } finally {
+      rmSync(corpus, { recursive: true, force: true });
+    }
+  });
+
   test("scenario with prototype-pollution keys in meta.json doesn't pollute", () => {
     const corpus = isolatedCorpus();
     try {

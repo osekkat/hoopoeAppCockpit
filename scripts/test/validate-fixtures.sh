@@ -87,12 +87,6 @@ if [[ -d "$SCENARIOS_DIR" ]]; then
   for sd in "$SCENARIOS_DIR"/*/; do
     [[ -d "$sd" ]] || continue
     name="$(basename "$sd")"
-    has_meta=0
-    if [[ -f "$sd/meta.json" ]]; then has_meta=1; fi
-    if [[ "$has_meta" == "0" ]]; then
-      # Skip scenario stubs — directories without meta.json are placeholders.
-      continue
-    fi
     for f in "${REQUIRED_FILES[@]}"; do
       if [[ ! -f "$sd/$f" ]]; then
         echo "  [missing] scenarios/$name/$f" >&2

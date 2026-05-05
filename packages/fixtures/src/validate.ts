@@ -53,7 +53,7 @@ const REQUIRED_SCENARIO_FILES = [
   "expected-outcome.json",
 ] as const;
 
-/** Required *directories* (must exist; may be empty in stub scenarios). */
+/** Required *directories* (must exist for every §8.8 tending scenario). */
 const REQUIRED_SCENARIO_DIRS = ["pane-logs", "build-logs"] as const;
 
 /** Required for `missing-tool` specifically. */
@@ -237,23 +237,20 @@ function validateScenarioDir(
     return;
   }
 
-  // Stub scenarios (directory exists, but no meta.json) are intentional
-  // placeholders for §8.8 entries not yet populated by the seeder. Skip
-  // the per-file checks but emit a warning so they're visible.
   const metaPresent = isFile(join(scenarioDir, "meta.json"));
   if (!metaPresent) {
-    pushWarning(
+    pushError(
       ctx,
       "scenario.stub",
       scenarioDir,
-      `scenario '${scenarioId}' is a stub (no meta.json); skip-checked. Populate via build-scenarios.sh.`,
+      `scenario '${scenarioId}' is missing meta.json; §8.8 tending scenario stubs are no longer allowed.`,
     );
-    return;
   }
 
   for (const file of REQUIRED_SCENARIO_FILES) {
     const fp = join(scenarioDir, file);
     if (!isFile(fp)) {
+      if (file === "meta.json" && !metaPresent) continue;
       pushError(
         ctx,
         "scenario.missing-file",
@@ -326,7 +323,9 @@ function validateScenarioDir(
     }
   }
 
-  validateMetaShape(ctx, scenarioDir);
+  if (metaPresent) {
+    validateMetaShape(ctx, scenarioDir);
+  }
   validateExpectedOutcomeShape(ctx, scenarioDir);
 }
 

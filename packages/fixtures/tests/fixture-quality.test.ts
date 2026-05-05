@@ -43,12 +43,10 @@ describe("fixture corpus quality (hp-pl5o)", () => {
     expect(result.ok).toBe(true);
   });
 
-  test("at least 5 §8.8 tending scenarios are populated", () => {
-    // hp-wle ships healthy-hour, idle-but-not-stuck, wedged-pane,
-    // rate-limited-no-caam, rate-limited-with-caam. The remaining 7 §8.8
-    // scenarios may be stubbed by directory only and will be filled in
-    // follow-up beads.
-    expect(result.summary.tendingScenariosFound).toBeGreaterThanOrEqual(5);
+  test("all 12 §8.8 tending scenarios are populated", () => {
+    expect(result.summary.tendingScenariosFound).toBe(TENDING_SCENARIOS.length);
+    expect(result.summary.tendingScenariosExpected).toBe(TENDING_SCENARIOS.length);
+    expect(result.findings.filter((f) => f.rule === "scenario.stub")).toEqual([]);
   });
 
   test("all 18 adapters × 6 golden-output states present (108 fixtures)", () => {
