@@ -154,6 +154,11 @@ if (!existsSync(manual)) {
 const tmpDir = mkdtempSync(join(tmpdir(), "hoopoe-preload-validate-"));
 const freshGenerated = join(tmpDir, "ipc-contract.gen.ts");
 
+// hp-olkd: Node's process.exit() does not run pending finally blocks, so
+// the original `process.exit(1)` calls inside the try leaked tmpDir on
+// generator failure or drift. Track the exit code and call process.exit
+// AFTER the finally runs rmSync.
+let exitCode = 0;
 try {
   const result = spawnSync("bun", [generator, "--out", freshGenerated], {
     stdio: ["ignore", "pipe", "pipe"],
@@ -164,43 +169,43 @@ try {
       `[validate-preload-codegen] generator failed (exit ${result.status})\n` +
         `stdout:\n${result.stdout}\nstderr:\n${result.stderr}\n`,
     );
-    process.exit(1);
-  }
+    exitCode = 1;
+  } else {
+    const want = readFileSync(committed, "utf8");
+    const got = readFileSync(freshGenerated, "utf8");
 
-  const want = readFileSync(committed, "utf8");
-  const got = readFileSync(freshGenerated, "utf8");
-
-  const manualContract = await importContract(manual, "apps/desktop/src/shared/ipc-contract.ts");
-  const generatedContract = await importContract(
-    freshGenerated,
-    "freshly generated apps/desktop/src/shared/ipc-contract.gen.ts",
-  );
-  const parityDiffs = contractParityDiffs(manualContract, generatedContract);
-
-  if (want === got && parityDiffs.length === 0) {
-    process.stdout.write(
-      "[validate-preload-codegen] OK — ipc-contract.gen.ts matches preload-api.yaml and ipc-contract.ts\n",
+    const manualContract = await importContract(manual, "apps/desktop/src/shared/ipc-contract.ts");
+    const generatedContract = await importContract(
+      freshGenerated,
+      "freshly generated apps/desktop/src/shared/ipc-contract.gen.ts",
     );
-    process.exit(0);
-  }
+    const parityDiffs = contractParityDiffs(manualContract, generatedContract);
 
-  const messages: string[] = [];
-  if (want !== got) {
-    messages.push(
-      "[validate-preload-codegen] DRIFT — preload-api.yaml and ipc-contract.gen.ts disagree.",
-      "No working-tree files were modified by this validation check.",
-      "Fix: run `bun run --cwd packages/schemas generate:preload` and commit the result.",
-    );
+    if (want === got && parityDiffs.length === 0) {
+      process.stdout.write(
+        "[validate-preload-codegen] OK — ipc-contract.gen.ts matches preload-api.yaml and ipc-contract.ts\n",
+      );
+    } else {
+      const messages: string[] = [];
+      if (want !== got) {
+        messages.push(
+          "[validate-preload-codegen] DRIFT — preload-api.yaml and ipc-contract.gen.ts disagree.",
+          "No working-tree files were modified by this validation check.",
+          "Fix: run `bun run --cwd packages/schemas generate:preload` and commit the result.",
+        );
+      }
+      if (parityDiffs.length > 0) {
+        messages.push(
+          "[validate-preload-codegen] DRIFT — ipc-contract.ts and generated preload contract disagree.",
+          ...parityDiffs,
+          "Fix: update packages/schemas/preload-api.yaml, run `bun run --cwd packages/schemas generate:preload`, and reconcile apps/desktop/src/shared/ipc-contract.ts.",
+        );
+      }
+      process.stderr.write(`${messages.join("\n")}\n`);
+      exitCode = 1;
+    }
   }
-  if (parityDiffs.length > 0) {
-    messages.push(
-      "[validate-preload-codegen] DRIFT — ipc-contract.ts and generated preload contract disagree.",
-      ...parityDiffs,
-      "Fix: update packages/schemas/preload-api.yaml, run `bun run --cwd packages/schemas generate:preload`, and reconcile apps/desktop/src/shared/ipc-contract.ts.",
-    );
-  }
-  process.stderr.write(`${messages.join("\n")}\n`);
-  process.exit(1);
 } finally {
   rmSync(tmpDir, { recursive: true, force: true });
 }
+process.exit(exitCode);
