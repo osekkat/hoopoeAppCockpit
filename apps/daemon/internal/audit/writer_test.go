@@ -347,6 +347,80 @@ func TestDecodeEntryMigratesLegacySchema(t *testing.T) {
 	}
 }
 
+// TestDecodeEntryRedactsLegacyData guards hp-yp9i: legacy v1 entries
+// pre-date the redaction layer (commit 3b8c174). Their on-disk Data
+// field may carry secrets that were never run through redact.RedactValue
+// at append time. Pre-hp-yp9i, audit exports stamped Redacted: true on
+// these entries even though the Data was unredacted. The fix re-runs
+// legacy Data through the default audit redactor on read, so the export
+// claim stays honest.
+func TestDecodeEntryRedactsLegacyData(t *testing.T) {
+	// Legacy v1 entry whose Data carries an Anthropic-shape secret.
+	// Encoded as a Go string so the JSON literal stays readable.
+	body := `{` +
+		`"schemaVersion":1,` +
+		`"eventId":"legacy_with_secret",` +
+		`"type":"legacy.import",` +
+		`"time":"1970-01-01T00:00:12Z",` +
+		`"actor":{"kind":"system","id":"daemon"},` +
+		`"data":{"note":"key is sk-ant-api-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX-AAAAAAAAAA"}` +
+		`}`
+	entry, err := DecodeEntry([]byte(body))
+	if err != nil {
+		t.Fatalf("decode legacy entry: %v", err)
+	}
+	note, ok := entry.Data["note"].(string)
+	if !ok {
+		t.Fatalf("Data.note not a string: %+v", entry.Data)
+	}
+	if strings.Contains(note, "sk-ant-api") {
+		t.Fatalf("legacy Data NOT redacted on read: %q", note)
+	}
+	// Redactor swaps the secret body for a sha256-tagged sentinel (e.g.
+	// `[redacted-sha256:48f2bb67]`) — the literal token "redacted"
+	// always appears in the sentinel.
+	if !strings.Contains(note, "redacted") {
+		t.Fatalf("legacy Data redaction sentinel missing: %q", note)
+	}
+}
+
+// TestDecodeEntryLegacyEmptyDataIsAUnchanged confirms the
+// fast-path: a legacy entry with no Data goes through the legacy
+// branch without invoking the redactor, so a deployment that never
+// had pre-redaction secrets pays nothing per read. This pins down
+// the early-return in redactLegacyData.
+func TestDecodeEntryLegacyEmptyDataIsUnchanged(t *testing.T) {
+	body := `{"schemaVersion":1,"eventId":"legacy_no_data","type":"legacy.action","time":"1970-01-01T00:00:12Z","actor":{"kind":"system","id":"daemon"}}`
+	entry, err := DecodeEntry([]byte(body))
+	if err != nil {
+		t.Fatalf("decode legacy entry: %v", err)
+	}
+	if len(entry.Data) != 0 {
+		t.Fatalf("expected empty Data, got %+v", entry.Data)
+	}
+}
+
+// TestSetLegacyDecodeRedactorOverride confirms the test-driver
+// override hook: a custom redactor swapped in via SetLegacyDecodeRedactor
+// is used on subsequent decodes. Restores the prior redactor at the
+// end so it doesn't leak across tests.
+func TestSetLegacyDecodeRedactorOverride(t *testing.T) {
+	// Stub redactor that wraps everything in [STUB:...].
+	stub := redaction.New(redaction.Config{})
+	previous := SetLegacyDecodeRedactor(stub)
+	defer SetLegacyDecodeRedactor(previous)
+
+	body := `{"schemaVersion":1,"eventId":"e","type":"x","time":"1970-01-01T00:00:00Z","actor":{"kind":"system","id":"daemon"},"data":{"k":"v"}}`
+	entry, err := DecodeEntry([]byte(body))
+	if err != nil {
+		t.Fatalf("decode legacy: %v", err)
+	}
+	if got := entry.Data["k"]; got != "v" {
+		// A no-secret value passes through the default redactor unchanged.
+		t.Fatalf("Data.k = %v, want \"v\"", got)
+	}
+}
+
 func decodeLines(t *testing.T, body string) []map[string]any {
 	t.Helper()
 	var out []map[string]any

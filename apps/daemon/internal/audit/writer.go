@@ -599,6 +599,14 @@ func DecodeEntry(line []byte) (Entry, error) {
 		if err := json.Unmarshal(line, &legacy); err != nil {
 			return Entry{}, fmt.Errorf("audit: decode legacy entry: %w", err)
 		}
+		// hp-yp9i: legacy v1 entries pre-date the redaction layer
+		// (commit 3b8c174). A deployment that started before that
+		// commit may have on-disk Data fields with raw secrets that
+		// were never run through redact.RedactValue at append time.
+		// Lazy re-redaction on read keeps the export's
+		// Redacted: true claim honest — every Entry leaving this
+		// function has been through the same redaction pipeline,
+		// regardless of when it was originally written.
 		return normalizeDecodedEntry(Entry{
 			SchemaVersion: SchemaVersion,
 			EventID:       legacy.EventID,
@@ -611,11 +619,69 @@ func DecodeEntry(line []byte) (Entry, error) {
 			Action:        legacy.Type,
 			CorrelationID: legacy.CorrelationID,
 			CausationID:   legacy.CausationID,
-			Data:          legacy.Data,
+			Data:          redactLegacyData(legacy.Data),
 		}), nil
 	default:
 		return Entry{}, fmt.Errorf("audit: unsupported schema version %d", header.SchemaVersion)
 	}
+}
+
+// redactLegacyData runs a legacy v1 entry's Data field through the
+// default audit redactor so secrets that pre-date the redaction layer
+// are scrubbed on read instead of leaking through into v2-shaped
+// exports. Empty / nil Data passes through untouched.
+//
+// The redactor is created lazily once per process via sync.Once and
+// then reused — pattern construction is non-trivial (~25 patterns
+// compile their regex on init) but each call is cheap. A test-only
+// override (`SetLegacyDecodeRedactor`) is exposed below for fixture
+// drivers that want a deterministic redactor with a fixed clock.
+func redactLegacyData(data map[string]any) map[string]any {
+	if len(data) == 0 {
+		return data
+	}
+	r := defaultLegacyDecodeRedactor()
+	redacted, _ := r.RedactValue(redaction.SurfaceAudit, "audit.legacy", data)
+	if asMap, ok := redacted.(map[string]any); ok {
+		return asMap
+	}
+	return data
+}
+
+var (
+	legacyDecodeRedactorOnce sync.Once
+	legacyDecodeRedactorMu   sync.Mutex
+	legacyDecodeRedactor     *redaction.Redactor
+)
+
+func defaultLegacyDecodeRedactor() *redaction.Redactor {
+	legacyDecodeRedactorOnce.Do(func() {
+		legacyDecodeRedactorMu.Lock()
+		defer legacyDecodeRedactorMu.Unlock()
+		if legacyDecodeRedactor == nil {
+			legacyDecodeRedactor = redaction.New(redaction.Config{})
+		}
+	})
+	legacyDecodeRedactorMu.Lock()
+	defer legacyDecodeRedactorMu.Unlock()
+	return legacyDecodeRedactor
+}
+
+// SetLegacyDecodeRedactor lets test drivers swap the singleton
+// redactor used by DecodeEntry's legacy v1 branch. Resets the
+// sync.Once so subsequent calls return the override. Returns the
+// previous redactor so the test can restore it. Production callers
+// should not use this — the default redactor is sufficient for
+// every deployment shape.
+func SetLegacyDecodeRedactor(r *redaction.Redactor) *redaction.Redactor {
+	legacyDecodeRedactorMu.Lock()
+	defer legacyDecodeRedactorMu.Unlock()
+	previous := legacyDecodeRedactor
+	legacyDecodeRedactor = r
+	// Mark the once as completed so subsequent reads skip the
+	// default-construction branch and use the override.
+	legacyDecodeRedactorOnce.Do(func() {})
+	return previous
 }
 
 type legacyEntry struct {
