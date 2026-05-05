@@ -143,11 +143,16 @@ describe("activity store", () => {
     expect(useActivityStore.getState().unreadCount).toBe(0);
   });
 
-  test("visibleEvents respects current filter", () => {
+  test("applyFilter against current store state respects current filter", () => {
+    // hp-habi: visibleEvents() was removed from the store interface — calling
+    // it inside a Zustand selector returned a fresh array each render and
+    // tripped useSyncExternalStore's "Maximum update depth exceeded" loop
+    // (see commit 8661828). Tests now call applyFilter against a snapshot.
     const store = useActivityStore.getState();
     store.addEvents(buildFixtureEvents());
     useActivityStore.getState().toggleCategory("safety");
-    const visible = useActivityStore.getState().visibleEvents();
+    const { events, filter } = useActivityStore.getState();
+    const visible = applyFilter(events, filter);
     for (const e of visible) {
       expect(e.category).toBe("safety");
     }

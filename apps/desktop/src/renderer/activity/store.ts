@@ -34,9 +34,6 @@ export interface ActivityStoreState {
   readonly toggleImportance: (importance: ActivityImportance) => void;
   readonly setText: (text: string) => void;
   readonly clearAll: () => void;
-
-  // Read selectors.
-  readonly visibleEvents: () => readonly ActivityEvent[];
 }
 
 /** Input shape for addEvent — id is generated if missing, category is
@@ -118,7 +115,7 @@ export function applyFilter(
   });
 }
 
-export const useActivityStore = create<ActivityStoreState>((set, get) => ({
+export const useActivityStore = create<ActivityStoreState>((set) => ({
   events: [],
   filter: EMPTY_FILTER,
   unreadCount: 0,
@@ -194,11 +191,6 @@ export const useActivityStore = create<ActivityStoreState>((set, get) => ({
 
   clearAll: () => {
     set({ events: [], unreadCount: 0 });
-  },
-
-  visibleEvents: () => {
-    const state = get();
-    return applyFilter(state.events, state.filter);
   },
 }));
 
