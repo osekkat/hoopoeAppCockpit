@@ -335,6 +335,114 @@ func TestPollOriginEmitsOriginUpdatedForDeletedBranch(t *testing.T) {
 	}
 }
 
+// TestPollOriginPreservesPushMergedRefsOnDeltaApply guards hp-dfad: a
+// push that completes during PollOrigin's publish window used to be
+// dropped by the post-publish `w.lastRemote = next` overwrite, then
+// re-emitted by the next poll under a different OriginUpdatedPayload
+// Source — bypassing the seen-set dedup (which keys on Source). The
+// delta-apply fix preserves concurrently-merged push refs in
+// lastRemote so the next poll sees no diff.
+func TestPollOriginPreservesPushMergedRefsOnDeltaApply(t *testing.T) {
+	t.Parallel()
+	const (
+		mainOldSHA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		mainNewSHA = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+		featureSHA = "cccccccccccccccccccccccccccccccccccccccc"
+	)
+	ctx := context.Background()
+	refs := &fakeRemoteRefs{snapshots: [][]gitevents.RefState{
+		// Seed sees only main.
+		{{Name: "refs/heads/main", SHA: mainOldSHA}},
+		// First PollOrigin sees main updated externally; feature is
+		// pushed during the publish window but origin's tracking
+		// branch hasn't propagated it yet.
+		{{Name: "refs/heads/main", SHA: mainNewSHA}},
+		// Second PollOrigin sees both refs (push propagated).
+		{
+			{Name: "refs/heads/main", SHA: mainNewSHA},
+			{Name: "refs/heads/feature", SHA: featureSHA},
+		},
+	}}
+	publisher := &recordingPublisher{}
+	w := NewGitWatcher("proj_01", &fakeGitClient{status: &gitadapter.Status{Branch: "main"}}, publisher)
+	w.RemoteRefs = refs
+	w.Now = fixedWatcherNow
+	if err := w.Seed(ctx); err != nil {
+		t.Fatalf("Seed: %v", err)
+	}
+
+	// Mid-publish injection: simulate the post-receive hook firing
+	// while PollOrigin is between its initial Unlock and its post-
+	// publish re-Lock. RecordPushCompleted merges feature into
+	// lastRemote — pre-fix, the subsequent `w.lastRemote = next`
+	// overwrite dropped it.
+	pushed := false
+	publisher.onPublish = func(_ Event) {
+		if pushed {
+			return
+		}
+		pushed = true
+		_, err := w.RecordPushCompleted(ctx, PushCompleted{
+			Branch:        "feature",
+			Remote:        "origin",
+			CommitsPushed: []string{featureSHA},
+			Refs: []gitevents.RefUpdate{{
+				Name:   "refs/heads/feature",
+				NewSHA: featureSHA,
+			}},
+			OK: true,
+		})
+		if err != nil {
+			t.Errorf("RecordPushCompleted: %v", err)
+		}
+	}
+
+	if _, err := w.PollOrigin(ctx); err != nil {
+		t.Fatalf("first PollOrigin: %v", err)
+	}
+
+	// After the first poll: lastRemote must contain BOTH the external
+	// main update AND the concurrently-merged feature push. Pre-fix,
+	// feature would have been dropped by the post-publish overwrite.
+	w.mu.Lock()
+	gotMain := w.lastRemote["refs/heads/main"]
+	gotFeature := w.lastRemote["refs/heads/feature"]
+	w.mu.Unlock()
+	if gotMain != mainNewSHA {
+		t.Fatalf("lastRemote[main] = %q, want %q (delta-apply must update)", gotMain, mainNewSHA)
+	}
+	if gotFeature != featureSHA {
+		t.Fatalf("lastRemote[feature] = %q, want %q — hp-dfad regression: push merge dropped by overwrite", gotFeature, featureSHA)
+	}
+
+	// Disable the injection so the second poll runs cleanly.
+	publisher.onPublish = nil
+
+	// Second poll: ListRemoteRefs now returns both refs. lastRemote
+	// already has them, so no diff and no event. Pre-fix, feature
+	// would have been re-emitted as a "create" with Source=external
+	// (different from the push's Source=vps_push), bypassing the
+	// seen-set dedup → duplicate origin event for the same push.
+	events, err := w.PollOrigin(ctx)
+	if err != nil {
+		t.Fatalf("second PollOrigin: %v", err)
+	}
+	for _, ev := range events {
+		if ev.Type != gitevents.EventOriginUpdated {
+			continue
+		}
+		payload, ok := ev.Data.(gitevents.OriginUpdatedPayload)
+		if !ok {
+			continue
+		}
+		for _, ref := range payload.Refs {
+			if ref.Name == "refs/heads/feature" {
+				t.Fatalf("second poll re-emitted feature push: payload=%+v — hp-dfad regression", payload)
+			}
+		}
+	}
+}
+
 func TestPollOriginRetriesAfterPublishFailure(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -757,6 +865,11 @@ func (f *fakeRemoteRefs) ListRemoteRefs(context.Context, string) ([]gitevents.Re
 type recordingPublisher struct {
 	events   []Event
 	failNext error
+	// onPublish lets a test inject a side effect (e.g. a concurrent
+	// RecordPushCompleted) at the moment Publish is invoked, simulating
+	// concurrent activity that would otherwise be hard to schedule
+	// deterministically. Used by hp-dfad's regression test.
+	onPublish func(event Event)
 }
 
 func (p *recordingPublisher) Publish(_ context.Context, event Event) error {
@@ -764,6 +877,9 @@ func (p *recordingPublisher) Publish(_ context.Context, event Event) error {
 		err := p.failNext
 		p.failNext = nil
 		return err
+	}
+	if p.onPublish != nil {
+		p.onPublish(event)
 	}
 	p.events = append(p.events, event)
 	return nil

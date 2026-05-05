@@ -210,7 +210,21 @@ func (w *GitWatcher) Seed(ctx context.Context) error {
 	w.mu.Lock()
 	w.lastLocalHead = commit.SHA
 	if w.RemoteRefs != nil {
-		w.lastRemote = seededRemote
+		// hp-dfad: a concurrent RecordPushCompleted may have lazy-
+		// inited lastRemote between our ListRemoteRefs call and this
+		// lock. Don't overwrite — merge seededRemote in for refs that
+		// aren't already present. Pushes are more recent than the
+		// tracking-branch snapshot, so an existing entry from the
+		// merge wins on overlap.
+		if w.lastRemote == nil {
+			w.lastRemote = seededRemote
+		} else {
+			for name, sha := range seededRemote {
+				if _, present := w.lastRemote[name]; !present {
+					w.lastRemote[name] = sha
+				}
+			}
+		}
 	}
 	w.mu.Unlock()
 	return nil
@@ -356,13 +370,23 @@ func (w *GitWatcher) PollOrigin(ctx context.Context) ([]Event, error) {
 
 	w.mu.Lock()
 	if w.lastRemote == nil {
+		// Lazy-init: seed with next AS WELL AS any refs a concurrent
+		// RecordPushCompleted has already merged in. mergeRemoteRefs
+		// also lazy-inits under mu, so by the time we hold mu the map
+		// either is nil (no merges yet) or already contains them.
+		// Pushes are more recent than our ListRemoteRefs snapshot, so
+		// the merge wins on overlapping ref names.
 		w.lastRemote = next
 		w.mu.Unlock()
 		return nil, nil
 	}
 	updates := changedRefs(w.lastRemote, next)
 	if len(updates) == 0 {
-		w.lastRemote = next
+		// hp-dfad: no diff against next, but lastRemote may carry
+		// freshly-merged push refs that aren't in next yet (origin
+		// hasn't propagated). Don't overwrite — leave lastRemote alone
+		// so the next poll can detect either propagation (no-op) or a
+		// real divergence.
 		w.mu.Unlock()
 		return nil, nil
 	}
@@ -376,9 +400,11 @@ func (w *GitWatcher) PollOrigin(ctx context.Context) ([]Event, error) {
 	}
 	key := originUpdateKey(payload)
 	if w.hasSeenEvent(key) {
-		w.mu.Lock()
-		w.lastRemote = next
-		w.mu.Unlock()
+		// Already published this exact diff — apply it to lastRemote
+		// so changedRefs doesn't return the same set on the next
+		// poll. Use delta-apply (not overwrite) to preserve concurrent
+		// push merges.
+		w.applyRefDelta(updates)
 		return nil, nil
 	}
 	event := w.gitEvent(gitevents.EventOriginUpdated, payload)
@@ -386,10 +412,37 @@ func (w *GitWatcher) PollOrigin(ctx context.Context) ([]Event, error) {
 		return nil, err
 	}
 	w.markSeenEvent(key)
-	w.mu.Lock()
-	w.lastRemote = next
-	w.mu.Unlock()
+	// hp-dfad: instead of `w.lastRemote = next` (which dropped any
+	// refs RecordPushCompleted merged after we released mu), apply
+	// only the diff we computed. Refs touched by a concurrent push
+	// are preserved, so we don't re-emit them on the next poll
+	// under a different Source (originUpdateKey differs by Source,
+	// so the seen-set dedup wouldn't catch the duplicate).
+	w.applyRefDelta(updates)
 	return []Event{event}, nil
+}
+
+// applyRefDelta applies a slice of RefUpdate operations to lastRemote
+// under mu. Used by PollOrigin in place of the previous overwrite
+// `w.lastRemote = next`. Preserves entries that were not in the
+// detected diff — specifically, refs added by a concurrent
+// RecordPushCompleted via mergeRemoteRefs.
+func (w *GitWatcher) applyRefDelta(updates []gitevents.RefUpdate) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.lastRemote == nil {
+		w.lastRemote = map[string]string{}
+	}
+	for _, ref := range updates {
+		switch ref.Op {
+		case gitevents.RefUpdateOpDelete:
+			delete(w.lastRemote, ref.Name)
+		default:
+			if ref.NewSHA != "" {
+				w.lastRemote[ref.Name] = ref.NewSHA
+			}
+		}
+	}
 }
 
 func (w *GitWatcher) validate(requirePublisher bool) error {
