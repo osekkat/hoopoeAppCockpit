@@ -1492,6 +1492,57 @@ func TestPublishSubstitutesSentinelForUnmarshalableActor(t *testing.T) {
 	}
 }
 
+// TestPublishPreservesGoodActorOnDataMarshalFailure guards hp-b87f:
+// the sentinel substitution path used to nullify Actor unconditionally
+// inside the "if dataMarshalErr || actorMarshalErr" branch, so a
+// caller publishing (bad Data + clean Actor) lost the forensic
+// metadata the sentinel exists to preserve. The fix scopes the Actor
+// drop to actorMarshalErr only.
+func TestPublishPreservesGoodActorOnDataMarshalFailure(t *testing.T) {
+	hub := NewEventHub(EventHubConfig{})
+
+	cleanActor := map[string]any{
+		"agent":  "agent-1",
+		"runId":  "run_42",
+		"reason": "tending tick",
+	}
+	poisoned := hub.Publish(PublishInput{
+		Channel: "project:test",
+		Type:    "agent.dispatched",
+		Actor:   cleanActor,
+		Data:    make(chan int), // un-marshalable Data only
+	})
+
+	if poisoned.Type != EventTypeEncodeError {
+		t.Fatalf("poisoned.Type = %q, want %q", poisoned.Type, EventTypeEncodeError)
+	}
+	if poisoned.Actor == nil {
+		t.Fatalf("poisoned.Actor = nil, want preserved %+v (only Data was bad)", cleanActor)
+	}
+	for k, v := range cleanActor {
+		if poisoned.Actor[k] != v {
+			t.Fatalf("poisoned.Actor[%q] = %v, want %v", k, poisoned.Actor[k], v)
+		}
+	}
+	// Sentinel still wraps Data; full event still marshals.
+	data, ok := poisoned.Data.(map[string]any)
+	if !ok {
+		t.Fatalf("poisoned.Data type = %T, want map[string]any sentinel", poisoned.Data)
+	}
+	if data["_encodeError"] != true {
+		t.Fatalf("poisoned.Data._encodeError = %v, want true", data["_encodeError"])
+	}
+	if data["dataMarshalError"] == nil {
+		t.Fatalf("poisoned.Data.dataMarshalError missing: %+v", data)
+	}
+	if data["actorMarshalError"] != nil {
+		t.Fatalf("poisoned.Data.actorMarshalError = %v, want nil (Actor was clean)", data["actorMarshalError"])
+	}
+	if _, err := json.Marshal(poisoned); err != nil {
+		t.Fatalf("poisoned event does not marshal: %v", err)
+	}
+}
+
 func TestReplayEndpointReturnsSentinelForPoisonedEvent(t *testing.T) {
 	// hp-4qbg: the acceptance also covers /v1/events/replay — a
 	// previously-poisoned event must now serialize cleanly so a

@@ -194,7 +194,14 @@ func (h *EventHub) Publish(input PublishInput) Event {
 			sentinel["actorMarshalError"] = actorMarshalErr.Error()
 		}
 		data = sentinel
-		input.Actor = nil
+		// hp-b87f: only drop Actor when IT was the un-marshalable field.
+		// Pre-fix this line fired unconditionally inside the OR branch,
+		// so a healthy Actor was silently nullified when Data was the
+		// failure — destroying the forensic value of "who triggered
+		// the bad publish?" the sentinel was supposed to preserve.
+		if actorMarshalErr != nil {
+			input.Actor = nil
+		}
 	}
 
 	h.mu.Lock()
