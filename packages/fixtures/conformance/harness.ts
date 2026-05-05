@@ -277,7 +277,14 @@ export const BR_BEAD_SCHEMA_VERSION = 1;
 
 interface BeadListResponseShape {
   items: BeadShape[];
-  page: { hasMore: boolean; total?: number };
+  // hp-ixhu: `dropped` counts issues from raw br --json output that the
+  // mapper rejected because they were missing required Bead fields. The
+  // count is not part of the OpenAPI BeadListResponse contract — it is a
+  // conformance-side telemetry field so a future br regression that
+  // emits half-Beads surfaces as "N items dropped" instead of silently
+  // shrinking items[]. The br conformance schema permits but does not
+  // require this field; downstream consumers ignore it.
+  page: { hasMore: boolean; total?: number; dropped?: number };
 }
 
 interface BeadShape {
@@ -297,16 +304,32 @@ interface BeadShape {
 export function mapBrToBeadListResponse(raw: Record<string, unknown>): Record<string, unknown> {
   const issuesRaw = Array.isArray(raw.issues) ? raw.issues : [];
   const items: BeadShape[] = [];
+  let dropped = 0;
   for (const entry of issuesRaw) {
-    if (!isObject(entry)) continue;
+    if (!isObject(entry)) {
+      dropped += 1;
+      continue;
+    }
     const bead = mapBrIssueToBead(entry);
-    if (bead !== null) items.push(bead);
+    if (bead === null) {
+      dropped += 1;
+      continue;
+    }
+    items.push(bead);
   }
   const page: BeadListResponseShape["page"] = {
     hasMore: typeof raw.has_more === "boolean" ? raw.has_more : false,
   };
   if (typeof raw.total === "number" && Number.isInteger(raw.total) && raw.total >= 0) {
     page.total = raw.total;
+  }
+  if (dropped > 0) {
+    // hp-ixhu: only emit the field when there's something to report. The
+    // OpenAPI contract does not include it; consumers that respect the
+    // contract ignore it. The br conformance schema declares it
+    // `additionalProperties: false`-friendly via the `dropped` property
+    // declaration so a passing fixture never has it set.
+    page.dropped = dropped;
   }
   const response: BeadListResponseShape = { items, page };
   return response as unknown as Record<string, unknown>;

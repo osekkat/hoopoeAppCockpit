@@ -275,8 +275,44 @@ describe("br adapter contract conformance", () => {
       ],
       total: 4,
       has_more: false,
-    }) as { items: Array<{ id: string }> };
+    }) as { items: Array<{ id: string }>; page: { dropped?: number } };
     expect(mapped.items.map((bead) => bead.id)).toEqual(["hp-ok"]);
+    // hp-ixhu: the dropped counter must surface so a future br regression
+    // that ships partial-Beads is visible to conformance, not silenced by
+    // a schema-valid items array.
+    expect(mapped.page.dropped).toBe(3);
+  });
+
+  test("mapBrToBeadListResponse omits page.dropped when no issues are rejected", () => {
+    // hp-ixhu: the telemetry field must be absent on healthy fixtures so
+    // it doesn't pollute every passing run; presence is the alarm signal.
+    const mapped = mapBrToBeadListResponse({
+      issues: [
+        { id: "hp-ok", title: "valid", status: "open", priority: 0, issue_type: "task" },
+      ],
+      total: 1,
+      has_more: false,
+    }) as { items: unknown[]; page: { dropped?: number } };
+    expect(mapped.items.length).toBe(1);
+    expect(mapped.page.dropped).toBeUndefined();
+  });
+
+  test("mapBrToBeadListResponse: committed br/normal.json fixture drops zero issues", () => {
+    // hp-ixhu regression guard. The committed golden fixture is
+    // canonical; it must round-trip through the mapper with zero
+    // rejected issues. A future fixture-edit that introduces a
+    // partial-Bead will trip this test before the schema-pass-with-
+    // smaller-items[] silently locks in.
+    const fixture = readJSON<GoldenOutputFixture>(goldenOutputPath("br", "normal"));
+    const stdoutJson = fixture.stdoutJson as { issues?: unknown[] };
+    const inputCount = Array.isArray(stdoutJson?.issues) ? stdoutJson.issues.length : 0;
+    const mapped = mapBrToBeadListResponse(stdoutJson as Record<string, unknown>) as {
+      items: unknown[];
+      page: { dropped?: number };
+    };
+    expect(inputCount).toBeGreaterThan(0);
+    expect(mapped.items.length).toBe(inputCount);
+    expect(mapped.page.dropped).toBeUndefined();
   });
 
   test("phase0 real-VPS fixture matrix advertises br for every scenario", () => {

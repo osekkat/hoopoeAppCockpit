@@ -52,7 +52,12 @@
           "required": ["hasMore"],
           "properties": {
             "hasMore": { "type": "boolean" },
-            "total": { "type": "integer", "minimum": 0 }
+            "total": { "type": "integer", "minimum": 0 },
+            "dropped": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "hp-ixhu telemetry: how many raw br issues the mapper rejected because they were missing required Bead fields. Absent on healthy fixtures; presence implies fixture corruption that the conformance suite must investigate."
+            }
           }
         }
       }
