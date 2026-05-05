@@ -440,12 +440,17 @@ preloadChannels:
   # write outside ~/.ssh/ or inject ssh-keygen flags.
   sshListKeys: hoopoe.ssh.listKeys
   sshGenerateKey: hoopoe.ssh.generateKey
-  # hp-58wp: Local-clone destructive action. Runs `git reset --hard @{u}`
-  # followed by `git clean -fd` against the project's local clone in the
-  # main process. The renderer NEVER supplies the clone path or argv —
-  # main resolves the path from the project registry and invokes git
-  # with explicit, non-interpolated argv (Guardrail 2). Audit fires on
-  # every invocation regardless of outcome (Guardrail 10).
+  # hp-58wp/hp-hde4: Legacy local-clone discard channel. The desktop
+  # local clone is a sync-driven read-only mirror of origin (Guardrail
+  # 3 / plan.md §7.7), so this channel must NOT mutate the mirror. Main
+  # validates the projectId, resolves the clone path from the project
+  # registry, validates clone-state (path exists, is a directory, has
+  # `.git`), emits an audit entry (Guardrail 10), and then refuses the
+  # request with an explicit read-only error. Any git write the renderer
+  # actually needs has to run on the VPS clone via daemon RPCs — never
+  # `git reset --hard`, `git clean`, or `git checkout` repair against
+  # the desktop mirror. The renderer NEVER supplies the clone path or
+  # argv (Guardrail 2 carries over even though no argv is built today).
   cloneDiscardLocalChanges: hoopoe.clone.discard-local-changes
   # hp-5bhy: Three more clone-action channels backing the
   # CloneSettingsCard (hp-1fd1) per-project + cache-view actions. Same
