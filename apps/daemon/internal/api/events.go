@@ -5,6 +5,8 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"log"
 	"reflect"
 	"sync"
 	"time"
@@ -53,6 +55,16 @@ type EventHubConfig struct {
 	// NewEventHubWithoutRedactor escape hatch used by load/chaos fixtures
 	// asserting raw delivery semantics.
 	Redactor *redaction.Redactor
+	// PanicSink, when non-nil, is invoked with the redacted message of
+	// any panic recovered inside the EventHub's internal goroutines (the
+	// Subscribe watcher today; future internal goroutines will share the
+	// same sink). The recover absorbs the panic so the daemon stays up;
+	// the sink gives operators a forensic surface to investigate.
+	// hp-a6lx: hp-uvjg added the recover but left the silent-swallow
+	// gap. Production wiring should pass slog or audit. nil falls back
+	// to log.Print so the panic at least lands in the daemon's standard
+	// logger rather than being a complete black hole.
+	PanicSink func(event string, message string)
 }
 
 type EventHub struct {
@@ -66,6 +78,7 @@ type EventHub struct {
 	subscribers        map[uint64]*subscriber
 	nextSubscriberID   uint64
 	redactor           *redaction.Redactor
+	panicSink          func(event string, message string)
 }
 
 type PublishInput struct {
@@ -154,7 +167,37 @@ func newEventHub(cfg EventHubConfig, now func() time.Time, redactor *redaction.R
 		events:             make([]Event, 0, replayCapacity),
 		subscribers:        make(map[uint64]*subscriber),
 		redactor:           redactor,
+		panicSink:          cfg.PanicSink,
 	}
+}
+
+// reportInternalPanic is the EventHub's forensic surface for panics
+// recovered inside its own goroutines. hp-a6lx: hp-uvjg added the
+// recover guard so a watcher panic doesn't take down the daemon, but
+// the recovered value was silently absorbed — operators saw
+// 'subscriber closed unexpectedly' on the WS/SSE side with no
+// daemon-side breadcrumb.
+//
+// The recovered value is formatted, scrubbed through the configured
+// redactor (same SurfaceLogger used by scheduler.redactPanicMessage so
+// the threat models stay aligned), then dispatched to PanicSink if
+// wired. PanicSink == nil falls back to log.Print so the panic at
+// least lands in the daemon's standard logger.
+func (h *EventHub) reportInternalPanic(event string, recovered any) {
+	msg := fmt.Sprintf("%v", recovered)
+	if h.redactor != nil {
+		redacted, _ := h.redactor.RedactText(redaction.SurfaceLogger, "eventhub.panic", msg)
+		msg = redacted
+	}
+	if h.panicSink != nil {
+		// PanicSink is operator-supplied and may itself misbehave;
+		// recover defensively so a buggy sink can't re-panic out of
+		// the watcher goroutine.
+		defer func() { _ = recover() }()
+		h.panicSink(event, msg)
+		return
+	}
+	log.Printf("eventhub: panic recovered in %s: %s", event, msg)
 }
 
 func (h *EventHub) Publish(input PublishInput) Event {
@@ -431,9 +474,12 @@ func (h *EventHub) Subscribe(ctx context.Context, channels []string) *Subscriber
 		// context.Context contract, an exotic cancel propagation, or
 		// any later code added here), the recover absorbs it and the
 		// subscriber is best-effort closed so the EventHub map doesn't
-		// leak the entry.
+		// leak the entry. hp-a6lx: the recovered value is also
+		// reported via reportInternalPanic so operators get a
+		// forensic surface; pre-fix the panic was silently swallowed.
 		defer func() {
 			if r := recover(); r != nil {
+				h.reportInternalPanic("subscribe.watcher", r)
 				wrapped.Close()
 			}
 		}()

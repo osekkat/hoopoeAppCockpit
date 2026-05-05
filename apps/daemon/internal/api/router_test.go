@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -1196,6 +1197,101 @@ func TestEventHubSubscribeAcceptsNilCtxWithoutPanic(t *testing.T) {
 		t.Fatal("subscriber watcher goroutine did not exit after Close (nil-ctx path leaked it)")
 	}
 }
+
+// TestEventHubSubscribeWatcherPanicReportsViaPanicSink guards hp-a6lx:
+// hp-uvjg added a recover to the Subscribe watcher goroutine so a
+// panic doesn't take down the daemon, but the recovered value was
+// silently absorbed — operators saw 'subscriber closed unexpectedly'
+// on the WS/SSE side with no daemon-side breadcrumb. The fix routes
+// the recovered value through reportInternalPanic, which calls the
+// configured PanicSink with redacted text.
+func TestEventHubSubscribeWatcherPanicReportsViaPanicSink(t *testing.T) {
+	const secret = "sk-ant-api03-zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+
+	type sinkCall struct {
+		event   string
+		message string
+	}
+	calls := make(chan sinkCall, 1)
+
+	hub := NewEventHub(EventHubConfig{
+		Redactor: redaction.NewDefault(),
+		PanicSink: func(event string, message string) {
+			calls <- sinkCall{event: event, message: message}
+		},
+	})
+
+	// panicCtx.Done() panics on the select setup so the watcher
+	// goroutine's recover fires. The panic value embeds a
+	// secret-shaped string to verify the redactor scrubs it before
+	// the sink receives the message.
+	ctx := &panicCtx{message: fmt.Sprintf("ctx panic: provider key %s", secret)}
+	sub := hub.Subscribe(ctx, []string{"project:test"})
+	defer sub.Close()
+
+	select {
+	case call := <-calls:
+		if call.event != "subscribe.watcher" {
+			t.Fatalf("sink event = %q, want %q", call.event, "subscribe.watcher")
+		}
+		if strings.Contains(call.message, secret) {
+			t.Fatalf("sink message leaked secret verbatim: %q", call.message)
+		}
+		// The envelope text ('ctx panic') is part of the panic
+		// value itself; the redactor only scrubs the secret pattern.
+		if call.message == "" {
+			t.Fatal("sink message is empty; expected redacted panic text")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("PanicSink not invoked within 1s — recover absorbed the panic without reporting")
+	}
+
+	// Watcher must still close cleanly after recovering.
+	select {
+	case <-sub.watcherDone:
+	case <-time.After(time.Second):
+		t.Fatal("watcher did not exit after panic recovery")
+	}
+}
+
+// TestEventHubSubscribeWatcherPanicFallsBackToLogWhenNoSink covers the
+// nil-PanicSink path: if no sink is wired, the EventHub still reports
+// the panic via the standard logger so the daemon doesn't silently
+// swallow it. Pre-fix the watcher closed without a single byte of
+// output anywhere; post-fix at least log.Print fires.
+func TestEventHubSubscribeWatcherPanicFallsBackToLogWhenNoSink(t *testing.T) {
+	hub := NewEventHub(EventHubConfig{
+		// Redactor present, PanicSink intentionally nil to exercise
+		// the log.Print fallback.
+		Redactor: redaction.NewDefault(),
+	})
+
+	ctx := &panicCtx{message: "watcher panic without sink"}
+	sub := hub.Subscribe(ctx, []string{"project:test"})
+	defer sub.Close()
+
+	// The panic must still be recovered (daemon stays up) and the
+	// watcher closes cleanly. log.Print output goes to os.Stderr by
+	// default; not capturing it here — we're only asserting the
+	// daemon doesn't crash and the goroutine cleanly exits.
+	select {
+	case <-sub.watcherDone:
+	case <-time.After(time.Second):
+		t.Fatal("watcher did not exit after panic recovery (nil-sink path)")
+	}
+}
+
+// panicCtx is a context.Context that panics when Done() is called.
+// Used to verify the Subscribe watcher's recover guard surfaces the
+// panic via PanicSink rather than silently swallowing it.
+type panicCtx struct {
+	message string
+}
+
+func (p *panicCtx) Deadline() (time.Time, bool) { return time.Time{}, false }
+func (p *panicCtx) Done() <-chan struct{}        { panic(p.message) }
+func (p *panicCtx) Err() error                   { return nil }
+func (p *panicCtx) Value(any) any                { return nil }
 
 func TestEventHubSubscriberCloseStopsContextWatcher(t *testing.T) {
 	hub := NewEventHub(EventHubConfig{})
