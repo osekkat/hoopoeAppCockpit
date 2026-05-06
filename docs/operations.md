@@ -113,9 +113,11 @@ journalctl --user -u hoopoed | grep -E 'migrations:.*(failed|restored)'
 
 ## How to add a migration
 
+> **Current substrate:** `apps/daemon/internal/migrations/` exposes the runner contract (`Migration` interface, `MigrationFunc` adapter, `Registry`, `Runner`, `Backuper`, `FileBackuper`) and is exercised by `runner_test.go`. **No migrations are registered yet** — the daemon ships with an empty `Registry` and the metadata table is created on first start by `EnsureMetaTable`. The per-migration file layout and the central `DefaultRegistry()` helper described below are the **planned convention** for the first real persisted-schema migration; the author of that migration introduces both the new sub-package and the registry helper at the same time.
+
 1. **Pick the next monotonic id.** Convention: `0001_create_jobs_table`, `0002_add_idempotency_key`, etc. — zero-padded so `ls`-sorted output matches application order.
 
-2. **Write the migration as a `MigrationFunc` value** in `apps/daemon/internal/migrations/manifest/<id>_<short_name>.go`:
+2. **Write the migration as a `MigrationFunc` value** in a new sub-package, e.g. `apps/daemon/internal/migrations/manifest/<id>_<short_name>.go`. (The `manifest/` directory does not exist yet; create it together with the first migration, or pick the structure that fits at the time — the runner doesn't care where `Migration` values live, only that something `MustRegister`s them.)
 
    ```go
    package manifest
@@ -123,6 +125,7 @@ journalctl --user -u hoopoed | grep -E 'migrations:.*(failed|restored)'
    import (
        "context"
        "database/sql"
+       "fmt"
 
        "github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/migrations"
    )
@@ -172,14 +175,17 @@ journalctl --user -u hoopoed | grep -E 'migrations:.*(failed|restored)'
        PostCheckFn: func(ctx context.Context, tx *sql.Tx) error {
            // Assert the column NOW exists.
            // ... mirror the PRAGMA scan, expect to find the column ...
+           return nil
        },
    }
    ```
 
-3. **Register the migration** in the manifest's `init()` (or a central registry-construction function):
+   `MigrationFunc` is the adapter the runner-test suite uses today (see `runner_test.go`); the field names match `IDValue`, `DescriptionValue`, `IsReversible`, `UpFn`, `DownFn`, `PreCheckFn`, `PostCheckFn` exactly. Implementing the `Migration` interface directly is also fine — `MigrationFunc` is an adapter, not the only shape.
+
+3. **Register the migration** in the central registry-construction helper. Until that helper lands, callers build a `Registry` inline via `migrations.NewRegistry()` + `MustRegister(...)`. The planned shape:
 
    ```go
-   // apps/daemon/internal/migrations/manifest/manifest.go
+   // apps/daemon/internal/migrations/manifest/manifest.go (forward-looking)
    func DefaultRegistry() *migrations.Registry {
        r := migrations.NewRegistry()
        r.MustRegister(Migration0001CreateJobsTable)
@@ -190,7 +196,9 @@ journalctl --user -u hoopoed | grep -E 'migrations:.*(failed|restored)'
    }
    ```
 
-4. **Add a contract test** that exercises the migration end-to-end against an in-memory SQLite (modernc/sqlite). The runner test suite shows the pattern: register the migration set, call `Run()`, verify the resulting schema + meta table.
+   Until `DefaultRegistry()` exists, the daemon's startup wiring should construct the registry inline at the call site that invokes `migrations.New(...)`; tests can keep using `runner_test.go`'s helpers.
+
+4. **Add a contract test** that exercises the migration end-to-end against an in-memory SQLite (modernc/sqlite). The runner test suite (`apps/daemon/internal/migrations/runner_test.go`) shows the pattern: register the migration set, call `Run()`, verify the resulting schema + meta table.
 
 5. **Update `packages/schemas/openapi.yaml`** if the migration changes a wire-visible shape. The `schemaVersion` field on the affected entity stays the same number unless the WIRE shape changed (which is a different event from a STORAGE-shape change).
 
