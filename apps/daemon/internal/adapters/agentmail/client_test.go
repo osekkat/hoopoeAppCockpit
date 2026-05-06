@@ -284,6 +284,87 @@ func TestProbeOnMalformedJSONGoldenFixtureDegradesAllCapabilities(t *testing.T) 
 	}
 }
 
+// TestStaticReportMatchesNormalGoldenFixtureCapabilityParity loads the
+// committed Phase 0 golden artifact at
+// packages/fixtures/golden-outputs/agent_mail/normal.json and pins three
+// pieces of the adapter contract from plan.md §18.3 for the "normal" state:
+//
+//  1. The fixture's canonical CLI behavior is intentional: invoking
+//     agent-mail as a CLI must exit non-zero with the "NOT a CLI tool"
+//     redirect to MCP. This is the user-visible normal state — the real
+//     transport is mcp_http (not stdout). A drift here means somebody
+//     accidentally wired the adapter to shell out instead of using MCP.
+//  2. Every capability the fixture self-declares as `ok` must be a real
+//     adapter capability ID (parity check between fixture and adapter).
+//     A drift here means a fixture edit or adapter rename broke the
+//     fixture/adapter contract without anyone noticing.
+//  3. StaticReport()—which the daemon serves on /v1/capabilities for the
+//     normal mcp_http transport—reports those same capabilities as
+//     StatusOK with Transport "mcp_http". A drift here means StaticReport
+//     stopped matching what the fixture promises.
+//
+// Re-asserts the fixture's own meta so a future fixture edit that drifts
+// off the "normal" intent fails this test rather than silently passing.
+func TestStaticReportMatchesNormalGoldenFixtureCapabilityParity(t *testing.T) {
+	t.Parallel()
+	fixture := loadAgentMailGoldenFixture(t, "normal.json")
+
+	if fixture.Meta.State != "normal" {
+		t.Fatalf("fixture state = %q, want normal", fixture.Meta.State)
+	}
+	if fixture.Exit == 0 {
+		t.Fatalf("fixture exit = 0; agent-mail CLI must exit non-zero to redirect to MCP (state=normal)")
+	}
+	if len(fixture.Argv) == 0 || fixture.Argv[0] != "agent-mail" {
+		t.Fatalf("fixture argv = %v; want first element to be 'agent-mail'", fixture.Argv)
+	}
+	if !strings.Contains(fixture.StdoutText, "NOT a CLI tool") {
+		t.Fatalf("fixture stdoutText missing 'NOT a CLI tool' redirect; agent-mail CLI must guide users to MCP")
+	}
+	if !strings.Contains(fixture.StdoutText, "MCP") {
+		t.Fatalf("fixture stdoutText missing 'MCP' guidance")
+	}
+
+	wantIDs := map[string]struct{}{}
+	for _, id := range CapabilityIDs() {
+		wantIDs[id] = struct{}{}
+	}
+	if len(fixture.Capabilities) == 0 {
+		t.Fatalf("fixture declares no capabilities; normal.json must self-document at least one ok capability")
+	}
+	for fixtureCapID, decl := range fixture.Capabilities {
+		if _, ok := wantIDs[fixtureCapID]; !ok {
+			t.Fatalf("fixture capability %q is not a real adapter CapabilityIDs() entry — fixture/adapter parity drift", fixtureCapID)
+		}
+		if decl.Status != "ok" {
+			t.Fatalf("fixture capability %q status = %q, want ok (state=normal)", fixtureCapID, decl.Status)
+		}
+	}
+
+	report := StaticReport(func() time.Time { return time.Date(2026, 5, 7, 0, 0, 0, 0, time.UTC) })
+	if err := report.Validate(); err != nil {
+		t.Fatalf("StaticReport invalid: %v", err)
+	}
+	if report.Tool != capabilities.ToolAgentMail {
+		t.Fatalf("StaticReport tool = %s, want %s", report.Tool, capabilities.ToolAgentMail)
+	}
+	if report.Source != "mcp_http" {
+		t.Fatalf("StaticReport source = %q, want mcp_http (the canonical agent-mail transport)", report.Source)
+	}
+	for fixtureCapID := range fixture.Capabilities {
+		got, present := report.Capabilities[fixtureCapID]
+		if !present {
+			t.Fatalf("StaticReport missing capability %q declared by normal.json", fixtureCapID)
+		}
+		if got.Status != capabilities.StatusOK {
+			t.Fatalf("StaticReport capability %q status = %s, want ok (state=normal)", fixtureCapID, got.Status)
+		}
+		if got.Transport != "mcp_http" {
+			t.Fatalf("StaticReport capability %q transport = %q, want mcp_http", fixtureCapID, got.Transport)
+		}
+	}
+}
+
 // agentMailGoldenFixture mirrors the shape of the committed Phase 0 golden
 // outputs at packages/fixtures/golden-outputs/agent_mail/*.json. Only the
 // fields the adapter contract observes are decoded — fixtures may carry
@@ -294,7 +375,9 @@ type agentMailGoldenFixture struct {
 		Adapter string `json:"adapter"`
 		State   string `json:"state"`
 	} `json:"meta"`
-	StdoutText   string `json:"stdoutText"`
+	Argv         []string `json:"argv"`
+	Exit         int      `json:"exit"`
+	StdoutText   string   `json:"stdoutText"`
 	Capabilities map[string]struct {
 		Status string `json:"status"`
 		Notes  string `json:"notes"`
