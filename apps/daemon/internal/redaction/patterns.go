@@ -114,7 +114,7 @@ func defaultPatterns() []pattern {
 		},
 		{
 			id:    "browser-cookie-claude-sessionkey",
-			regex: regexp.MustCompile(`(?i)\bsessionKey\s*=\s*sk-ant-[A-Za-z0-9._\-]+`),
+			regex: regexp.MustCompile(`(?i)\bsessionKey\s*=\s*[A-Za-z0-9._%+/\-]+`),
 			replace: func(string) string {
 				return "sessionKey=[redacted]"
 			},

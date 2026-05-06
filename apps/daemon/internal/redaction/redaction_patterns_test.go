@@ -172,25 +172,47 @@ func TestRedactBrowserCookieNextAuthCsrf(t *testing.T) {
 }
 
 func TestRedactBrowserCookieClaudeSessionKey(t *testing.T) {
-	r := NewDefault()
-	// Claude.ai session cookie. Suffix is too short for provider-key-anthropic
-	// (needs 16+ chars) and too unstructured for browser-cookie-claude (which
-	// requires "claude" or "anthropic" in the cookie name itself).
-	out, traces := r.RedactText(SurfaceAudit, "test", "sessionKey=sk-ant-api03-abc")
-	if strings.Contains(out, "api03-abc") {
-		t.Errorf("sessionKey leaked: %s", out)
+	cases := []struct {
+		name  string
+		input string
+		leak  string
+	}{
+		{
+			name:  "anthropic-prefix-short",
+			input: "sessionKey=sk-ant-api03-abc",
+			leak:  "api03-abc",
+		},
+		{
+			name:  "alternate-prefix",
+			input: "sessionKey=sk-claude-rotated_123",
+			leak:  "sk-claude-rotated_123",
+		},
+		{
+			name:  "opaque-cookie-token",
+			input: "sessionKey=ck.%2Bopaque/value-123",
+			leak:  "ck.%2Bopaque/value-123",
+		},
 	}
-	if !strings.Contains(out, "[redacted]") {
-		t.Errorf("expected placeholder: %s", out)
-	}
-	hit := false
-	for _, ev := range traces {
-		if ev.PatternID == "browser-cookie-claude-sessionkey" {
-			hit = true
-		}
-	}
-	if !hit {
-		t.Errorf("expected browser-cookie-claude-sessionkey trace, got %+v", traces)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := NewDefault()
+			out, traces := r.RedactText(SurfaceAudit, "test", tc.input)
+			if strings.Contains(out, tc.leak) {
+				t.Errorf("sessionKey leaked: %s", out)
+			}
+			if !strings.Contains(out, "[redacted]") {
+				t.Errorf("expected placeholder: %s", out)
+			}
+			hit := false
+			for _, ev := range traces {
+				if ev.PatternID == "browser-cookie-claude-sessionkey" {
+					hit = true
+				}
+			}
+			if !hit {
+				t.Errorf("expected browser-cookie-claude-sessionkey trace, got %+v", traces)
+			}
+		})
 	}
 }
 

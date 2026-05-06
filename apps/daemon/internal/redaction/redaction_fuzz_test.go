@@ -241,7 +241,7 @@ func redactionFuzzCases() []redactionFuzzCase {
 		{
 			id: "browser-cookie-claude-sessionkey",
 			build: func(entropy string) (string, []string) {
-				value := "sk-ant-" + alphabet(entropy, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-", 9)
+				value := "ck." + alphabet(entropy, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._%+/-", 24)
 				return "sessionKey=" + value, []string{value}
 			},
 		},
