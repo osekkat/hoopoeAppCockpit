@@ -448,6 +448,63 @@ type bvGoldenFixture struct {
 	} `json:"capabilities"`
 }
 
+// TestProbeOnTimeoutGoldenFixtureDegradesAllCapabilities loads
+// packages/fixtures/golden-outputs/bv/timeout.json and pins the contract
+// from plan.md §18.3 for the timeout state: exit-124 + "timeout: sending
+// signal TERM" stderr (the GNU coreutils `timeout` envelope's standard
+// signal trace) must produce StatusDegraded on every probed capability,
+// not StatusMissing — the binary exists but the call exceeded
+// ENVELOPE_TIMEOUT_S.
+//
+// "Do not retry without backoff" from the fixture notes is a daemon-level
+// contract for the recovery action; this test only pins the surface that
+// classification correctly distinguishes envelope timeout from missing
+// binary.
+func TestProbeOnTimeoutGoldenFixtureDegradesAllCapabilities(t *testing.T) {
+	t.Parallel()
+	fixture := loadBVGoldenFixture(t, "timeout.json")
+	if fixture.Meta.State != "timeout" {
+		t.Fatalf("fixture state = %q, want timeout", fixture.Meta.State)
+	}
+	if cap, ok := fixture.Capabilities["bv._timeout"]; !ok || cap.Status != "degraded" {
+		t.Fatalf("fixture must declare bv._timeout=degraded, got %+v", fixture.Capabilities)
+	}
+	if fixture.Exit != 124 {
+		t.Fatalf("fixture exit = %d, want 124 (GNU timeout)", fixture.Exit)
+	}
+
+	fake := newFakeExecutor()
+	for _, robotFlag := range []string{
+		"--robot-triage",
+		"--robot-plan",
+		"--robot-insights",
+		"--robot-next",
+		"--robot-diff --diff-since HEAD",
+	} {
+		fake.Exits[robotFlag] = fixture.Exit
+		fake.Stderrs[robotFlag] = []byte(fixture.StderrText)
+	}
+
+	c := NewWithExecutor(fake)
+	res := Probe(context.Background(), c, func() time.Time { return time.Date(2026, 5, 7, 0, 0, 0, 0, time.UTC) })
+
+	for _, capID := range []string{CapTriage, CapPlan, CapInsights, CapDiff, CapNext} {
+		report, ok := res.Reports[capID]
+		if !ok {
+			t.Fatalf("%s missing from probe report", capID)
+		}
+		if report.Status != StatusDegraded {
+			t.Fatalf("%s status = %q, want degraded (fixture state=timeout)", capID, report.Status)
+		}
+		if !strings.Contains(report.Notes, "exited 124") {
+			t.Fatalf("%s notes = %q; want exit-124 wrapping preserved", capID, report.Notes)
+		}
+		if !strings.Contains(report.Notes, "TERM") {
+			t.Fatalf("%s notes = %q; want fixture stderr signal trace surfaced", capID, report.Notes)
+		}
+	}
+}
+
 func loadBVGoldenFixture(t *testing.T, name string) bvGoldenFixture {
 	t.Helper()
 	data := loadFixture(t, filepath.Join("golden-outputs", "bv", name))
