@@ -1,6 +1,15 @@
 # Health adapter — Rust
 
 > Code-health metrics for Rust crates / workspaces (`plan.md` §7.4, §11).
+>
+> **Status: forward-looking Phase 11 contract.** The adapter sub-package
+> (`apps/daemon/internal/adapters/health/rust/`) and the
+> `packages/fixtures/.../health/rust/` fixture trees referenced below **do not
+> exist on disk yet.** The current seed implementation lives in
+> `apps/daemon/internal/health/health.go` (snapshot envelope + in-process probe
+> scaffolding) plus its `health_test.go`. Phase 11 (bead `hp-9uh`) introduces
+> the per-language adapter sub-package and the fixture corpus in line with this
+> contract.
 
 ## Source of truth
 
@@ -54,6 +63,8 @@ Health jobs run in `~/.hoopoe/work/<project-id>/health/<run-id>/`. Cargo's targe
 
 ## Adapter notes (Hoopoe Go side)
 
-- Lives at `apps/daemon/internal/adapters/health/rust/` (Phase 11, bead `hp-9uh`).
-- Argv builder enforces `CARGO_TARGET_DIR` and `--message-format=json` for cargo invocations.
-- For very large Rust workspaces, the daemon's job runner uses `rch exec` to offload (matches `AGENTS.md` rch pattern).
+- **Today** the only on-disk health code is `apps/daemon/internal/health/health.go`. No per-language adapter sub-packages exist yet.
+- **Planned** under bead `hp-9uh` (Phase 11):
+  - Adapter at `apps/daemon/internal/adapters/health/rust/`.
+  - Argv builder enforces `CARGO_TARGET_DIR` and `--message-format=json` for cargo invocations.
+  - For very large Rust workspaces, the daemon's job runner uses `rch exec` to offload (matches `AGENTS.md` rch pattern).

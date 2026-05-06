@@ -1,6 +1,15 @@
 # Health adapter — Go
 
 > Code-health metrics for Go modules / workspaces (`plan.md` §7.4, §11).
+>
+> **Status: forward-looking Phase 11 contract.** The adapter sub-package
+> (`apps/daemon/internal/adapters/health/go/`) and the
+> `packages/fixtures/.../health/go/` fixture trees referenced below **do not
+> exist on disk yet.** The current seed implementation lives in
+> `apps/daemon/internal/health/health.go` (snapshot envelope + in-process probe
+> scaffolding) plus its `health_test.go`. Phase 11 (bead `hp-9uh`) introduces
+> the per-language adapter sub-package and the fixture corpus in line with this
+> contract.
 
 ## Source of truth
 
@@ -56,6 +65,8 @@ Health jobs run in `~/.hoopoe/work/<project-id>/health/<run-id>/`. `go build` ca
 
 ## Adapter notes (Hoopoe Go side)
 
-- Lives at `apps/daemon/internal/adapters/health/go/` (Phase 11, bead `hp-9uh`).
-- Cover.out parser: `go tool cover -func` is the preferred summary surface; per-line precision is in `cover.out` directly.
-- `golangci-lint` JSON ingested into finding ledger with `source: golangci-lint` stamp.
+- **Today** the only on-disk health code is `apps/daemon/internal/health/health.go`. No per-language adapter sub-packages exist yet.
+- **Planned** under bead `hp-9uh` (Phase 11):
+  - Adapter at `apps/daemon/internal/adapters/health/go/`.
+  - Cover.out parser: `go tool cover -func` is the preferred summary surface; per-line precision is in `cover.out` directly.
+  - `golangci-lint` JSON ingested into the §9.3 finding ledger with `source: golangci-lint` stamp.

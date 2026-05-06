@@ -1,6 +1,16 @@
 # Health adapter — TypeScript / JavaScript
 
 > Code-health metrics for TS/JS projects (`plan.md` §7.4, §11). Coverage, complexity, churn, hotspots.
+>
+> **Status: forward-looking Phase 11 contract.** The adapter and store paths
+> referenced below (`apps/daemon/internal/adapters/health/ts/`,
+> `apps/daemon/internal/health/scoring.go`,
+> `apps/daemon/internal/health/store/`, the `packages/fixtures/.../health/ts/`
+> fixture trees) **do not exist on disk yet.** The current seed implementation
+> lives in `apps/daemon/internal/health/health.go` (snapshot envelope +
+> in-process probe scaffolding) plus its `health_test.go`. Phase 11 (bead
+> `hp-9uh`) introduces the per-language adapter sub-packages, the scoring
+> module, and the persistence store in line with this contract.
 
 ## Source of truth
 
@@ -63,7 +73,8 @@ Health jobs run in `~/.hoopoe/work/<project-id>/health/<run-id>/` via `git workt
 
 ## Adapter notes (Hoopoe Go side)
 
-- Lives at `apps/daemon/internal/adapters/health/ts/` (Phase 11, bead `hp-9uh`).
-- Output normalized to the snapshot envelope's `health` capture.
-- Hotspot scoring lives in `apps/daemon/internal/health/scoring.go` — language-agnostic.
-- Persistence: snapshots stored in `apps/daemon/internal/health/store/` per project + per run-id (`hp-3at`).
+- **Today** the only on-disk health code is `apps/daemon/internal/health/health.go` (snapshot envelope + in-process probe scaffolding). No per-language adapter sub-packages exist yet.
+- **Planned** under bead `hp-9uh` (Phase 11):
+  - Adapter at `apps/daemon/internal/adapters/health/ts/` — output normalized into the snapshot envelope's `health` capture.
+  - Hotspot scoring at `apps/daemon/internal/health/scoring.go` — language-agnostic.
+  - Persistence at `apps/daemon/internal/health/store/` (per project + per run-id) — bead `hp-3at`.

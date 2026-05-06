@@ -1,6 +1,15 @@
 # Health adapter — Python
 
 > Code-health metrics for Python projects (`plan.md` §7.4, §11).
+>
+> **Status: forward-looking Phase 11 contract.** The adapter sub-package
+> (`apps/daemon/internal/adapters/health/python/`) and the
+> `packages/fixtures/.../health/python/` fixture trees referenced below **do
+> not exist on disk yet.** The current seed implementation lives in
+> `apps/daemon/internal/health/health.go` (snapshot envelope + in-process probe
+> scaffolding) plus its `health_test.go`. Phase 11 (bead `hp-9uh`) introduces
+> the per-language adapter sub-package and the fixture corpus in line with this
+> contract.
 
 ## Source of truth
 
@@ -55,5 +64,7 @@ Same as TS — `~/.hoopoe/work/<project-id>/health/<run-id>/`.
 
 ## Adapter notes (Hoopoe Go side)
 
-- Lives at `apps/daemon/internal/adapters/health/python/` (Phase 11, bead `hp-9uh`).
-- Same scoring + persistence path as TS.
+- **Today** the only on-disk health code is `apps/daemon/internal/health/health.go`. No per-language adapter sub-packages exist yet.
+- **Planned** under bead `hp-9uh` (Phase 11):
+  - Adapter at `apps/daemon/internal/adapters/health/python/`.
+  - Same scoring + persistence path as TS — see `docs/integration-contracts/health/ts.md`.

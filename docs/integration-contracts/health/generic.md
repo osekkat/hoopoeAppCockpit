@@ -1,6 +1,15 @@
 # Health adapter — generic (cross-language)
 
 > Catch-all for languages without a dedicated adapter (Ruby, Elixir, Java, C/C++, Swift, shell, multi-language repos). Scopes: complexity (`lizard`), LOC (`scc` / `tokei`), churn (`git log --numstat`). No coverage by default — coverage is language-specific and lands in the per-language adapters.
+>
+> **Status: forward-looking Phase 11 contract.** The adapter sub-package
+> (`apps/daemon/internal/adapters/health/generic/`) and the
+> `packages/fixtures/.../health/generic/` fixture trees referenced below **do
+> not exist on disk yet.** The current seed implementation lives in
+> `apps/daemon/internal/health/health.go` (snapshot envelope + in-process probe
+> scaffolding) plus its `health_test.go`. Phase 11 (bead `hp-9uh`) introduces
+> the per-language adapter sub-package and the fixture corpus in line with this
+> contract.
 
 ## Source of truth
 
@@ -54,6 +63,8 @@
 
 ## Adapter notes (Hoopoe Go side)
 
-- Lives at `apps/daemon/internal/adapters/health/generic/` (Phase 11, bead `hp-9uh`).
-- Always-on for any project (even when a language-specific adapter is also engaged).
-- Hotspot scoring uses generic complexity + churn when language-specific complexity unavailable.
+- **Today** the only on-disk health code is `apps/daemon/internal/health/health.go`. No per-language adapter sub-packages exist yet.
+- **Planned** under bead `hp-9uh` (Phase 11):
+  - Adapter at `apps/daemon/internal/adapters/health/generic/`.
+  - Always-on for any project (even when a language-specific adapter is also engaged).
+  - Hotspot scoring uses generic complexity + churn when language-specific complexity is unavailable.
