@@ -365,6 +365,97 @@ func TestStaticReportMatchesNormalGoldenFixtureCapabilityParity(t *testing.T) {
 	}
 }
 
+// TestProbeOnMissingToolGoldenFixtureDegradesAllCapabilities loads the
+// committed Phase 0 golden artifact at
+// packages/fixtures/golden-outputs/agent_mail/missing-tool.json and pins
+// the agent-mail adapter contract from plan.md §18.3 for the
+// "missing-tool" state.
+//
+// agent-mail is an MCP server, not a CLI binary, so the fixture's
+// "command not found" stderr captures what happens when an operator
+// tries to shell out instead of reaching MCP. The runtime equivalent for
+// the real adapter is "MCP transport unreachable" (connection refused,
+// DNS failure, etc.). The fixture self-declares the synthetic
+// `agent_mail._present` capability as `missing` to mark this scenario.
+//
+// The contract pinned here:
+//
+//  1. Fixture self-consistency: state="missing-tool", exit=127,
+//     stderrText carries "command not found", and `_present` is missing.
+//  2. Adapter graceful-degradation: when the MCP transport returns a
+//     connection-level error, Probe must wrap (not panic) and surface
+//     every real CapabilityIDs() entry as Degraded with the underlying
+//     error preserved in notes — matching the fixture's intent that
+//     missing transport means no capability is usable.
+func TestProbeOnMissingToolGoldenFixtureDegradesAllCapabilities(t *testing.T) {
+	t.Parallel()
+	fixture := loadAgentMailGoldenFixture(t, "missing-tool.json")
+
+	if fixture.Meta.State != "missing-tool" {
+		t.Fatalf("fixture state = %q, want missing-tool", fixture.Meta.State)
+	}
+	if fixture.Exit != 127 {
+		t.Fatalf("fixture exit = %d, want 127 (POSIX command-not-found)", fixture.Exit)
+	}
+	if !strings.Contains(fixture.StderrText, "command not found") {
+		t.Fatalf("fixture stderrText = %q, want 'command not found'", fixture.StderrText)
+	}
+	presentCap, ok := fixture.Capabilities["agent_mail._present"]
+	if !ok || presentCap.Status != "missing" {
+		t.Fatalf("fixture must declare agent_mail._present=missing, got %+v", fixture.Capabilities)
+	}
+
+	rt := &failingRoundTripper{err: errors.New("dial tcp 127.0.0.1:8765: connect: connection refused")}
+	client := New("http://127.0.0.1:8765")
+	client.Token = "test-token"
+	client.HTTPClient = &http.Client{Transport: rt}
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("Probe panicked on transport-unreachable scenario: %v", r)
+		}
+	}()
+	report := Probe(
+		context.Background(),
+		client,
+		"/repo",
+		"RoseCastle",
+		func() time.Time { return time.Date(2026, 5, 7, 0, 0, 0, 0, time.UTC) },
+	)
+	if report == nil {
+		t.Fatalf("Probe returned nil report")
+	}
+	if err := report.Validate(); err != nil {
+		t.Fatalf("report invalid: %v", err)
+	}
+	if report.Tool != capabilities.ToolAgentMail {
+		t.Fatalf("tool = %s, want %s", report.Tool, capabilities.ToolAgentMail)
+	}
+
+	wantIDs := CapabilityIDs()
+	if len(report.Capabilities) != len(wantIDs) {
+		t.Fatalf("capability count = %d, want %d", len(report.Capabilities), len(wantIDs))
+	}
+	for _, id := range wantIDs {
+		got, present := report.Capabilities[id]
+		if !present {
+			t.Fatalf("capability %s missing from report", id)
+		}
+		if got.Status != capabilities.StatusDegraded {
+			t.Fatalf("capability %s status = %s, want degraded (transport unreachable)", id, got.Status)
+		}
+		if got.Notes == "" {
+			t.Fatalf("capability %s notes empty; expected transport error preserved", id)
+		}
+		if !strings.Contains(got.Notes, "connection refused") {
+			t.Fatalf("capability %s notes = %q, want underlying transport error", id, got.Notes)
+		}
+	}
+	if rt.calls != 1 {
+		t.Fatalf("probe should hit transport exactly once for FetchInbox check, got %d calls", rt.calls)
+	}
+}
+
 // agentMailGoldenFixture mirrors the shape of the committed Phase 0 golden
 // outputs at packages/fixtures/golden-outputs/agent_mail/*.json. Only the
 // fields the adapter contract observes are decoded — fixtures may carry
@@ -378,10 +469,23 @@ type agentMailGoldenFixture struct {
 	Argv         []string `json:"argv"`
 	Exit         int      `json:"exit"`
 	StdoutText   string   `json:"stdoutText"`
+	StderrText   string   `json:"stderrText"`
 	Capabilities map[string]struct {
 		Status string `json:"status"`
 		Notes  string `json:"notes"`
 	} `json:"capabilities"`
+}
+
+// failingRoundTripper always returns the configured error, modeling an
+// unreachable MCP endpoint (connection refused, DNS failure, etc.).
+type failingRoundTripper struct {
+	err   error
+	calls int
+}
+
+func (f *failingRoundTripper) RoundTrip(_ *http.Request) (*http.Response, error) {
+	f.calls++
+	return nil, f.err
 }
 
 func loadAgentMailGoldenFixture(t *testing.T, name string) agentMailGoldenFixture {
