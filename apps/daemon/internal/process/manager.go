@@ -94,10 +94,20 @@ func (m *Manager) Start(ctx context.Context, spec Spec) (Record, error) {
 	}
 	m.mu.Unlock()
 
-	cmd := exec.Command(spec.Path, spec.Args...)
+	cmd := exec.CommandContext(ctx, spec.Path, spec.Args...)
 	cmd.Dir = spec.Dir
 	cmd.Env = append(os.Environ(), spec.Env...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		if cmd.Process == nil {
+			return os.ErrProcessDone
+		}
+		pgid, err := syscall.Getpgid(cmd.Process.Pid)
+		if err != nil {
+			return cmd.Process.Kill()
+		}
+		return signalGroup(pgid, syscall.SIGKILL)
+	}
 
 	if err := cmd.Start(); err != nil {
 		return Record{}, err

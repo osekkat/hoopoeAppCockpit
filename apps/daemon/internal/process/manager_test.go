@@ -61,6 +61,51 @@ func TestManagerStopTerminatesProcessGroup(t *testing.T) {
 	}
 }
 
+func TestManagerStartContextCancelKillsChild(t *testing.T) {
+	manager := NewManager()
+	sleep := requireSleep(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	rec, err := manager.Start(ctx, Spec{JobID: "job-cancel", Path: sleep, Args: []string{"30"}})
+	if err != nil {
+		cancel()
+		t.Fatalf("start: %v", err)
+	}
+	if err := syscall.Kill(rec.PID, 0); err != nil {
+		cancel()
+		t.Fatalf("expected live child, kill(0) err=%v", err)
+	}
+
+	cancel()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if err := syscall.Kill(rec.PID, 0); errors.Is(err, syscall.ESRCH) {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err := syscall.Kill(rec.PID, 0); !errors.Is(err, syscall.ESRCH) {
+		t.Fatalf("child %d still alive after ctx cancel, kill(0) err=%v", rec.PID, err)
+	}
+
+	statusCtx, statusCancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer statusCancel()
+	for {
+		status, err := manager.Status(statusCtx, rec.JobID)
+		if err != nil {
+			t.Fatalf("status: %v", err)
+		}
+		if status.Status == StatusExited {
+			break
+		}
+		select {
+		case <-statusCtx.Done():
+			t.Fatalf("manager status did not transition to exited: got %s", status.Status)
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+}
+
 func TestManagerAdoptRequiresLiveProcess(t *testing.T) {
 	manager := NewManager()
 	pgid, err := syscall.Getpgid(os.Getpid())

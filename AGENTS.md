@@ -280,6 +280,8 @@ Origin is the canonical source of truth for code. Agents push their bead's branc
 
 ### Source of truth table (plan.md §1.1)
 
+This is an **abbreviated quick reference**. The canonical, exhaustive table lives in `plan.md §1.1` — when its rows and this list disagree, `plan.md` wins.
+
 When in doubt about who owns what:
 
 - **Code (canonical):** origin (GitHub/GitLab/etc.).
@@ -291,10 +293,20 @@ When in doubt about who owns what:
 - **Swarm sessions:** `ntm` + tmux.
 - **Agent communication:** Agent Mail.
 - **Build/test execution:** `rch`, NTM pipelines, language-native runners.
+- **Code health:** coverage/complexity reports + Git; snapshots/trends normalized by Hoopoe per the `vibing-with-ntm` cadence.
 - **Swarm tending methodology:** `ntm` + `vibing-with-ntm` skills, loaded into tending agents at runtime — **not reimplemented in Go**.
+- **Agent skill installation/updates:** `jsm` (preferred) / `jfp` (fallback) — never reimplemented; pin by SHA-256 when `jsm` is available.
 - **Safety approvals:** NTM/DCG/SLB. DCG verdicts are _ingested_ into Hoopoe's unified approvals queue, not run as a parallel guard.
+- **Destructive-command policy:** `DCG` (Claude Code hook); ingested as approval-source events, not run as a parallel guard.
+- **Two-person rule (high-risk):** `SLB` — required for the destructive-action class under the `autopilot` safety preset.
 - **LLM provider account credentials:** CAAM (sole credential pathway).
-- **Subscription usage:** `caut` (per-provider quota).
+- **ChatGPT Pro web reach:** `oracle --engine browser` (the only path to ChatGPT Pro).
+- **Subscription usage telemetry:** `caut` (per-provider quota), `rano` (per-call latency/error), per-CLI status messages, NTM events.
+- **Session resumption across CLIs:** `casr` — invoked by recovery actions and the `tend-swarm` job.
+- **System resource health:** `srp` (CPU/load), `sbh` (disk pressure), `pt` (process termination) — actuators behind the `watch-safety-thresholds` pre-script.
+- **Bug scanning & code review tools:** `UBS` (primary) plus specialized audit skills; findings flow into the §9.3 finding ledger with the source tool stamped on each finding.
+- **Plan refinement automation:** Hoopoe's §7.1 planning pipeline (in-house). `apr` is installed by ACFS but not used as Hoopoe's planning backend.
+- **Planning model execution:** subscription-backed CLIs (Claude Code / Codex / Gemini) plus `oracle` for ChatGPT Pro web — never direct provider APIs (Guardrail 11).
 
 ---
 
