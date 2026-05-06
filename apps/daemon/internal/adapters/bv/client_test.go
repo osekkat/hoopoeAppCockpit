@@ -448,6 +448,76 @@ type bvGoldenFixture struct {
 	} `json:"capabilities"`
 }
 
+// TestProbeOnMalformedJSONGoldenFixtureDegradesAllCapabilities loads
+// packages/fixtures/golden-outputs/bv/malformed-json.json and pins the
+// contract from plan.md §18.3 for the malformed-json state: exit-0 with a
+// truncated/non-JSON stdout produces StatusDegraded on every probed
+// capability — neither StatusOK (parser saw no error path) nor
+// StatusMissing (binary present and exited cleanly).
+//
+// Specifically exercises the *parser* failure surface: Client.run returns
+// the raw stdout because exit=0, then each typed parser (Triage, Plan,
+// Insights, Diff, Next) hits json.Unmarshal on the truncated bytes and
+// returns a wrapped "decode X" error. probeOne reads StatusDegraded with
+// the parser error trace surfaced via the "%s probe error: %s" format.
+func TestProbeOnMalformedJSONGoldenFixtureDegradesAllCapabilities(t *testing.T) {
+	t.Parallel()
+	fixture := loadBVGoldenFixture(t, "malformed-json.json")
+	if fixture.Meta.State != "malformed-json" {
+		t.Fatalf("fixture state = %q, want malformed-json", fixture.Meta.State)
+	}
+	if cap, ok := fixture.Capabilities["bv._parse"]; !ok || cap.Status != "degraded" {
+		t.Fatalf("fixture must declare bv._parse=degraded, got %+v", fixture.Capabilities)
+	}
+	if fixture.StdoutText == "" || fixture.Exit != 0 {
+		t.Fatalf("fixture stdoutText/exit = %q/%d; want non-empty/0", fixture.StdoutText, fixture.Exit)
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("Probe panicked on malformed JSON fixture: %v", r)
+		}
+	}()
+
+	fake := newFakeExecutor()
+	for _, robotFlag := range []string{
+		"--robot-triage",
+		"--robot-plan",
+		"--robot-insights",
+		"--robot-next",
+		"--robot-diff --diff-since HEAD",
+	} {
+		fake.Stdouts[robotFlag] = []byte(fixture.StdoutText)
+	}
+
+	c := NewWithExecutor(fake)
+	res := Probe(context.Background(), c, func() time.Time { return time.Date(2026, 5, 7, 0, 0, 0, 0, time.UTC) })
+
+	for _, capID := range []string{CapTriage, CapPlan, CapInsights, CapDiff, CapNext} {
+		report, ok := res.Reports[capID]
+		if !ok {
+			t.Fatalf("%s missing from probe report", capID)
+		}
+		if report.Status != StatusDegraded {
+			t.Fatalf("%s status = %q, want degraded (fixture state=malformed-json)", capID, report.Status)
+		}
+		if !strings.Contains(strings.ToLower(report.Notes), "decode") {
+			t.Fatalf("%s notes = %q; want parser decode-error wrapping", capID, report.Notes)
+		}
+	}
+
+	// Also exercise the typed parsers directly so a regression that drops
+	// the json.Unmarshal error surface — e.g., "best-effort" empty parse
+	// returning a zero value and nil — fails this test rather than
+	// silently passing.
+	directFake := newFakeExecutor()
+	directFake.Stdouts["--robot-triage"] = []byte(fixture.StdoutText)
+	dc := NewWithExecutor(directFake)
+	if _, err := dc.Triage(context.Background()); err == nil {
+		t.Fatalf("Triage accepted truncated JSON without error")
+	}
+}
+
 // TestProbeOnTimeoutGoldenFixtureDegradesAllCapabilities loads
 // packages/fixtures/golden-outputs/bv/timeout.json and pins the contract
 // from plan.md §18.3 for the timeout state: exit-124 + "timeout: sending
