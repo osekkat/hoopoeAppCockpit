@@ -452,6 +452,103 @@ func TestProbeReportsCapabilitiesForRegistry(t *testing.T) {
 	}
 }
 
+// TestProbeOnMissingToolGoldenFixtureMarksAllCapabilitiesMissing loads
+// packages/fixtures/golden-outputs/br/missing-tool.json and pins the
+// adapter contract from plan.md §18.3: when the version probe exits with
+// the captured 127 / "command not found" pair, statusForError takes the
+// ExitCode==127 branch (br.go:1131) — distinct from the existing test that
+// drives the runner-level "executable file not found" string-match path —
+// and every declared capability lands at StatusMissing, with TUI
+// downgraded to BlockedByPolicy as today.
+func TestProbeOnMissingToolGoldenFixtureMarksAllCapabilitiesMissing(t *testing.T) {
+	fixture := loadBRGoldenFixture(t, "missing-tool.json")
+	if fixture.Meta.State != "missing-tool" {
+		t.Fatalf("fixture state = %q, want missing-tool", fixture.Meta.State)
+	}
+	if cap, ok := fixture.Capabilities["br._present"]; !ok || cap.Status != "missing" {
+		t.Fatalf("fixture must declare br._present=missing, got %+v", fixture.Capabilities)
+	}
+	if fixture.Exit != 127 {
+		t.Fatalf("fixture exit = %d, want 127", fixture.Exit)
+	}
+
+	adapter := New(&fakeRunner{responses: map[string]CommandResult{
+		"br version --short": {
+			ExitCode: fixture.Exit,
+			Stderr:   []byte(fixture.StderrText),
+		},
+	}})
+	adapter.Now = fixedNow
+	report, err := adapter.Probe(context.Background())
+	if err != nil {
+		t.Fatalf("Probe: %v", err)
+	}
+	if report.Tool != capabilities.ToolBR {
+		t.Fatalf("tool = %s", report.Tool)
+	}
+	if got := report.Capabilities[CapabilityPresent].Status; got != capabilities.StatusMissing {
+		t.Fatalf("br._present = %s, want missing", got)
+	}
+	for _, capID := range []string{
+		CapabilityIssuesRead,
+		CapabilityIssuesUpdate,
+		CapabilityReady,
+		CapabilityCreate,
+		CapabilityClose,
+		CapabilityDepAdd,
+		CapabilityDepRemove,
+		CapabilityDepCycles,
+		CapabilitySyncFlushOnly,
+		CapabilitySyncFlush,
+		CapabilityDoctor,
+		CapabilitySchema,
+	} {
+		got := report.Capabilities[capID]
+		if got.Status != capabilities.StatusMissing {
+			t.Fatalf("%s = %+v, want missing", capID, got)
+		}
+		if !strings.Contains(got.Notes, "exited 127") {
+			t.Fatalf("%s notes = %q; want exit-127 wrapping preserved", capID, got.Notes)
+		}
+	}
+	tui := report.Capabilities[CapabilityTUI]
+	if tui.Status != capabilities.StatusMissing {
+		t.Fatalf("br.tui = %+v, want missing (TUI inherits the missing state when binary absent — see Probe condition at br.go:837)", tui)
+	}
+}
+
+type brGoldenFixture struct {
+	Meta struct {
+		Adapter string `json:"adapter"`
+		State   string `json:"state"`
+	} `json:"meta"`
+	Exit         int    `json:"exit"`
+	StdoutText   string `json:"stdoutText"`
+	StderrText   string `json:"stderrText"`
+	Capabilities map[string]struct {
+		Status string `json:"status"`
+		Notes  string `json:"notes"`
+	} `json:"capabilities"`
+}
+
+func loadBRGoldenFixture(t *testing.T, name string) brGoldenFixture {
+	t.Helper()
+	rel := filepath.Join("packages", "fixtures", "golden-outputs", "br", name)
+	root := findRepoRoot(t)
+	data, err := os.ReadFile(filepath.Join(root, rel))
+	if err != nil {
+		t.Fatalf("read fixture %s: %v", rel, err)
+	}
+	var fixture brGoldenFixture
+	if err := json.Unmarshal(data, &fixture); err != nil {
+		t.Fatalf("parse fixture %s: %v", rel, err)
+	}
+	if fixture.Meta.Adapter != "br" {
+		t.Fatalf("fixture %s adapter = %q, want br", rel, fixture.Meta.Adapter)
+	}
+	return fixture
+}
+
 func TestProbeReportsMissingMalformedTimeoutHighVolumeAndCycles(t *testing.T) {
 	missing := New(&fakeRunner{err: errors.New("exec: \"br\": executable file not found")})
 	missing.Now = fixedNow
