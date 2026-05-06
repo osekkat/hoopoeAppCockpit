@@ -3,8 +3,13 @@
   "compilerOptions": {
     "composite": true,
     "types": ["bun", "node"],
-    "lib": ["ESNext"]
+    "lib": ["ESNext"],
+    "baseUrl": ".",
+    "paths": {
+      "@hoopoe/fixtures": ["../fixtures/src/index.ts"],
+      "@hoopoe/schemas": ["../schemas/src/index.ts"]
+    }
   },
-  "include": ["src"],
+  "include": ["src", "../fixtures/src", "../fixtures/replay", "../schemas/src"],
   "exclude": ["**/*.test.ts"]
 }

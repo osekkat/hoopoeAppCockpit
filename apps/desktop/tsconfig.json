@@ -4,8 +4,21 @@
     "composite": true,
     "jsx": "react-jsx",
     "types": ["bun", "node"],
-    "lib": ["ESNext", "DOM", "esnext.disposable"]
+    "lib": ["ESNext", "DOM", "esnext.disposable"],
+    "baseUrl": ".",
+    "paths": {
+      "@hoopoe/fixture-replay": ["../../packages/fixture-replay/src/index.ts"],
+      "@hoopoe/fixtures": ["../../packages/fixtures/src/index.ts"],
+      "@hoopoe/schemas": ["../../packages/schemas/src/index.ts"]
+    }
   },
-  "include": ["src", "electron"],
+  "include": [
+    "src",
+    "electron",
+    "../../packages/fixture-replay/src",
+    "../../packages/fixtures/src",
+    "../../packages/fixtures/replay",
+    "../../packages/schemas/src"
+  ],
   "exclude": ["**/*.test.ts", "**/*.test.tsx"]
 }

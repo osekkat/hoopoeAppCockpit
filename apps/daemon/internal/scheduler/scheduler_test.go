@@ -725,8 +725,6 @@ func TestSchedulerRecoversRunnerPanicRedactsValue(t *testing.T) {
 		Registry: registry,
 		Runner: RunnerFunc(func(context.Context, Run) (RunResult, error) {
 			panic(fmt.Errorf("upstream auth: %s", secret))
-			// unreachable, but Go's flow analysis requires a return
-			return RunResult{}, nil
 		}),
 		Redactor:   redaction.NewDefault(),
 		MaxWorkers: 1,

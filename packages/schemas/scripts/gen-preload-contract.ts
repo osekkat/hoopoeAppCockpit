@@ -401,6 +401,8 @@ function parseArgs(args: readonly string[]): GeneratorOptions {
     outPath: defaultOutPath,
     stdout: false,
   };
+  let stdoutSeen = false;
+  let outSeen = false;
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index] ?? "";
@@ -409,7 +411,11 @@ function parseArgs(args: readonly string[]): GeneratorOptions {
       process.exit(0);
     }
     if (arg === "--stdout") {
-      if (options.outPath !== defaultOutPath) {
+      if (stdoutSeen) {
+        throw new Error("--stdout was provided multiple times");
+      }
+      stdoutSeen = true;
+      if (outSeen) {
         throw new Error("--stdout cannot be combined with --out");
       }
       options.stdout = true;
@@ -417,12 +423,19 @@ function parseArgs(args: readonly string[]): GeneratorOptions {
       continue;
     }
     if (arg === "--out") {
-      if (options.stdout) {
+      if (outSeen) {
+        throw new Error("--out was provided multiple times");
+      }
+      outSeen = true;
+      if (stdoutSeen) {
         throw new Error("--out cannot be combined with --stdout");
       }
       const next = args[index + 1];
       if (next === undefined || next.startsWith("--")) {
         throw new Error("--out requires a path argument");
+      }
+      if (next === "-") {
+        throw new Error("--out requires a filesystem path; use --stdout for stdout");
       }
       options.outPath = resolve(process.cwd(), next);
       index += 1;

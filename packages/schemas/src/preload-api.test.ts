@@ -146,6 +146,44 @@ test("gen-preload-contract --out writes only the requested file", () => {
   }
 });
 
+test("gen-preload-contract rejects repeated output flags with precise errors", () => {
+  const tmpDir = mkdtempSync(join(tmpdir(), "hoopoe-preload-gen-args-"));
+  try {
+    const before = generatedSnapshot();
+    const cases = [
+      {
+        args: [generatorPath, "--stdout", "--stdout"],
+        message: "--stdout was provided multiple times",
+      },
+      {
+        args: [generatorPath, "--out", join(tmpDir, "first.ts"), "--out", join(tmpDir, "second.ts")],
+        message: "--out was provided multiple times",
+      },
+    ];
+
+    for (const { args, message } of cases) {
+      const result = runBunScript(args);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain(message);
+    }
+
+    expect(generatedSnapshot()).toEqual(before);
+    expect(existsSync(join(tmpDir, "first.ts"))).toBe(false);
+    expect(existsSync(join(tmpDir, "second.ts"))).toBe(false);
+  } finally {
+    rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("gen-preload-contract rejects --out dash with stdout guidance", () => {
+  const before = generatedSnapshot();
+  const result = runBunScript([generatorPath, "--out", "-"]);
+
+  expect(result.status).toBe(1);
+  expect(result.stderr).toContain("--out requires a filesystem path; use --stdout for stdout");
+  expect(generatedSnapshot()).toEqual(before);
+});
+
 test("validate-preload-codegen is read-only on success", () => {
   const before = generatedSnapshot();
   const result = runBunScript([validatorPath]);
