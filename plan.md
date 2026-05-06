@@ -1840,7 +1840,7 @@ Initialize Hoopoe monorepo (Turbo + Bun workspaces, `apps/{desktop, daemon}`, `p
 - ⌘K command palette with the registry from above.
 - macOS Keychain integration via Electron `safeStorage`.
 
-**Exit:** visual review against reference design passes; app can navigate stages; `bun run dist:desktop:dmg:arm64` produces a signed/notarized DMG; auto-update flow works against `mock-update-server`; settings hot-reload demonstrated; ⌘K palette opens; Mock Flywheel Mode can replay at least one fixture project without connecting to a VPS, so stage UI and Activity panel behavior are testable in CI.
+**Exit:** visual review against reference design passes; app can navigate stages; the `release.yml` GitHub Actions workflow on `macos-14` produces a signed/notarized DMG (arm64 + x64) on tagged releases via `bun scripts/build-desktop-artifact.ts` (the `dist:desktop:dmg:arm64` package-json shortcut script is **not** wired up — the canonical entry is the build-artifact CLI invoked by CI, with the `--mock-artifact` flag exercised locally for non-macOS hosts per `docs/development/release-signing.md`); auto-update flow works against `mock-update-server`; settings hot-reload demonstrated; ⌘K palette opens; Mock Flywheel Mode can replay at least one fixture project without connecting to a VPS, so stage UI and Activity panel behavior are testable in CI. **Acceptance status:** the desktop release workflow is in place, but a real signed/notarized DMG produced by the macOS CI on a tagged release is still pending — local acceptance currently runs through `--mock-artifact`, which writes a DMG-shaped acceptance artifact rather than a real signed disk image.
 
 ### Phase 2 — VPS connection, auth, and daemon skeleton
 
@@ -1936,7 +1936,7 @@ Second subsystem of the Debugging / Hardening stage (§7.4). Hardening-mode swar
 
 One provider plugin (**Contabo first**, matching the §6.2 rollout — the agent-flywheel.com wizard's top pick and the easiest "just works" path for a beginner following the canonical guide); cost estimate and teardown wired to the §13 cost-transparency numbers; polished empty/loading/error states; onboarding tour mirroring the [agent-flywheel.com 13-step wizard](https://agent-flywheel.com/wizard/os-selection); diagnostics screen; crash reports opt-in; daemon upgrade system end-to-end; documentation and demo project.
 
-(Signed/notarized DMG and auto-update infrastructure are already in place from Phase 1's lift — this phase is about polish, error UX, and provider automation, not building the release pipeline.)
+(The signed/notarized DMG **release pipeline** and auto-update infrastructure are already in place from Phase 1's lift via `release.yml` + `scripts/build-desktop-artifact.ts` + electron-updater; **a real macOS CI run that produces a signed/notarized DMG on a tagged release is still pending** — local acceptance has so far exercised `--mock-artifact`. This phase is about polish, error UX, and provider automation, not building the release pipeline.)
 
 **Exit:** a new user can install Hoopoe, connect/provision a VPS, import a project, create a plan, convert beads, launch agents, monitor review, and land a small project.
 
@@ -2176,7 +2176,7 @@ Phase 0 must verify actual installed command names, output formats, version comp
 | Milestone | Acceptance test                                                                                                                                                      |
 | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Phase 0   | On a real ACFS VPS, one command emits a normalized JSON snapshot for Git, beads, `bv`, NTM, Agent Mail, reservations, and health; fixtures are committed.            |
-| Phase 1   | Signed/notarized DMG opens, navigates all four stages, hot-reloads settings, opens ⌘K, and runs a desktop unit test suite.                                           |
+| Phase 1   | Signed/notarized DMG opens, navigates all four stages, hot-reloads settings, opens ⌘K, and runs a desktop unit test suite. **Status: partial.** The release pipeline (`release.yml` + `scripts/build-desktop-artifact.ts` + electron-updater) and the local `--mock-artifact` acceptance path have landed; a real macOS-CI signed/notarized DMG on a tagged release is still pending — see `hp-hze` follow-up. |
 | Phase 2   | Fresh VPS → daemon installed → pairing consumed → bearer stored → WS connected → simulated disconnect/reconnect replays without state corruption.                    |
 | Phase 3   | ACFS install/doctor runs through Hoopoe with structured checkpoints; a failed run resumes; raw-log fallback works when markers are missing.                          |
 | Phase 4   | Import a repo with origin; local clone fetches origin; a VPS commit auto-pushes; desktop fetches on `origin_updated`; WIP overlay shows unpushed/modified VPS state. |

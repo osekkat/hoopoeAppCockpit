@@ -258,8 +258,16 @@ yet. See `packages/fixtures/phase0-2026-05-02/README.md` for the collector
 contract and the open beads tracking it (hp-r7i, hp-jvm, hp-7cs, hp-vtwm).
 
 Phase 1, Phase 1.5, and the early Phase 2 daemon substrate have landed in
-this checkout. The remaining beads continue to follow the same roadmap order
-and the milestone acceptance tests in `plan.md §18`.
+this checkout, with one explicit caveat: the Phase 1 release acceptance
+("signed/notarized DMG opens, navigates all four stages, hot-reloads
+settings, opens ⌘K, and runs a desktop unit test suite") is **partial**.
+The release pipeline (`release.yml` + `scripts/build-desktop-artifact.ts`
++ electron-updater) is in place and local acceptance is exercised via
+`--mock-artifact` (see `docs/development/release-signing.md`); a real
+macOS-CI signed/notarized DMG produced on a tagged release is still
+pending — tracked under `hp-hze`. The remaining beads continue to follow
+the same roadmap order and the milestone acceptance tests in
+`plan.md §18`.
 
 ---
 
