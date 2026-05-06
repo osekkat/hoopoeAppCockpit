@@ -1,0 +1,5 @@
+go test fuzz v1
+string("GET")
+string("/v1/diagnostics/metrics/prometheus")
+string("")
+string("0")
