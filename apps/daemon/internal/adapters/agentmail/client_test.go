@@ -6,6 +6,8 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -183,6 +185,138 @@ func TestForceReleaseRequiresNoteAuditsAndNotifiesPreviousHolder(t *testing.T) {
 	if len(audit.events) != 2 || audit.events[0].Result != "started" || audit.events[1].Result != "success" {
 		t.Fatalf("audit events = %+v", audit.events)
 	}
+}
+
+// TestProbeOnMalformedJSONGoldenFixtureDegradesAllCapabilities loads the
+// committed Phase 0 golden artifact at
+// packages/fixtures/golden-outputs/agent_mail/malformed-json.json and pins the
+// adapter contract from plan.md §18.3: when the MCP transport returns a
+// truncated/non-JSON envelope, the probe must wrap the parser error as
+// ErrDecode (no panic) and mark every declared capability as Degraded with the
+// underlying decode error preserved in the notes. The test also re-checks the
+// fixture's own self-declared capability/state pairs so a future fixture
+// edit that drifts from the contract fails this test rather than silently
+// passing.
+func TestProbeOnMalformedJSONGoldenFixtureDegradesAllCapabilities(t *testing.T) {
+	t.Parallel()
+	fixture := loadAgentMailGoldenFixture(t, "malformed-json.json")
+
+	if fixture.Meta.State != "malformed-json" {
+		t.Fatalf("fixture state = %q, want malformed-json", fixture.Meta.State)
+	}
+	parseCap, ok := fixture.Capabilities["agent_mail._parse"]
+	if !ok || parseCap.Status != "degraded" {
+		t.Fatalf("fixture must declare agent_mail._parse=degraded, got %+v", fixture.Capabilities)
+	}
+
+	rt := &queueRoundTripper{responses: []*http.Response{
+		{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(fixture.StdoutText)),
+		},
+	}}
+	client := New("http://127.0.0.1:8765")
+	client.Token = "test-token"
+	client.HTTPClient = &http.Client{Transport: rt}
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("Probe panicked on malformed JSON fixture: %v", r)
+		}
+	}()
+	report := Probe(
+		context.Background(),
+		client,
+		"/repo",
+		"RoseCastle",
+		func() time.Time { return time.Date(2026, 5, 7, 0, 0, 0, 0, time.UTC) },
+	)
+	if report == nil {
+		t.Fatalf("Probe returned nil report")
+	}
+	if err := report.Validate(); err != nil {
+		t.Fatalf("report invalid: %v", err)
+	}
+	if report.Tool != capabilities.ToolAgentMail {
+		t.Fatalf("tool = %s, want %s", report.Tool, capabilities.ToolAgentMail)
+	}
+
+	wantIDs := CapabilityIDs()
+	if len(report.Capabilities) != len(wantIDs) {
+		t.Fatalf("capability count = %d, want %d", len(report.Capabilities), len(wantIDs))
+	}
+	for _, id := range wantIDs {
+		got, present := report.Capabilities[id]
+		if !present {
+			t.Fatalf("capability %s missing from report", id)
+		}
+		if got.Status != capabilities.StatusDegraded {
+			t.Fatalf("capability %s status = %s, want degraded (fixture state=malformed-json)", id, got.Status)
+		}
+		if got.Notes == "" || !strings.Contains(got.Notes, "decode") {
+			t.Fatalf("capability %s notes = %q, want non-empty with decode wrapping", id, got.Notes)
+		}
+	}
+
+	if rt.toolNames()[0] != "fetch_inbox" {
+		t.Fatalf("probe should call fetch_inbox first, got %v", rt.toolNames())
+	}
+
+	// Confirm that the error surfaced through Probe is wrapped as ErrDecode
+	// rather than a bare string. We drive callTool with a second copy of the
+	// fixture body so the assertion exercises the wrapping site directly.
+	rt.responses = append(rt.responses, &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader(fixture.StdoutText)),
+	})
+	directErr := client.callTool(context.Background(), "fetch_inbox", map[string]any{
+		"project_key": "/repo",
+		"agent_name":  "RoseCastle",
+		"limit":       1,
+	}, &[]Message{})
+	if directErr == nil {
+		t.Fatalf("callTool should error on malformed JSON")
+	}
+	if !errors.Is(directErr, ErrDecode) {
+		t.Fatalf("callTool err = %v, want ErrDecode wrap", directErr)
+	}
+}
+
+// agentMailGoldenFixture mirrors the shape of the committed Phase 0 golden
+// outputs at packages/fixtures/golden-outputs/agent_mail/*.json. Only the
+// fields the adapter contract observes are decoded — fixtures may carry
+// additional metadata (capturedAt, durationMs, etc.) that we deliberately
+// ignore so the contract stays loose around capture provenance.
+type agentMailGoldenFixture struct {
+	Meta struct {
+		Adapter string `json:"adapter"`
+		State   string `json:"state"`
+	} `json:"meta"`
+	StdoutText   string `json:"stdoutText"`
+	Capabilities map[string]struct {
+		Status string `json:"status"`
+		Notes  string `json:"notes"`
+	} `json:"capabilities"`
+}
+
+func loadAgentMailGoldenFixture(t *testing.T, name string) agentMailGoldenFixture {
+	t.Helper()
+	root := findRepoRoot(t)
+	path := filepath.Join(root, "packages", "fixtures", "golden-outputs", "agent_mail", name)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read fixture %s: %v", path, err)
+	}
+	var fixture agentMailGoldenFixture
+	if err := json.Unmarshal(data, &fixture); err != nil {
+		t.Fatalf("parse fixture %s: %v", path, err)
+	}
+	if fixture.Meta.Adapter != "agent_mail" {
+		t.Fatalf("fixture %s adapter = %q, want agent_mail", path, fixture.Meta.Adapter)
+	}
+	return fixture
 }
 
 func TestThreadIDValidationAndCapabilityReport(t *testing.T) {
