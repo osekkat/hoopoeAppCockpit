@@ -2357,6 +2357,21 @@ Hoopoe-authored support files inside `apps/desktop/src/vendored/t3code/`
 not carry the upstream source notice because they are not copied or adapted
 t3code source. They must instead start with a clear Hoopoe-owned marker.
 
+The same exemption applies to the six **decomposed integration modules** under
+`apps/desktop/src/main/` — `BackendLifecycle.ts`, `UpdateMachine.ts`,
+`IpcRegistry.ts`, `WindowManager.ts`, `SettingsBridge.ts`, `AuthBridge.ts`.
+These modules replace t3code's 2,175-line `apps/desktop/src/main.ts` monolith
+("Anti-patterns to refuse" #4) with Hoopoe-owned integration seams that import
+from the vendored t3code helpers but do not contain substantial copied source
+code: they orchestrate Hoopoe's Go-daemon launch, electron-updater wiring, IPC
+dispatch, BrowserWindow lifecycle, three-tier settings resolution, and the
+three-token auth dance respectively. Each starts with a `// Hoopoe-owned.`
+marker that names which vendored helpers it composes; that marker is the
+precise provenance signal future reviewers should look for. If any of these
+modules later imports a substantial copied t3code function inline (rather than
+referencing it through the vendored tree), the upstream MIT notice must be
+added at the top of the affected file at the same time.
+
 ---
 
 ## Appendix C — Non-negotiable implementation guardrails

@@ -46,6 +46,7 @@ notice, and must be clearly marked as Hoopoe-owned:
 | `apps/desktop/src/vendored/t3code/*.test.ts`                   | Hoopoe-authored regression tests for lifted helpers |
 | `apps/desktop/src/vendored/t3code/keybindings/*.test.ts`       | Hoopoe-authored keybinding parser/evaluator tests |
 | `apps/desktop/src/vendored/t3code/README.md`                   | Hoopoe-authored provenance and editing guide |
+| `apps/desktop/src/main/*.ts` (`BackendLifecycle`, `UpdateMachine`, `IpcRegistry`, `WindowManager`, `SettingsBridge`, `AuthBridge`) | Six Hoopoe-owned integration seams that replace t3code's 2,175-line `apps/desktop/src/main.ts` monolith (Appendix B "Anti-patterns to refuse" #4). They import from the vendored t3code helpers but do not contain substantial copied source; each module begins with a `// Hoopoe-owned.` marker naming the helpers it composes. If a later edit pastes a substantial copied t3code function inline, the upstream MIT notice must be added at the top of that file. |
 
 ### File inventory
 
