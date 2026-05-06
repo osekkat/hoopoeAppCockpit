@@ -194,6 +194,87 @@ func TestParseSnapshotUsesGoldenAndScenarioFixtures(t *testing.T) {
 	}
 }
 
+// TestProbeOnMalformedJSONGoldenFixtureDegradesSnapshotCapability loads
+// packages/fixtures/golden-outputs/ntm/malformed-json.json and pins the
+// adapter contract from plan.md §18.3: when the ntm CLI returns a truncated
+// JSON envelope, the snapshot parser must wrap (not panic) and Probe must
+// surface CapabilityRobotSnapshot as Degraded. Drives the malformed bytes
+// through the same fakeRunner+Probe pipeline used by the existing
+// TestProbeReportsMissingMalformedUnsupportedHighVolumeAndApprovalFailure
+// test, so a fixture edit that drifts the byte stream away from the
+// "non-JSON, must not panic" intent will fail this test.
+func TestProbeOnMalformedJSONGoldenFixtureDegradesSnapshotCapability(t *testing.T) {
+	fixture := loadNTMGoldenFixture(t, "malformed-json.json")
+	if fixture.Meta.State != "malformed-json" {
+		t.Fatalf("fixture state = %q, want malformed-json", fixture.Meta.State)
+	}
+	if cap, ok := fixture.Capabilities["ntm._parse"]; !ok || cap.Status != "degraded" {
+		t.Fatalf("fixture must declare ntm._parse=degraded, got %+v", fixture.Capabilities)
+	}
+	if fixture.StdoutText == "" {
+		t.Fatalf("fixture stdoutText is empty")
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("ParseSnapshot panicked on malformed JSON fixture: %v", r)
+		}
+	}()
+	if _, err := ParseSnapshot([]byte(fixture.StdoutText)); err == nil {
+		t.Fatalf("ParseSnapshot accepted truncated JSON without error")
+	}
+
+	adapter := New(&fakeRunner{responses: map[string]CommandResult{
+		"ntm version":              {Stdout: []byte("ntm version 1.7.0\n")},
+		"ntm sessions list --json": {Stdout: []byte(`{"sessions":null,"count":0}`)},
+		"ntm --robot-snapshot":     {Stdout: []byte(fixture.StdoutText)},
+		"ntm --robot-status":       {Stdout: []byte(`{"success":true,"sessions":[]}`)},
+		"ntm --robot-triage":       {Stdout: []byte(`{"success":true,"items":[]}`)},
+		"ntm approve list --json":  {Stdout: []byte(`{"success":true,"approvals":[]}`)},
+	}})
+	adapter.Now = fixedNow
+	report, err := adapter.Probe(context.Background())
+	if err != nil {
+		t.Fatalf("Probe: %v", err)
+	}
+	snap, ok := report.Capabilities[CapabilityRobotSnapshot]
+	if !ok {
+		t.Fatalf("report missing %s", CapabilityRobotSnapshot)
+	}
+	if snap.Status != capabilities.StatusDegraded {
+		t.Fatalf("%s status = %s, want degraded (fixture state=malformed-json)", CapabilityRobotSnapshot, snap.Status)
+	}
+	if snap.Notes == "" {
+		t.Fatalf("%s notes are empty; expected parser error trace", CapabilityRobotSnapshot)
+	}
+}
+
+type ntmGoldenFixture struct {
+	Meta struct {
+		Adapter string `json:"adapter"`
+		State   string `json:"state"`
+	} `json:"meta"`
+	StdoutText   string `json:"stdoutText"`
+	Capabilities map[string]struct {
+		Status string `json:"status"`
+		Notes  string `json:"notes"`
+	} `json:"capabilities"`
+}
+
+func loadNTMGoldenFixture(t *testing.T, name string) ntmGoldenFixture {
+	t.Helper()
+	path := filepath.Join("packages", "fixtures", "golden-outputs", "ntm", name)
+	data := mustReadFile(t, path)
+	var fixture ntmGoldenFixture
+	if err := json.Unmarshal(data, &fixture); err != nil {
+		t.Fatalf("parse fixture %s: %v", path, err)
+	}
+	if fixture.Meta.Adapter != "ntm" {
+		t.Fatalf("fixture %s adapter = %q, want ntm", path, fixture.Meta.Adapter)
+	}
+	return fixture
+}
+
 func TestParseNullSessionsAndStateMapping(t *testing.T) {
 	sessions, err := ParseSessionsResponse([]byte(`{"sessions":null,"count":0}`))
 	if err != nil {
