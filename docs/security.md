@@ -17,7 +17,7 @@ execution.
   "projectId": "hoopoe-app-cockpit",
   "intent": "commit staged changes for hp-l7e",
   "argv": ["git", "commit", "-m", "[hp-l7e] add docs suite"],
-  "workingDirectory": "/data/projects/hoopoeAppCockpit/repo",
+  "workingDirectory": "/data/projects/hoopoeAppCockpit",
   "environmentPolicy": "minimal",
   "approval": {
     "required": false,
@@ -70,7 +70,7 @@ activity may be hidden from the Activity panel, but it is still audited.
   "action": "git.commit",
   "target": {
     "type": "repo",
-    "id": "/data/projects/hoopoeAppCockpit/repo"
+    "id": "/data/projects/hoopoeAppCockpit"
   },
   "decision": "allowed",
   "approvalId": null,

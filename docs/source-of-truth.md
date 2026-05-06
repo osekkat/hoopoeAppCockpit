@@ -15,7 +15,7 @@ owners that do not own persistent paths in this checkout — lives in
 | Domain | Canonical source | Hoopoe behavior |
 | --- | --- | --- |
 | Code, branches, tags | Git origin | Desktop mirrors origin read-only; daemon drives VPS-side git actions. |
-| VPS working state | `/data/projects/<project-id>/repo/` | Agents and daemon actions operate here before pushing. |
+| VPS working state | `/data/projects/<project-id>/` | Agents and daemon actions operate here before pushing. Matches `ProjectRepoRef.VpsClonePath` in `packages/schemas/openapi.yaml` and `project.RootPath` in `apps/daemon/internal/projects/projects.go`. |
 | Desktop code mirror | `~/Library/Application Support/Hoopoe/projects/<project-id>/repo/` | Read-only sync mirror of origin for fast UI reads, diffs, blame, and ripgrep. |
 | Plans | `.hoopoe/plans/<plan-id>/` in the repo | Locked plans become the basis for bead conversion and traceability; Hoopoe's §7.1 planning pipeline writes its candidates / matrix / synthesis / refinement artifacts under the same plan-id directory. |
 | Beads | `br` and `.beads/` | Hoopoe reads/writes through typed daemon RPCs. |
@@ -52,8 +52,8 @@ state lives in the named tool, and Hoopoe wraps without mirroring. See
 
 | Path | Owner | Contents | Canonical? |
 | --- | --- | --- | --- |
-| `/data/projects/<project-id>/repo/` | VPS daemon / agents | Active project checkout where agents edit, test, commit, and push. | Working state only. |
-| `/data/projects/<project-id>/worktrees/` | VPS daemon | Dedicated worktrees for health, review, and isolated jobs. | No, derived from origin/VPS work. |
+| `/data/projects/<project-id>/` | VPS daemon / agents | Active project checkout where agents edit, test, commit, and push. | Working state only. |
+| `~/.hoopoe/work/<project-id>/` | VPS daemon | Parent directory for all isolated job worktrees (health, review, etc.) — never under the active checkout, per Guardrail 5. | No, derived from origin/VPS work. |
 | `~/.hoopoe/daemon.db` | VPS daemon | Hoopoe job registry, event read models, onboarding state, preferences, and caches. | Canonical only for Hoopoe-owned state. |
 | `~/.hoopoe/audit.jsonl` | VPS daemon | Append-only audit events for actions, approvals, jobs, and safety decisions. | Canonical audit log. |
 | `~/.hoopoe/logs/` | VPS daemon | Structured daemon/bootstrap logs. | Diagnostic evidence. |

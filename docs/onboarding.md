@@ -59,7 +59,7 @@ field guide.
   "projectId": "hoopoe-app-cockpit",
   "displayName": "Hoopoe App Cockpit",
   "origin": "https://github.com/osekkat/hoopoeAppCockpit.git",
-  "vpsRepoPath": "/data/projects/hoopoeAppCockpit/repo",
+  "vpsRepoPath": "/data/projects/hoopoeAppCockpit",
   "desktopMirrorPath": "~/Library/Application Support/Hoopoe/projects/hoopoe-app-cockpit/repo",
   "planRoot": ".hoopoe/plans",
   "beadsPath": ".beads",
