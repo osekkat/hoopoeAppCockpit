@@ -380,3 +380,83 @@ func TestProbeReportsMissingWhenBinaryAbsent(t *testing.T) {
 		t.Fatalf("expected missing, got %q", report.Status)
 	}
 }
+
+// TestProbeOnMissingToolGoldenFixtureMarksAllCapabilitiesMissing loads
+// packages/fixtures/golden-outputs/bv/missing-tool.json and pins the
+// adapter contract from plan.md §18.3 by driving the captured exit-127 +
+// "bv: command not found" pair through Probe via the existing fake
+// executor — distinct from TestProbeReportsMissingWhenBinaryAbsent above
+// which exercises the *err-set* path of fakeExecutor (os/exec ENOENT
+// surfaces). This test exercises the *exit-only* path: stderr says
+// "command not found" and exit=127, so isMissingBinary catches the
+// "command not found" substring inside Client.run's wrapped error
+// (capabilities.go:191) and every probed capability lands at StatusMissing.
+func TestProbeOnMissingToolGoldenFixtureMarksAllCapabilitiesMissing(t *testing.T) {
+	t.Parallel()
+	fixture := loadBVGoldenFixture(t, "missing-tool.json")
+	if fixture.Meta.State != "missing-tool" {
+		t.Fatalf("fixture state = %q, want missing-tool", fixture.Meta.State)
+	}
+	if cap, ok := fixture.Capabilities["bv._present"]; !ok || cap.Status != "missing" {
+		t.Fatalf("fixture must declare bv._present=missing, got %+v", fixture.Capabilities)
+	}
+	if fixture.Exit != 127 {
+		t.Fatalf("fixture exit = %d, want 127", fixture.Exit)
+	}
+
+	fake := newFakeExecutor()
+	for _, robotFlag := range []string{
+		"--robot-triage",
+		"--robot-plan",
+		"--robot-insights",
+		"--robot-next",
+	} {
+		fake.Exits[robotFlag] = fixture.Exit
+		fake.Stderrs[robotFlag] = []byte(fixture.StderrText)
+	}
+	fake.Exits["--robot-diff --diff-since HEAD"] = fixture.Exit
+	fake.Stderrs["--robot-diff --diff-since HEAD"] = []byte(fixture.StderrText)
+
+	c := NewWithExecutor(fake)
+	res := Probe(context.Background(), c, func() time.Time { return time.Date(2026, 5, 7, 0, 0, 0, 0, time.UTC) })
+
+	for _, capID := range []string{CapTriage, CapPlan, CapInsights, CapDiff, CapNext} {
+		report, ok := res.Reports[capID]
+		if !ok {
+			t.Fatalf("%s missing from probe report", capID)
+		}
+		if report.Status != StatusMissing {
+			t.Fatalf("%s status = %q, want missing (fixture state=missing-tool)", capID, report.Status)
+		}
+		if !strings.Contains(report.Notes, "command not found") {
+			t.Fatalf("%s notes = %q; want fixture stderr surfaced", capID, report.Notes)
+		}
+	}
+}
+
+type bvGoldenFixture struct {
+	Meta struct {
+		Adapter string `json:"adapter"`
+		State   string `json:"state"`
+	} `json:"meta"`
+	Exit         int    `json:"exit"`
+	StdoutText   string `json:"stdoutText"`
+	StderrText   string `json:"stderrText"`
+	Capabilities map[string]struct {
+		Status string `json:"status"`
+		Notes  string `json:"notes"`
+	} `json:"capabilities"`
+}
+
+func loadBVGoldenFixture(t *testing.T, name string) bvGoldenFixture {
+	t.Helper()
+	data := loadFixture(t, filepath.Join("golden-outputs", "bv", name))
+	var fixture bvGoldenFixture
+	if err := json.Unmarshal(data, &fixture); err != nil {
+		t.Fatalf("parse fixture %s: %v", name, err)
+	}
+	if fixture.Meta.Adapter != "bv" {
+		t.Fatalf("fixture %s adapter = %q, want bv", name, fixture.Meta.Adapter)
+	}
+	return fixture
+}
