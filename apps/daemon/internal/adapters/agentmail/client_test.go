@@ -456,6 +456,87 @@ func TestProbeOnMissingToolGoldenFixtureDegradesAllCapabilities(t *testing.T) {
 	}
 }
 
+// TestProbeOnTimeoutGoldenFixtureDegradesAllCapabilities loads the
+// committed Phase 0 golden artifact at
+// packages/fixtures/golden-outputs/agent_mail/timeout.json and pins the
+// agent-mail adapter contract from plan.md §18.3 for the "timeout" state.
+//
+// The fixture mimics ENVELOPE_TIMEOUT_S exhaustion: exit=124 (POSIX
+// `timeout` exit code), 30s wall-clock, "timeout: sending signal TERM"
+// on stderr, and a synthetic `agent_mail._timeout` capability flagged
+// degraded with the note "do not retry without backoff".
+//
+// The runtime equivalent for the real adapter is a request whose
+// context deadline elapses before the MCP server responds. The contract:
+//
+//  1. Fixture self-consistency (state, exit, stderr, _timeout marker).
+//  2. Adapter graceful-degradation: when the HTTP transport returns a
+//     context-cancelled / deadline-exceeded error, Probe must wrap (not
+//     panic) and surface every real CapabilityIDs() entry as Degraded
+//     with the timeout error preserved in notes.
+func TestProbeOnTimeoutGoldenFixtureDegradesAllCapabilities(t *testing.T) {
+	t.Parallel()
+	fixture := loadAgentMailGoldenFixture(t, "timeout.json")
+
+	if fixture.Meta.State != "timeout" {
+		t.Fatalf("fixture state = %q, want timeout", fixture.Meta.State)
+	}
+	if fixture.Exit != 124 {
+		t.Fatalf("fixture exit = %d, want 124 (POSIX timeout)", fixture.Exit)
+	}
+	if !strings.Contains(fixture.StderrText, "timeout") {
+		t.Fatalf("fixture stderrText = %q, want 'timeout' marker", fixture.StderrText)
+	}
+	timeoutCap, ok := fixture.Capabilities["agent_mail._timeout"]
+	if !ok || timeoutCap.Status != "degraded" {
+		t.Fatalf("fixture must declare agent_mail._timeout=degraded, got %+v", fixture.Capabilities)
+	}
+
+	rt := &failingRoundTripper{err: context.DeadlineExceeded}
+	client := New("http://127.0.0.1:8765")
+	client.Token = "test-token"
+	client.HTTPClient = &http.Client{Transport: rt}
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("Probe panicked on timeout scenario: %v", r)
+		}
+	}()
+	report := Probe(
+		context.Background(),
+		client,
+		"/repo",
+		"RoseCastle",
+		func() time.Time { return time.Date(2026, 5, 7, 0, 0, 0, 0, time.UTC) },
+	)
+	if report == nil {
+		t.Fatalf("Probe returned nil report")
+	}
+	if err := report.Validate(); err != nil {
+		t.Fatalf("report invalid: %v", err)
+	}
+
+	wantIDs := CapabilityIDs()
+	if len(report.Capabilities) != len(wantIDs) {
+		t.Fatalf("capability count = %d, want %d", len(report.Capabilities), len(wantIDs))
+	}
+	for _, id := range wantIDs {
+		got, present := report.Capabilities[id]
+		if !present {
+			t.Fatalf("capability %s missing from report", id)
+		}
+		if got.Status != capabilities.StatusDegraded {
+			t.Fatalf("capability %s status = %s, want degraded (timeout)", id, got.Status)
+		}
+		if got.Notes == "" {
+			t.Fatalf("capability %s notes empty; expected timeout error preserved", id)
+		}
+		if !strings.Contains(got.Notes, "deadline exceeded") {
+			t.Fatalf("capability %s notes = %q, want underlying timeout error", id, got.Notes)
+		}
+	}
+}
+
 // agentMailGoldenFixture mirrors the shape of the committed Phase 0 golden
 // outputs at packages/fixtures/golden-outputs/agent_mail/*.json. Only the
 // fields the adapter contract observes are decoded — fixtures may carry
