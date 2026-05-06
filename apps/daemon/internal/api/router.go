@@ -114,7 +114,7 @@ type server struct {
 	// misconfigured AuditLog (Query-only) is detectable at boot. nil
 	// when auditLog is nil OR doesn't satisfy auditAppender.
 	auditLogAppender auditAppender
-	now          func() time.Time
+	now              func() time.Time
 	// hp-snmn: per-process identifier appended to DaemonId so the desktop
 	// can distinguish between two daemons that share the same build
 	// version (e.g., in dev or after a redeploy that didn't bump the
@@ -226,11 +226,16 @@ func normalizeConfig(cfg Config) *server {
 	if now == nil {
 		now = time.Now
 	}
+	logger := cfg.Logger
+	if logger == nil {
+		logger = NoopLogger{}
+	}
 	events := cfg.Events
 	if events == nil {
 		events = NewEventHub(EventHubConfig{
 			Now:      now,
 			Redactor: redaction.New(redaction.Config{Now: now}),
+			Logger:   logger,
 		})
 	}
 	build := cfg.Build
@@ -249,10 +254,6 @@ func normalizeConfig(cfg Config) *server {
 	jobs := cfg.Jobs
 	if jobs == nil {
 		jobs = MissingJobsReader{}
-	}
-	logger := cfg.Logger
-	if logger == nil {
-		logger = NoopLogger{}
 	}
 	redactor := cfg.Redactor
 	if redactor == nil {

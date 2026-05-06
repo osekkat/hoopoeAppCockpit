@@ -1254,6 +1254,40 @@ func TestEventHubSubscribeWatcherPanicReportsViaPanicSink(t *testing.T) {
 	}
 }
 
+func TestEventHubSubscribeWatcherPanicReportsViaStructuredLogger(t *testing.T) {
+	logger := &recordingLogger{}
+	hub := NewEventHub(EventHubConfig{
+		Redactor: redaction.NewDefault(),
+		Logger:   logger,
+	})
+
+	ctx := &panicCtx{message: "ctx panic: logger fallback"}
+	sub := hub.Subscribe(ctx, []string{"project:test"})
+	defer sub.Close()
+
+	select {
+	case <-sub.watcherDone:
+	case <-time.After(time.Second):
+		t.Fatal("watcher did not exit after panic recovery")
+	}
+
+	logger.mu.Lock()
+	defer logger.mu.Unlock()
+	if len(logger.errors) != 1 {
+		t.Fatalf("logger errors = %d, want 1: %+v", len(logger.errors), logger.errors)
+	}
+	entry := logger.errors[0]
+	if entry.message != "eventhub_panic_recovered" {
+		t.Fatalf("logger message = %q, want eventhub_panic_recovered", entry.message)
+	}
+	if entry.fields["event"] != "subscribe.watcher" {
+		t.Fatalf("logger event field = %#v, want subscribe.watcher", entry.fields["event"])
+	}
+	if msg, ok := entry.fields["message"].(string); !ok || !strings.Contains(msg, "logger fallback") {
+		t.Fatalf("logger message field = %#v, want redacted panic text", entry.fields["message"])
+	}
+}
+
 // TestEventHubRedactDataDegradationReportedViaPanicSink guards hp-zhmu:
 // the redactData round-trip silently degraded typed Data to
 // map[string]any when json.Marshal or json.Unmarshal failed.
@@ -1365,9 +1399,9 @@ type panicCtx struct {
 }
 
 func (p *panicCtx) Deadline() (time.Time, bool) { return time.Time{}, false }
-func (p *panicCtx) Done() <-chan struct{}        { panic(p.message) }
-func (p *panicCtx) Err() error                   { return nil }
-func (p *panicCtx) Value(any) any                { return nil }
+func (p *panicCtx) Done() <-chan struct{}       { panic(p.message) }
+func (p *panicCtx) Err() error                  { return nil }
+func (p *panicCtx) Value(any) any               { return nil }
 
 func TestEventHubSubscriberCloseStopsContextWatcher(t *testing.T) {
 	hub := NewEventHub(EventHubConfig{})
@@ -1683,9 +1717,9 @@ func (queryOnlyAuditLog) Query(audit.Query) ([]audit.Entry, error) {
 // recordingLogger captures Error calls so tests can assert that
 // NewRouter logged the auditAppender misconfiguration.
 type recordingLogger struct {
-	mu       sync.Mutex
-	infos    []recordedLogEntry
-	errors   []recordedLogEntry
+	mu     sync.Mutex
+	infos  []recordedLogEntry
+	errors []recordedLogEntry
 }
 
 type recordedLogEntry struct {
@@ -1851,9 +1885,9 @@ func TestReplayEndpointReturnsSentinelForPoisonedEvent(t *testing.T) {
 	}
 	var body struct {
 		Events []struct {
-			Sequence uint64                 `json:"sequence"`
-			Type     string                 `json:"type"`
-			Data     map[string]any         `json:"data"`
+			Sequence uint64         `json:"sequence"`
+			Type     string         `json:"type"`
+			Data     map[string]any `json:"data"`
 		} `json:"events"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {

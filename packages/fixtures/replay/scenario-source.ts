@@ -350,21 +350,34 @@ function normalizeCapabilityRegistry(
     throw new ScenarioLoadError(scenarioId, "capabilities.json must be a JSON object");
   }
 
-  if (
-    raw.schemaVersion === 1 &&
-    typeof raw.snapshotAt === "string" &&
-    typeof raw.daemonApiVersion === "string" &&
-    typeof raw.fixturesVersion === "string" &&
-    isObject(raw.tools)
-  ) {
+  const looksLikeEnvelope =
+    "schemaVersion" in raw ||
+    "snapshotAt" in raw ||
+    "daemonApiVersion" in raw ||
+    "fixturesVersion" in raw ||
+    "tools" in raw;
+
+  if (looksLikeEnvelope) {
+    if (raw.schemaVersion !== 1) {
+      throw new ScenarioLoadError(
+        scenarioId,
+        "capabilities.json envelope schemaVersion must be number 1",
+      );
+    }
+    if (
+      typeof raw.snapshotAt !== "string" ||
+      typeof raw.daemonApiVersion !== "string" ||
+      typeof raw.fixturesVersion !== "string" ||
+      !isObject(raw.tools)
+    ) {
+      throw new ScenarioLoadError(
+        scenarioId,
+        "capabilities.json envelope must include snapshotAt, daemonApiVersion, fixturesVersion, and tools",
+      );
+    }
     const tools: Record<string, ToolReport> = {};
     for (const [rawToolId, rawReport] of Object.entries(raw.tools)) {
-      tools[normalizeToolId(scenarioId, rawToolId)] = normalizeToolReport(
-        scenarioId,
-        rawToolId,
-        rawReport,
-        meta,
-      );
+      addToolReport(scenarioId, tools, rawToolId, rawReport, meta);
     }
     return {
       schemaVersion: 1,
@@ -377,12 +390,7 @@ function normalizeCapabilityRegistry(
 
   const tools: Record<string, ToolReport> = {};
   for (const [rawToolId, rawReport] of Object.entries(raw)) {
-    tools[normalizeToolId(scenarioId, rawToolId)] = normalizeToolReport(
-      scenarioId,
-      rawToolId,
-      rawReport,
-      meta,
-    );
+    addToolReport(scenarioId, tools, rawToolId, rawReport, meta);
   }
   return {
     schemaVersion: 1,
@@ -391,6 +399,23 @@ function normalizeCapabilityRegistry(
     fixturesVersion: meta.fixturesVersion,
     tools,
   };
+}
+
+function addToolReport(
+  scenarioId: string,
+  tools: Record<string, ToolReport>,
+  rawToolId: string,
+  rawReport: unknown,
+  meta: FixtureMeta,
+): void {
+  const toolId = normalizeToolId(scenarioId, rawToolId);
+  if (Object.hasOwn(tools, toolId)) {
+    throw new ScenarioLoadError(
+      scenarioId,
+      `capabilities.json contains duplicate reports for canonical tool '${toolId}' via '${rawToolId}'`,
+    );
+  }
+  tools[toolId] = normalizeToolReport(scenarioId, rawToolId, rawReport, meta);
 }
 
 export interface LoadScenarioOptions {

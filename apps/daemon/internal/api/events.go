@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"log"
 	"reflect"
 	"sync"
 	"time"
@@ -62,9 +61,13 @@ type EventHubConfig struct {
 	// the sink gives operators a forensic surface to investigate.
 	// hp-a6lx: hp-uvjg added the recover but left the silent-swallow
 	// gap. Production wiring should pass slog or audit. nil falls back
-	// to log.Print so the panic at least lands in the daemon's standard
-	// logger rather than being a complete black hole.
+	// to the EventHub structured logger rather than being a complete
+	// black hole.
 	PanicSink func(event string, message string)
+	// Logger receives EventHub fallback diagnostics when no PanicSink is
+	// configured. nil uses NoopLogger so callers that do not care about
+	// diagnostics keep their existing behavior without raw logging.
+	Logger Logger
 }
 
 type EventHub struct {
@@ -79,6 +82,7 @@ type EventHub struct {
 	nextSubscriberID   uint64
 	redactor           *redaction.Redactor
 	panicSink          func(event string, message string)
+	logger             Logger
 }
 
 type PublishInput struct {
@@ -138,6 +142,13 @@ func NewEventHub(cfg EventHubConfig) *EventHub {
 	return newEventHub(cfg, now, redactor)
 }
 
+func defaultLogger(logger Logger) Logger {
+	if logger != nil {
+		return logger
+	}
+	return NoopLogger{}
+}
+
 // NewEventHubWithoutRedactor constructs an EventHub that delivers Publish.Data
 // verbatim. Reserved for load/chaos test fixtures asserting raw delivery
 // semantics where the inputs are known-clean. Production wiring must use
@@ -168,6 +179,7 @@ func newEventHub(cfg EventHubConfig, now func() time.Time, redactor *redaction.R
 		subscribers:        make(map[uint64]*subscriber),
 		redactor:           redactor,
 		panicSink:          cfg.PanicSink,
+		logger:             defaultLogger(cfg.Logger),
 	}
 }
 
@@ -181,8 +193,7 @@ func newEventHub(cfg EventHubConfig, now func() time.Time, redactor *redaction.R
 // The recovered value is formatted, scrubbed through the configured
 // redactor (same SurfaceLogger used by scheduler.redactPanicMessage so
 // the threat models stay aligned), then dispatched to PanicSink if
-// wired. PanicSink == nil falls back to log.Print so the panic at
-// least lands in the daemon's standard logger.
+// wired. PanicSink == nil falls back to the EventHub structured logger.
 func (h *EventHub) reportInternalPanic(event string, recovered any) {
 	msg := fmt.Sprintf("%v", recovered)
 	if h.redactor != nil {
@@ -197,7 +208,10 @@ func (h *EventHub) reportInternalPanic(event string, recovered any) {
 		h.panicSink(event, msg)
 		return
 	}
-	log.Printf("eventhub: panic recovered in %s: %s", event, msg)
+	h.logger.Error(context.Background(), "eventhub_panic_recovered", map[string]any{
+		"event":   event,
+		"message": msg,
+	})
 }
 
 func (h *EventHub) Publish(input PublishInput) Event {
@@ -227,8 +241,8 @@ func (h *EventHub) Publish(input PublishInput) Event {
 	if dataMarshalErr != nil || actorMarshalErr != nil {
 		input.Type = EventTypeEncodeError
 		sentinel := map[string]any{
-			"_encodeError":  true,
-			"originalType":  originalType,
+			"_encodeError": true,
+			"originalType": originalType,
 		}
 		if dataMarshalErr != nil {
 			sentinel["dataMarshalError"] = dataMarshalErr.Error()
@@ -335,7 +349,7 @@ func (h *EventHub) redactData(value any) any {
 //
 // Reuses the PanicSink wiring from hp-a6lx — different event names
 // keep the diagnostic streams differentiated. No sink wired falls
-// back to log.Printf so the diagnostic isn't a complete black hole.
+// back to the EventHub structured logger.
 func (h *EventHub) reportRedactDegraded(stage string, rt reflect.Type, cause error) {
 	typeName := "<nil>"
 	if rt != nil {
@@ -347,7 +361,11 @@ func (h *EventHub) reportRedactDegraded(stage string, rt reflect.Type, cause err
 		h.panicSink("redact.degraded", msg)
 		return
 	}
-	log.Printf("eventhub: redactData degraded (%s) on %s: %v", stage, typeName, cause)
+	h.logger.Error(context.Background(), "eventhub_redact_data_degraded", map[string]any{
+		"stage": stage,
+		"type":  typeName,
+		"error": cause.Error(),
+	})
 }
 
 func isStructLike(rt reflect.Type) bool {

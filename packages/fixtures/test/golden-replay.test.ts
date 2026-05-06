@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { Buffer } from "node:buffer";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, relative } from "node:path";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, relative } from "node:path";
 import {
   createMockDaemonClient,
   deriveCursors,
@@ -10,6 +11,7 @@ import {
   MOCK_BEARER_TOKEN,
   MOCK_FLYWHEEL_HEALTH_TIME,
   MOCK_PAIRING_TOKEN,
+  ScenarioLoadError,
   startReplay,
   type LoadedScenario,
   type ReplayEvent,
@@ -101,6 +103,39 @@ describe("Mock Flywheel scenario determinism baseline", () => {
       // assertion even when all three are equal.
       expect(sourceA).toBe(sourceB);
     }
+  });
+});
+
+describe("Mock Flywheel capability fixture normalization", () => {
+  test("rejects alias and canonical tool reports that normalize to the same key", () => {
+    const corpusRoot = writeScenarioWithCapabilities({
+      health: {
+        probe: { status: "ok" },
+      },
+      health_generic: {
+        probe: { status: "degraded" },
+      },
+    });
+
+    expect(() => loadTendingScenario("capability-edge", { corpusRoot })).toThrow(ScenarioLoadError);
+    expect(() => loadTendingScenario("capability-edge", { corpusRoot })).toThrow(
+      "duplicate reports for canonical tool 'health_generic' via 'health_generic'",
+    );
+  });
+
+  test("rejects malformed capability envelopes before legacy flat-map parsing", () => {
+    const corpusRoot = writeScenarioWithCapabilities({
+      schemaVersion: "v1",
+      snapshotAt: MOCK_FLYWHEEL_HEALTH_TIME,
+      daemonApiVersion: "0.1.0",
+      fixturesVersion: "test-fixtures",
+      tools: {},
+    });
+
+    expect(() => loadTendingScenario("capability-edge", { corpusRoot })).toThrow(ScenarioLoadError);
+    expect(() => loadTendingScenario("capability-edge", { corpusRoot })).toThrow(
+      "capabilities.json envelope schemaVersion must be number 1",
+    );
   });
 });
 
@@ -255,6 +290,34 @@ function assertGolden(path: string, actual: string): void {
 
 function goldenPath(scenarioId: string, fileName: string): string {
   return `${fixturesRoot()}/scenarios/${scenarioId}/.goldens/${fileName}`;
+}
+
+function writeScenarioWithCapabilities(capabilities: unknown): string {
+  const corpusRoot = mkdtempSync(join(tmpdir(), "hoopoe-capability-fixture-"));
+  const scenarioRoot = join(corpusRoot, "scenarios", "capability-edge");
+  mkdirSync(join(scenarioRoot, "pane-logs"), { recursive: true });
+  mkdirSync(join(scenarioRoot, "build-logs"), { recursive: true });
+  writeJson(join(scenarioRoot, "meta.json"), {
+    kind: "synthetic",
+    scenario: "capability-edge",
+    fixturesVersion: "test-fixtures",
+    capturedAt: MOCK_FLYWHEEL_HEALTH_TIME,
+    vpsId: "local-test",
+    source: "golden-replay.test.ts",
+  });
+  writeJson(join(scenarioRoot, "capabilities.json"), capabilities);
+  writeJson(join(scenarioRoot, "bv-triage.json"), {});
+  writeJson(join(scenarioRoot, "br-list.json"), []);
+  writeJson(join(scenarioRoot, "ntm-snapshot.json"), {});
+  writeJson(join(scenarioRoot, "agent-mail-dump.json"), {});
+  writeJson(join(scenarioRoot, "reservations.json"), []);
+  writeJson(join(scenarioRoot, "expected-outcome.json"), {});
+  writeFileSync(join(scenarioRoot, "events.jsonl"), "");
+  return corpusRoot;
+}
+
+function writeJson(path: string, value: unknown): void {
+  writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
 }
 
 function canonicalJson(value: unknown): string {
