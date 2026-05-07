@@ -13,7 +13,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -374,60 +373,9 @@ func (s *Service) readinessFor(ctx context.Context, project StoreProject) schema
 // hp-j6zr: InitializeOptions/InitializeResult, InitializeHoopoeDir,
 // ReadProjectJSON/readProjectJSONPath, InitializeBeadsIfMissing, and the
 // project-json/file write helpers (writeProjectJSON, writeJSONFileIfMissing,
-// writeFileIfAbsent) moved to initialization.go.
-
-func ReadGitInfo(ctx context.Context, runner CommandRunner, root string) (GitInfo, error) {
-	root, err := normalizeRoot(root)
-	if err != nil {
-		return GitInfo{}, err
-	}
-	if runner == nil {
-		runner = ExecRunner{}
-	}
-	inside, err := runner.Run(ctx, root, []string{"git", "rev-parse", "--is-inside-work-tree"})
-	if err != nil {
-		return GitInfo{}, err
-	}
-	if inside.ExitCode != 0 || strings.TrimSpace(string(inside.Stdout)) != "true" {
-		return GitInfo{IsGitRepo: false}, nil
-	}
-	remote, err := runner.Run(ctx, root, []string{"git", "remote", "get-url", "origin"})
-	if err != nil {
-		return GitInfo{}, err
-	}
-	branch, err := runner.Run(ctx, root, []string{"git", "branch", "--show-current"})
-	if err != nil {
-		return GitInfo{}, err
-	}
-	return GitInfo{
-		IsGitRepo:    true,
-		OriginRemote: strings.TrimSpace(string(remote.Stdout)),
-		Branch:       strings.TrimSpace(string(branch.Stdout)),
-	}, nil
-}
-
-func DetectToolEnvironment(root string) ToolEnvironment {
-	root, err := normalizeRoot(root)
-	if err != nil {
-		return ToolEnvironment{}
-	}
-	manifests := make([]Manifest, 0)
-	for _, name := range supportedLanguageManifests {
-		if fileExists(filepath.Join(root, name)) {
-			manifests = append(manifests, Manifest{Name: name, RelativePath: name})
-		}
-	}
-	sort.Slice(manifests, func(i, j int) bool {
-		return manifests[i].Name < manifests[j].Name
-	})
-	return ToolEnvironment{
-		AgentsMDRelative: findCaseInsensitive(root, "AGENTS.md"),
-		ReadmeRelative:   findCaseInsensitive(root, "README.md"),
-		Manifests:        manifests,
-		HasBeadsDir:      dirExists(filepath.Join(root, ".beads")),
-		HasHoopoeDir:     dirExists(filepath.Join(root, ".hoopoe")),
-	}
-}
+// writeFileIfAbsent) moved to initialization.go (cut #2). ReadGitInfo,
+// DetectToolEnvironment, RUListPathsArgv, and ListRUPaths moved to
+// discovery.go (cut #3).
 
 func RecommendedAgentsTemplate(projectName string) string {
 	name := strings.TrimSpace(projectName)
@@ -499,35 +447,6 @@ func missingAgentContractDetail(contract schemas.ProjectAgentContract) string {
 		return fmt.Sprintf("AGENTS.md is missing; surface %s action targeting %s", contract.CreateAction.Id, contract.CreateAction.TargetRelativePath)
 	}
 	return "AGENTS.md is missing"
-}
-
-func RUListPathsArgv() []string {
-	return []string{"ru", "list", "--paths"}
-}
-
-func ListRUPaths(ctx context.Context, runner CommandRunner) ([]string, error) {
-	if runner == nil {
-		runner = ExecRunner{}
-	}
-	result, err := runner.Run(ctx, "", RUListPathsArgv())
-	if err != nil {
-		return nil, fmt.Errorf("projects: ru list --paths: %w", err)
-	}
-	if result.ExitCode != 0 {
-		return nil, commandError{argv: RUListPathsArgv(), result: result}
-	}
-	var paths []string
-	for _, line := range strings.Split(string(result.Stdout), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		if !filepath.IsAbs(line) {
-			return nil, fmt.Errorf("%w: ru returned non-absolute path %q", ErrInvalidRequest, line)
-		}
-		paths = append(paths, filepath.Clean(line))
-	}
-	return paths, nil
 }
 
 type commandError struct {
