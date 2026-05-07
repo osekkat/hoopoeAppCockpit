@@ -147,6 +147,15 @@ type GitWatcher struct {
 	mu            sync.Mutex
 	lastLocalHead string
 	lastRemote    map[string]string
+	// pushedSinceLastPoll records the timestamp at which each ref was
+	// merged into lastRemote via RecordPushCompleted. It guards against
+	// hp-5mc6: a push that completes during a PollOrigin window can be
+	// reflected in lastRemote (via mergeRemoteRefs) before origin's
+	// ListRemoteRefs view propagates the new ref. The next PollOrigin's
+	// changedRefs(lastRemote, next) would then surface the pushed ref
+	// as a deletion. Entries here let PollOrigin suppress those false
+	// deletes within propagationGrace; older entries are GC'd each poll.
+	pushedSinceLastPoll map[string]time.Time
 	// seenSet + seenRing form a FIFO-bounded set with per-entry TTL so
 	// dedup memory stays capped over the daemon's lifetime. The
 	// unbounded map[string]bool version grew O(commits + pushes +
@@ -167,6 +176,12 @@ type seenEntry struct {
 const (
 	seenCapacity = 1024
 	seenTTL      = 24 * time.Hour
+	// propagationGrace is how long after a push merge to ignore a
+	// missing ref in origin's ListRemoteRefs view (hp-5mc6). Origin
+	// host replication is typically sub-second; 30s is generous enough
+	// to absorb fetch caching + polling jitter without keeping a
+	// genuinely-deleted ref alive in the false-delete suppression set.
+	propagationGrace = 30 * time.Second
 )
 
 type PushCompleted struct {
@@ -381,6 +396,36 @@ func (w *GitWatcher) PollOrigin(ctx context.Context) ([]Event, error) {
 		return nil, nil
 	}
 	updates := changedRefs(w.lastRemote, next)
+	// hp-5mc6: suppress false-delete events for refs that were merged
+	// via RecordPushCompleted within propagationGrace and haven't yet
+	// propagated to origin's ListRemoteRefs view. GC entries older than
+	// the grace window so a genuinely-deleted ref past grace surfaces
+	// as a deletion on the next poll.
+	now := w.now()
+	if w.pushedSinceLastPoll != nil {
+		filtered := updates[:0]
+		for _, ref := range updates {
+			if ref.Op == gitevents.RefUpdateOpDelete {
+				if pushedAt, ok := w.pushedSinceLastPoll[ref.Name]; ok {
+					if now.Sub(pushedAt) < propagationGrace {
+						// Within grace — suppress; origin hasn't caught up.
+						continue
+					}
+					// Past grace — drop the stamp and let the deletion fire.
+					delete(w.pushedSinceLastPoll, ref.Name)
+				}
+			}
+			filtered = append(filtered, ref)
+		}
+		updates = filtered
+		// Independent GC so stamps for refs not in this poll's diff still
+		// expire (e.g., the ref propagated cleanly via an update path).
+		for name, pushedAt := range w.pushedSinceLastPoll {
+			if now.Sub(pushedAt) >= propagationGrace {
+				delete(w.pushedSinceLastPoll, name)
+			}
+		}
+	}
 	if len(updates) == 0 {
 		// hp-dfad: no diff against next, but lastRemote may carry
 		// freshly-merged push refs that aren't in next yet (origin
@@ -656,9 +701,16 @@ func (w *GitWatcher) mergeRemoteRefs(refs []gitevents.RefUpdate) {
 	if w.lastRemote == nil {
 		w.lastRemote = map[string]string{}
 	}
+	if w.pushedSinceLastPoll == nil {
+		w.pushedSinceLastPoll = map[string]time.Time{}
+	}
+	now := w.now()
 	for _, ref := range refs {
 		if ref.Name != "" && ref.NewSHA != "" {
 			w.lastRemote[ref.Name] = ref.NewSHA
+			// hp-5mc6: stamp so PollOrigin can ignore origin's lagging
+			// view as a "false delete" within propagationGrace.
+			w.pushedSinceLastPoll[ref.Name] = now
 		}
 	}
 }

@@ -443,6 +443,115 @@ func TestPollOriginPreservesPushMergedRefsOnDeltaApply(t *testing.T) {
 	}
 }
 
+// TestPollOriginSuppressesFalseDeleteForRecentlyPushedRef guards hp-5mc6:
+// after RecordPushCompleted merges a ref into lastRemote, the next
+// PollOrigin's ListRemoteRefs view may not yet include the pushed ref
+// (origin replication lag, fetch caching). Pre-fix, changedRefs would
+// surface that absence as Op=delete and PollOrigin would emit a false
+// origin_updated event. The pushedSinceLastPoll grace map suppresses
+// the deletion within propagationGrace; past grace, a genuine deletion
+// surfaces normally.
+func TestPollOriginSuppressesFalseDeleteForRecentlyPushedRef(t *testing.T) {
+	t.Parallel()
+	const (
+		mainSHA    = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		featureSHA = "cccccccccccccccccccccccccccccccccccccccc"
+	)
+	ctx := context.Background()
+	refs := &fakeRemoteRefs{snapshots: [][]gitevents.RefState{
+		// Seed sees only main.
+		{{Name: "refs/heads/main", SHA: mainSHA}},
+		// First PollOrigin runs after the push merge: origin's view
+		// still lacks feature (replication lag).
+		{{Name: "refs/heads/main", SHA: mainSHA}},
+		// Second PollOrigin (after grace expiry): origin still lacks
+		// feature → past-grace, the deletion fires.
+		{{Name: "refs/heads/main", SHA: mainSHA}},
+	}}
+	publisher := &recordingPublisher{}
+	w := NewGitWatcher("proj_01", &fakeGitClient{status: &gitadapter.Status{Branch: "main"}}, publisher)
+	w.RemoteRefs = refs
+
+	mockNow := time.Date(2026, 5, 4, 12, 0, 0, 0, time.UTC)
+	w.Now = func() time.Time { return mockNow }
+
+	if err := w.Seed(ctx); err != nil {
+		t.Fatalf("Seed: %v", err)
+	}
+
+	// Push merges feature ref into lastRemote + pushedSinceLastPoll.
+	if _, err := w.RecordPushCompleted(ctx, PushCompleted{
+		Branch:        "feature",
+		Remote:        "origin",
+		CommitsPushed: []string{featureSHA},
+		Refs: []gitevents.RefUpdate{{
+			Name:   "refs/heads/feature",
+			NewSHA: featureSHA,
+		}},
+		OK: true,
+	}); err != nil {
+		t.Fatalf("RecordPushCompleted: %v", err)
+	}
+
+	// First poll — within grace. ListRemoteRefs returns only main.
+	// Pre-fix, this would emit a delete for feature; post-fix, the
+	// deletion is suppressed and changedRefs surfaces no diff.
+	publisher.events = publisher.events[:0]
+	events, err := w.PollOrigin(ctx)
+	if err != nil {
+		t.Fatalf("first PollOrigin (within grace): %v", err)
+	}
+	for _, ev := range events {
+		if ev.Type != gitevents.EventOriginUpdated {
+			continue
+		}
+		payload := ev.Data.(gitevents.OriginUpdatedPayload)
+		for _, ref := range payload.Refs {
+			if ref.Name == "refs/heads/feature" && ref.Op == gitevents.RefUpdateOpDelete {
+				t.Fatalf("hp-5mc6 regression: false delete emitted for recently-pushed ref within grace: %+v", ref)
+			}
+		}
+	}
+	w.mu.Lock()
+	if _, kept := w.lastRemote["refs/heads/feature"]; !kept {
+		t.Fatal("lastRemote dropped feature within grace — origin propagation suppression must keep the ref")
+	}
+	if _, stamped := w.pushedSinceLastPoll["refs/heads/feature"]; !stamped {
+		t.Fatal("pushedSinceLastPoll dropped feature stamp within grace — grace logic must preserve it")
+	}
+	w.mu.Unlock()
+
+	// Advance time past the grace window. ListRemoteRefs still
+	// shows only main — origin really doesn't know about feature.
+	// The deletion should now fire and the stamp should GC.
+	mockNow = mockNow.Add(propagationGrace + time.Second)
+	publisher.events = publisher.events[:0]
+	events, err = w.PollOrigin(ctx)
+	if err != nil {
+		t.Fatalf("second PollOrigin (past grace): %v", err)
+	}
+	sawDelete := false
+	for _, ev := range events {
+		if ev.Type != gitevents.EventOriginUpdated {
+			continue
+		}
+		payload := ev.Data.(gitevents.OriginUpdatedPayload)
+		for _, ref := range payload.Refs {
+			if ref.Name == "refs/heads/feature" && ref.Op == gitevents.RefUpdateOpDelete {
+				sawDelete = true
+			}
+		}
+	}
+	if !sawDelete {
+		t.Fatal("past-grace poll did not emit deletion for feature; grace expiry must release the suppression")
+	}
+	w.mu.Lock()
+	if _, stamped := w.pushedSinceLastPoll["refs/heads/feature"]; stamped {
+		t.Fatal("pushedSinceLastPoll did not GC the past-grace stamp")
+	}
+	w.mu.Unlock()
+}
+
 func TestPollOriginRetriesAfterPublishFailure(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
