@@ -389,6 +389,24 @@ func (e HealthResponseStatus) Valid() bool {
 	}
 }
 
+// Defines values for IssuedBearerRole.
+const (
+	Client IssuedBearerRole = "client"
+	Owner  IssuedBearerRole = "owner"
+)
+
+// Valid indicates whether the value is a known member of the IssuedBearerRole enum.
+func (e IssuedBearerRole) Valid() bool {
+	switch e {
+	case Client:
+		return true
+	case Owner:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for JobStatus.
 const (
 	JobStatusCanceling       JobStatus = "canceling"
@@ -1048,6 +1066,17 @@ type BeadPriority = int
 // BeadStatus defines model for BeadStatus.
 type BeadStatus string
 
+// BootstrapBearerRequest defines model for BootstrapBearerRequest.
+type BootstrapBearerRequest struct {
+	// InstanceId Human-stable identifier for this client install (e.g.,
+	// macOS hardware UUID hash). Recorded on the resulting
+	// session for audit and revocation.
+	InstanceId string `json:"instanceId"`
+
+	// PairingToken Single-use pairing token issued via `hoopoe pair create`.
+	PairingToken string `json:"pairingToken"`
+}
+
 // Capability One capability slot inside a `ToolReport`. The map key is the
 // capability ID (e.g., `ntm.sessions.list`); the value is this object.
 type Capability struct {
@@ -1219,6 +1248,25 @@ type HealthResponseAdapters string
 
 // HealthResponseStatus defines model for HealthResponse.Status.
 type HealthResponseStatus string
+
+// IssuedBearer defines model for IssuedBearer.
+type IssuedBearer struct {
+	BearerToken string           `json:"bearerToken"`
+	ExpiresAt   time.Time        `json:"expiresAt"`
+	Role        IssuedBearerRole `json:"role"`
+
+	// Sid Session id; durable across daemon restart per hp-b7rx.
+	Sid string `json:"sid"`
+}
+
+// IssuedBearerRole defines model for IssuedBearer.Role.
+type IssuedBearerRole string
+
+// IssuedWSToken defines model for IssuedWSToken.
+type IssuedWSToken struct {
+	ExpiresAt time.Time `json:"expiresAt"`
+	WsToken   string    `json:"wsToken"`
+}
 
 // Job One long-running job in the daemon's registry (§2.7). `argvDigest`
 // and `envDigest` are blake3 hashes — full argv/env are recorded in the
@@ -1793,8 +1841,41 @@ type ProviderSizeTier string
 // ProviderStorageType defines model for ProviderStorageType.
 type ProviderStorageType string
 
+// RotateSecretResponse defines model for RotateSecretResponse.
+type RotateSecretResponse struct {
+	// ReplacementPairingToken One-time replacement owner pairing token. Returned once;
+	// the daemon does not retain the plaintext.
+	ReplacementPairingToken string `json:"replacementPairingToken"`
+	Revoked                 struct {
+		// Bearers Number of active bearer sessions revoked by the rotation.
+		Bearers int `json:"bearers"`
+
+		// PairingGrants Number of un-consumed pairing tokens revoked.
+		PairingGrants int `json:"pairingGrants"`
+	} `json:"revoked"`
+	RotatedAt time.Time `json:"rotatedAt"`
+
+	// SecretGeneration Monotonic counter of how many times the signing secret has
+	// rotated since installation. Bearers signed under prior
+	// generations fail with `auth.bearer_invalid_signature`.
+	SecretGeneration int `json:"secretGeneration"`
+}
+
 // SchemaVersion Monotonically increasing schema version for a persisted shape.
 type SchemaVersion = int
+
+// SessionRevokeRequest defines model for SessionRevokeRequest.
+type SessionRevokeRequest struct {
+	Sid string `json:"sid"`
+}
+
+// SessionRevokeResponse defines model for SessionRevokeResponse.
+type SessionRevokeResponse struct {
+	// Revoked False iff the sid was already revoked or unknown — the
+	// handler is idempotent over `sid`.
+	Revoked bool   `json:"revoked"`
+	Sid     string `json:"sid"`
+}
 
 // ToolId Closed enum of tools the capability registry knows about. New
 // ecosystem health probes (e.g., `health_zig`) require an explicit
@@ -1904,6 +1985,46 @@ type ProjectIdPath = string
 // bearerAuthContextKey is the context key for bearerAuth security scheme
 type bearerAuthContextKey string
 
+// BootstrapBearerParams defines parameters for BootstrapBearer.
+type BootstrapBearerParams struct {
+	// IdempotencyKey Stable client-generated key (ULID/UUID) for safe retries. The daemon
+	// dedupes by key within a sliding window (default 24h) and replays the
+	// original status + body. Required on retryable writes; clients that omit
+	// it on a write that turns out to be retryable will receive a
+	// `precondition-failed` problem on the second attempt.
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// RotateAuthSecretParams defines parameters for RotateAuthSecret.
+type RotateAuthSecretParams struct {
+	// IdempotencyKey Stable client-generated key (ULID/UUID) for safe retries. The daemon
+	// dedupes by key within a sliding window (default 24h) and replays the
+	// original status + body. Required on retryable writes; clients that omit
+	// it on a write that turns out to be retryable will receive a
+	// `precondition-failed` problem on the second attempt.
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// RevokeSessionParams defines parameters for RevokeSession.
+type RevokeSessionParams struct {
+	// IdempotencyKey Stable client-generated key (ULID/UUID) for safe retries. The daemon
+	// dedupes by key within a sliding window (default 24h) and replays the
+	// original status + body. Required on retryable writes; clients that omit
+	// it on a write that turns out to be retryable will receive a
+	// `precondition-failed` problem on the second attempt.
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// IssueWSTokenParams defines parameters for IssueWSToken.
+type IssueWSTokenParams struct {
+	// IdempotencyKey Stable client-generated key (ULID/UUID) for safe retries. The daemon
+	// dedupes by key within a sliding window (default 24h) and replays the
+	// original status + body. Required on retryable writes; clients that omit
+	// it on a write that turns out to be retryable will receive a
+	// `precondition-failed` problem on the second attempt.
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
 // GetCapabilitiesParams defines parameters for GetCapabilities.
 type GetCapabilitiesParams struct {
 	// Tool Filter to a single tool (e.g., `ntm`, `br`, `bv`).
@@ -1918,6 +2039,22 @@ type ReplayEventsParams struct {
 	// SinceSequence Last-known sequence number; replay returns sequence > this.
 	SinceSequence int  `form:"sinceSequence" json:"sinceSequence"`
 	Limit         *int `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// StreamEventsSSEParams defines parameters for StreamEventsSSE.
+type StreamEventsSSEParams struct {
+	// Channels Comma-separated channel selectors.
+	Channels string `form:"channels" json:"channels"`
+
+	// Cursors Optional URL-encoded JSON map of `{channel: lastSequence}`
+	// for replay-on-connect.
+	Cursors *string `form:"cursors,omitempty" json:"cursors,omitempty"`
+}
+
+// StreamEventsWSParams defines parameters for StreamEventsWS.
+type StreamEventsWSParams struct {
+	// WsToken 5-minute WS token from `/v1/events/ws-token`.
+	WsToken string `form:"wsToken" json:"wsToken"`
 }
 
 // ListJobsParams defines parameters for ListJobs.
@@ -2026,6 +2163,12 @@ type DestroyProviderInstanceParams struct {
 	// `precondition-failed` problem on the second attempt.
 	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
 }
+
+// BootstrapBearerJSONRequestBody defines body for BootstrapBearer for application/json ContentType.
+type BootstrapBearerJSONRequestBody = BootstrapBearerRequest
+
+// RevokeSessionJSONRequestBody defines body for RevokeSession for application/json ContentType.
+type RevokeSessionJSONRequestBody = SessionRevokeRequest
 
 // CancelJobJSONRequestBody defines body for CancelJob for application/json ContentType.
 type CancelJobJSONRequestBody = JobCancelRequest

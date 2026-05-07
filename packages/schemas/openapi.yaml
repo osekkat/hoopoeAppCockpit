@@ -441,11 +441,95 @@ paths:
         default: { $ref: '#/components/responses/Problem' }
 
   # ─────────────────────────────────────────────────────────────────────────
-  # Events (§2.6) — replay stream for the WS reconnect path.
-  # The bidirectional WebSocket itself is not modeled here (OpenAPI 3.x
-  # cannot describe it); see `events/ws-envelope.schema.json` for the
-  # standalone envelope JSON Schema that mirrors `components.WsEventEnvelope`.
+  # Events (§2.6) — replay stream for the WS reconnect path, plus the
+  # SSE / WS connection paths. OpenAPI 3.x cannot fully describe a
+  # bidirectional WebSocket or a streaming SSE response, so the
+  # connection paths below carry summaries + auth requirements only and
+  # link out to the JSON Schema sidecars that describe the wire frames:
+  # `events/ws-envelope.schema.json` mirrors `components.WsEventEnvelope`
+  # and is the source of truth for individual frames pushed over either
+  # transport. hp-q1p closes the docs-drift gap that the connection
+  # paths existed in router code but were absent from this contract.
   # ─────────────────────────────────────────────────────────────────────────
+
+  /v1/events/sse:
+    get:
+      tags: [Events]
+      operationId: streamEventsSSE
+      summary: Server-Sent Events stream for live event delivery.
+      description: |
+        Long-lived `text/event-stream` response that pushes the same
+        event envelopes the WS path delivers. Each frame matches
+        `components.WsEventEnvelope` (see `events/ws-envelope.schema.json`).
+        Used as a fallback when WS is blocked by the network path.
+        Reconnect via `/v1/events/replay` with the last sequence cursor
+        from each channel — same `_gap` semantics as the WS path.
+      parameters:
+        - name: channels
+          in: query
+          required: true
+          description: Comma-separated channel selectors.
+          schema: { type: string, minLength: 1 }
+        - name: cursors
+          in: query
+          required: false
+          description: |
+            Optional URL-encoded JSON map of `{channel: lastSequence}`
+            for replay-on-connect.
+          schema: { type: string }
+      responses:
+        '200':
+          description: SSE stream opened.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: |
+                  Stream of `event: <type>\ndata: <json>\n\n` frames
+                  whose `data` fields validate against
+                  `components.WsEventEnvelope`.
+        default: { $ref: '#/components/responses/Problem' }
+
+  /v1/events/ws:
+    get:
+      tags: [Events]
+      operationId: streamEventsWS
+      summary: WebSocket upgrade for live bidirectional event delivery.
+      description: |
+        Upgrades to a WebSocket. Authentication is via the short-lived
+        `wsToken` query parameter issued by `/v1/events/ws-token`. Each
+        frame is a JSON-encoded `components.WsEventEnvelope` (see
+        `events/ws-envelope.schema.json` for the standalone JSON Schema).
+        OpenAPI 3.x cannot model the WebSocket protocol; this entry
+        documents the URL, auth, and frame shape so the contract is
+        not silently absent.
+      parameters:
+        - name: wsToken
+          in: query
+          required: true
+          description: 5-minute WS token from `/v1/events/ws-token`.
+          schema: { type: string, minLength: 1 }
+      responses:
+        '101':
+          description: Switching Protocols (WebSocket upgrade).
+        default: { $ref: '#/components/responses/Problem' }
+
+  /v1/events/ws-token:
+    get:
+      tags: [Events]
+      operationId: getEventsWSToken
+      summary: Mint a 5-minute WS token from the bearer.
+      description: |
+        Convenience GET wrapper around `POST /v1/auth/ws-token` for the
+        SSE→WS upgrade path. The bearer is supplied via the
+        `Authorization: Bearer <token>` header.
+      responses:
+        '200':
+          description: Issued WS token.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IssuedWSToken' }
+        default: { $ref: '#/components/responses/Problem' }
 
   /v1/events/replay:
     get:
@@ -479,6 +563,105 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/EventReplayResponse' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Auth (§5.2) — three-token bootstrap (pairing → bearer → ws-token)
+  # plus session-revoke and rotate-secret. hp-q1p closes the docs-drift
+  # gap that these paths were live in apps/daemon/internal/api/auth.go
+  # but absent from this contract.
+  # ─────────────────────────────────────────────────────────────────────────
+
+  /v1/auth/bootstrap/bearer:
+    parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+    post:
+      tags: [Auth]
+      operationId: bootstrapBearer
+      summary: Exchange a pairing token for a 30-day bearer.
+      description: |
+        Single-use consumption of a pairing token. Returns a bearer
+        plus session metadata. The pairing token is destroyed on
+        success; replay with the same token returns 410 Gone.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BootstrapBearerRequest' }
+      responses:
+        '200':
+          description: Bearer issued.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IssuedBearer' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /v1/auth/ws-token:
+    parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+    post:
+      tags: [Auth]
+      operationId: issueWSToken
+      summary: Mint a 5-minute WS token from a valid bearer.
+      description: |
+        Bearer is supplied via the `Authorization: Bearer <token>`
+        header. The returned WS token is single-use and binds to the
+        same session.
+      responses:
+        '200':
+          description: WS token issued.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IssuedWSToken' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /v1/auth/session/revoke:
+    parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+    post:
+      tags: [Auth]
+      operationId: revokeSession
+      summary: Revoke a session by sid (drops bearer + cascading WS).
+      description: |
+        Owner-only — caller's role is verified via the bearer in the
+        `Authorization` header. Revocation is durable across daemon
+        restart (per hp-b7rx). Idempotent over `sid`: revoking an
+        already-revoked session returns 200 with `revoked: false`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SessionRevokeRequest' }
+      responses:
+        '200':
+          description: Revoke result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SessionRevokeResponse' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /v1/auth/rotate-secret:
+    parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+    post:
+      tags: [Auth]
+      operationId: rotateAuthSecret
+      summary: Rotate the daemon's auth signing secret + re-pair owner.
+      description: |
+        Two-step write that rotates the JWT signing secret, revokes
+        every active bearer/WS, and issues a single replacement owner
+        pairing token whose plaintext is returned ONCE. Must be
+        approved through the unified approvals queue first; the
+        approval id is supplied via the `X-Hoopoe-Approval-ID` header
+        and the explicit `X-Hoopoe-Confirm-Rotate: yes` confirmation.
+        Surfaces `auth.secret_rotation_imminent` and
+        `auth.secret_rotated` events on the `_system` channel.
+      responses:
+        '200':
+          description: Rotation completed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RotateSecretResponse' }
         default: { $ref: '#/components/responses/Problem' }
 
   # ─────────────────────────────────────────────────────────────────────────
@@ -1857,6 +2040,103 @@ components:
         - $ref: '#/components/schemas/WsHeartbeat'
         - $ref: '#/components/schemas/WsGap'
         - $ref: '#/components/schemas/WsLag'
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Auth (§5.2) request/response schemas — hp-q1p adds the four POST
+    # endpoints' shapes to close the docs-drift gap. Field shapes mirror
+    # apps/daemon/internal/api/auth.go and apps/daemon/internal/auth.
+    # ─────────────────────────────────────────────────────────────────────────
+
+    BootstrapBearerRequest:
+      type: object
+      required: [pairingToken, instanceId]
+      properties:
+        pairingToken:
+          type: string
+          minLength: 1
+          description: Single-use pairing token issued via `hoopoe pair create`.
+        instanceId:
+          type: string
+          minLength: 1
+          description: |
+            Human-stable identifier for this client install (e.g.,
+            macOS hardware UUID hash). Recorded on the resulting
+            session for audit and revocation.
+
+    IssuedBearer:
+      type: object
+      required: [bearerToken, sid, role, expiresAt]
+      properties:
+        bearerToken: { type: string, minLength: 1 }
+        sid:
+          type: string
+          minLength: 1
+          description: Session id; durable across daemon restart per hp-b7rx.
+        role:
+          type: string
+          enum: [owner, client]
+        expiresAt:
+          type: string
+          format: date-time
+
+    IssuedWSToken:
+      type: object
+      required: [wsToken, expiresAt]
+      properties:
+        wsToken: { type: string, minLength: 1 }
+        expiresAt:
+          type: string
+          format: date-time
+
+    SessionRevokeRequest:
+      type: object
+      required: [sid]
+      properties:
+        sid: { type: string, minLength: 1 }
+
+    SessionRevokeResponse:
+      type: object
+      required: [sid, revoked]
+      properties:
+        sid: { type: string }
+        revoked:
+          type: boolean
+          description: |
+            False iff the sid was already revoked or unknown — the
+            handler is idempotent over `sid`.
+
+    RotateSecretResponse:
+      type: object
+      required: [secretGeneration, replacementPairingToken, rotatedAt, revoked]
+      properties:
+        secretGeneration:
+          type: integer
+          minimum: 1
+          description: |
+            Monotonic counter of how many times the signing secret has
+            rotated since installation. Bearers signed under prior
+            generations fail with `auth.bearer_invalid_signature`.
+        replacementPairingToken:
+          type: string
+          minLength: 1
+          description: |
+            One-time replacement owner pairing token. Returned once;
+            the daemon does not retain the plaintext.
+        rotatedAt:
+          type: string
+          format: date-time
+        revoked:
+          type: object
+          required: [bearers, pairingGrants]
+          properties:
+            bearers:
+              type: integer
+              minimum: 0
+              description: Number of active bearer sessions revoked by the rotation.
+            pairingGrants:
+              type: integer
+              minimum: 0
+              description: Number of un-consumed pairing tokens revoked.
 
     EventReplayResponse:
       type: object

@@ -324,6 +324,79 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/events/sse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Server-Sent Events stream for live event delivery.
+         * @description Long-lived `text/event-stream` response that pushes the same
+         *     event envelopes the WS path delivers. Each frame matches
+         *     `components.WsEventEnvelope` (see `events/ws-envelope.schema.json`).
+         *     Used as a fallback when WS is blocked by the network path.
+         *     Reconnect via `/v1/events/replay` with the last sequence cursor
+         *     from each channel — same `_gap` semantics as the WS path.
+         */
+        get: operations["streamEventsSSE"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/events/ws": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * WebSocket upgrade for live bidirectional event delivery.
+         * @description Upgrades to a WebSocket. Authentication is via the short-lived
+         *     `wsToken` query parameter issued by `/v1/events/ws-token`. Each
+         *     frame is a JSON-encoded `components.WsEventEnvelope` (see
+         *     `events/ws-envelope.schema.json` for the standalone JSON Schema).
+         *     OpenAPI 3.x cannot model the WebSocket protocol; this entry
+         *     documents the URL, auth, and frame shape so the contract is
+         *     not silently absent.
+         */
+        get: operations["streamEventsWS"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/events/ws-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Mint a 5-minute WS token from the bearer.
+         * @description Convenience GET wrapper around `POST /v1/auth/ws-token` for the
+         *     SSE→WS upgrade path. The bearer is supplied via the
+         *     `Authorization: Bearer <token>` header.
+         */
+        get: operations["getEventsWSToken"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/events/replay": {
         parameters: {
             query?: never;
@@ -342,6 +415,136 @@ export interface paths {
         get: operations["replayEvents"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/bootstrap/bearer": {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Stable client-generated key (ULID/UUID) for safe retries. The daemon
+                 *     dedupes by key within a sliding window (default 24h) and replays the
+                 *     original status + body. Required on retryable writes; clients that omit
+                 *     it on a write that turns out to be retryable will receive a
+                 *     `precondition-failed` problem on the second attempt.
+                 */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Exchange a pairing token for a 30-day bearer.
+         * @description Single-use consumption of a pairing token. Returns a bearer
+         *     plus session metadata. The pairing token is destroyed on
+         *     success; replay with the same token returns 410 Gone.
+         */
+        post: operations["bootstrapBearer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/ws-token": {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Stable client-generated key (ULID/UUID) for safe retries. The daemon
+                 *     dedupes by key within a sliding window (default 24h) and replays the
+                 *     original status + body. Required on retryable writes; clients that omit
+                 *     it on a write that turns out to be retryable will receive a
+                 *     `precondition-failed` problem on the second attempt.
+                 */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mint a 5-minute WS token from a valid bearer.
+         * @description Bearer is supplied via the `Authorization: Bearer <token>`
+         *     header. The returned WS token is single-use and binds to the
+         *     same session.
+         */
+        post: operations["issueWSToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/session/revoke": {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Stable client-generated key (ULID/UUID) for safe retries. The daemon
+                 *     dedupes by key within a sliding window (default 24h) and replays the
+                 *     original status + body. Required on retryable writes; clients that omit
+                 *     it on a write that turns out to be retryable will receive a
+                 *     `precondition-failed` problem on the second attempt.
+                 */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revoke a session by sid (drops bearer + cascading WS).
+         * @description Owner-only — caller's role is verified via the bearer in the
+         *     `Authorization` header. Revocation is durable across daemon
+         *     restart (per hp-b7rx). Idempotent over `sid`: revoking an
+         *     already-revoked session returns 200 with `revoked: false`.
+         */
+        post: operations["revokeSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/rotate-secret": {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Stable client-generated key (ULID/UUID) for safe retries. The daemon
+                 *     dedupes by key within a sliding window (default 24h) and replays the
+                 *     original status + body. Required on retryable writes; clients that omit
+                 *     it on a write that turns out to be retryable will receive a
+                 *     `precondition-failed` problem on the second attempt.
+                 */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rotate the daemon's auth signing secret + re-pair owner.
+         * @description Two-step write that rotates the JWT signing secret, revokes
+         *     every active bearer/WS, and issues a single replacement owner
+         *     pairing token whose plaintext is returned ONCE. Must be
+         *     approved through the unified approvals queue first; the
+         *     approval id is supplied via the `X-Hoopoe-Approval-ID` header
+         *     and the explicit `X-Hoopoe-Confirm-Rotate: yes` confirmation.
+         *     Surfaces `auth.secret_rotation_imminent` and
+         *     `auth.secret_rotated` events on the `_system` channel.
+         */
+        post: operations["rotateAuthSecret"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1369,6 +1572,62 @@ export interface components {
         };
         /** @description Discriminated union of daemon → client messages. */
         WsServerMessage: components["schemas"]["WsEventEnvelope"] | components["schemas"]["WsHeartbeat"] | components["schemas"]["WsGap"] | components["schemas"]["WsLag"];
+        BootstrapBearerRequest: {
+            /** @description Single-use pairing token issued via `hoopoe pair create`. */
+            pairingToken: string;
+            /**
+             * @description Human-stable identifier for this client install (e.g.,
+             *     macOS hardware UUID hash). Recorded on the resulting
+             *     session for audit and revocation.
+             */
+            instanceId: string;
+        };
+        IssuedBearer: {
+            bearerToken: string;
+            /** @description Session id; durable across daemon restart per hp-b7rx. */
+            sid: string;
+            /** @enum {string} */
+            role: "owner" | "client";
+            /** Format: date-time */
+            expiresAt: string;
+        };
+        IssuedWSToken: {
+            wsToken: string;
+            /** Format: date-time */
+            expiresAt: string;
+        };
+        SessionRevokeRequest: {
+            sid: string;
+        };
+        SessionRevokeResponse: {
+            sid: string;
+            /**
+             * @description False iff the sid was already revoked or unknown — the
+             *     handler is idempotent over `sid`.
+             */
+            revoked: boolean;
+        };
+        RotateSecretResponse: {
+            /**
+             * @description Monotonic counter of how many times the signing secret has
+             *     rotated since installation. Bearers signed under prior
+             *     generations fail with `auth.bearer_invalid_signature`.
+             */
+            secretGeneration: number;
+            /**
+             * @description One-time replacement owner pairing token. Returned once;
+             *     the daemon does not retain the plaintext.
+             */
+            replacementPairingToken: string;
+            /** Format: date-time */
+            rotatedAt: string;
+            revoked: {
+                /** @description Number of active bearer sessions revoked by the rotation. */
+                bearers: number;
+                /** @description Number of un-consumed pairing tokens revoked. */
+                pairingGrants: number;
+            };
+        };
         EventReplayResponse: {
             channel: string;
             events: components["schemas"]["WsEventEnvelope"][];
@@ -2293,6 +2552,78 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
+    streamEventsSSE: {
+        parameters: {
+            query: {
+                /** @description Comma-separated channel selectors. */
+                channels: string;
+                /**
+                 * @description Optional URL-encoded JSON map of `{channel: lastSequence}`
+                 *     for replay-on-connect.
+                 */
+                cursors?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description SSE stream opened. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    streamEventsWS: {
+        parameters: {
+            query: {
+                /** @description 5-minute WS token from `/v1/events/ws-token`. */
+                wsToken: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Switching Protocols (WebSocket upgrade). */
+            101: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getEventsWSToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Issued WS token. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssuedWSToken"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
     replayEvents: {
         parameters: {
             query: {
@@ -2315,6 +2646,134 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EventReplayResponse"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    bootstrapBearer: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Stable client-generated key (ULID/UUID) for safe retries. The daemon
+                 *     dedupes by key within a sliding window (default 24h) and replays the
+                 *     original status + body. Required on retryable writes; clients that omit
+                 *     it on a write that turns out to be retryable will receive a
+                 *     `precondition-failed` problem on the second attempt.
+                 */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BootstrapBearerRequest"];
+            };
+        };
+        responses: {
+            /** @description Bearer issued. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssuedBearer"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    issueWSToken: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Stable client-generated key (ULID/UUID) for safe retries. The daemon
+                 *     dedupes by key within a sliding window (default 24h) and replays the
+                 *     original status + body. Required on retryable writes; clients that omit
+                 *     it on a write that turns out to be retryable will receive a
+                 *     `precondition-failed` problem on the second attempt.
+                 */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description WS token issued. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssuedWSToken"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    revokeSession: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Stable client-generated key (ULID/UUID) for safe retries. The daemon
+                 *     dedupes by key within a sliding window (default 24h) and replays the
+                 *     original status + body. Required on retryable writes; clients that omit
+                 *     it on a write that turns out to be retryable will receive a
+                 *     `precondition-failed` problem on the second attempt.
+                 */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SessionRevokeRequest"];
+            };
+        };
+        responses: {
+            /** @description Revoke result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionRevokeResponse"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    rotateAuthSecret: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Stable client-generated key (ULID/UUID) for safe retries. The daemon
+                 *     dedupes by key within a sliding window (default 24h) and replays the
+                 *     original status + body. Required on retryable writes; clients that omit
+                 *     it on a write that turns out to be retryable will receive a
+                 *     `precondition-failed` problem on the second attempt.
+                 */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Rotation completed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RotateSecretResponse"];
                 };
             };
             default: components["responses"]["Problem"];
