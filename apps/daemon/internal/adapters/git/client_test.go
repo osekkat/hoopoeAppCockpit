@@ -662,6 +662,90 @@ func TestProbeOnMalformedJSONGoldenFixtureDegradesLogCapability(t *testing.T) {
 	}
 }
 
+// TestProbeOnHighVolumeGoldenFixtureDegradesLogCapability loads
+// packages/fixtures/golden-outputs/git/high-volume.json and pins the
+// adapter contract from plan.md §18.3 for the high-volume state.
+//
+// Fixture mimics ENVELOPE_MAX_BYTES truncation: stdoutBytes=1048576
+// (1MiB), truncated=true, exit=0, synthetic git._highVolume=degraded
+// with the note "stdout exceeded ENVELOPE_MAX_BYTES; pagination
+// required".
+//
+// The git adapter does not enforce its own output cap — the truncation
+// contract documents that *upstream* (the envelope harness) enforces a
+// cap, and when the resulting stdout is a truncated/non-parseable
+// fragment, parseLog must surface StatusDegraded rather than crashing
+// or accepting a zero value as success.
+//
+// Pinned here:
+//
+//  1. Fixture self-consistency (state, exit=0, truncated=true,
+//     _highVolume=degraded).
+//  2. The fixture's stdoutText placeholder does NOT parse as a valid
+//     git log envelope (sanity guard against drift).
+//  3. parseLog directly against the truncated bytes returns an error
+//     and does not panic — pre-fix safety net for the daemon process.
+//  4. Probe drives through the truncated envelope: CapLog degrades
+//     with parser-error notes, distinct from the timeout (exit=124)
+//     and missing-tool (ErrMissingBinary) error classes covered by
+//     adjacent fixtures.
+func TestProbeOnHighVolumeGoldenFixtureDegradesLogCapability(t *testing.T) {
+	t.Parallel()
+	fixture := loadGitGoldenFixture(t, "high-volume.json")
+	if fixture.Meta.State != "high-volume" {
+		t.Fatalf("fixture state = %q, want high-volume", fixture.Meta.State)
+	}
+	if !fixture.Truncated {
+		t.Fatalf("fixture truncated = false, want true (envelope-truncation is the high-volume contract)")
+	}
+	if fixture.Exit != 0 {
+		t.Fatalf("fixture exit = %d, want 0 (high-volume is envelope-size, not failure)", fixture.Exit)
+	}
+	cap, ok := fixture.Capabilities["git._highVolume"]
+	if !ok || cap.Status != "degraded" {
+		t.Fatalf("fixture must declare git._highVolume=degraded, got %+v", fixture.Capabilities)
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("parseLog panicked on high-volume fixture: %v", r)
+		}
+	}()
+	if _, err := parseLog([]byte(fixture.StdoutText)); err == nil {
+		t.Fatalf("parseLog accepted truncated high-volume bytes without error")
+	}
+
+	fake := newFakeExecutor()
+	logKey := "log --no-color -n 1 --pretty=format:%H%x00%h%x00%an%x00%ae%x00%aI%x00%cn%x00%ce%x00%cI%x00%P%x00%s%x00%b%x1e"
+	fake.Stdouts[logKey] = []byte(fixture.StdoutText)
+	// Satisfy the other read-only probe argvs so only the log path
+	// goes degraded — pinning the per-capability contract.
+	fake.Stdouts["status --porcelain=v1 --branch"] = []byte("## main\n")
+	fake.Stdouts["diff --no-color"] = []byte("")
+	fake.Stdouts["show --no-color HEAD"] = []byte("commit abc123\n")
+	fake.Stdouts["remote -v"] = []byte("")
+	fake.Stdouts["branch -v --no-abbrev"] = []byte("* main abcdef0 hello\n")
+	fake.Stdouts["blame --porcelain -- README.md"] = []byte("")
+	fake.Stdouts["rev-list origin/HEAD..HEAD"] = []byte("")
+	fake.Stdouts["--version"] = []byte("git version 2.43.0\n")
+
+	c := NewWithExecutor("/repo", fake)
+	res := Probe(context.Background(), c, func() time.Time {
+		return time.Date(2026, 5, 7, 0, 0, 0, 0, time.UTC)
+	})
+
+	logReport, ok := res.Reports[CapLog]
+	if !ok {
+		t.Fatalf("missing report for %s", CapLog)
+	}
+	if logReport.Status != StatusDegraded {
+		t.Fatalf("%s status = %q, want degraded (fixture state=high-volume; truncated envelope must not parse as success)", CapLog, logReport.Status)
+	}
+	if logReport.Notes == "" {
+		t.Fatalf("%s notes are empty; expected parser error trace for truncated envelope", CapLog)
+	}
+}
+
 // alwaysMissingBinaryExecutor returns ErrMissingBinary for every
 // invocation. Mirrors what OSExecutor produces at client.go:116-118
 // when the underlying exec.Cmd.Run reports
@@ -680,6 +764,7 @@ type gitGoldenFixture struct {
 	Argv         []string `json:"argv"`
 	Exit         int      `json:"exit"`
 	StdoutText   string   `json:"stdoutText"`
+	Truncated    bool     `json:"truncated"`
 	Capabilities map[string]struct {
 		Status   string `json:"status"`
 		Notes    string `json:"notes"`
