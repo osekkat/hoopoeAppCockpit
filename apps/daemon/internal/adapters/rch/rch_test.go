@@ -457,6 +457,71 @@ func (c *countingRCHRunner) calls(key string) int {
 	return c.keyCalls[key]
 }
 
+// TestProbeOnNormalGoldenFixtureMatchesHealthyContract loads
+// packages/fixtures/golden-outputs/rch/normal.json and pins the
+// adapter contract from plan.md §18.3 for the normal state.
+//
+// The fixture authoritatively declares:
+//   - meta.state == "normal"
+//   - exit == 0
+//   - capabilities["rch.run"] == {status: "ok"}
+//   - stdoutText is the healthy `rch status` text — but per
+//     packages/fixtures/golden-outputs/README.md, argv and
+//     stdoutText are placeholders. The adapter's actual healthy
+//     path runs `rch --version`, not `rch status`. What the fixture
+//     pins is the capability shape on the healthy path.
+//
+// The existing TestProbeReportsRCHCapability already exercises the
+// healthy-version path, but does so without a fixture-loaded contract
+// anchor. This test wraps that path so a future fixture edit that
+// flips capabilities.rch.run away from `ok` is caught even if the
+// underlying adapter behavior keeps working — the inverse-direction
+// safety net the §18.3 contract calls for.
+func TestProbeOnNormalGoldenFixtureMatchesHealthyContract(t *testing.T) {
+	fixture := loadRCHGoldenFixture(t, "normal.json")
+	if fixture.Meta.State != "normal" {
+		t.Fatalf("fixture state = %q, want normal", fixture.Meta.State)
+	}
+	if fixture.Exit != 0 {
+		t.Fatalf("fixture exit = %d, want 0 (normal state must be a clean exit)", fixture.Exit)
+	}
+	if fixture.Truncated {
+		t.Fatalf("fixture truncated = true, want false (normal state must not flag truncation)")
+	}
+	cap, ok := fixture.Capabilities["rch.run"]
+	if !ok || cap.Status != "ok" {
+		t.Fatalf("fixture must declare rch.run=ok, got %+v", fixture.Capabilities)
+	}
+
+	adapter := New(&fakeRunner{responses: map[string]CommandResult{
+		"\x00rch --version": {Stdout: []byte("rch 1.0.18\n")},
+	}})
+	adapter.Now = fixedNow
+	report, err := adapter.Probe(context.Background())
+	if err != nil {
+		t.Fatalf("Probe: %v", err)
+	}
+	if report.Tool != capabilities.ToolRCH {
+		t.Fatalf("report tool = %q, want %s", report.Tool, capabilities.ToolRCH)
+	}
+	if report.Version == "" {
+		t.Fatalf("report version is empty; ParseVersion did not extract a version from the healthy stdout")
+	}
+	got := report.Capabilities[CapabilityRun]
+	if got.Status != capabilities.StatusOK {
+		t.Fatalf("%s status = %q, want ok (fixture state=normal)", CapabilityRun, got.Status)
+	}
+	if got.Transport != "stdio" {
+		t.Fatalf("%s transport = %q, want stdio", CapabilityRun, got.Transport)
+	}
+	if got.Notes != "" {
+		t.Fatalf("%s notes = %q, want empty (healthy path must not surface a degradation note)", CapabilityRun, got.Notes)
+	}
+	if err := report.Validate(); err != nil {
+		t.Fatalf("report validation: %v", err)
+	}
+}
+
 type rchGoldenFixture struct {
 	Meta struct {
 		Adapter string `json:"adapter"`
