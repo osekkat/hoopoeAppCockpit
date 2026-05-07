@@ -587,6 +587,107 @@ func TestUnsupportedVersionGoldenFixturePinsCorpusIntegrity(t *testing.T) {
 	}
 }
 
+// TestProbeOnHighVolumeGoldenFixtureDegradesAllCapabilities loads the
+// committed Phase 0 golden artifact at
+// packages/fixtures/golden-outputs/agent_mail/high-volume.json and pins
+// the agent-mail adapter contract from plan.md §18.3 for the
+// "high-volume" state.
+//
+// Fixture mimics ENVELOPE_MAX_BYTES truncation: stdoutBytes=1048576
+// (1MiB), truncated=true, synthetic _highVolume=degraded with the note
+// "stdout exceeded ENVELOPE_MAX_BYTES; pagination required".
+//
+// The adapter enforces MaxResponseBytes (default 4MiB) at callTool —
+// responses exceeding the cap return ErrDecode wrapping "response
+// exceeded N bytes". Pinned here:
+//
+//  1. Fixture self-consistency (state, truncated flag, _highVolume).
+//  2. Adapter graceful-degradation: when the HTTP body exceeds the
+//     configured cap, callTool returns an ErrDecode-wrapped error and
+//     Probe surfaces every real CapabilityIDs() entry as Degraded with
+//     the cap error preserved in notes.
+func TestProbeOnHighVolumeGoldenFixtureDegradesAllCapabilities(t *testing.T) {
+	t.Parallel()
+	fixture := loadAgentMailGoldenFixture(t, "high-volume.json")
+
+	if fixture.Meta.State != "high-volume" {
+		t.Fatalf("fixture state = %q, want high-volume", fixture.Meta.State)
+	}
+	if !fixture.Truncated {
+		t.Fatalf("fixture truncated = false, want true (stdout exceeded ENVELOPE_MAX_BYTES)")
+	}
+	highVolCap, ok := fixture.Capabilities["agent_mail._highVolume"]
+	if !ok || highVolCap.Status != "degraded" {
+		t.Fatalf("fixture must declare agent_mail._highVolume=degraded, got %+v", fixture.Capabilities)
+	}
+
+	const cap = int64(256)
+	oversizedBody := strings.Repeat("x", int(cap*2))
+	rt := &queueRoundTripper{responses: []*http.Response{{
+		StatusCode: http.StatusOK,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader(oversizedBody)),
+	}}}
+	client := New("http://127.0.0.1:8765")
+	client.Token = "test-token"
+	client.HTTPClient = &http.Client{Transport: rt}
+	client.MaxResponseBytes = cap
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("Probe panicked on oversized response: %v", r)
+		}
+	}()
+	report := Probe(
+		context.Background(),
+		client,
+		"/repo",
+		"RoseCastle",
+		func() time.Time { return time.Date(2026, 5, 7, 0, 0, 0, 0, time.UTC) },
+	)
+	if report == nil {
+		t.Fatalf("Probe returned nil report")
+	}
+	if err := report.Validate(); err != nil {
+		t.Fatalf("report invalid: %v", err)
+	}
+
+	wantIDs := CapabilityIDs()
+	if len(report.Capabilities) != len(wantIDs) {
+		t.Fatalf("capability count = %d, want %d", len(report.Capabilities), len(wantIDs))
+	}
+	for _, id := range wantIDs {
+		got, present := report.Capabilities[id]
+		if !present {
+			t.Fatalf("capability %s missing from report", id)
+		}
+		if got.Status != capabilities.StatusDegraded {
+			t.Fatalf("capability %s status = %s, want degraded (response exceeded cap)", id, got.Status)
+		}
+		if !strings.Contains(got.Notes, "exceeded") {
+			t.Fatalf("capability %s notes = %q, want underlying cap error", id, got.Notes)
+		}
+	}
+
+	rt2 := &queueRoundTripper{responses: []*http.Response{{
+		StatusCode: http.StatusOK,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader(oversizedBody)),
+	}}}
+	client.HTTPClient = &http.Client{Transport: rt2}
+	directErr := client.callTool(context.Background(), "fetch_inbox", map[string]any{
+		"project_key": "/repo",
+		"agent_name":  "RoseCastle",
+		"limit":       1,
+	}, &[]Message{})
+	if directErr == nil {
+		t.Fatalf("callTool should error on oversized response")
+	}
+	if !errors.Is(directErr, ErrDecode) {
+		t.Fatalf("callTool err = %v, want ErrDecode wrap", directErr)
+	}
+}
+
 // agentMailGoldenFixture mirrors the shape of the committed Phase 0 golden
 // outputs at packages/fixtures/golden-outputs/agent_mail/*.json. Only the
 // fields the adapter contract observes are decoded — fixtures may carry
@@ -601,6 +702,7 @@ type agentMailGoldenFixture struct {
 	Exit         int      `json:"exit"`
 	StdoutText   string   `json:"stdoutText"`
 	StderrText   string   `json:"stderrText"`
+	Truncated    bool     `json:"truncated"`
 	Capabilities map[string]struct {
 		Status string `json:"status"`
 		Notes  string `json:"notes"`
