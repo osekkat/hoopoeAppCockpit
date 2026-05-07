@@ -38,6 +38,35 @@ const tmpDir = mkdtempSync(join(tmpdir(), "hoopoe-schemas-gen-go-"));
 const cfgInTmp = join(tmpDir, "cfg.yaml");
 copyFileSync(cfgSource, cfgInTmp);
 
+// hp-kcpa: openapi.yaml must stay on a 3.0.x version while the pinned
+// oapi-codegen v2.7.0 only has partial OpenAPI 3.1 support (its own
+// stderr warning recommends downgrading). A future committer bumping the
+// spec back to 3.1.x without first switching the Go generator to one
+// with full 3.1 coverage would silently degrade Go ↔ TS contract
+// fidelity (3.1-only constructs may parse cleanly under
+// openapi-typescript while oapi-codegen omits or models them
+// incorrectly). Refuse the drift here at the validate gate — the assert
+// fires before the byte-compare so the diagnostic points at the actual
+// root cause instead of a confusing schemas.gen.go diff.
+const specSource = readFileSync(spec, "utf8");
+const versionMatch = specSource.match(/^\s*openapi:\s*(\S+)/m);
+if (!versionMatch) {
+  process.stderr.write(
+    "[validate-go-codegen] openapi.yaml is missing the top-level `openapi:` declaration.\n",
+  );
+  process.exit(1);
+}
+const specVersion = versionMatch[1].replace(/^['"]|['"]$/g, "");
+if (!specVersion.startsWith("3.0.")) {
+  process.stderr.write(
+    `[validate-go-codegen] openapi.yaml declares openapi: ${specVersion}, but the pinned ` +
+      `oapi-codegen ${OAPI_CODEGEN_VERSION} only fully supports 3.0.x. Switch the Go ` +
+      `generator to a 3.1-aware tool first (or downgrade the spec back to 3.0.x).\n` +
+      `hp-kcpa parent context: spec drift here silently degrades Go ↔ TS contract fidelity.\n`,
+  );
+  process.exit(1);
+}
+
 try {
   const result = spawnSync(
     "go",
@@ -48,6 +77,18 @@ try {
     process.stderr.write(
       `[validate-go-codegen] oapi-codegen failed (exit ${result.status})\n` +
         `stdout:\n${result.stdout}\nstderr:\n${result.stderr}\n`,
+    );
+    process.exit(1);
+  }
+  // hp-kcpa: even on 3.0.x, fail validation if oapi-codegen ever emits the
+  // "OpenAPI 3.1.x is not yet supported" warning — the warning is the
+  // signal the contract has drifted into 3.1 territory the generator
+  // can't model.
+  if (/OpenAPI\s+3\.1\.x\s+specification.*is not yet supported/i.test(result.stderr)) {
+    process.stderr.write(
+      "[validate-go-codegen] oapi-codegen emitted the OpenAPI-3.1-not-supported warning. " +
+        "Switch the Go generator before adopting 3.1 features, or keep openapi.yaml on 3.0.x.\n" +
+        `oapi-codegen stderr:\n${result.stderr}\n`,
     );
     process.exit(1);
   }
