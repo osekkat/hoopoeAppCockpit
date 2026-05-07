@@ -2757,3 +2757,174 @@ func BenchmarkHandleAuditQueryWithFilters(b *testing.B) {
 		}
 	}
 }
+
+// hp-dn4x: the §10 canonical audit log must contain entries for every
+// successful mutating route. Pre-fix only audit-export self-records
+// reached the log; an approval decision, a provider create/destroy, a
+// project import, or a job cancel mutated state without leaving a
+// canonical trail. These tests pin the wiring per-handler: drive the
+// route, then query the audit Writer and assert the expected
+// (action, result, projectId, approvalId) tuple appears.
+
+// TestHp_dn4x_ApprovalApproveWritesCanonicalAuditEntry: POST
+// /v1/projects/{id}/approvals/{id}/approve writes a canonical
+// `approval.approved` audit entry on the success path.
+func TestHp_dn4x_ApprovalApproveWritesCanonicalAuditEntry(t *testing.T) {
+	now := time.Date(2026, 5, 5, 12, 0, 0, 0, time.UTC)
+	writer, err := audit.NewWriter(audit.Config{Writer: nopSyncWriter{}, Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatalf("new audit writer: %v", err)
+	}
+	queue := approvals.NewQueue(approvals.Config{
+		Now: func() time.Time { return now },
+		NewID: func(approvals.Request) (string, error) {
+			return "appr_dn4x", nil
+		},
+	})
+	if _, _, err := queue.Request(context.Background(), approvals.Request{
+		Source:          schemas.ApprovalSourceHoopoePolicy,
+		PolicyRule:      "hoopoe-policy:auth.rotate_secret",
+		RequestedAction: schemas.CommandSpec{Kind: "auth.rotate_secret"},
+		RequestActor:    schemas.Actor{Kind: schemas.ActorKindSystem},
+		ProjectID:       "proj_dn4x",
+		Scope:           schemas.Once,
+		RiskClass:       schemas.Critical,
+	}); err != nil {
+		t.Fatalf("queue.Request: %v", err)
+	}
+	router := NewRouter(Config{
+		Approvals: queue,
+		Audit:     writer,
+		Now:       func() time.Time { return now },
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects/proj_dn4x/approvals/appr_dn4x/approve", strings.NewReader(`{"decisionActor":{"kind":"user","id":"owner"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Idempotency-Key", "01HXTESTDN4X")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("approve status = %d; body=%s", rec.Code, rec.Body.String())
+	}
+
+	entries, err := writer.Query(audit.Query{Action: "approval.approved"})
+	if err != nil {
+		t.Fatalf("query audit: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 approval.approved audit entry, got %d", len(entries))
+	}
+	entry := entries[0]
+	if entry.Result != audit.ResultSuccess {
+		t.Fatalf("entry.Result = %q, want %q", entry.Result, audit.ResultSuccess)
+	}
+	if entry.ProjectID != "proj_dn4x" {
+		t.Fatalf("entry.ProjectID = %q, want proj_dn4x", entry.ProjectID)
+	}
+	if entry.ApprovalID != "appr_dn4x" {
+		t.Fatalf("entry.ApprovalID = %q, want appr_dn4x", entry.ApprovalID)
+	}
+	if entry.Actor.Kind != audit.ActorSystem {
+		t.Fatalf("entry.Actor.Kind = %q, want %q", entry.Actor.Kind, audit.ActorSystem)
+	}
+}
+
+// TestHp_dn4x_ApprovalDenyWritesCanonicalAuditEntry: same shape for the
+// deny path — both verbs share handleApprovalDecision so the test
+// exercises the symmetrical action name.
+func TestHp_dn4x_ApprovalDenyWritesCanonicalAuditEntry(t *testing.T) {
+	now := time.Date(2026, 5, 5, 12, 0, 0, 0, time.UTC)
+	writer, err := audit.NewWriter(audit.Config{Writer: nopSyncWriter{}, Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatalf("new audit writer: %v", err)
+	}
+	queue := approvals.NewQueue(approvals.Config{
+		Now: func() time.Time { return now },
+		NewID: func(approvals.Request) (string, error) {
+			return "appr_deny", nil
+		},
+	})
+	if _, _, err := queue.Request(context.Background(), approvals.Request{
+		Source:          schemas.ApprovalSourceHoopoePolicy,
+		PolicyRule:      "hoopoe-policy:auth.rotate_secret",
+		RequestedAction: schemas.CommandSpec{Kind: "auth.rotate_secret"},
+		RequestActor:    schemas.Actor{Kind: schemas.ActorKindSystem},
+		ProjectID:       "proj_deny",
+		Scope:           schemas.Once,
+		RiskClass:       schemas.Critical,
+	}); err != nil {
+		t.Fatalf("queue.Request: %v", err)
+	}
+	router := NewRouter(Config{
+		Approvals: queue,
+		Audit:     writer,
+		Now:       func() time.Time { return now },
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects/proj_deny/approvals/appr_deny/deny", strings.NewReader(`{"decisionActor":{"kind":"user","id":"owner"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Idempotency-Key", "01HXTESTDN4XD")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("deny status = %d; body=%s", rec.Code, rec.Body.String())
+	}
+
+	entries, err := writer.Query(audit.Query{Action: "approval.denied"})
+	if err != nil {
+		t.Fatalf("query audit: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 approval.denied audit entry, got %d", len(entries))
+	}
+}
+
+// TestHp_dn4x_ApprovalApproveSurfaces500OnAuditAppendUnavailable: a
+// misconfigured audit log (Query-only, no Append) must short-circuit
+// the mutating route with a problem envelope rather than 200, since the
+// approval mutation succeeded but the canonical §10 trail did not
+// land. Pre-fix Gap 1 the handler 200ed without auditing.
+func TestHp_dn4x_ApprovalApproveSurfaces500OnAuditAppendUnavailable(t *testing.T) {
+	now := time.Date(2026, 5, 5, 12, 0, 0, 0, time.UTC)
+	queue := approvals.NewQueue(approvals.Config{
+		Now: func() time.Time { return now },
+		NewID: func(approvals.Request) (string, error) {
+			return "appr_500", nil
+		},
+	})
+	if _, _, err := queue.Request(context.Background(), approvals.Request{
+		Source:          schemas.ApprovalSourceHoopoePolicy,
+		PolicyRule:      "hoopoe-policy:auth.rotate_secret",
+		RequestedAction: schemas.CommandSpec{Kind: "auth.rotate_secret"},
+		RequestActor:    schemas.Actor{Kind: schemas.ActorKindSystem},
+		ProjectID:       "proj_500",
+		Scope:           schemas.Once,
+		RiskClass:       schemas.Critical,
+	}); err != nil {
+		t.Fatalf("queue.Request: %v", err)
+	}
+	router := NewRouter(Config{
+		Approvals: queue,
+		Audit:     queryOnlyAuditLog{},
+		Now:       func() time.Time { return now },
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects/proj_500/approvals/appr_500/approve", strings.NewReader(`{"decisionActor":{"kind":"user","id":"owner"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Idempotency-Key", "01HXTESTDN4X500")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500 (audit.append_unavailable); body=%s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "application/problem+json") {
+		t.Fatalf("content-type = %q, want problem+json", got)
+	}
+	var problem schemas.Problem
+	if err := json.Unmarshal(rec.Body.Bytes(), &problem); err != nil {
+		t.Fatalf("decode problem: %v", err)
+	}
+	if problem.Code != "audit.append_unavailable" {
+		t.Fatalf("problem.Code = %q, want audit.append_unavailable", problem.Code)
+	}
+}

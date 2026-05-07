@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/api/vps"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/approvals"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/audit"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/capabilities"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/jobs"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/projects"
@@ -182,7 +183,20 @@ func (s *server) handleJobCancel(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 	if err != nil {
+		// hp-dn4x: failure-side audit best-effort; the jobs package
+		// has its own per-job event log but the canonical §10 ledger
+		// is the daemon-wide audit.jsonl.
+		if appendErr := s.appendAudit("job.cancelled", audit.ResultFailure, "", "", map[string]any{"jobId": jobID, "reason": reason, "error": err.Error()}); appendErr != nil {
+			s.logger.Error(r.Context(), "audit_append_failed", map[string]any{"action": "job.cancelled", "error": appendErr.Error()})
+		}
 		s.writeJobError(w, err)
+		return
+	}
+	if auditErr := s.appendAudit("job.cancelled", audit.ResultSuccess, "", "", map[string]any{
+		"jobId":  jobID,
+		"reason": reason,
+	}); auditErr != nil {
+		s.writeProblemCode(w, http.StatusInternalServerError, "audit.append_unavailable", "audit append failed", auditErr.Error())
 		return
 	}
 	writeJSON(w, http.StatusAccepted, jobResponse(job))
@@ -319,7 +333,28 @@ func (s *server) handleProjectCreate(w http.ResponseWriter, r *http.Request) {
 	request.IdempotencyKey = idempotencyKey
 	project, err := s.projects.Import(r.Context(), request)
 	if err != nil {
+		// hp-dn4x: audit failures best-effort so the §10 ledger reflects
+		// mutation attempts that the projects-package error handling
+		// absorbed (validation, capability denial, idempotency replay).
+		// Pre-fix the canonical audit log only saw export self-records.
+		if appendErr := s.appendAudit("project.created", audit.ResultFailure, "", "", map[string]any{"error": err.Error(), "idempotencyKey": idempotencyKey}); appendErr != nil {
+			s.logger.Error(r.Context(), "audit_append_failed", map[string]any{"action": "project.created", "error": appendErr.Error()})
+		}
 		s.writeProjectError(w, err)
+		return
+	}
+	repoOrigin := project.Repo.Origin
+	if auditErr := s.appendAudit("project.created", audit.ResultSuccess, project.Id, "", map[string]any{
+		"name":           project.Name,
+		"slug":           project.Slug,
+		"origin":         repoOrigin,
+		"idempotencyKey": idempotencyKey,
+	}); auditErr != nil {
+		// hp-dn4x: ErrAuditAppendUnavailable surfaces as 500 per bead
+		// acceptance — a misconfigured audit log must not silently 201,
+		// because that would let mutating writes succeed without the
+		// canonical §10 trail.
+		s.writeProblemCode(w, http.StatusInternalServerError, "audit.append_unavailable", "audit append failed", auditErr.Error())
 		return
 	}
 	writeJSON(w, http.StatusCreated, project)
@@ -487,13 +522,40 @@ func (s *server) handleApprovalDecision(w http.ResponseWriter, r *http.Request, 
 		err      error
 	)
 	approvalID := chi.URLParam(r, "approvalId")
+	projectID := chi.URLParam(r, "projectId")
 	if approve {
 		approval, err = s.approvals.Approve(r.Context(), approvalID, request)
 	} else {
 		approval, err = s.approvals.Deny(r.Context(), approvalID, request)
 	}
 	if err != nil {
+		// hp-dn4x: failure-side audit is best-effort; don't shadow the
+		// approval-queue error with an audit-write error.
+		action := "approval." + verb + "_failed"
+		if appendErr := s.appendAudit(action, audit.ResultFailure, projectID, approvalID, map[string]any{"error": err.Error()}); appendErr != nil {
+			s.logger.Error(r.Context(), "audit_append_failed", map[string]any{"action": action, "error": appendErr.Error()})
+		}
 		s.writeApprovalQueueError(w, err)
+		return
+	}
+	// hp-dn4x: §10 canonical audit on every approval-queue mutation.
+	// The approvals package does not write the canonical audit log; pre-fix
+	// these mutations were invisible to /v1/audit/query.
+	action := "approval.approved"
+	if !approve {
+		action = "approval.denied"
+	}
+	auditData := map[string]any{
+		"decisionActor": request.DecisionActor,
+	}
+	if request.Note != nil {
+		auditData["note"] = *request.Note
+	}
+	if request.Scope != nil {
+		auditData["scope"] = *request.Scope
+	}
+	if auditErr := s.appendAudit(action, audit.ResultSuccess, projectID, approvalID, auditData); auditErr != nil {
+		s.writeProblemCode(w, http.StatusInternalServerError, "audit.append_unavailable", "audit append failed", auditErr.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, approval)

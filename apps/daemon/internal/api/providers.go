@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/audit"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/capabilities"
 	providerplugins "github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/providers"
 	schemas "github.com/hoopoe-cockpit/hoopoe/packages/schemas/go"
@@ -86,7 +87,7 @@ func (s *server) handleProviderCostEstimate(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *server) handleProviderCreateInstance(w http.ResponseWriter, r *http.Request) {
-	_, plugin, ok := s.providerPlugin(w, r, schemas.VpsCreate)
+	id, plugin, ok := s.providerPlugin(w, r, schemas.VpsCreate)
 	if !ok {
 		return
 	}
@@ -97,14 +98,29 @@ func (s *server) handleProviderCreateInstance(w http.ResponseWriter, r *http.Req
 	}
 	instance, err := plugin.CreateInstance(r.Context(), request)
 	if err != nil {
+		// hp-dn4x: failure-side audit best-effort; provider failures
+		// (capability denied, plugin transport error, region/size
+		// invalid) leave residue worth recording on the canonical §10
+		// ledger so post-incident reconstruction can see attempted VPS
+		// lifecycle ops, not just successes.
+		if appendErr := s.appendAudit("provider.instance_created", audit.ResultFailure, "", "", map[string]any{"providerId": string(id), "error": err.Error()}); appendErr != nil {
+			s.logger.Error(r.Context(), "audit_append_failed", map[string]any{"action": "provider.instance_created", "error": appendErr.Error()})
+		}
 		s.writeProviderError(w, err)
+		return
+	}
+	if auditErr := s.appendAudit("provider.instance_created", audit.ResultSuccess, "", "", map[string]any{
+		"providerId": string(id),
+		"instanceId": string(instance.InstanceId),
+	}); auditErr != nil {
+		s.writeProblemCode(w, http.StatusInternalServerError, "audit.append_unavailable", "audit append failed", auditErr.Error())
 		return
 	}
 	writeJSON(w, http.StatusAccepted, instance)
 }
 
 func (s *server) handleProviderDestroyInstance(w http.ResponseWriter, r *http.Request) {
-	_, plugin, ok := s.providerPlugin(w, r, schemas.VpsDestroy)
+	id, plugin, ok := s.providerPlugin(w, r, schemas.VpsDestroy)
 	if !ok {
 		return
 	}
@@ -115,7 +131,21 @@ func (s *server) handleProviderDestroyInstance(w http.ResponseWriter, r *http.Re
 	}
 	result, err := plugin.DestroyInstance(r.Context(), instanceID)
 	if err != nil {
+		// hp-dn4x: see handleProviderCreateInstance — destroy failures
+		// matter even more for forensics (was the VPS actually torn
+		// down? did the API error mid-call?), so record on the §10
+		// ledger best-effort.
+		if appendErr := s.appendAudit("provider.instance_destroyed", audit.ResultFailure, "", "", map[string]any{"providerId": string(id), "instanceId": instanceID, "error": err.Error()}); appendErr != nil {
+			s.logger.Error(r.Context(), "audit_append_failed", map[string]any{"action": "provider.instance_destroyed", "error": appendErr.Error()})
+		}
 		s.writeProviderError(w, err)
+		return
+	}
+	if auditErr := s.appendAudit("provider.instance_destroyed", audit.ResultSuccess, "", "", map[string]any{
+		"providerId": string(id),
+		"instanceId": instanceID,
+	}); auditErr != nil {
+		s.writeProblemCode(w, http.StatusInternalServerError, "audit.append_unavailable", "audit append failed", auditErr.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
