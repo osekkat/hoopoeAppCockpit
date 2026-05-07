@@ -194,6 +194,130 @@ func TestParseSnapshotUsesGoldenAndScenarioFixtures(t *testing.T) {
 	}
 }
 
+// TestProbeOnTimeoutGoldenFixtureDegradesAllCapabilities loads
+// packages/fixtures/golden-outputs/ntm/timeout.json and pins the
+// adapter contract from plan.md §18.3 for the timeout state.
+//
+// The fixture authoritatively declares:
+//   - meta.state == "timeout"
+//   - exit == 124 (standard `timeout(1)` exit code)
+//   - stderrText carries "timeout: sending signal TERM"
+//   - capabilities["ntm._timeout"] == {status: "degraded",
+//     notes: "exceeded ENVELOPE_TIMEOUT_S; adapter must surface;
+//     do not retry without backoff"}
+//
+// The discriminant for this branch is exit code 124 — distinct from
+// 127 (missing-tool, exercised by
+// TestProbeOnMissingToolGoldenFixture...). The
+// commandError-with-ExitCode-124 branch of statusForError
+// (ntm.go:1258-1259) maps to StatusDegraded; the version-failure
+// short-circuit in Probe (ntm.go:884-892) then fans Degraded across
+// every capability.
+//
+// Pins the "no retry without backoff" contract by counting fakeRunner
+// invocations: a regression that introduced an unbacked-off retry
+// loop on timeout would call `ntm version` more than once and fail
+// the assertion below.
+func TestProbeOnTimeoutGoldenFixtureDegradesAllCapabilities(t *testing.T) {
+	fixture := loadNTMGoldenFixture(t, "timeout.json")
+	if fixture.Meta.State != "timeout" {
+		t.Fatalf("fixture state = %q, want timeout", fixture.Meta.State)
+	}
+	if fixture.Exit != 124 {
+		t.Fatalf("fixture exit = %d, want 124 (the discriminant for the commandError-124 branch this test pins)", fixture.Exit)
+	}
+	if cap, ok := fixture.Capabilities["ntm._timeout"]; !ok || cap.Status != "degraded" {
+		t.Fatalf("fixture must declare ntm._timeout=degraded, got %+v", fixture.Capabilities)
+	}
+	if !strings.Contains(fixture.StderrText, "timeout") {
+		t.Fatalf("fixture stderrText = %q, want a 'timeout' marker", fixture.StderrText)
+	}
+
+	// Wrap the standard fakeRunner to count invocations so we can
+	// pin the "no retry without backoff" contract from the fixture's
+	// capability notes.
+	inner := &fakeRunner{responses: map[string]CommandResult{
+		"ntm version": {
+			ExitCode: fixture.Exit,
+			Stderr:   []byte(fixture.StderrText),
+		},
+	}}
+	counter := &countingRunner{inner: inner}
+	adapter := New(counter)
+	adapter.Now = fixedNow
+	report, err := adapter.Probe(context.Background())
+	if err != nil {
+		t.Fatalf("Probe: %v", err)
+	}
+
+	present, ok := report.Capabilities[CapabilityPresent]
+	if !ok {
+		t.Fatalf("report missing %s", CapabilityPresent)
+	}
+	if present.Status != capabilities.StatusDegraded {
+		t.Fatalf("%s status = %q, want degraded (fixture state=timeout, exit=124)", CapabilityPresent, present.Status)
+	}
+
+	// Every non-policy-blocked capability should be Degraded —
+	// the version-failure short-circuit fans `statusForError(err)`
+	// across the whole map (ntm.go:886-890), and statusForError
+	// maps exit-124 to Degraded.
+	policyBlocked := map[string]struct{}{
+		CapabilitySessionsSpawn:      {},
+		CapabilitySessionsTerminate:  {},
+		CapabilitySessionsAttach:     {},
+		CapabilityApprovalsApprove:   {},
+		CapabilityApprovalsDeny:      {},
+		CapabilitySwarmHalt:          {},
+		CapabilitySpawn:              {},
+		CapabilitySendMarchingOrders: {},
+		CapabilityPaneKill:           {},
+	}
+	for capID, cap := range report.Capabilities {
+		if _, ok := policyBlocked[capID]; ok {
+			if cap.Status != capabilities.StatusDegraded && cap.Status != capabilities.StatusBlockedByPolicy {
+				t.Fatalf("%s status = %q, want degraded or blocked_by_policy", capID, cap.Status)
+			}
+			continue
+		}
+		if cap.Status != capabilities.StatusDegraded {
+			t.Fatalf("%s status = %q, want degraded (whole-tool timeout fixture should fan StatusDegraded across non-policy caps)", capID, cap.Status)
+		}
+	}
+
+	// "Do not retry without backoff" contract: Probe runs `ntm
+	// version` exactly once on the failure path. A regression that
+	// added an unbacked-off retry loop would push the call count
+	// above 1 and fail this assertion.
+	if got := counter.calls("ntm version"); got != 1 {
+		t.Fatalf("ntm version invocation count = %d, want 1 (timeout fixture pins no-retry-without-backoff)", got)
+	}
+}
+
+// countingRunner wraps a Runner and tracks per-argv invocation counts
+// so a test can pin "no retry without backoff" style contracts. Each
+// call routes through the wrapped runner unchanged — only the per-key
+// tally changes.
+type countingRunner struct {
+	inner    Runner
+	keyCalls map[string]int
+}
+
+func (c *countingRunner) Run(ctx context.Context, argv []string) (CommandResult, error) {
+	if c.keyCalls == nil {
+		c.keyCalls = map[string]int{}
+	}
+	c.keyCalls[strings.Join(argv, " ")]++
+	return c.inner.Run(ctx, argv)
+}
+
+func (c *countingRunner) calls(argv string) int {
+	if c.keyCalls == nil {
+		return 0
+	}
+	return c.keyCalls[argv]
+}
+
 // TestProbeOnHighVolumeGoldenFixtureDegradesSessionsListCapability loads
 // packages/fixtures/golden-outputs/ntm/high-volume.json and pins the
 // adapter contract from plan.md §18.3 for the high-volume state.
