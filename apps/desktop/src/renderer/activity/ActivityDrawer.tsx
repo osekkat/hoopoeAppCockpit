@@ -38,6 +38,10 @@ export function ActivityDrawer({
   const events = useActivityStore((s) => s.events);
   const filter = useActivityStore((s) => s.filter);
   const visibleEvents = useMemo(() => applyFilter(events, filter), [events, filter]);
+  const visibleUnreadCount = useMemo(
+    () => visibleEvents.filter((e) => !e.read).length,
+    [visibleEvents],
+  );
   const unreadCount = useActivityStore((s) => s.unreadCount);
   const toggleCategory = useActivityStore((s) => s.toggleCategory);
   const toggleImportance = useActivityStore((s) => s.toggleImportance);
@@ -102,13 +106,13 @@ export function ActivityDrawer({
           <div className="hh-activity-title">
             {icon}
             <span>Activity</span>
-            {unreadCount > 0 && (
+            {visibleUnreadCount > 0 && (
               <span
-                aria-label={`${unreadCount} unread`}
+                aria-label={`${visibleUnreadCount} unread`}
                 className="hh-activity-unread-badge"
                 data-importance={hasUrgentEvents(visibleEvents) ? "urgent" : "info"}
               >
-                {unreadCount}
+                {visibleUnreadCount}
               </span>
             )}
           </div>
