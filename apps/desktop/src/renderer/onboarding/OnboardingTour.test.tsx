@@ -43,6 +43,22 @@ test("OnboardingTour: renders the current step, progress, and skip control", () 
   expect(html).toContain("Step 2 of 7");
 });
 
+test("OnboardingTour: step body sits inside an aria-live region for step-change announcements (hp-k90v)", () => {
+  const html = renderToStaticMarkup(
+    <OnboardingTour
+      open={true}
+      stepId="topbar"
+      onBack={() => undefined}
+      onClose={() => undefined}
+      onComplete={() => undefined}
+      onNext={() => undefined}
+      onSkip={() => undefined}
+    />,
+  );
+  expect(html).toContain('aria-live="polite"');
+  expect(html).toContain('aria-atomic="true"');
+});
+
 test("OnboardingTour: hidden state renders nothing", () => {
   const html = renderToStaticMarkup(
     <OnboardingTour

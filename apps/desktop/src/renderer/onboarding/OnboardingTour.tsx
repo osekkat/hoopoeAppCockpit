@@ -1,4 +1,5 @@
 import { ArrowLeft, ArrowRight, CheckCircle2, Compass, X } from "lucide-react";
+import { useEffect, useRef } from "react";
 import {
   ONBOARDING_TOUR_STEP_IDS,
   nextOnboardingTourStepId,
@@ -78,6 +79,9 @@ export const ONBOARDING_TOUR_STEPS: readonly OnboardingTourStep[] = [
 
 const stepsById = new Map(ONBOARDING_TOUR_STEPS.map((step) => [step.id, step]));
 
+const FOCUSABLE_SELECTOR =
+  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
 export function OnboardingTour({
   onBack,
   onClose,
@@ -87,18 +91,81 @@ export function OnboardingTour({
   open,
   stepId,
 }: OnboardingTourProps) {
-  if (!open) return null;
+  const dialogRef = useRef<HTMLElement | null>(null);
+  const triggerRef = useRef<Element | null>(null);
 
   const step = stepsById.get(stepId) ?? ONBOARDING_TOUR_STEPS[0]!;
+  const hasPrevious = previousOnboardingTourStepId(step.id) !== step.id;
+  const hasNext = nextOnboardingTourStepId(step.id) !== step.id;
+
+  useEffect(() => {
+    if (!open) return;
+    if (typeof document === "undefined") return;
+
+    triggerRef.current = document.activeElement;
+    const node = dialogRef.current;
+    if (node) {
+      const primary = node.querySelector<HTMLElement>('[data-testid="onboarding-tour-next"]');
+      if (primary) {
+        primary.focus();
+      } else {
+        const fallback = node.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
+        fallback?.focus();
+      }
+    }
+
+    function handleKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (event.key === "ArrowLeft" && hasPrevious) {
+        event.preventDefault();
+        onBack();
+        return;
+      }
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        if (hasNext) onNext();
+        else onComplete();
+        return;
+      }
+      if (event.key === "Tab" && node) {
+        const items = node.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
+        if (items.length === 0) return;
+        const first = items[0];
+        const last = items[items.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last?.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first?.focus();
+        }
+      }
+    }
+
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("keydown", handleKey);
+      const trigger = triggerRef.current;
+      if (trigger instanceof HTMLElement) {
+        trigger.focus();
+      }
+    };
+  }, [open, hasNext, hasPrevious, onBack, onClose, onComplete, onNext]);
+
+  if (!open) return null;
+
   const index = ONBOARDING_TOUR_STEP_IDS.indexOf(step.id);
   const current = index + 1;
   const total = ONBOARDING_TOUR_STEPS.length;
-  const hasPrevious = previousOnboardingTourStepId(step.id) !== step.id;
-  const hasNext = nextOnboardingTourStepId(step.id) !== step.id;
 
   return (
     <div className="hh-onboarding-backdrop" data-testid="onboarding-tour">
       <section
+        ref={dialogRef}
         aria-labelledby="hh-onboarding-tour-title"
         aria-modal="true"
         className="hh-onboarding-tour"
@@ -121,7 +188,9 @@ export function OnboardingTour({
           </button>
         </header>
 
-        <p className="hh-onboarding-tour-body">{step.body}</p>
+        <div aria-live="polite" aria-atomic="true">
+          <p className="hh-onboarding-tour-body">{step.body}</p>
+        </div>
 
         <div aria-label="Tour progress" className="hh-onboarding-progress">
           {ONBOARDING_TOUR_STEPS.map((item) => (
