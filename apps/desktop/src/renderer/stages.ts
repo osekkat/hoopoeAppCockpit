@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   ListChecks,
 } from "lucide-react";
+import type { FeatureId } from "../capabilities/index.ts";
 
 export type StageId = "plan" | "bead" | "swarm" | "harden";
 export type ShellRouteId = StageId | "diag";
@@ -23,6 +24,13 @@ export interface StageDefinition {
     | "/$projectId/harden"
     | "/$projectId/diag";
   readonly icon: ComponentType<{ readonly size?: number; readonly strokeWidth?: number }>;
+  /** FEATURE_CATALOG ids whose decision gates the stage. The renderer
+   *  picks the worst-of resolution across this list (per plan.md §2.8 +
+   *  hp-hle): blocked-by-policy > unavailable > degraded > available.
+   *  An empty list means the stage is always available — Planning is
+   *  pure local UI; Diagnostics is the inspection surface for missing
+   *  capabilities and must always render. */
+  readonly requiredFeatureIds: readonly FeatureId[];
 }
 
 export const stageDefinitions = [
@@ -34,6 +42,7 @@ export const stageDefinitions = [
     routeSegment: "plan",
     routeTo: "/$projectId/plan",
     icon: CircleDot,
+    requiredFeatureIds: [],
   },
   {
     id: "bead",
@@ -43,6 +52,7 @@ export const stageDefinitions = [
     routeSegment: "bead",
     routeTo: "/$projectId/bead",
     icon: ListChecks,
+    requiredFeatureIds: ["bead.kanban.refresh"],
   },
   {
     id: "swarm",
@@ -52,6 +62,7 @@ export const stageDefinitions = [
     routeSegment: "swarm",
     routeTo: "/$projectId/swarm",
     icon: LayoutDashboard,
+    requiredFeatureIds: ["swarm.dashboard.live", "swarm.bead.push-branch"],
   },
   {
     id: "harden",
@@ -61,6 +72,7 @@ export const stageDefinitions = [
     routeSegment: "harden",
     routeTo: "/$projectId/harden",
     icon: Bug,
+    requiredFeatureIds: ["bead.kanban.refresh"],
   },
   {
     id: "diag",
@@ -70,6 +82,7 @@ export const stageDefinitions = [
     routeSegment: "diag",
     routeTo: "/$projectId/diag",
     icon: Activity,
+    requiredFeatureIds: [],
   },
 ] as const satisfies readonly StageDefinition[];
 

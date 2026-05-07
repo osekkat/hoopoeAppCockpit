@@ -15,6 +15,7 @@ import { SwarmStage } from "../stages/Swarm/SwarmStage.tsx";
 import { StateSurface } from "../state-view/index.ts";
 import { useShellUiStore } from "../store.ts";
 import { formatRelativeActivation, routeForStage } from "../topbar/project-switcher-model.ts";
+import { ConnectedStageGate } from "./StageGate.tsx";
 import { EmptyStage } from "./empty-stage.tsx";
 import { StageHeader } from "./stage-header.tsx";
 
@@ -127,17 +128,19 @@ export function StageRoute({ stageId }: { readonly stageId: ShellRouteId }) {
         projectName={projectName}
         breadcrumb={stageId === "diag" ? ["Diagnostics"] : [stage.label]}
       />
-      {stageId === "plan" ? (
-        <PlanningStage projectId={projectId} />
-      ) : stageId === "bead" ? (
-        <BeadsStage projectId={projectId} />
-      ) : stageId === "swarm" ? (
-        <SwarmStage projectId={projectId} />
-      ) : stageId === "diag" ? (
-        <DiagnosticsStage projectId={projectId} />
-      ) : (
-        <EmptyStage stageId={stageId} />
-      )}
+      <ConnectedStageGate stage={stage}>
+        {stageId === "plan" ? (
+          <PlanningStage projectId={projectId} />
+        ) : stageId === "bead" ? (
+          <BeadsStage projectId={projectId} />
+        ) : stageId === "swarm" ? (
+          <SwarmStage projectId={projectId} />
+        ) : stageId === "diag" ? (
+          <DiagnosticsStage projectId={projectId} />
+        ) : (
+          <EmptyStage stageId={stageId} />
+        )}
+      </ConnectedStageGate>
     </section>
   );
 }
