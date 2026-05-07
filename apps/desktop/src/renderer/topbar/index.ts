@@ -25,6 +25,7 @@ export {
 } from "./TopbarPills.tsx";
 
 export {
+  callDaemonOrNoBridgeForTesting,
   codeHealthAria,
   dotClass,
   seedBeadsPulse,

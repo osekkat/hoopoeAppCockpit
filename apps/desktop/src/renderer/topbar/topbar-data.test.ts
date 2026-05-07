@@ -1,7 +1,11 @@
 // hp-4ya — top-bar data layer tests (seed helpers + aria formatters).
+// hp-dk4r — daemon-failure tests: a bridge-present request that throws
+// must propagate to useQuery so the user sees a degraded indicator
+// instead of a fabricated "healthy 0%" snapshot.
 
-import { expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, test } from "bun:test";
 import {
+  callDaemonOrNoBridgeForTesting,
   codeHealthAria,
   dotClass,
   seedBeadsPulse,
@@ -199,4 +203,65 @@ test("subscriptionAria: high usage with no rate-limit prints max%", () => {
     maxUsagePercent: 73,
   };
   expect(subscriptionAria(usage)).toBe("Subscription usage up to 73%");
+});
+
+// ── hp-dk4r: bridge contract ──────────────────────────────────────────────
+
+type WindowWithBridge = typeof globalThis & {
+  hoopoe?: {
+    daemon?: {
+      request?: (method: string, body: unknown) => Promise<unknown>;
+    };
+  };
+};
+
+const bridgeWindow: WindowWithBridge = (() => {
+  if (typeof globalThis.window === "undefined") {
+    Object.defineProperty(globalThis, "window", { value: globalThis, configurable: true });
+  }
+  return globalThis as WindowWithBridge;
+})();
+
+beforeEach(() => {
+  delete bridgeWindow.hoopoe;
+});
+
+afterEach(() => {
+  delete bridgeWindow.hoopoe;
+});
+
+test("hp-dk4r: callDaemonOrNoBridge returns null when no bridge is present (pre-pair / Mock-Flywheel mode)", async () => {
+  const result = await callDaemonOrNoBridgeForTesting<{ ok: boolean }>("capabilities", null);
+  expect(result).toBeNull();
+});
+
+test("hp-dk4r: callDaemonOrNoBridge resolves the bridge response when present", async () => {
+  bridgeWindow.hoopoe = {
+    daemon: {
+      request: async () => ({ canonical: true }),
+    },
+  };
+  const result = await callDaemonOrNoBridgeForTesting<{ canonical: boolean }>("capabilities", null);
+  expect(result).toEqual({ canonical: true });
+});
+
+test("hp-dk4r: callDaemonOrNoBridge propagates daemon failures instead of swallowing them into seed", async () => {
+  // The bug: previously a present-but-failing bridge was caught into
+  // `return null`, so queryFn returned seedToolHealth(...) — i.e. the
+  // five tools rendered as "healthy" and quotas as "0% / not rate
+  // limited" while the real daemon was offline / 500ing.
+  // Acceptance: useQuery.error should fire, not useQuery.data with
+  // a fabricated healthy snapshot. We pin the contract one layer down
+  // so the bun:test (no DOM) suite can verify it without renderHook.
+  const synthetic = new Error("daemon /v1/capabilities returned 500");
+  bridgeWindow.hoopoe = {
+    daemon: {
+      request: async () => {
+        throw synthetic;
+      },
+    },
+  };
+  await expect(
+    callDaemonOrNoBridgeForTesting<{ ok: boolean }>("capabilities", null),
+  ).rejects.toBe(synthetic);
 });

@@ -108,16 +108,40 @@ function resolveDaemonRequest(): ((method: string, body: unknown) => Promise<unk
   return typeof request === "function" ? request : null;
 }
 
-async function tryDaemon<O>(method: string, body: unknown): Promise<O | null> {
+/**
+ * Bridge-resolution helper for top-bar queries.
+ *
+ * Returns `null` ONLY when no daemon bridge is wired (no preload, no
+ * pairing, jsdom, Mock Flywheel without an installed bridge) — that is
+ * the pre-connect / demo state where seeded shell data is the
+ * intentional fallback.
+ *
+ * hp-dk4r: when a bridge IS present and the daemon/capability call
+ * fails, the previous `try { ... } catch { return null; }` swallowed
+ * the error and tricked queryFn into returning seed data — so a broken
+ * canonical integration (offline VPS, missing capability, network
+ * outage) was reported to the user as "0% usage / wedged 0 / all 5
+ * tools healthy". That hides exactly the failure modes the top bar
+ * exists to surface. The fix re-throws bridge errors so useQuery's
+ * error/stale state can drive a visible degraded indicator instead of
+ * a fabricated healthy snapshot.
+ */
+async function callDaemonOrNoBridge<O>(method: string, body: unknown): Promise<O | null> {
   const request = resolveDaemonRequest();
   if (!request) return null;
-  try {
-    return (await request(method, body)) as O;
-  } catch {
-    // Daemon unreachable / capability missing — fall through to seed.
-    return null;
-  }
+  return (await request(method, body)) as O;
 }
+
+/**
+ * Test-only re-export of the bridge resolver. The bridge contract is
+ * load-bearing for hp-dk4r — a bridge-present-but-failing call must
+ * NOT swallow the error into a seed-success — so the test suite
+ * exercises it directly. Production code paths only call the
+ * package-private `callDaemonOrNoBridge` above; this export exists
+ * solely so the bun:test runner (which has no DOM/renderHook) can
+ * pin the contract without a full React render.
+ */
+export const callDaemonOrNoBridgeForTesting = callDaemonOrNoBridge;
 
 // ── Seed data (project-aware where possible) ─────────────────────────────
 
@@ -201,7 +225,7 @@ export function useToolHealthQuery(project: ShellProjectSummary | null) {
   return useQuery<ToolHealthSnapshot>({
     queryKey: ["topbar", "tool-health", projectId],
     queryFn: async () => {
-      const remote = await tryDaemon<ToolHealthSnapshot>("capabilities", null);
+      const remote = await callDaemonOrNoBridge<ToolHealthSnapshot>("capabilities", null);
       return remote ?? seedToolHealth(project);
     },
     placeholderData: () => seedToolHealth(project),
@@ -215,7 +239,7 @@ export function useSwarmStateQuery(project: ShellProjectSummary | null) {
     queryKey: ["topbar", "swarm-state", projectId],
     queryFn: async () => {
       if (!projectId) return seedSwarmState(project);
-      const remote = await tryDaemon<SwarmStateSummary>("swarm.snapshot", { projectId });
+      const remote = await callDaemonOrNoBridge<SwarmStateSummary>("swarm.snapshot", { projectId });
       return remote ?? seedSwarmState(project);
     },
     placeholderData: () => seedSwarmState(project),
@@ -229,7 +253,7 @@ export function useBeadsPulseQuery(project: ShellProjectSummary | null) {
     queryKey: ["topbar", "beads-pulse", projectId],
     queryFn: async () => {
       if (!projectId) return seedBeadsPulse(project);
-      const remote = await tryDaemon<BeadsPulse>("triage.get", { projectId });
+      const remote = await callDaemonOrNoBridge<BeadsPulse>("triage.get", { projectId });
       return remote ?? seedBeadsPulse(project);
     },
     placeholderData: () => seedBeadsPulse(project),
