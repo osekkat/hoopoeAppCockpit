@@ -14,6 +14,7 @@ import (
 
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/agent"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/audit"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/capabilities"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/redaction"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/scheduler"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/tending/prescript"
@@ -29,6 +30,12 @@ type tendingIO struct {
 	AuditPath       string
 	IdempotencyPath string
 	Editor          string
+	// CapabilityRegistry is consulted by the scheduler's pre-dispatch
+	// gate (hp-8gq + hp-ktog). nil triggers an auto-default in
+	// setDefaults so production wiring + tests both flow through the
+	// same gate. Tests can pre-populate this registry to drive the
+	// gate's missing/blocked/degraded branches.
+	CapabilityRegistry *capabilities.Registry
 }
 
 func runTending(ctx context.Context, args []string, io *tendingIO) error {
@@ -101,6 +108,15 @@ func (io *tendingIO) setDefaults() error {
 		// daemon can crash mid-tick and still replay correctly on
 		// restart instead of re-executing already-completed actions.
 		io.IdempotencyPath = filepath.Join(base, "tending", "idempotency.jsonl")
+	}
+	if io.CapabilityRegistry == nil {
+		// hp-ktog: empty-by-default registry is the safe choice for the
+		// tending CLI - jobs without CapabilitiesRequired keep
+		// dispatching, but any job that declares a required capability
+		// is blocked by the gate until production wiring registers a
+		// probe or report. Tests inject a pre-populated registry to
+		// exercise the gate's missing / blocked / degraded branches.
+		io.CapabilityRegistry = newTendingCapabilityRegistry()
 	}
 	return nil
 }
@@ -497,6 +513,15 @@ func openTendingRegistry(ctx context.Context, io *tendingIO) (*scheduler.Registr
 		// audit log is the canonical history.
 		TerminalRunRetention: 1024,
 		DedupeRetention:      1024,
+		// hp-ktog: feed the scheduler's pre-dispatch capability gate
+		// (hp-8gq) the daemon's authoritative *capabilities.Registry
+		// via the thin scheduler.CapabilityChecker adapter in
+		// tending_capabilities.go. Without this, the gate is fully
+		// disabled in production: jobs declaring CapabilitiesRequired
+		// dispatch even when the required capability is missing or
+		// blocked-by-policy, defeating the hp-8gq guarantee. The
+		// adapter handles a nil registry pointer too.
+		Capabilities: capabilityRegistryAdapter{r: io.CapabilityRegistry},
 	})
 }
 

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/audit"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/capabilities"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/scheduler"
 )
 
@@ -371,5 +372,107 @@ func assertTendingRunSucceeded(t *testing.T, io *tendingIO, runID string) {
 	}
 	if _, ok := run.Context["preScript"]; !ok {
 		t.Fatalf("run %s missing preScript metadata: %#v", runID, run.Context)
+	}
+}
+
+// TestOpenTendingRegistryEnforcesCapabilityGate exercises the full
+// production wiring of hp-ktog: io.CapabilityRegistry ->
+// capabilityRegistryAdapter -> scheduler.RegistryConfig.Capabilities ->
+// resolveDueLocked gate. A job declaring CapabilitiesRequired must be
+// blocked by an OutcomeBlockedByCapability decision when the wired
+// registry reports the capability as missing.
+//
+// Without this wiring the hp-8gq pre-dispatch gate is a TEST-ONLY
+// feature: the original openTendingRegistry passed nil for
+// RegistryConfig.Capabilities and the scheduler's `if r.capabilities
+// != nil` short-circuited every check. This test guards against a
+// regression that re-disables the gate.
+func TestOpenTendingRegistryEnforcesCapabilityGate(t *testing.T) {
+	io := newTestTendingIO(t)
+
+	// Pre-populate the capability registry with a missing-status
+	// SetReport for br.issues.read. setDefaults() leaves the field
+	// alone if the test has already injected one.
+	registry := newTendingCapabilityRegistry()
+	if err := registry.SetReport(&capabilities.ToolReport{
+		Tool:          capabilities.ToolBR,
+		Source:        "hp-ktog test fixture",
+		LastCheckedAt: io.Now().UTC().Format(time.RFC3339),
+		Capabilities: map[string]capabilities.Capability{
+			"issues.read": {Status: capabilities.StatusMissing, Notes: "fixture: br doctor reports missing"},
+		},
+	}); err != nil {
+		t.Fatalf("SetReport: %v", err)
+	}
+	io.CapabilityRegistry = registry
+
+	ctx := context.Background()
+	schedRegistry, err := openTendingRegistry(ctx, io)
+	if err != nil {
+		t.Fatalf("openTendingRegistry: %v", err)
+	}
+	def := scheduler.Definition{
+		ID:                   "needs-br",
+		Name:                 "needs br.issues.read",
+		Kind:                 scheduler.KindDeterministic,
+		Version:              scheduler.SchemaVersion,
+		Schedule:             scheduler.Schedule{Type: scheduler.ScheduleOnDemand},
+		CapabilitiesRequired: []string{"br.issues.read"},
+		Repeat:               scheduler.Repeat{},
+		MisfirePolicy:        scheduler.MisfireSkip,
+		RetryPolicy:          scheduler.RetryNone,
+		AuditAlways:          true,
+	}
+	if _, err := schedRegistry.ImportDefinition(ctx, def); err != nil {
+		t.Fatalf("ImportDefinition: %v", err)
+	}
+	run, decision, err := schedRegistry.RunNow(ctx, "needs-br")
+	if err != nil {
+		t.Fatalf("RunNow: %v", err)
+	}
+	if decision.Outcome != scheduler.OutcomeBlockedByCapability {
+		t.Fatalf("decision.Outcome = %s, want %s (gate must fire in production wiring)", decision.Outcome, scheduler.OutcomeBlockedByCapability)
+	}
+	if run.Status != scheduler.RunStatusSkipped {
+		t.Fatalf("run.Status = %s, want %s", run.Status, scheduler.RunStatusSkipped)
+	}
+	if !strings.Contains(decision.Reason, "br.issues.read") {
+		t.Fatalf("decision.Reason = %q, want it to name the missing capability", decision.Reason)
+	}
+}
+
+// TestOpenTendingRegistryDispatchesJobsWithoutRequiredCapabilities
+// confirms the empty-by-default registry choice in setDefaults is the
+// right safe default - jobs that don't declare CapabilitiesRequired
+// still dispatch normally even when the registry has no probes wired.
+// Without this assertion a regression that over-blocks (e.g.,
+// adapter.LookupCapabilityStatus returning ok=true for empty refs)
+// would silently break healthy CLI ticks.
+func TestOpenTendingRegistryDispatchesJobsWithoutRequiredCapabilities(t *testing.T) {
+	io := newTestTendingIO(t)
+	ctx := context.Background()
+	schedRegistry, err := openTendingRegistry(ctx, io)
+	if err != nil {
+		t.Fatalf("openTendingRegistry: %v", err)
+	}
+	def := scheduler.Definition{
+		ID:            "no-deps",
+		Name:          "no required capabilities",
+		Kind:          scheduler.KindDeterministic,
+		Version:       scheduler.SchemaVersion,
+		Schedule:      scheduler.Schedule{Type: scheduler.ScheduleOnDemand},
+		Repeat:        scheduler.Repeat{},
+		MisfirePolicy: scheduler.MisfireSkip,
+		RetryPolicy:   scheduler.RetryNone,
+	}
+	if _, err := schedRegistry.ImportDefinition(ctx, def); err != nil {
+		t.Fatalf("ImportDefinition: %v", err)
+	}
+	_, decision, err := schedRegistry.RunNow(ctx, "no-deps")
+	if err != nil {
+		t.Fatalf("RunNow: %v", err)
+	}
+	if decision.Outcome != scheduler.OutcomeStarted {
+		t.Fatalf("decision.Outcome = %s, want %s (capability-free job must dispatch even with empty registry)", decision.Outcome, scheduler.OutcomeStarted)
 	}
 }
