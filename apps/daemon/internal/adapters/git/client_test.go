@@ -7,6 +7,7 @@ package git
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -407,6 +408,131 @@ func TestRevParseAgainstRealRepo(t *testing.T) {
 	}
 	if len(sha) != 40 {
 		t.Fatalf("expected 40-char SHA, got %d (%q)", len(sha), sha)
+	}
+}
+
+// TestProbeOnNormalGoldenFixtureMatchesHealthyContract loads
+// packages/fixtures/golden-outputs/git/normal.json and pins the contract
+// from plan.md §18.3 for the normal state: a healthy git repo's read
+// surface (status, diff, log/branch/remote, unpushed) reports StatusOK,
+// and pushes are not exercised during probe.
+//
+// Two-sided check:
+//
+//   - The fixture's self-declared capabilities are sanity-checked so a
+//     future fixture edit that drifts the canonical "normal" map fails
+//     this test rather than silently passing. git.status.read /
+//     git.diff.read / git.unpushed.list must read OK; git.push must be
+//     declared blocked-by-policy with a reason note (the snapshot script
+//     never pushes — semantically equivalent to the daemon's "untested",
+//     and both pin the contract that probes never write).
+//
+//   - The adapter's live Probe against a real temp repo (initTempRepo)
+//     must produce StatusOK on every read capability the fixture
+//     declares OK, and CapPush must come back as StatusUntested (the
+//     daemon's narrower variant of "blocked-by-policy" — push is
+//     deliberately not run during probe).
+//
+// The fixture's stdoutText carries `--porcelain=v2 --branch` output
+// captured by snapshot.sh; the daemon adapter reads `--porcelain=v1`
+// (parsers.go:18). We deliberately do not feed the v2 bytes through
+// parseStatus — that would test snapshot.sh's argv shape, not the
+// adapter contract. Instead we use the fixture's *capability map* as
+// the contract surface.
+func TestProbeOnNormalGoldenFixtureMatchesHealthyContract(t *testing.T) {
+	t.Parallel()
+	fixture := loadGitGoldenFixture(t, "normal.json")
+	if fixture.Meta.State != "normal" {
+		t.Fatalf("fixture state = %q, want normal", fixture.Meta.State)
+	}
+	for _, capID := range []string{"git.status.read", "git.diff.read", "git.unpushed.list"} {
+		cap, ok := fixture.Capabilities[capID]
+		if !ok {
+			t.Fatalf("fixture missing %s", capID)
+		}
+		if cap.Status != "ok" {
+			t.Fatalf("fixture %s = %q, want ok", capID, cap.Status)
+		}
+	}
+	push, ok := fixture.Capabilities["git.push"]
+	if !ok {
+		t.Fatalf("fixture missing git.push")
+	}
+	if push.Status != "blocked-by-policy" {
+		t.Fatalf("fixture git.push = %q, want blocked-by-policy", push.Status)
+	}
+	if !strings.Contains(strings.ToLower(push.Notes), "never push") && !strings.Contains(strings.ToLower(push.Notes), "snapshot") {
+		t.Fatalf("fixture git.push notes %q should explain why push is not exercised", push.Notes)
+	}
+
+	dir := initTempRepo(t)
+	c := New(dir)
+	res := Probe(context.Background(), c, func() time.Time {
+		return time.Date(2026, 5, 7, 0, 0, 0, 0, time.UTC)
+	})
+
+	for _, capID := range []string{CapStatusRead, CapLog, CapBranchRead, CapRemoteRead} {
+		report, ok := res.Reports[capID]
+		if !ok {
+			t.Fatalf("live probe missing %s", capID)
+		}
+		if report.Status != StatusOK {
+			t.Fatalf("live probe %s = %q (notes: %s); want ok to match fixture's normal-state contract", capID, report.Status, report.Notes)
+		}
+	}
+	if got := res.Reports[CapPush].Status; got != StatusUntested {
+		t.Fatalf("live probe push = %q; want untested (fixture pins push=blocked-by-policy; daemon's narrower variant is untested — both pin the contract that probes never write)", got)
+	}
+}
+
+type gitGoldenFixture struct {
+	Meta struct {
+		Adapter string `json:"adapter"`
+		State   string `json:"state"`
+	} `json:"meta"`
+	Argv         []string `json:"argv"`
+	Exit         int      `json:"exit"`
+	StdoutText   string   `json:"stdoutText"`
+	Capabilities map[string]struct {
+		Status   string `json:"status"`
+		Notes    string `json:"notes"`
+		Fallback string `json:"fallback"`
+	} `json:"capabilities"`
+}
+
+func loadGitGoldenFixture(t *testing.T, name string) gitGoldenFixture {
+	t.Helper()
+	root := findRepoRoot(t)
+	rel := filepath.Join("packages", "fixtures", "golden-outputs", "git", name)
+	data, err := os.ReadFile(filepath.Join(root, rel))
+	if err != nil {
+		t.Fatalf("read fixture %s: %v", rel, err)
+	}
+	var fixture gitGoldenFixture
+	if err := json.Unmarshal(data, &fixture); err != nil {
+		t.Fatalf("parse fixture %s: %v", rel, err)
+	}
+	if fixture.Meta.Adapter != "git" {
+		t.Fatalf("fixture %s adapter = %q, want git", rel, fixture.Meta.Adapter)
+	}
+	return fixture
+}
+
+func findRepoRoot(t *testing.T) string {
+	t.Helper()
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.work")); err == nil {
+			return dir
+		}
+		next := filepath.Dir(dir)
+		if next == dir {
+			t.Fatalf("could not find repo root from %s", dir)
+		}
+		dir = next
 	}
 }
 
