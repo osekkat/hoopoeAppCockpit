@@ -11,8 +11,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/approvals"
 	jobstore "github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/jobs"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/security"
+	schemas "github.com/hoopoe-cockpit/hoopoe/packages/schemas/go"
 )
 
 func TestValidateListenAddressDefaultsToLoopbackOnly(t *testing.T) {
@@ -129,6 +131,70 @@ func TestPrepareJobsRuntimeDefaultsToFileRegistry(t *testing.T) {
 		t.Fatalf("default jobs length = %d, want 0", len(list))
 	}
 }
+
+// TestPrepareAuthRuntimeApprovalsPersistAcrossRestart pins hp-rh0w: the
+// production prepareAuthRuntime path must wire approvals.NewQueue with
+// a durable Store (FileStore under stateDir/approvals/), not the
+// implicit MemoryStore default. After a Request the approval must be
+// recoverable by a second Queue opened against the same path with no
+// in-memory state carryover — proving the pending record survived
+// daemon restart.
+func TestPrepareAuthRuntimeApprovalsPersistAcrossRestart(t *testing.T) {
+	stateDir := t.TempDir()
+	now := time.Date(2026, 5, 4, 0, 0, 0, 0, time.UTC)
+	clock := func() time.Time { return now }
+
+	runtime, err := prepareAuthRuntime(context.Background(), stateDir, clock, nil)
+	if err != nil {
+		t.Fatalf("prepareAuthRuntime: %v", err)
+	}
+	queue, ok := runtime.approvals.(*approvals.Queue)
+	if !ok {
+		t.Fatalf("runtime.approvals = %T, want *approvals.Queue", runtime.approvals)
+	}
+
+	approval, _, err := queue.Request(context.Background(), approvals.Request{
+		Source:     schemas.ApprovalSourceHoopoePolicy,
+		PolicyRule: "hoopoe-policy:test",
+		RequestedAction: schemas.CommandSpec{
+			Kind:           "test.action",
+			IdempotencyKey: stringPtrLocal("idem-1"),
+			Target:         map[string]interface{}{"projectId": "project-1"},
+		},
+		RequestActor: schemas.Actor{Kind: schemas.ActorKindAgent, Id: stringPtrLocal("agent-1")},
+		ProjectID:    "project-1",
+		RiskClass:    schemas.Medium,
+	})
+	if err != nil {
+		t.Fatalf("Queue.Request: %v", err)
+	}
+
+	approvalsFile := filepath.Join(stateDir, "approvals", "approvals.jsonl")
+	if _, err := os.Stat(approvalsFile); err != nil {
+		t.Fatalf("approvals.jsonl missing — production runtime fell back to MemoryStore: %v", err)
+	}
+
+	// Simulate restart: open a fresh FileStore over the same path and
+	// confirm the previously-saved approval is recoverable. Use a
+	// brand-new Queue instance so no in-memory state carries over.
+	resumeStore := approvals.NewFileStore(approvalsFile)
+	resumeQueue := approvals.NewQueue(approvals.Config{
+		Now:   clock,
+		Store: resumeStore,
+	})
+	got, ok, err := resumeQueue.Get(context.Background(), approval.Id)
+	if err != nil {
+		t.Fatalf("resumeQueue.Get: %v", err)
+	}
+	if !ok {
+		t.Fatalf("approval %q missing after restart — production runtime is not durable", approval.Id)
+	}
+	if got.State != schemas.Pending {
+		t.Fatalf("post-restart state = %s, want pending", got.State)
+	}
+}
+
+func stringPtrLocal(s string) *string { return &s }
 
 func TestRunNotifiesSystemdReadyAndWatchdog(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())

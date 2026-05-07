@@ -292,7 +292,17 @@ func prepareAuthRuntime(ctx context.Context, stateDir string, now func() time.Ti
 	if err != nil {
 		return authRuntime{}, err
 	}
-	approvalQueue := approvals.NewQueue(approvals.Config{Now: now})
+	// hp-rh0w: production approval queue must survive daemon restart.
+	// Without a durable Store, the unified approvals queue (where Hoopoe
+	// policy gates, DCG verdicts, and SLB co-signature state converge)
+	// drops every pending request and every approved/denied/consumed
+	// record on restart, undercutting plan.md §1.5 restartability and
+	// docs/security.md's approval-checkpoint promise. JSONL FileStore
+	// under stateDir/approvals/ mirrors the auth/ pairing/secret
+	// pattern (also flock-protected JSONL).
+	approvalsDir := filepath.Join(stateDir, "approvals")
+	approvalStore := approvals.NewFileStore(filepath.Join(approvalsDir, "approvals.jsonl"))
+	approvalQueue := approvals.NewQueue(approvals.Config{Now: now, Store: approvalStore})
 	return authRuntime{
 		config: &api.AuthConfig{
 			Service:   sessions,
