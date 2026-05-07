@@ -4184,22 +4184,27 @@
     }
   },
   "pane_logs.missing": null,
-  "projects.list": [
-    {
-      "id": "mock-flywheel-project",
-      "meta": {
-        "capturedAt": "<scrubbed-captured-at>",
-        "fixturesVersion": "phase0-2026-05-02",
-        "kind": "synthetic",
-        "notes": "Anthropic rate limit hit; CAAM has no alternative account configured. tend-swarm should propose pause + surface to user.",
-        "scenario": "rate-limited-no-caam",
-        "source": "snapshot.sh + scripts/snapshot/seed/build-scenarios.sh",
-        "vpsId": "local-full"
-      },
-      "name": "rate-limited-no-caam",
-      "rootPath": "<fixtures-root>/scenarios/rate-limited-no-caam"
+  "projects.list": {
+    "items": [
+      {
+        "id": "mock-flywheel-project",
+        "lifecycleState": "imported",
+        "name": "rate-limited-no-caam",
+        "repo": {
+          "branch": "main",
+          "origin": "https://example.invalid/mock-flywheel.git",
+          "vpsClonePath": "<fixtures-root>/scenarios/rate-limited-no-caam"
+        },
+        "schemaVersion": 1,
+        "slug": "mock-flywheel-project",
+        "vpsId": "mock-flywheel-vps"
+      }
+    ],
+    "page": {
+      "hasMore": false,
+      "total": 1
     }
-  ],
+  },
   "scenario.id": "rate-limited-no-caam",
   "system.capabilities": {
     "daemonApiVersion": "0.1.0",

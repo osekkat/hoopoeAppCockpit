@@ -143,22 +143,27 @@
     }
   },
   "pane_logs.missing": null,
-  "projects.list": [
-    {
-      "id": "mock-flywheel-project",
-      "meta": {
-        "capturedAt": "<scrubbed-captured-at>",
-        "fixturesVersion": "phase0-2026-05-02",
-        "kind": "synthetic",
-        "notes": "NTM is absent from PATH. Required NTM capabilities are missing, so tend-swarm blocks instead of waking an agent or silently continuing.",
-        "scenario": "missing-tool",
-        "source": "hand-written hp-zql missing-tool tending fixture",
-        "vpsId": "mock-flywheel"
-      },
-      "name": "missing-tool",
-      "rootPath": "<fixtures-root>/scenarios/missing-tool"
+  "projects.list": {
+    "items": [
+      {
+        "id": "mock-flywheel-project",
+        "lifecycleState": "imported",
+        "name": "missing-tool",
+        "repo": {
+          "branch": "main",
+          "origin": "https://example.invalid/mock-flywheel.git",
+          "vpsClonePath": "<fixtures-root>/scenarios/missing-tool"
+        },
+        "schemaVersion": 1,
+        "slug": "mock-flywheel-project",
+        "vpsId": "mock-flywheel-vps"
+      }
+    ],
+    "page": {
+      "hasMore": false,
+      "total": 1
     }
-  ],
+  },
   "scenario.id": "missing-tool",
   "system.capabilities": {
     "daemonApiVersion": "0.1.0",

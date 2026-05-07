@@ -140,8 +140,11 @@ describe("createMockFlywheelDaemon (hp-o74)", () => {
     expect(client.scenarioId()).toBe("healthy-hour");
     expect(client.health().environment).toBe("mock-flywheel");
     const projects = client.listProjects();
-    expect(projects.length).toBe(1);
-    expect(projects[0]?.name).toBe("healthy-hour");
+    expect(projects.items.length).toBe(1);
+    expect(projects.items[0]?.name).toBe("healthy-hour");
+    expect(projects.items[0]?.lifecycleState).toBe("imported");
+    expect(projects.items[0]?.repo.branch).toBe("main");
+    expect(projects.page.hasMore).toBe(false);
   });
 });
 

@@ -172,22 +172,27 @@
     }
   },
   "pane_logs.missing": null,
-  "projects.list": [
-    {
-      "id": "mock-flywheel-project",
-      "meta": {
-        "capturedAt": "<scrubbed-captured-at>",
-        "fixturesVersion": "phase0-2026-05-02",
-        "kind": "synthetic",
-        "notes": "jsm verify reports the installed vibing-with-ntm skill has drifted from its pinned SHA-256. Pre-script detects deterministically; tend-swarm blocks the agent run, requests an approval to repin (or roll back), and surfaces a warning. wakeAgent=false because the deterministic pre-script handles the decision.",
-        "scenario": "skill-drift",
-        "source": "hand-written hp-49f skill-drift tending fixture",
-        "vpsId": "mock-flywheel"
-      },
-      "name": "skill-drift",
-      "rootPath": "<fixtures-root>/scenarios/skill-drift"
+  "projects.list": {
+    "items": [
+      {
+        "id": "mock-flywheel-project",
+        "lifecycleState": "imported",
+        "name": "skill-drift",
+        "repo": {
+          "branch": "main",
+          "origin": "https://example.invalid/mock-flywheel.git",
+          "vpsClonePath": "<fixtures-root>/scenarios/skill-drift"
+        },
+        "schemaVersion": 1,
+        "slug": "mock-flywheel-project",
+        "vpsId": "mock-flywheel-vps"
+      }
+    ],
+    "page": {
+      "hasMore": false,
+      "total": 1
     }
-  ],
+  },
   "scenario.id": "skill-drift",
   "system.capabilities": {
     "daemonApiVersion": "0.1.0",

@@ -47,7 +47,13 @@ bun run mock-flywheel
 ```
 
 This runs the scenario replay goldens plus the desktop mock daemon, local-demo
-auth bootstrap, IPC, and replay harnesses.
+auth bootstrap, IPC, and replay harnesses, and (hp-hxpr) a daemon-side
+end-to-end redaction smoke that publishes a `sk-…`-shaped payload through the
+mock daemon's EventHub and asserts it is scrubbed before reaching the
+`/v1/events/replay` HTTP surface. For the full pattern-by-pattern redactor
+suite (every secret class enumerated in `internal/redaction/patterns.go` plus
+the renderer-side parity in `apps/desktop/src/shared/redact/`), run
+`bun run test:redact-drift` separately.
 
 ## Work Selection
 

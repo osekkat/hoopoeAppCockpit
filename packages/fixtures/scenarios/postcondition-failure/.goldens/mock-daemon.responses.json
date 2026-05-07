@@ -263,22 +263,27 @@
     }
   },
   "pane_logs.missing": null,
-  "projects.list": [
-    {
-      "id": "mock-flywheel-project",
-      "meta": {
-        "capturedAt": "<scrubbed-captured-at>",
-        "fixturesVersion": "phase0-2026-05-02",
-        "kind": "synthetic",
-        "notes": "A push-stale-commits ActionPlan executes successfully (git push returns 0) but the post-execution postcondition that origin/<branch> SHA equals the local <branch> SHA fails — origin still points at the old SHA because of a race with another agent's force-push that arrived between the local commit and our push. Per plan.md §8.3.1 the daemon rolls back the action's cached state ('branch-up-to-date' flag), refuses to mark the bead as pushed, emits a follow-up detection with sourceActionId=ap-001 and severity tied to the failed git.push_branch risk class, emits an activity warning, and the audit log records the precondition pass + postcondition fail + rollback decision regardless of [SILENT] semantics (Guardrail 10). wakeAgent stays false because deterministic rollback covers immediate recovery while the follow-up detection gives the next tend tick restartable input.",
-        "scenario": "postcondition-failure",
-        "source": "hand-written hp-2rp postcondition-failure tending fixture, corrected by hp-zm7",
-        "vpsId": "mock-flywheel"
-      },
-      "name": "postcondition-failure",
-      "rootPath": "<fixtures-root>/scenarios/postcondition-failure"
+  "projects.list": {
+    "items": [
+      {
+        "id": "mock-flywheel-project",
+        "lifecycleState": "imported",
+        "name": "postcondition-failure",
+        "repo": {
+          "branch": "main",
+          "origin": "https://example.invalid/mock-flywheel.git",
+          "vpsClonePath": "<fixtures-root>/scenarios/postcondition-failure"
+        },
+        "schemaVersion": 1,
+        "slug": "mock-flywheel-project",
+        "vpsId": "mock-flywheel-vps"
+      }
+    ],
+    "page": {
+      "hasMore": false,
+      "total": 1
     }
-  ],
+  },
   "scenario.id": "postcondition-failure",
   "system.capabilities": {
     "daemonApiVersion": "0.1.0",

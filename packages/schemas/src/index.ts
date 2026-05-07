@@ -44,6 +44,7 @@ export type ProjectLifecycleState = components["schemas"]["ProjectLifecycleState
 export type ProjectRepoRef = components["schemas"]["ProjectRepoRef"];
 export type ProjectGate = components["schemas"]["ProjectGate"];
 export type ProjectReadiness = components["schemas"]["ProjectReadiness"];
+export type ProjectListResponse = components["schemas"]["ProjectListResponse"];
 
 // Plans + Beads (§7.1, §7.2)
 export type Plan = components["schemas"]["Plan"];

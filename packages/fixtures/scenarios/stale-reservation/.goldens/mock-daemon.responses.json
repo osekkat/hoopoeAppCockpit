@@ -363,22 +363,27 @@
     }
   },
   "pane_logs.missing": null,
-  "projects.list": [
-    {
-      "id": "mock-flywheel-project",
-      "meta": {
-        "capturedAt": "<scrubbed-captured-at>",
-        "fixturesVersion": "phase0-2026-05-02",
-        "kind": "synthetic",
-        "notes": "Agent Mail reports an expired exclusive reservation whose owner no longer has a live NTM pane. A peer asks the coordinator to unblock packages/schemas work; tend-swarm should release the reservation through a typed reservation.force_release action and record the Agent Mail audit trail.",
-        "scenario": "stale-reservation",
-        "source": "hand-written hp-tjf stale-reservation tending fixture",
-        "vpsId": "mock-flywheel"
-      },
-      "name": "stale-reservation",
-      "rootPath": "<fixtures-root>/scenarios/stale-reservation"
+  "projects.list": {
+    "items": [
+      {
+        "id": "mock-flywheel-project",
+        "lifecycleState": "imported",
+        "name": "stale-reservation",
+        "repo": {
+          "branch": "main",
+          "origin": "https://example.invalid/mock-flywheel.git",
+          "vpsClonePath": "<fixtures-root>/scenarios/stale-reservation"
+        },
+        "schemaVersion": 1,
+        "slug": "mock-flywheel-project",
+        "vpsId": "mock-flywheel-vps"
+      }
+    ],
+    "page": {
+      "hasMore": false,
+      "total": 1
     }
-  ],
+  },
   "scenario.id": "stale-reservation",
   "system.capabilities": {
     "daemonApiVersion": "0.1.0",

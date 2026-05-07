@@ -360,22 +360,27 @@
     }
   },
   "pane_logs.missing": null,
-  "projects.list": [
-    {
-      "id": "mock-flywheel-project",
-      "meta": {
-        "capturedAt": "<scrubbed-captured-at>",
-        "fixturesVersion": "phase0-2026-05-02",
-        "kind": "synthetic",
-        "notes": "A recovery ActionPlan is already accepted and in flight for GreenBear when watch-safety-thresholds emits a safety ActionPlan for the same swarm. Per plan.md §8.8 and hp-15z, the safety swarm.halt plan wins, the recovery plan is recorded as superseded_by the safety plan, and the record links to the winning safety run.",
-        "scenario": "action-arbitration",
-        "source": "hand-written hp-15z safety-supersession action-arbitration tending fixture",
-        "vpsId": "mock-flywheel"
-      },
-      "name": "action-arbitration",
-      "rootPath": "<fixtures-root>/scenarios/action-arbitration"
+  "projects.list": {
+    "items": [
+      {
+        "id": "mock-flywheel-project",
+        "lifecycleState": "imported",
+        "name": "action-arbitration",
+        "repo": {
+          "branch": "main",
+          "origin": "https://example.invalid/mock-flywheel.git",
+          "vpsClonePath": "<fixtures-root>/scenarios/action-arbitration"
+        },
+        "schemaVersion": 1,
+        "slug": "mock-flywheel-project",
+        "vpsId": "mock-flywheel-vps"
+      }
+    ],
+    "page": {
+      "hasMore": false,
+      "total": 1
     }
-  ],
+  },
   "scenario.id": "action-arbitration",
   "system.capabilities": {
     "daemonApiVersion": "0.1.0",

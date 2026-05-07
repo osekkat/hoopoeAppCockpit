@@ -28,7 +28,7 @@ import {
   type LoadedScenario,
   type ReplayEvent,
 } from "./scenario-source.ts";
-import type { CapabilityRegistry } from "@hoopoe/schemas";
+import type { CapabilityRegistry, ProjectListResponse } from "@hoopoe/schemas";
 import {
   deriveCursors,
   startReplay,
@@ -68,7 +68,7 @@ export interface MockDaemonClient {
   health(): { status: "ok"; environment: "mock-flywheel"; time: string };
   version(): { api: string; daemon: string };
   capabilities(): CapabilityRegistry;
-  listProjects(): Array<{ id: string; name: string; rootPath: string; meta: unknown }>;
+  listProjects(): ProjectListResponse;
   getBeads(projectId: string): unknown;
   getTriage(projectId: string): unknown;
   getSwarmSnapshot(projectId: string): unknown;
@@ -150,14 +150,24 @@ export function createMockDaemonClient(options: MockDaemonClientOptions): MockDa
     version: () => ({ api: "v1.0.0-mock", daemon: "mock-flywheel" }),
     capabilities: () => scenario.capabilities,
 
-    listProjects: () => [
-      {
-        id: "mock-flywheel-project",
-        name: scenario.id,
-        rootPath: scenario.rootPath,
-        meta: scenario.meta,
-      },
-    ],
+    listProjects: () => ({
+      items: [
+        {
+          schemaVersion: 1,
+          id: "mock-flywheel-project",
+          slug: "mock-flywheel-project",
+          name: scenario.id,
+          vpsId: "mock-flywheel-vps",
+          repo: {
+            origin: "https://example.invalid/mock-flywheel.git",
+            branch: "main",
+            vpsClonePath: scenario.rootPath,
+          },
+          lifecycleState: "imported",
+        },
+      ],
+      page: { hasMore: false, total: 1 },
+    }),
     getBeads: (_projectId: string) => scenario.brList,
     getTriage: (_projectId: string) => scenario.bvTriage,
     getSwarmSnapshot: (_projectId: string) => scenario.ntmSnapshot,

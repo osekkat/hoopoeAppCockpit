@@ -4275,22 +4275,27 @@
     }
   },
   "pane_logs.missing": null,
-  "projects.list": [
-    {
-      "id": "mock-flywheel-project",
-      "meta": {
-        "capturedAt": "<scrubbed-captured-at>",
-        "fixturesVersion": "phase0-2026-05-02",
-        "kind": "synthetic",
-        "notes": "Real bv/br extracts from local self-test (2026-05-02). Pane state, mail, build logs synthesized for §8.8 healthy-hour.",
-        "scenario": "healthy-hour",
-        "source": "snapshot.sh + scripts/snapshot/seed/build-scenarios.sh",
-        "vpsId": "local-full"
-      },
-      "name": "healthy-hour",
-      "rootPath": "<fixtures-root>/scenarios/healthy-hour"
+  "projects.list": {
+    "items": [
+      {
+        "id": "mock-flywheel-project",
+        "lifecycleState": "imported",
+        "name": "healthy-hour",
+        "repo": {
+          "branch": "main",
+          "origin": "https://example.invalid/mock-flywheel.git",
+          "vpsClonePath": "<fixtures-root>/scenarios/healthy-hour"
+        },
+        "schemaVersion": 1,
+        "slug": "mock-flywheel-project",
+        "vpsId": "mock-flywheel-vps"
+      }
+    ],
+    "page": {
+      "hasMore": false,
+      "total": 1
     }
-  ],
+  },
   "scenario.id": "healthy-hour",
   "system.capabilities": {
     "daemonApiVersion": "0.1.0",

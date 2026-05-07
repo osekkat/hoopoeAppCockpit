@@ -157,22 +157,27 @@
     }
   },
   "pane_logs.missing": null,
-  "projects.list": [
-    {
-      "id": "mock-flywheel-project",
-      "meta": {
-        "capturedAt": "<scrubbed-captured-at>",
-        "fixturesVersion": "phase0-2026-05-02",
-        "kind": "synthetic",
-        "notes": "One agent lands 50 commits in a 42s window. snapshot-health coalesces the burst into one deterministic health run and does not wake a tending LLM.",
-        "scenario": "commit-burst",
-        "source": "hand-written hp-uk4 commit-burst tending fixture",
-        "vpsId": "mock-flywheel"
-      },
-      "name": "commit-burst",
-      "rootPath": "<fixtures-root>/scenarios/commit-burst"
+  "projects.list": {
+    "items": [
+      {
+        "id": "mock-flywheel-project",
+        "lifecycleState": "imported",
+        "name": "commit-burst",
+        "repo": {
+          "branch": "main",
+          "origin": "https://example.invalid/mock-flywheel.git",
+          "vpsClonePath": "<fixtures-root>/scenarios/commit-burst"
+        },
+        "schemaVersion": 1,
+        "slug": "mock-flywheel-project",
+        "vpsId": "mock-flywheel-vps"
+      }
+    ],
+    "page": {
+      "hasMore": false,
+      "total": 1
     }
-  ],
+  },
   "scenario.id": "commit-burst",
   "system.capabilities": {
     "daemonApiVersion": "0.1.0",

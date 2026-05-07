@@ -85,7 +85,7 @@ export function createPhase1MockFlywheelHarness(input?: {
       MOCK_FLYWHEEL_COMMANDS.listProjects,
       undefined,
     );
-    const project = projects[0];
+    const project = projects.items[0];
     if (!project) {
       throw new Error(`Mock Flywheel scenario ${client.scenarioId()} has no projects`);
     }
@@ -138,7 +138,7 @@ export function createPhase1MockFlywheelHarness(input?: {
       scenarioId: client.scenarioId(),
       healthEnvironment: health.environment,
       projectId: activeProjectId,
-      projectCount: projects.length,
+      projectCount: projects.items.length,
       capabilityKeys: Object.keys(capabilities).toSorted(),
       fixtureEventCount: replayEvents.length,
       buildLogCount: buildLog === null ? 0 : 1,

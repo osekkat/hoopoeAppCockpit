@@ -118,6 +118,83 @@ func TestMockDaemonSmoke(t *testing.T) {
 	}
 }
 
+// TestMockDaemonRedactsSecretsOnPublishedEvents proves the
+// `bun run mock-flywheel` surface exercises redaction end-to-end.
+//
+// hp-hxpr: the four bun tests that mock-flywheel:bun runs do not
+// reference redaction at all, so a green run gives a contributor zero
+// signal that the daemon-side redactor is wired and working. hp-cy4
+// (commit 1289cb8) wired Redactor into the mock daemon's EventHub —
+// this test pins that wiring by publishing a `sk-…`-shaped payload
+// through `daemon.Events.Publish` and reading it back over the same
+// HTTP replay endpoint subscribers use, asserting the secret is gone.
+//
+// Smoke property covered: producer → EventHub.redactData →
+// RedactStreamedEvent → replay-buffer marshal → /v1/events/replay
+// JSON deserialize. A regression that reverts the mock daemon's
+// Redactor wiring (or that breaks the redactor for `sk-…` keys) will
+// fail this test, which `bun run mock-flywheel` runs via
+// `mock-flywheel:go` (`./internal/mock/...`).
+func TestMockDaemonRedactsSecretsOnPublishedEvents(t *testing.T) {
+	now := func() time.Time { return time.Date(2026, 5, 3, 22, 11, 51, 0, time.UTC) }
+	daemon, err := NewDaemon(Config{
+		Scenario:    "fresh",
+		FixtureRoot: phase0Root(),
+		Build: api.BuildInfo{
+			Version:    "test",
+			Commit:     "mock",
+			BuildDate:  "2026-05-03T22:11:51Z",
+			APIVersion: "v1",
+		},
+		Now: now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(daemon.Router())
+	defer server.Close()
+
+	// Use a known-shape provider key (the `sk-…` regex requires 20+
+	// chars). The pattern is the same one TestRedactProviderKeys exercises
+	// in internal/redaction/redaction_patterns_test.go, so a regression
+	// here that lets `sk-…` through means redaction is broken at the
+	// daemon's actual production wiring point, not just the unit-level
+	// regex.
+	const secret = "sk-abcdef0123456789ABCDEF0123456789"
+	daemon.Events.Publish(api.PublishInput{
+		Channel: "project:redact-smoke",
+		Type:    "mock.redact.smoke",
+		Actor:   map[string]any{"kind": "system", "id": "mock-flywheel-redact-smoke"},
+		Data:    map[string]any{"apiKey": secret, "note": "expect this scrubbed"},
+	})
+
+	var replay struct {
+		Events []struct {
+			Type string         `json:"type"`
+			Data map[string]any `json:"data"`
+		} `json:"events"`
+	}
+	getJSON(t, server.URL+"/v1/events/replay?channel=project:redact-smoke&sinceSequence=0", &replay)
+	if len(replay.Events) == 0 {
+		t.Fatalf("expected one redacted event, got %d", len(replay.Events))
+	}
+
+	body, err := json.Marshal(replay.Events)
+	if err != nil {
+		t.Fatalf("marshal replay events: %v", err)
+	}
+	if strings.Contains(string(body), secret) {
+		t.Fatalf("mock daemon EventHub leaked secret over /v1/events/replay: %s", body)
+	}
+	if !strings.Contains(string(body), "expect this scrubbed") {
+		// Sanity: the surrounding non-secret payload should still be
+		// present. If it isn't, the replay endpoint is dropping the
+		// event entirely and the secret-leak assertion above passes
+		// trivially.
+		t.Fatalf("expected non-secret payload field to round-trip, replay body = %s", body)
+	}
+}
+
 func TestMockDaemonLoadsAllPhase0Scenarios(t *testing.T) {
 	for _, scenario := range []string{"fresh", "active", "failure"} {
 		t.Run(scenario, func(t *testing.T) {
