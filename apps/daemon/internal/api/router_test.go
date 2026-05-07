@@ -1480,6 +1480,106 @@ func TestEventHubRedactsPublishDataBeforeDeliveryAndReplay(t *testing.T) {
 	}
 }
 
+// TestEventHubRedactsAuthRotateSecretEventDataAndActor guards hp-z33:
+// the auth.secret_rotation_imminent and auth.secret_rotated events
+// publish through s.events.Publish at apps/daemon/internal/api/auth.go
+// :340 and :360 with Data and Actor maps that today carry only
+// non-secret metadata (flowId, secretGeneration, sid, etc.). The bead
+// is forward-looking: a future edit that adds a secret-shaped value
+// to these payloads must still reach subscribers/replay redacted.
+//
+// This test publishes payloads mimicking the auth rotate-secret shape
+// (channel + type + Actor.sid pattern matching auth.go) with a
+// secret-shaped string injected into Data and Actor and asserts the
+// EventHub redactor scrubs both before delivery and replay. Pinned
+// against the redaction.NewDefault() configuration so a future
+// regression that scopes redaction surfaces narrower than SurfaceEvents
+// fails this test rather than silently passing.
+func TestEventHubRedactsAuthRotateSecretEventDataAndActor(t *testing.T) {
+	const (
+		systemChannel   = "_system"
+		imminentEvent   = "auth.secret_rotation_imminent"
+		completedEvent  = "auth.secret_rotated"
+		injectedSecret  = "sk-abcdef0123456789ABCDEF0123456789"
+		injectedBearer  = "Bearer abcdefghijklmnopqrstuvwxyz012345"
+	)
+
+	redactor := redaction.NewDefault()
+	hub := NewEventHub(EventHubConfig{Redactor: redactor})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sub := hub.Subscribe(ctx, []string{systemChannel})
+	defer sub.Close()
+
+	hub.Publish(PublishInput{
+		Channel:       systemChannel,
+		Type:          imminentEvent,
+		CorrelationID: "flow-z33-imminent",
+		Actor:         map[string]any{"kind": "owner", "sid": "sid-token-" + injectedSecret},
+		Data: map[string]any{
+			"flowId":  "flow-z33-imminent",
+			"graceMs": 5000,
+			"leak":    "future field could carry " + injectedSecret,
+		},
+	})
+	hub.Publish(PublishInput{
+		Channel:       systemChannel,
+		Type:          completedEvent,
+		CorrelationID: "flow-z33-completed",
+		Actor:         map[string]any{"kind": "owner", "sid": injectedBearer},
+		Data: map[string]any{
+			"flowId":            "flow-z33-completed",
+			"approvalId":        "approval-1",
+			"secretGeneration":  42,
+			"newPairingTokenId": "pt-1",
+			"leakedSecret":      injectedSecret,
+			"nestedRevoked": map[string]any{
+				"bearers":       []any{injectedSecret, "Bearer " + injectedSecret},
+				"pairingGrants": 1,
+			},
+		},
+	})
+
+	for i := 0; i < 2; i++ {
+		select {
+		case ev := <-sub.Events():
+			body, err := json.Marshal(map[string]any{"data": ev.Data, "actor": ev.Actor})
+			if err != nil {
+				t.Fatalf("marshal delivered auth event %d: %v", i, err)
+			}
+			rendered := string(body)
+			if strings.Contains(rendered, injectedSecret) {
+				t.Fatalf("auth event %d delivered raw secret to subscriber: %s", i, rendered)
+			}
+			if strings.Contains(rendered, "abcdefghijklmnopqrstuvwxyz012345") {
+				t.Fatalf("auth event %d delivered raw bearer body to subscriber: %s", i, rendered)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("timed out waiting for delivered auth event %d", i)
+		}
+	}
+
+	// Replay buffer is the same surface — must also be redacted so a
+	// reconnect doesn't leak.
+	replayed, _ := hub.Replay(systemChannel, 0)
+	if len(replayed) != 2 {
+		t.Fatalf("replay returned %d events, want 2", len(replayed))
+	}
+	for i, ev := range replayed {
+		body, err := json.Marshal(map[string]any{"data": ev.Data, "actor": ev.Actor})
+		if err != nil {
+			t.Fatalf("marshal replay auth event %d: %v", i, err)
+		}
+		rendered := string(body)
+		if strings.Contains(rendered, injectedSecret) {
+			t.Fatalf("auth event %d holds raw secret in replay buffer: %s", i, rendered)
+		}
+		if strings.Contains(rendered, "abcdefghijklmnopqrstuvwxyz012345") {
+			t.Fatalf("auth event %d holds raw bearer body in replay buffer: %s", i, rendered)
+		}
+	}
+}
+
 func TestEventHubNilRedactorAutoDefaultsAndStillRedacts(t *testing.T) {
 	// hp-cy4: NewEventHub is safe-by-default. A nil EventHubConfig.Redactor
 	// no longer means raw delivery — the constructor auto-creates a default

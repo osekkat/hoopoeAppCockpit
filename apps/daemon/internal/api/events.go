@@ -228,6 +228,17 @@ func (h *EventHub) Publish(input PublishInput) Event {
 	// any other 'any' payload) reach WS/SSE subscribers or sit in the
 	// replay buffer raw.
 	data := h.redactData(input.Data)
+	// hp-z33: Actor is producer-controlled (owner sid, agent name,
+	// causation metadata) and reaches subscribers + the replay buffer
+	// through the same Event surface as Data. Pre-fix it bypassed the
+	// redactor entirely — a future producer that put a secret-shaped
+	// value in Actor (sid token, bearer fragment) leaked raw. Run the
+	// same redactor pass to give Actor parity with Data; the Event
+	// schema still types Actor as map[string]any, so re-assert after
+	// redaction (RedactStreamedEvent returns the walked map; if that
+	// shape doesn't apply we fall back to the original Actor — safer
+	// than dropping forensic context).
+	actor := redactActor(h, input.Actor)
 
 	// hp-4qbg: pre-validate that the Data + Actor (the two `any` fields
 	// on Event that producers control) actually marshal. If they don't,
@@ -237,7 +248,7 @@ func (h *EventHub) Publish(input PublishInput) Event {
 	// stays correct so subscribers see a clean monotonic stream.
 	originalType := input.Type
 	dataMarshalErr := tryMarshal(data)
-	actorMarshalErr := tryMarshal(input.Actor)
+	actorMarshalErr := tryMarshal(actor)
 	if dataMarshalErr != nil || actorMarshalErr != nil {
 		input.Type = EventTypeEncodeError
 		sentinel := map[string]any{
@@ -257,7 +268,7 @@ func (h *EventHub) Publish(input PublishInput) Event {
 		// failure — destroying the forensic value of "who triggered
 		// the bad publish?" the sentinel was supposed to preserve.
 		if actorMarshalErr != nil {
-			input.Actor = nil
+			actor = nil
 		}
 	}
 
@@ -269,7 +280,7 @@ func (h *EventHub) Publish(input PublishInput) Event {
 		Type:          input.Type,
 		Sequence:      h.nextSequenceLocked(input.Channel),
 		Time:          h.now().UTC().Format(time.RFC3339Nano),
-		Actor:         input.Actor,
+		Actor:         actor,
 		CausationID:   input.CausationID,
 		CorrelationID: input.CorrelationID,
 		Data:          data,
@@ -291,6 +302,23 @@ func (h *EventHub) Publish(input PublishInput) Event {
 		sub.deliver(ev, h.lagEvent(ev))
 	}
 	return ev
+}
+
+// redactActor runs the EventHub redactor over Publish.Actor and returns
+// the scrubbed map. Falls back to the original input on any path that
+// doesn't yield a clean map[string]any (nil redactor, nil actor, an
+// adapter return that surprised us) so we never destroy the original
+// forensic context. hp-z33: pre-fix Actor reached subscribers + replay
+// raw, so a future producer adding a secret-shaped value would leak.
+func redactActor(h *EventHub, actor map[string]any) map[string]any {
+	if h.redactor == nil || actor == nil {
+		return actor
+	}
+	redacted, _ := h.redactor.RedactStreamedEvent(actor)
+	if asMap, ok := redacted.(map[string]any); ok {
+		return asMap
+	}
+	return actor
 }
 
 // redactData scrubs Publish.Data through the configured redactor before the
