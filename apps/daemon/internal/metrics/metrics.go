@@ -26,6 +26,16 @@ const (
 	MetricLogFetchDurationSeconds = "log_fetch_duration_seconds"
 	MetricActiveWSConnections     = "active_ws_connections"
 	MetricInFlightJobs            = "in_flight_jobs"
+	// MetricAuditRedactionsTotal counts redaction-pattern matches that
+	// fired during audit log Append. hp-8oym (hp-nlk8 Gap 3): pre-fix
+	// the []redaction.TraceEvent return value from auditLogAppender.Append
+	// landed in the audit log file as separate `audit.redaction_trace`
+	// records but never reached a Counter, so operators investigating
+	// "is the production redactor actually working?" had no
+	// at-a-glance signal. Labels: `pattern_id` (the redaction pattern
+	// that matched, e.g., `provider-key-anthropic`) and `context`
+	// (the producer-supplied context string).
+	MetricAuditRedactionsTotal = "audit_redactions_total"
 
 	MetricDesktopReconnectAfterWakeMS  = "desktop_reconnect_after_wake_ms"
 	MetricEventReplayAfterDisconnectMS = "event_replay_after_disconnect_ms"

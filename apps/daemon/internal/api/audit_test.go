@@ -13,6 +13,7 @@ import (
 
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/approvals"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/audit"
+	daemonmetrics "github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/metrics"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/redaction"
 	schemas "github.com/hoopoe-cockpit/hoopoe/packages/schemas/go"
 )
@@ -399,6 +400,93 @@ func createApprovedAuditExportApproval(t *testing.T, queue *approvals.Queue, now
 
 func timePtr(value time.Time) *time.Time {
 	return &value
+}
+
+// TestAppendAuditForwardsRedactionTracesToMetricCounter pins the
+// hp-8oym (hp-nlk8 Gap 3) contract: every TraceEvent returned from
+// the auditLogAppender's Append call must increment the
+// MetricAuditRedactionsTotal counter, labeled by pattern_id and
+// context, so operators investigating "is the production redactor
+// actually working?" can watch /v1/diagnostics/metrics for live
+// signal — not just the audit log file's `audit.redaction_trace`
+// records.
+//
+// Pre-fix the second return value (`[]redaction.TraceEvent`) was
+// discarded with `_, _ = s.auditLogAppender.Append(entry)` and
+// never reached the metrics registry.
+func TestAppendAuditForwardsRedactionTracesToMetricCounter(t *testing.T) {
+	now := time.Date(2026, 5, 4, 8, 0, 0, 0, time.UTC)
+	writer, err := audit.NewWriter(audit.Config{Writer: nopSyncWriter{}, Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatalf("new audit writer: %v", err)
+	}
+	registry := daemonmetrics.NewRegistry(daemonmetrics.Config{Now: func() time.Time { return now }})
+
+	s := normalizeConfig(Config{
+		Audit:   writer,
+		Metrics: registry,
+		Now:     func() time.Time { return now },
+	})
+	if s.auditLogAppender == nil {
+		t.Fatalf("auditLogAppender is nil — normalizeConfig didn't lift the assertion")
+	}
+	if s.metrics == nil {
+		t.Fatalf("metrics registry is nil — normalizeConfig didn't accept the supplied registry")
+	}
+
+	// Drive a known provider-key pattern through appendAudit's data
+	// payload. The audit Writer's Append runs RedactValue under
+	// SurfaceAudit, so the matching pattern produces a TraceEvent
+	// the audit log file persists AND (per hp-8oym) the metric
+	// counter must reflect.
+	const secret = "sk-abcdef0123456789ABCDEF0123456789"
+	if err := s.appendAudit("test.redaction.coverage", audit.ResultSuccess, "proj_a", "", map[string]any{
+		"detail": "rotating " + secret + " for compliance",
+	}); err != nil {
+		t.Fatalf("appendAudit: %v", err)
+	}
+
+	snap := registry.Snapshot()
+	var found bool
+	var observedPatterns []string
+	for _, s := range snap.Series {
+		if s.Name != daemonmetrics.MetricAuditRedactionsTotal || s.Kind != daemonmetrics.KindCounter {
+			continue
+		}
+		observedPatterns = append(observedPatterns, s.Labels["pattern_id"])
+		if s.Labels["pattern_id"] == "provider-key-sk" && s.Labels["context"] != "" && s.Value != nil && *s.Value > 0 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("MetricAuditRedactionsTotal{pattern_id=provider-key-sk} did not increment; observed counter pattern_ids=%v", observedPatterns)
+	}
+
+	// Inverse direction: a payload with no secret-shaped fields must
+	// NOT increment the counter. A regression that mistakenly fans
+	// out a 1 per Append call (regardless of TraceEvents) would
+	// violate this — the counter would balloon on every audit row.
+	beforeBenign := countAuditRedactionMetric(registry)
+	if err := s.appendAudit("test.benign", audit.ResultSuccess, "proj_a", "", map[string]any{
+		"detail": "the quick brown fox jumps over the lazy dog",
+	}); err != nil {
+		t.Fatalf("appendAudit benign: %v", err)
+	}
+	afterBenign := countAuditRedactionMetric(registry)
+	if afterBenign != beforeBenign {
+		t.Fatalf("benign appendAudit incremented counter (before=%d, after=%d); the metric should only fire on actual TraceEvents", beforeBenign, afterBenign)
+	}
+}
+
+func countAuditRedactionMetric(registry *daemonmetrics.Registry) int {
+	total := 0
+	snap := registry.Snapshot()
+	for _, s := range snap.Series {
+		if s.Name == daemonmetrics.MetricAuditRedactionsTotal && s.Kind == daemonmetrics.KindCounter && s.Value != nil {
+			total += int(*s.Value)
+		}
+	}
+	return total
 }
 
 func appendAuditEntry(t *testing.T, writer *audit.Writer, entry audit.Entry) audit.Entry {

@@ -16,6 +16,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/approvals"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/audit"
+	daemonmetrics "github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/metrics"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/redaction"
 	schemas "github.com/hoopoe-cockpit/hoopoe/packages/schemas/go"
 )
@@ -573,7 +574,22 @@ func (s *server) appendAudit(action string, result audit.Result, projectID strin
 		ApprovalID: approvalID,
 		Data:       data,
 	}
-	_, _, err := s.auditLogAppender.Append(entry)
+	_, traces, err := s.auditLogAppender.Append(entry)
+	// hp-8oym (hp-nlk8 Gap 3): forward each TraceEvent to the
+	// MetricAuditRedactionsTotal counter so operators can watch
+	// "is the production redactor actually working?" at a glance via
+	// /v1/diagnostics/metrics. Increment on success only — a failed
+	// Append means the audit record didn't land, so the metric should
+	// not over-count secret matches that the audit log won't preserve.
+	// Pre-fix the second return value was discarded entirely.
+	if err == nil && s.metrics != nil {
+		for _, ev := range traces {
+			_ = s.metrics.IncCounter(daemonmetrics.MetricAuditRedactionsTotal, daemonmetrics.Labels{
+				"pattern_id": ev.PatternID,
+				"context":    ev.Context,
+			}, 1)
+		}
+	}
 	return err
 }
 
