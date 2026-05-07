@@ -657,6 +657,86 @@ func TestProbeOnHighVolumeGoldenFixtureDegradesAllCapabilities(t *testing.T) {
 	}
 }
 
+// TestProbeOnUnsupportedVersionGoldenFixturePinsCorpusContract loads
+// packages/fixtures/golden-outputs/bv/unsupported-version.json and pins
+// the bv adapter contract from plan.md §18.3 for the
+// "unsupported-version" state.
+//
+// Today probeVersion (capabilities.go:158) records the observed bv
+// version into ProbeResult.Version on a best-effort basis but no
+// capability is gated on a minimum version. The fixture documents the
+// downstream contract that future version-gating logic must honor:
+// report `bv._minVersion` as `missing` when the observed version is
+// below the integration-contract minimum.
+//
+// Pinned here:
+//
+//  1. Fixture self-consistency (state, exit=0, stdoutText "bv 0.0.1",
+//     _minVersion=missing).
+//  2. The synthetic `bv._minVersion` capability is *not* a real adapter
+//     capability constant — fixture-corpus marker only. AllCapabilityIDs
+//     must not contain it; if it ever does, this test fails so the
+//     contract change is intentional.
+//  3. Probe drives through the unsupported version: `--version` returns
+//     "bv 0.0.1\n" and probeVersion captures "0.0.1" verbatim into
+//     ProbeResult.Version. All real capabilities (Triage, Plan, Insights,
+//     Diff, Next) still report StatusOK because no version gate exists
+//     yet — a future commit that introduces version gating must promote
+//     _minVersion to a real capability and downgrade gated capabilities
+//     here intentionally.
+func TestProbeOnUnsupportedVersionGoldenFixturePinsCorpusContract(t *testing.T) {
+	t.Parallel()
+	fixture := loadBVGoldenFixture(t, "unsupported-version.json")
+	if fixture.Meta.State != "unsupported-version" {
+		t.Fatalf("fixture state = %q, want unsupported-version", fixture.Meta.State)
+	}
+	if fixture.Exit != 0 {
+		t.Fatalf("fixture exit = %d, want 0 (binary executed and printed version)", fixture.Exit)
+	}
+	if !strings.Contains(fixture.StdoutText, "0.0.1") {
+		t.Fatalf("fixture stdoutText = %q, want '0.0.1' marker", fixture.StdoutText)
+	}
+	versionCap, ok := fixture.Capabilities["bv._minVersion"]
+	if !ok || versionCap.Status != "missing" {
+		t.Fatalf("fixture must declare bv._minVersion=missing, got %+v", fixture.Capabilities)
+	}
+
+	for _, id := range AllCapabilityIDs() {
+		if id == "bv._minVersion" {
+			t.Fatalf("bv._minVersion is now a real adapter capability — update the fixture/test contract intentionally")
+		}
+	}
+
+	fake := newFakeExecutor()
+	fake.Stdouts["--version"] = []byte(fixture.StdoutText)
+	// Minimum-viable JSON for each capability so probeOne reaches StatusOK —
+	// reused from TestProbeReportsOkWhenAllCommandsSucceed.
+	fake.Stdouts["--robot-triage"] = []byte(`{"generated_at":"2026-05-04T00:00:00Z","data_hash":"x","triage":{"meta":{"version":"1","generated_at":"x","phase2_ready":true,"issue_count":1},"quick_ref":{"open_count":1,"actionable_count":0,"blocked_count":0,"in_progress_count":0,"top_picks":[]}}}`)
+	fake.Stdouts["--robot-plan"] = []byte(`{"generated_at":"2026-05-04T00:00:00Z","data_hash":"x","plan":{"total_actionable":0,"total_blocked":0,"tracks":[],"summary":{"unblocks_count":0}}}`)
+	fake.Stdouts["--robot-insights"] = []byte(`{}`)
+	fake.Stdouts["--robot-diff --diff-since HEAD"] = []byte(`{"generated_at":"2026-05-04T00:00:00Z","resolved_revision":"x","from_data_hash":"a","to_data_hash":"b","diff":{"from_timestamp":"2026-05-04T00:00:00Z","to_timestamp":"2026-05-04T00:00:00Z","from_revision":"HEAD","new_issues":null,"closed_issues":null,"removed_issues":null,"reopened_issues":null,"modified_issues":[],"metric_deltas":{"total_issues":0,"open_issues":0,"closed_issues":0,"blocked_issues":0,"total_edges":0,"cycle_count":0,"component_count":0,"avg_pagerank":0,"avg_betweenness":0},"summary":{"total_changes":0,"issues_added":0,"issues_closed":0,"issues_removed":0,"issues_reopened":0,"issues_modified":0,"cycles_introduced":0,"cycles_resolved":0,"net_issue_change":0,"health_trend":"stable"}}}`)
+	fake.Stdouts["--robot-next"] = []byte(`{"generated_at":"2026-05-04T00:00:00Z","data_hash":"x","status":"ok"}`)
+
+	c := NewWithExecutor(fake)
+	res := Probe(context.Background(), c, func() time.Time { return time.Date(2026, 5, 7, 0, 0, 0, 0, time.UTC) })
+
+	if res.Tool != "bv" {
+		t.Fatalf("ProbeResult.Tool = %q, want bv", res.Tool)
+	}
+	if !strings.Contains(res.Version, "0.0.1") {
+		t.Fatalf("ProbeResult.Version = %q, want it to capture the unsupported '0.0.1' verbatim", res.Version)
+	}
+	for _, capID := range AllCapabilityIDs() {
+		report, ok := res.Reports[capID]
+		if !ok {
+			t.Fatalf("%s missing from probe report", capID)
+		}
+		if report.Status != StatusOK {
+			t.Fatalf("%s = %q, want ok (no version gating today; future version-gating must promote _minVersion). notes=%q", capID, report.Status, report.Notes)
+		}
+	}
+}
+
 func loadBVGoldenFixture(t *testing.T, name string) bvGoldenFixture {
 	t.Helper()
 	data := loadFixture(t, filepath.Join("golden-outputs", "bv", name))
