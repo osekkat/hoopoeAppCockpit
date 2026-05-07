@@ -583,6 +583,17 @@ func (s *subscriber) deliver(ev Event, lag Event) {
 	}
 }
 
+// lagEvent constructs the per-subscriber `_lag` marker. The Data map
+// is built from a hardcoded literal plus `ev.Sequence` (a uint64), so
+// it carries nothing the redactor would touch today.
+//
+// hp-hn4: DO NOT add caller-supplied or runtime-string fields here
+// without routing them through redaction. Unlike Publish, this path
+// does not run the EventHub redactor — fields added below would ship
+// to subscribers verbatim. If a future change needs to surface a
+// non-numeric field, either redact it before constructing the map or
+// publish a real event through h.Publish (which goes through
+// redactData → RedactStreamedEvent).
 func (h *EventHub) lagEvent(ev Event) Event {
 	return Event{
 		EventID:       newEventID(),
@@ -617,6 +628,17 @@ func (h *EventHub) nextSequenceLocked(channel string) uint64 {
 // Read the channel's current sequence WITHOUT mutating it. Receivers
 // that care about ordering still see a meaningful sequence; the next
 // real Publish on that channel still gets sequence currentMax+1.
+//
+// hp-hn4: this constructor BYPASSES the EventHub redactor by design —
+// callers (Heartbeat, CompatibilityWarning) build the Data map from
+// hardcoded literals plus a small set of well-typed primitives
+// (clientSchemaVersion / serverSchemaVersion). DO NOT pass
+// caller-supplied strings, paths, identifiers, or any other field
+// through `data` here without first running it through the redactor;
+// a value placed in this map ships to subscribers verbatim. If a
+// future caller needs to surface free-form runtime data, either
+// redact the value before constructing the map or publish through
+// h.Publish (which routes through redactData → RedactStreamedEvent).
 func (h *EventHub) transientEvent(channel string, eventType string, data any) Event {
 	h.mu.RLock()
 	sequence := h.sequences[channel]
@@ -639,6 +661,19 @@ type replayWindow struct {
 	LastSequence   uint64
 }
 
+// gapEvent constructs the per-snapshot `_gap` marker shipped on
+// SnapshotWithGaps. The Data map is built from `cursor` and
+// `window.{LastSequence,OldestRetained}` — all uint64 — so it carries
+// nothing the redactor would touch today.
+//
+// hp-hn4: DO NOT add caller-supplied or runtime-string fields here
+// without routing them through redaction. Unlike Publish, this path
+// does not run the EventHub redactor — fields added below would ship
+// to subscribers verbatim. If a future change needs to surface a
+// non-numeric field (e.g., a channel selector, a producer hint, a
+// path), either redact it before constructing the map or publish a
+// real event through h.Publish (which goes through redactData →
+// RedactStreamedEvent).
 func (h *EventHub) gapEvent(channel string, cursor uint64, window replayWindow) Event {
 	from := cursor + 1
 	to := window.LastSequence
