@@ -537,6 +537,56 @@ func TestProbeOnTimeoutGoldenFixtureDegradesAllCapabilities(t *testing.T) {
 	}
 }
 
+// TestUnsupportedVersionGoldenFixturePinsCorpusIntegrity loads the
+// committed Phase 0 golden artifact at
+// packages/fixtures/golden-outputs/agent_mail/unsupported-version.json
+// and pins the fixture-corpus contract from plan.md §18.3 for the
+// "unsupported-version" state.
+//
+// agent-mail is an MCP server, not a CLI binary, so the agent-mail Go
+// adapter has no version-gating shell-out. The fixture exists to
+// document the contract that future version-gating logic (e.g., when
+// the adapter starts negotiating MCP protocol versions explicitly) must
+// honor: report `agent_mail._minVersion` as `missing` when the observed
+// MCP server version is below the integration-contract minimum.
+//
+// Pinned here:
+//
+//  1. Fixture self-consistency (state, exit, version string).
+//  2. The synthetic `_minVersion` capability is *not* a real adapter
+//     CapabilityIDs() entry — it's a fixture-corpus marker. A future
+//     edit that promotes it to a real capability must update the
+//     adapter alongside the fixture.
+//  3. The observed version "0.0.1" is below any plausible future
+//     minimum, so the fixture remains a valid test of the
+//     unsupported-version contract.
+func TestUnsupportedVersionGoldenFixturePinsCorpusIntegrity(t *testing.T) {
+	t.Parallel()
+	fixture := loadAgentMailGoldenFixture(t, "unsupported-version.json")
+
+	if fixture.Meta.State != "unsupported-version" {
+		t.Fatalf("fixture state = %q, want unsupported-version", fixture.Meta.State)
+	}
+	if fixture.Exit != 0 {
+		t.Fatalf("fixture exit = %d, want 0 (binary executed and printed version)", fixture.Exit)
+	}
+	if !strings.Contains(fixture.StdoutText, "0.0.1") {
+		t.Fatalf("fixture stdoutText = %q, want '0.0.1' marker", fixture.StdoutText)
+	}
+	versionCap, ok := fixture.Capabilities["agent_mail._minVersion"]
+	if !ok || versionCap.Status != "missing" {
+		t.Fatalf("fixture must declare agent_mail._minVersion=missing, got %+v", fixture.Capabilities)
+	}
+
+	realIDs := map[string]struct{}{}
+	for _, id := range CapabilityIDs() {
+		realIDs[id] = struct{}{}
+	}
+	if _, present := realIDs["agent_mail._minVersion"]; present {
+		t.Fatalf("agent_mail._minVersion is now a real adapter capability — update the fixture/test contract intentionally")
+	}
+}
+
 // agentMailGoldenFixture mirrors the shape of the committed Phase 0 golden
 // outputs at packages/fixtures/golden-outputs/agent_mail/*.json. Only the
 // fields the adapter contract observes are decoded — fixtures may carry
