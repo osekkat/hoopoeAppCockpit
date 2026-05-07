@@ -47,6 +47,63 @@ export const DEFAULT_CSP =
   "form-action 'self'; " +
   "frame-ancestors 'none'";
 
+/**
+ * hp-iq8f: dev-only CSP applied when the renderer loads from Vite
+ * (HOOPOE_VITE_URL set). The Vite + @vitejs/plugin-react dev
+ * pipeline injects an inline preamble script and uses `eval`-based
+ * Fast Refresh; both are blocked by the strict prod CSP, which
+ * causes plugin-react to throw "can't detect preamble" at the top
+ * of the first .tsx import and leaves the renderer with a black
+ * screen because React never mounts.
+ *
+ * Loosenings vs DEFAULT_CSP, scoped to dev:
+ *   default-src + script-src + style-src + img-src + font-src
+ *     each gain http://127.0.0.1:5173 so module/asset fetches
+ *     from the Vite dev server resolve.
+ *   script-src additionally gains 'unsafe-inline' (React preamble)
+ *     and 'unsafe-eval' (Fast Refresh's eval-based HMR).
+ *
+ * Hardening that STAYS strict in dev (not relaxed):
+ *   object-src 'none'    — no plugins.
+ *   base-uri 'self'      — no <base href> hijack.
+ *   form-action 'self'   — forms still bound to self.
+ *   frame-ancestors 'none' — never embedded.
+ *   connect-src          — already permits ws://127.0.0.1:* /
+ *                          loopback, so HMR works without further
+ *                          relaxation.
+ *
+ * Selection is gated on HOOPOE_VITE_URL via {@link selectCsp};
+ * production builds (no env var) keep DEFAULT_CSP, so this dev
+ * relaxation never reaches a user-shipped DMG.
+ */
+export const DEV_CSP_FOR_VITE =
+  "default-src 'self' http://127.0.0.1:5173; " +
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' http://127.0.0.1:5173; " +
+  "style-src 'self' 'unsafe-inline' http://127.0.0.1:5173; " +
+  "img-src 'self' data: http://127.0.0.1:5173; " +
+  "font-src 'self' http://127.0.0.1:5173; " +
+  "connect-src 'self' http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:* wss://127.0.0.1:* wss://localhost:*; " +
+  "object-src 'none'; " +
+  "base-uri 'self'; " +
+  "form-action 'self'; " +
+  "frame-ancestors 'none'";
+
+/**
+ * hp-iq8f: pick the CSP at startup based on whether the renderer
+ * is loading from Vite. When `HOOPOE_VITE_URL` is set to a real
+ * URL (non-empty after trim), returns {@link DEV_CSP_FOR_VITE};
+ * otherwise returns the strict {@link DEFAULT_CSP}. The trim/empty
+ * rule mirrors hp-1loj's `shouldSpawnBackend` so dev-mode toggles
+ * stay consistent across the entry-point seams.
+ */
+export function selectCsp(env: NodeJS.ProcessEnv): string {
+  const viteUrl = env.HOOPOE_VITE_URL;
+  if (typeof viteUrl === "string" && viteUrl.trim().length > 0) {
+    return DEV_CSP_FOR_VITE;
+  }
+  return DEFAULT_CSP;
+}
+
 export const SAFE_WEB_PREFERENCES: WebPreferences = {
   contextIsolation: true,
   sandbox: true,

@@ -21,6 +21,7 @@ import {
   createMainWindow,
   revealExistingWindowOnActivate,
 } from "./main/WindowManager.ts";
+import { selectCsp } from "./main/window-policy.ts";
 import {
   resolveRendererTarget,
   wireMainProcessLifecycle,
@@ -50,6 +51,12 @@ const target = resolveRendererTarget({
 });
 
 const preloadPath = Path.join(__dirname, "preload.js");
+
+// hp-iq8f: pick the CSP once at startup. HOOPOE_VITE_URL set ->
+// DEV_CSP_FOR_VITE (lets Vite + plugin-react preamble run);
+// unset -> the strict DEFAULT_CSP. Production DMG never sees the
+// dev relaxation because the env var is only set in dev.
+const cspDirective = selectCsp(process.env);
 
 // Electron's `app.on` uses heavily-overloaded literal event-name
 // types that don't conform structurally to the simpler `(event:
@@ -86,6 +93,7 @@ wireMainProcessLifecycle({
     createMainWindow({
       preloadPath,
       initialUrl: resolved.url,
+      cspDirective,
     });
   },
   revealExisting: () => revealExistingWindowOnActivate(),

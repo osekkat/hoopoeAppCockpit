@@ -7,10 +7,12 @@ import { expect, test } from "bun:test";
 import {
   ALLOWED_NAVIGATION_ORIGINS,
   DEFAULT_CSP,
+  DEV_CSP_FOR_VITE,
   HARDENING_RESPONSE_HEADERS,
   SAFE_WEB_PREFERENCES,
   isAllowedNavigationUrl,
   navigationPolicyForInitialUrl,
+  selectCsp,
 } from "./window-policy.ts";
 
 // ── Strict webPreferences (hp-rflj) ───────────────────────────────────────
@@ -108,4 +110,75 @@ test("window-policy: ALLOWED_NAVIGATION_ORIGINS pins to loopback origins", () =>
     const isLoopback = origin.includes("127.0.0.1") || origin.includes("localhost");
     expect(isLoopback).toBe(true);
   }
+});
+
+// ── hp-iq8f: dev-mode CSP + selector ──────────────────────────────────────
+
+test("window-policy: DEFAULT_CSP MUST NOT contain 'unsafe-inline' or 'unsafe-eval' on script-src (prod-strict invariant)", () => {
+  // Regression guard. The dev relaxation in DEV_CSP_FOR_VITE must
+  // NEVER bleed into the prod CSP. Renderer isolation (Guardrail 2
+  // spirit) depends on this. style-src `'unsafe-inline'` is the
+  // documented Tailwind-runtime exception (see comment on
+  // DEFAULT_CSP); script-src must stay locked.
+  const scriptSrcMatch = /script-src ([^;]+);/.exec(DEFAULT_CSP);
+  expect(scriptSrcMatch).not.toBeNull();
+  const scriptSrc = scriptSrcMatch?.[1] ?? "";
+  expect(scriptSrc).not.toContain("'unsafe-inline'");
+  expect(scriptSrc).not.toContain("'unsafe-eval'");
+  expect(scriptSrc).not.toContain("127.0.0.1:5173");
+});
+
+test("window-policy: DEV_CSP_FOR_VITE allows the inline preamble + eval-based Fast Refresh", () => {
+  const scriptSrcMatch = /script-src ([^;]+);/.exec(DEV_CSP_FOR_VITE);
+  expect(scriptSrcMatch).not.toBeNull();
+  const scriptSrc = scriptSrcMatch?.[1] ?? "";
+  expect(scriptSrc).toContain("'self'");
+  expect(scriptSrc).toContain("'unsafe-inline'");
+  expect(scriptSrc).toContain("'unsafe-eval'");
+  expect(scriptSrc).toContain("http://127.0.0.1:5173");
+});
+
+test("window-policy: DEV_CSP_FOR_VITE permits Vite asset/style fetches from the dev server", () => {
+  expect(DEV_CSP_FOR_VITE).toMatch(/style-src[^;]+http:\/\/127\.0\.0\.1:5173/);
+  expect(DEV_CSP_FOR_VITE).toMatch(/img-src[^;]+http:\/\/127\.0\.0\.1:5173/);
+  expect(DEV_CSP_FOR_VITE).toMatch(/font-src[^;]+http:\/\/127\.0\.0\.1:5173/);
+  expect(DEV_CSP_FOR_VITE).toMatch(/default-src[^;]+http:\/\/127\.0\.0\.1:5173/);
+});
+
+test("window-policy: DEV_CSP_FOR_VITE keeps object-src / base-uri / frame-ancestors strict", () => {
+  expect(DEV_CSP_FOR_VITE).toContain("object-src 'none'");
+  expect(DEV_CSP_FOR_VITE).toContain("base-uri 'self'");
+  expect(DEV_CSP_FOR_VITE).toContain("frame-ancestors 'none'");
+  expect(DEV_CSP_FOR_VITE).toContain("form-action 'self'");
+});
+
+test("window-policy: DEV_CSP_FOR_VITE connect-src already permits the HMR websocket (loopback ws)", () => {
+  // Vite's HMR connects to ws://127.0.0.1:5173. The shared
+  // connect-src list already covers ws://127.0.0.1:* so HMR works
+  // without further relaxation.
+  expect(DEV_CSP_FOR_VITE).toMatch(/connect-src[^;]+ws:\/\/127\.0\.0\.1:\*/);
+});
+
+test("selectCsp: HOOPOE_VITE_URL unset returns the strict DEFAULT_CSP", () => {
+  expect(selectCsp({})).toBe(DEFAULT_CSP);
+});
+
+test("selectCsp: HOOPOE_VITE_URL='' returns the strict DEFAULT_CSP", () => {
+  expect(selectCsp({ HOOPOE_VITE_URL: "" })).toBe(DEFAULT_CSP);
+});
+
+test("selectCsp: whitespace-only HOOPOE_VITE_URL still returns DEFAULT_CSP (treated as unset after trim)", () => {
+  expect(selectCsp({ HOOPOE_VITE_URL: "   \n\t " })).toBe(DEFAULT_CSP);
+});
+
+test("selectCsp: real HOOPOE_VITE_URL returns DEV_CSP_FOR_VITE", () => {
+  expect(
+    selectCsp({ HOOPOE_VITE_URL: "http://127.0.0.1:5173" }),
+  ).toBe(DEV_CSP_FOR_VITE);
+});
+
+test("selectCsp: leading/trailing whitespace around a real URL still returns DEV_CSP_FOR_VITE", () => {
+  expect(
+    selectCsp({ HOOPOE_VITE_URL: "  http://127.0.0.1:5173  " }),
+  ).toBe(DEV_CSP_FOR_VITE);
 });
