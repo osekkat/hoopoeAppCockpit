@@ -3,7 +3,12 @@ import healthyHourMailDump from "../../../../../packages/fixtures/scenarios/heal
 import healthyHourBrList from "../../../../../packages/fixtures/scenarios/healthy-hour/br-list.json" with { type: "json" };
 import healthyHourMeta from "../../../../../packages/fixtures/scenarios/healthy-hour/meta.json" with { type: "json" };
 import healthyHourNtmSnapshot from "../../../../../packages/fixtures/scenarios/healthy-hour/ntm-snapshot.json" with { type: "json" };
-import { MOCK_FLYWHEEL_COMMANDS } from "../../shared/ipc-contract.ts";
+import {
+  isDaemonRequestMethod,
+  isInternalIpcCommand,
+  MOCK_FLYWHEEL_COMMANDS,
+  type DaemonRequestMethod,
+} from "../../shared/ipc-contract.ts";
 
 const MOCK_STAGE_PROJECT_IDS = new Set(["local-demo", "mock-flywheel-project"]);
 
@@ -108,11 +113,20 @@ interface StagePayload<T> {
   readonly transport: StageFixtureSource["transport"];
 }
 
+// hp-no7e: Beads/Swarm queries used to set staleTime: Number.POSITIVE_INFINITY,
+// which meant a stage would render its first payload and never refresh — even
+// after focus, reconnect, or a visible bead/swarm event. Cap freshness at
+// STAGE_QUERY_STALE_MS so TanStack Query refetches on focus/mount without
+// hammering the daemon between user-visible refresh signals. The Beads/Swarm
+// stages will graduate to event-driven invalidation when the real
+// beads.list/swarm.snapshot RPCs ship; until then this is the right floor.
+export const STAGE_QUERY_STALE_MS = 30_000;
+
 export function useBeadsStageQuery(projectId: string) {
   return useQuery({
     queryKey: ["stage-data", "beads", projectId],
     queryFn: () => loadBeadsStageData(projectId),
-    staleTime: Number.POSITIVE_INFINITY,
+    staleTime: STAGE_QUERY_STALE_MS,
   });
 }
 
@@ -120,7 +134,7 @@ export function useSwarmStageQuery(projectId: string) {
   return useQuery({
     queryKey: ["stage-data", "swarm", projectId],
     queryFn: () => loadSwarmStageData(projectId),
-    staleTime: Number.POSITIVE_INFINITY,
+    staleTime: STAGE_QUERY_STALE_MS,
   });
 }
 
@@ -220,12 +234,35 @@ export function isMockStageProject(projectId: string): boolean {
   return MOCK_STAGE_PROJECT_IDS.has(projectId);
 }
 
+// hp-no7e: mock-flywheel.* command IDs are documented as main-only in
+// preload-api.yaml (the renderer-facing daemonRequestMethods allowlist
+// rejects them, see preload.ts isDaemonRequestMethod gate). Routing them
+// through window.hoopoe.daemon.request would have produced a "method
+// rejected" error in real Electron, breaking BeadsStage/SwarmStage even
+// when a daemon bridge is present. Always serve fixture fallback for these
+// IDs — and fail loudly if a non-mock project tries to ride them, since
+// that would mean a real project is reaching for fixtures it doesn't have.
 async function requestStagePayload<T>(
   method: string,
   body: unknown,
   fallbackPayload: T,
   projectId: string,
 ): Promise<StagePayload<unknown>> {
+  if (isInternalIpcCommand(method)) {
+    if (!isMockStageProject(projectId)) {
+      throw new Error(
+        `Hoopoe stage data is not available for project ${projectId}: method ${method} is a main-only mock-flywheel command and the renderer has no real ${method.replace(/^mock-flywheel\./, "")} RPC wired yet.`,
+      );
+    }
+    return { payload: fallbackPayload, transport: "fixture-fallback" };
+  }
+
+  if (!isDaemonRequestMethod(method)) {
+    throw new Error(
+      `Hoopoe stage data: method ${method} is not a registered daemonRequestMethod — refusing to route through the renderer daemon bridge.`,
+    );
+  }
+
   const request = rendererDaemonRequest();
   if (request) {
     return { payload: await request(method, body), transport: "daemon-rpc" };
@@ -238,11 +275,14 @@ async function requestStagePayload<T>(
   return { payload: fallbackPayload, transport: "fixture-fallback" };
 }
 
-function rendererDaemonRequest(): ((method: string, body: unknown) => Promise<unknown>) | null {
+// rendererDaemonRequest types its method param as DaemonRequestMethod so
+// future additions to stage-data are caught at compile time if they try to
+// reach for a method that isn't in the renderer-facing allowlist.
+function rendererDaemonRequest(): ((method: DaemonRequestMethod, body: unknown) => Promise<unknown>) | null {
   if (typeof window === "undefined") return null;
   const hoopoe = (window as Window & { readonly hoopoe?: RendererDaemonBridge }).hoopoe;
   const request = hoopoe?.daemon?.request;
-  return typeof request === "function" ? request : null;
+  return typeof request === "function" ? (request as (method: DaemonRequestMethod, body: unknown) => Promise<unknown>) : null;
 }
 
 function sourceFor(transport: StageFixtureSource["transport"]): StageFixtureSource {
