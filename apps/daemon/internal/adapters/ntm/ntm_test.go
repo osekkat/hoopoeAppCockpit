@@ -194,6 +194,104 @@ func TestParseSnapshotUsesGoldenAndScenarioFixtures(t *testing.T) {
 	}
 }
 
+// TestProbeOnMissingToolGoldenFixtureMarksAllCapabilitiesMissing loads
+// packages/fixtures/golden-outputs/ntm/missing-tool.json and pins the
+// adapter contract from plan.md §18.3 for the missing-tool state.
+//
+// The existing TestProbeReportsMissing... case in this file already
+// covers the runner-error path (`exec: ... not found`). The fixture
+// declares a different observable surface: `exit: 127` plus a
+// "ntm: command not found" stderr. That hits the
+// commandError-with-ExitCode-127 branch of statusForError
+// (ntm.go:1257-1261) — distinct from the exec.ErrNotFound /
+// "executable file not found" / "command not found" string match
+// branches at line 1269. A regression that flips that branch back to
+// Degraded would slip past the existing test but trip this one.
+//
+// Acceptance pinned: the version probe at ntm.go:883 returns a
+// commandError, statusForError fans StatusMissing across every
+// capability, and CapabilityPresent in particular is reported
+// Missing — matching the fixture's
+// `capabilities.ntm._present.status == "missing"` declaration.
+func TestProbeOnMissingToolGoldenFixtureMarksAllCapabilitiesMissing(t *testing.T) {
+	fixture := loadNTMGoldenFixture(t, "missing-tool.json")
+	if fixture.Meta.State != "missing-tool" {
+		t.Fatalf("fixture state = %q, want missing-tool", fixture.Meta.State)
+	}
+	if cap, ok := fixture.Capabilities["ntm._present"]; !ok || cap.Status != "missing" {
+		t.Fatalf("fixture must declare ntm._present=missing, got %+v", fixture.Capabilities)
+	}
+	if fixture.Exit != 127 {
+		t.Fatalf("fixture exit = %d, want 127 (the discriminant for the commandError-127 branch this test pins)", fixture.Exit)
+	}
+	if !strings.Contains(fixture.StderrText, "command not found") {
+		t.Fatalf("fixture stderrText = %q, want a 'command not found' marker", fixture.StderrText)
+	}
+
+	// Drive the version probe via a fakeRunner that replays the
+	// fixture's exit code + stderr verbatim. The adapter's
+	// runText helper (ntm.go:1121-1127) sees ExitCode != 0 and
+	// returns a commandError wrapping that result; statusForError
+	// (ntm.go:1257-1261) then maps ExitCode 127 → StatusMissing,
+	// and Probe (ntm.go:884-892) fans that state across every
+	// capability via missingCapabilities + the per-cap rewrite
+	// loop at lines 886-890.
+	adapter := New(&fakeRunner{responses: map[string]CommandResult{
+		"ntm version": {
+			ExitCode: fixture.Exit,
+			Stderr:   []byte(fixture.StderrText),
+		},
+	}})
+	adapter.Now = fixedNow
+	report, err := adapter.Probe(context.Background())
+	if err != nil {
+		t.Fatalf("Probe: %v", err)
+	}
+
+	present, ok := report.Capabilities[CapabilityPresent]
+	if !ok {
+		t.Fatalf("report missing %s", CapabilityPresent)
+	}
+	if present.Status != capabilities.StatusMissing {
+		t.Fatalf("%s status = %q, want missing (fixture state=missing-tool, exit=127)", CapabilityPresent, present.Status)
+	}
+
+	// Every other capability should also be Missing — the version
+	// failure short-circuits the rest of Probe at ntm.go:892, and
+	// missingCapabilities seeds the whole map. A future refactor
+	// that lets some capabilities through to a separate probe path
+	// (e.g., live-mode REST when the binary is missing) would slip
+	// past the CapabilityPresent assertion above; this fan-out check
+	// guards against that drift. Policy-blocked capabilities
+	// (the mutating ones routed through blockPolicyCapabilities)
+	// can legitimately end up as StatusBlockedByPolicy because the
+	// blockPolicyCapabilities pass at ntm.go:891 fires after the
+	// per-capability rewrite — accept either Missing or
+	// BlockedByPolicy for those.
+	policyBlocked := map[string]struct{}{
+		CapabilitySessionsSpawn:      {},
+		CapabilitySessionsTerminate:  {},
+		CapabilitySessionsAttach:     {},
+		CapabilityApprovalsApprove:   {},
+		CapabilityApprovalsDeny:      {},
+		CapabilitySwarmHalt:          {},
+		CapabilitySpawn:              {},
+		CapabilitySendMarchingOrders: {},
+		CapabilityPaneKill:           {},
+	}
+	for capID, cap := range report.Capabilities {
+		if _, ok := policyBlocked[capID]; ok {
+			if cap.Status != capabilities.StatusMissing && cap.Status != capabilities.StatusBlockedByPolicy {
+				t.Fatalf("%s status = %q, want missing or blocked_by_policy", capID, cap.Status)
+			}
+			continue
+		}
+		if cap.Status != capabilities.StatusMissing {
+			t.Fatalf("%s status = %q, want missing (whole-tool missing fixture should fan StatusMissing across non-policy caps)", capID, cap.Status)
+		}
+	}
+}
+
 // TestProbeOnMalformedJSONGoldenFixtureDegradesSnapshotCapability loads
 // packages/fixtures/golden-outputs/ntm/malformed-json.json and pins the
 // adapter contract from plan.md §18.3: when the ntm CLI returns a truncated
@@ -254,7 +352,9 @@ type ntmGoldenFixture struct {
 		Adapter string `json:"adapter"`
 		State   string `json:"state"`
 	} `json:"meta"`
+	Exit         int    `json:"exit"`
 	StdoutText   string `json:"stdoutText"`
+	StderrText   string `json:"stderrText"`
 	Capabilities map[string]struct {
 		Status string `json:"status"`
 		Notes  string `json:"notes"`
