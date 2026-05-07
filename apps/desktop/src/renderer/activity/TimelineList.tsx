@@ -43,6 +43,8 @@ interface OpenContextMenuState {
   readonly y: number;
 }
 
+const ACTIVITY_CONTEXT_MENU_DOM_ID = "hh-activity-context-menu";
+
 export function TimelineList({
   emptyReason = "filtered",
   events,
@@ -132,6 +134,7 @@ export function TimelineList({
         <TimelineEntry
           key={event.id}
           event={event}
+          isMenuOpen={openMenu?.event.id === event.id}
           onOpenContextMenu={handleOpenMenu}
           {...(onEventClick ? { onEventClick } : {})}
         />
@@ -150,6 +153,7 @@ export function TimelineList({
 
 interface TimelineEntryProps {
   readonly event: ActivityEvent;
+  readonly isMenuOpen: boolean;
   readonly onEventClick?: (event: ActivityEvent, pivot: ActivityPivot | null) => void;
   readonly onOpenContextMenu: (
     event: ActivityEvent,
@@ -159,7 +163,7 @@ interface TimelineEntryProps {
   ) => void;
 }
 
-function TimelineEntry({ event, onEventClick, onOpenContextMenu }: TimelineEntryProps) {
+function TimelineEntry({ event, isMenuOpen, onEventClick, onOpenContextMenu }: TimelineEntryProps) {
   const rowRef = useRef<HTMLButtonElement>(null);
 
   const props: TimelineRowProps = useMemo(() => {
@@ -198,14 +202,34 @@ function TimelineEntry({ event, onEventClick, onOpenContextMenu }: TimelineEntry
     [event, onOpenContextMenu],
   );
 
+  // hp-r8ch: keyboard-triggered menu opens (Shift+F10 and the dedicated
+  // ContextMenu key) anchor at the row's bounding rect rather than the
+  // synthetic clientX/Y=0 a KeyboardEvent carries — that pair would
+  // detach the fixed-position menu from the focused row entirely.
+  const handleKeyDown = useCallback(
+    (e: ReactKeyboardEvent<HTMLButtonElement>) => {
+      if (!isContextMenuKeyEvent(e.key, e.shiftKey)) return;
+      e.preventDefault();
+      const node = rowRef.current;
+      if (!node) return;
+      const rect = node.getBoundingClientRect();
+      onOpenContextMenu(event, rect.left, rect.bottom, node);
+    },
+    [event, onOpenContextMenu],
+  );
+
   return (
     <button
+      aria-controls={isMenuOpen ? ACTIVITY_CONTEXT_MENU_DOM_ID : undefined}
+      aria-expanded={isMenuOpen}
+      aria-haspopup="menu"
       aria-label={model.ariaLabel}
       className="hh-activity-row"
       data-importance={event.importance}
       data-unread={!event.read}
       onClick={handleClick}
       onContextMenu={handleContextMenu}
+      onKeyDown={handleKeyDown}
       ref={rowRef}
       role="listitem"
       type="button"
@@ -271,6 +295,17 @@ export type ContextMenuKeyAction =
   | { readonly type: "activate"; readonly index: number }
   | { readonly type: "dismiss" }
   | null;
+
+/** hp-r8ch: pure helper for the row's keyboard-trigger detector. The
+ *  WAI-ARIA APG menu pattern names two keys for opening a context menu
+ *  from a focused element: the dedicated ContextMenu key (where the
+ *  hardware exposes one) and Shift+F10 (the reliable cross-platform
+ *  fallback). Extracted so the contract is unit-testable without a DOM. */
+export function isContextMenuKeyEvent(key: string, shiftKey: boolean): boolean {
+  if (key === "ContextMenu") return true;
+  if (key === "F10" && shiftKey) return true;
+  return false;
+}
 
 export function reduceContextMenuKey(
   key: string,
@@ -354,6 +389,7 @@ function ContextMenu({ x, y, onAction, onDismiss }: ContextMenuProps) {
       <ul
         aria-label="Activity event actions"
         className="hh-activity-context-menu"
+        id={ACTIVITY_CONTEXT_MENU_DOM_ID}
         onKeyDown={handleKeyDown}
         role="menu"
         style={style}
