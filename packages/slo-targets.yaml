@@ -83,3 +83,38 @@ targets:
       boolean: true
     source_section: "§10.5"
     enforced_in: [phase2.e2e, chaos]
+
+  # hp-644o — desktop build perf budget. Splits inner-build (vite +
+  # tsdown) from rch-wrapped (rch exec -- bun run build) so a slow
+  # external wrapper doesn't mask Hoopoe build regressions, and a fast
+  # local rebuild doesn't hide a slow CI/queued path. Threshold split:
+  #   - inner: 5s — measures only the build tools we own.
+  #   - wrapped: 10s — accommodates rch's queue + worker dispatch,
+  #     which is external to Hoopoe and not a Hoopoe regression source.
+  - id: desktop.build.inner.p95
+    description: |
+      Desktop production build (`bun run build`) inner-tool latency
+      measured at the workspace root, p95. Excludes any external
+      wrapper (rch / Turbo) so this targets the build tools Hoopoe
+      owns (vite + tsdown). Inner-build observed baseline ≈ 3.0s; 5s
+      threshold leaves headroom for renderer + main-bundle growth.
+    target:
+      percentile: 95
+      value: 5s
+      direction: max
+    source_section: "§10.5"
+    enforced_in: [phase1.perf]
+
+  - id: desktop.build.wrapped.p95
+    description: |
+      Desktop production build under the `rch exec --` wrapper, p95.
+      The 10s ceiling accommodates rch's queue + worker dispatch
+      (~3-4s overhead) on top of inner-build latency. Higher than
+      desktop.build.inner.p95 by design — when CI fleet is loaded
+      this is what users actually wait for.
+    target:
+      percentile: 95
+      value: 10s
+      direction: max
+    source_section: "§10.5"
+    enforced_in: [phase1.perf]
