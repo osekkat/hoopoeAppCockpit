@@ -746,6 +746,98 @@ func TestProbeOnHighVolumeGoldenFixtureDegradesLogCapability(t *testing.T) {
 	}
 }
 
+// TestProbeOnUnsupportedVersionGoldenFixturePinsCorpusContract loads
+// packages/fixtures/golden-outputs/git/unsupported-version.json and
+// pins the git adapter contract from plan.md §18.3 for the
+// "unsupported-version" state.
+//
+// Today probeVersion (capabilities.go:175) records the observed git
+// version into ProbeResult.Version on a best-effort basis but no
+// capability is gated on a minimum version. The fixture documents the
+// downstream contract that future version-gating logic must honor:
+// report `git._minVersion` as `missing` when the observed version is
+// below the integration-contract minimum.
+//
+// Pinned here:
+//
+//  1. Fixture self-consistency (state, exit=0, stdoutText "git 0.0.1",
+//     _minVersion=missing).
+//  2. The synthetic `git._minVersion` capability is *not* a real
+//     adapter capability constant — fixture-corpus marker only.
+//     AllCapabilityIDs must not contain it; if it ever does, this test
+//     fails so the contract change is intentional.
+//  3. Probe drives through the unsupported version: `--version` returns
+//     "git 0.0.1\n" and probeVersion captures "0.0.1" verbatim into
+//     ProbeResult.Version. All real read capabilities (Status, Diff,
+//     Log, Show, Remote, Branch, Blame, UnpushedList) still report
+//     StatusOK because no version gate exists yet — a future commit
+//     that introduces version gating must promote _minVersion to a
+//     real capability and downgrade gated capabilities here
+//     intentionally. CapPush stays Untested (probe never pushes).
+func TestProbeOnUnsupportedVersionGoldenFixturePinsCorpusContract(t *testing.T) {
+	t.Parallel()
+	fixture := loadGitGoldenFixture(t, "unsupported-version.json")
+	if fixture.Meta.State != "unsupported-version" {
+		t.Fatalf("fixture state = %q, want unsupported-version", fixture.Meta.State)
+	}
+	if fixture.Exit != 0 {
+		t.Fatalf("fixture exit = %d, want 0 (binary executed and printed version)", fixture.Exit)
+	}
+	if !strings.Contains(fixture.StdoutText, "0.0.1") {
+		t.Fatalf("fixture stdoutText = %q, want '0.0.1' marker", fixture.StdoutText)
+	}
+	versionCap, ok := fixture.Capabilities["git._minVersion"]
+	if !ok || versionCap.Status != "missing" {
+		t.Fatalf("fixture must declare git._minVersion=missing, got %+v", fixture.Capabilities)
+	}
+
+	for _, id := range AllCapabilityIDs() {
+		if id == "git._minVersion" {
+			t.Fatalf("git._minVersion is now a real adapter capability — update the fixture/test contract intentionally")
+		}
+	}
+
+	fake := newFakeExecutor()
+	fake.Stdouts["--version"] = []byte(fixture.StdoutText)
+	// Healthy responses for every real capability so probeOne reaches
+	// StatusOK — the unsupported-version contract does not gate read
+	// capabilities today, so they must all stay green.
+	logKey := "log --no-color -n 1 --pretty=format:%H%x00%h%x00%an%x00%ae%x00%aI%x00%cn%x00%ce%x00%cI%x00%P%x00%s%x00%b%x1e"
+	fake.Stdouts[logKey] = []byte("abcdef0123456789abcdef0123456789abcdef01\x00abcdef0\x00alice\x00alice@example.com\x002026-05-04T00:00:00+00:00\x00alice\x00alice@example.com\x002026-05-04T00:00:00+00:00\x00\x00first commit\x00\x1e")
+	fake.Stdouts["status --porcelain=v1 --branch"] = []byte("## main\n")
+	fake.Stdouts["diff --no-color"] = []byte("")
+	fake.Stdouts["show --no-color HEAD"] = []byte("commit abcdef0123456789abcdef0123456789abcdef01\nAuthor: alice <alice@example.com>\nDate:   2026-05-04T00:00:00+00:00\n\n    first commit\n")
+	fake.Stdouts["remote -v"] = []byte("")
+	fake.Stdouts["branch -v --no-abbrev"] = []byte("* main abcdef0 first commit\n")
+	fake.Stdouts["blame --porcelain -- README.md"] = []byte("")
+	fake.Stdouts["rev-list origin/HEAD..HEAD"] = []byte("")
+
+	c := NewWithExecutor("/repo", fake)
+	res := Probe(context.Background(), c, func() time.Time { return time.Date(2026, 5, 7, 0, 0, 0, 0, time.UTC) })
+
+	if res.Tool != "git" {
+		t.Fatalf("ProbeResult.Tool = %q, want git", res.Tool)
+	}
+	if !strings.Contains(res.Version, "0.0.1") {
+		t.Fatalf("ProbeResult.Version = %q, want it to capture the unsupported '0.0.1' verbatim", res.Version)
+	}
+	for _, capID := range []string{
+		CapStatusRead, CapDiffRead, CapLog, CapShow,
+		CapRemoteRead, CapBranchRead, CapBlame, CapUnpushedList,
+	} {
+		report, ok := res.Reports[capID]
+		if !ok {
+			t.Fatalf("%s missing from probe report", capID)
+		}
+		if report.Status != StatusOK {
+			t.Fatalf("%s = %q, want ok (no version gating today; future version-gating must promote _minVersion). notes=%q", capID, report.Status, report.Notes)
+		}
+	}
+	if got := res.Reports[CapPush].Status; got != StatusUntested {
+		t.Fatalf("CapPush = %q, want untested (probe never pushes; unaffected by version state)", got)
+	}
+}
+
 // alwaysMissingBinaryExecutor returns ErrMissingBinary for every
 // invocation. Mirrors what OSExecutor produces at client.go:116-118
 // when the underlying exec.Cmd.Run reports
