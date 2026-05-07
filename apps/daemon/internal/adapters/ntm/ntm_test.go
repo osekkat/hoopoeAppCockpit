@@ -194,6 +194,84 @@ func TestParseSnapshotUsesGoldenAndScenarioFixtures(t *testing.T) {
 	}
 }
 
+// TestProbeOnHighVolumeGoldenFixtureDegradesSessionsListCapability loads
+// packages/fixtures/golden-outputs/ntm/high-volume.json and pins the
+// adapter contract from plan.md §18.3 for the high-volume state.
+//
+// The fixture declares `truncated: true` and a 1 MiB stdout payload
+// — `argv` and `stdoutText` are placeholders per
+// `packages/fixtures/golden-outputs/README.md` ("argv semantics
+// (synthetic vs. realistic)"). What is authoritative is `meta.state`,
+// the truncation flag, and the contract that an adapter facing a
+// high-volume response must surface a Degraded capability rather
+// than silently parsing/dropping bytes.
+//
+// The existing TestProbeReportsMissing... case already exercises the
+// MaxStdoutBytes path against a contrived 91-byte response with a
+// 32-byte limit. This test wraps the same envelope-truncation
+// behavior in a fixture-loading guard so the high-volume contract is
+// pinned to the fixture's meta.state and its capabilities table —
+// the fields the README marks authoritative — and a future fixture
+// edit that drops `truncated: true` or flips the capability away from
+// `degraded` is caught.
+func TestProbeOnHighVolumeGoldenFixtureDegradesSessionsListCapability(t *testing.T) {
+	fixture := loadNTMGoldenFixture(t, "high-volume.json")
+	if fixture.Meta.State != "high-volume" {
+		t.Fatalf("fixture state = %q, want high-volume", fixture.Meta.State)
+	}
+	// `ntm._highVolume` is the fixture's contract key for
+	// "high-volume capability surface" — it is not a real adapter
+	// capability ID (the adapter exposes per-surface caps:
+	// CapabilitySessionsList, CapabilityRobotSnapshot, etc.). The
+	// fixture's contract column says: when the wire response
+	// exceeds ENVELOPE_MAX_BYTES, the surface that consumed it
+	// must be reported `degraded`. Pin that.
+	if cap, ok := fixture.Capabilities["ntm._highVolume"]; !ok || cap.Status != "degraded" {
+		t.Fatalf("fixture must declare ntm._highVolume=degraded, got %+v", fixture.Capabilities)
+	}
+	if !fixture.Truncated {
+		t.Fatalf("fixture truncated = false, want true (envelope-truncation is the high-volume contract)")
+	}
+
+	// Drive the adapter's MaxStdoutBytes path via the same
+	// fakeRunner-with-padded-stdout pattern used by the existing
+	// high-volume case in TestProbeReportsMissing... A 91-byte
+	// response against a 32-byte cap forces outputTooLargeError
+	// inside SessionsList, which Probe maps to Degraded
+	// (ntm.go:922-925). The whole point: a future change that
+	// either (a) raises MaxStdoutBytes silently, (b) makes
+	// outputTooLargeError fall through to StatusOK, or (c) drops
+	// the per-call `if err != nil` short-circuit on SessionsList
+	// will fail this test.
+	adapter := New(&fakeRunner{responses: map[string]CommandResult{
+		"ntm version":              {Stdout: []byte("ntm version 1.7.0\n")},
+		"ntm sessions list --json": {Stdout: []byte(`{"sessions":null,"count":0}` + strings.Repeat(" ", 64))},
+		"ntm --robot-snapshot":     {Stdout: []byte(`{"success":true,"sessions":null}`)},
+		"ntm --robot-status":       {Stdout: []byte(`{"success":true,"sessions":[]}`)},
+		"ntm --robot-triage":       {Stdout: []byte(`{"success":true,"items":[]}`)},
+		"ntm approve list --json":  {Stdout: []byte(`{"success":true,"approvals":[]}`)},
+	}})
+	adapter.MaxStdoutBytes = 32
+	adapter.Now = fixedNow
+	report, err := adapter.Probe(context.Background())
+	if err != nil {
+		t.Fatalf("Probe: %v", err)
+	}
+	listCap, ok := report.Capabilities[CapabilitySessionsList]
+	if !ok {
+		t.Fatalf("report missing %s", CapabilitySessionsList)
+	}
+	if listCap.Status != capabilities.StatusDegraded {
+		t.Fatalf("%s status = %q, want degraded (high-volume → envelope-truncation → Degraded contract)", CapabilitySessionsList, listCap.Status)
+	}
+	if listCap.Notes == "" {
+		t.Fatalf("%s notes are empty; expected envelope-truncation error trace", CapabilitySessionsList)
+	}
+	if !strings.Contains(listCap.Notes, "limit") {
+		t.Fatalf("%s notes = %q; expected mention of byte-limit trigger", CapabilitySessionsList, listCap.Notes)
+	}
+}
+
 // TestProbeOnMissingToolGoldenFixtureMarksAllCapabilitiesMissing loads
 // packages/fixtures/golden-outputs/ntm/missing-tool.json and pins the
 // adapter contract from plan.md §18.3 for the missing-tool state.
@@ -355,6 +433,7 @@ type ntmGoldenFixture struct {
 	Exit         int    `json:"exit"`
 	StdoutText   string `json:"stdoutText"`
 	StderrText   string `json:"stderrText"`
+	Truncated    bool   `json:"truncated"`
 	Capabilities map[string]struct {
 		Status string `json:"status"`
 		Notes  string `json:"notes"`
