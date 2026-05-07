@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import type { BeadDependency, BeadStageItem } from "../../data/stage-data.ts";
+import * as DagLayoutModule from "./dag-layout.ts";
 import {
   buildBeadDagLayout,
   clusterIdFor,
@@ -288,5 +291,102 @@ describe("hp-s2x :: helpers", () => {
     expect(isClosedStatus("completed")).toBe(true);
     expect(isClosedStatus("open")).toBe(false);
     expect(isClosedStatus("in_progress")).toBe(false);
+  });
+});
+
+// hp-qpu source-of-truth boundary regression. Plan.md §1.1 + AGENTS.md
+// name `bv --robot-*` as the canonical owner of bead-graph intelligence
+// (PageRank, betweenness, critical path, cycles, ready frontier, k-core,
+// articulation points, eigenvector, HITS). Local helpers in
+// dag-layout.ts (`detectCycles`, `criticalPath`, `readyFrontier`)
+// exist as a Mock-Flywheel offline-rendering fallback gated to
+// `MOCK_STAGE_PROJECT_IDS` in dag-data.ts. These tests pin that
+// boundary so the renderer cannot drift back into a parallel
+// graph-intelligence source for production projects.
+describe("hp-qpu :: bv source-of-truth boundary", () => {
+  const repoRoot = resolve(__dirname, "..", "..", "..", "..", "..", "..");
+  const dagLayoutPath = resolve(
+    repoRoot,
+    "apps",
+    "desktop",
+    "src",
+    "renderer",
+    "stages",
+    "Beads",
+    "dag-layout.ts",
+  );
+  const dagDataPath = resolve(
+    repoRoot,
+    "apps",
+    "desktop",
+    "src",
+    "renderer",
+    "data",
+    "dag-data.ts",
+  );
+
+  test("dag-layout.ts header carries the hp-qpu boundary docblock", () => {
+    const source = readFileSync(dagLayoutPath, "utf8");
+    const head = source.slice(0, 1500);
+    expect(head).toContain("hp-qpu source-of-truth boundary");
+    expect(head).toContain("bv --robot-*");
+    expect(head).toContain("Mock-Flywheel");
+    expect(head).toContain("MOCK_STAGE_PROJECT_IDS");
+  });
+
+  test("dag-layout.ts does NOT export PageRank / betweenness / HITS / eigenvector / kcore / articulation symbols (those live in bv)", () => {
+    const forbiddenExports = [
+      "pageRank",
+      "PageRank",
+      "betweenness",
+      "Betweenness",
+      "hits",
+      "HITS",
+      "eigenvector",
+      "Eigenvector",
+      "kCore",
+      "kcore",
+      "KCore",
+      "articulation",
+      "Articulation",
+    ];
+    const exported = Object.keys(DagLayoutModule);
+    for (const name of forbiddenExports) {
+      expect(exported.includes(name)).toBe(false);
+    }
+  });
+
+  test("dag-layout.ts source does not declare PageRank-style functions or constants", () => {
+    const source = readFileSync(dagLayoutPath, "utf8");
+    // Strip the boundary docblock so its mention of forbidden metric
+    // names doesn't trigger the regex below — the docblock
+    // explicitly enumerates forbidden metrics as the rule that the
+    // rest of the file must NOT violate.
+    const headerEnd = source.indexOf("import type");
+    const codeOnly = headerEnd >= 0 ? source.slice(headerEnd) : source;
+    const forbiddenDeclarationPatterns = [
+      /\b(?:function|const)\s+(?:pageRank|PageRank|computePageRank)\b/,
+      /\b(?:function|const)\s+(?:betweenness|computeBetweenness)\b/,
+      /\b(?:function|const)\s+(?:hits|HITS|computeHits)\b/,
+      /\b(?:function|const)\s+(?:eigenvector|computeEigenvector)\b/,
+      /\b(?:function|const)\s+(?:kCore|computeKCore)\b/,
+      /\b(?:function|const)\s+(?:articulation|computeArticulation)\b/,
+    ];
+    for (const pattern of forbiddenDeclarationPatterns) {
+      expect(codeOnly.match(pattern)).toBeNull();
+    }
+  });
+
+  test("dag-data.ts gates the local-fallback DAG path to MOCK_STAGE_PROJECT_IDS only", () => {
+    const source = readFileSync(dagDataPath, "utf8");
+    expect(source).toContain("MOCK_STAGE_PROJECT_IDS");
+    expect(source).toContain('"local-demo"');
+    expect(source).toContain('"mock-flywheel-project"');
+    // The query must be enabled only for mock IDs; if a future change
+    // removes the isDagProjectId guard, this test catches it.
+    expect(source).toMatch(/enabled:\s*isDagProjectId\(/);
+    // The transport label must stay "fixture-fallback" so a stage
+    // route reading this data sees its non-canonical origin.
+    expect(source).toContain('transport: "fixture-fallback"');
   });
 });

@@ -1,3 +1,22 @@
+// hp-qpu source-of-truth boundary: this file owns the renderer's DAG
+// VISUAL POSITIONING (node x/y coords, cluster collapsing, edge
+// routing, parent/child visibility, status counts). Plan.md §1.1 names
+// `bv --robot-*` as the canonical source for bead-graph intelligence
+// (PageRank, betweenness, critical path, cycles, ready frontier, k-core).
+// The graph-intelligence helpers below — `detectCycles`,
+// `criticalPath`, `readyFrontier` — exist as a Mock-Flywheel /
+// offline fallback used by the local-demo / mock-flywheel-project
+// renderer paths in `apps/desktop/src/renderer/data/dag-data.ts`
+// (gated by `MOCK_STAGE_PROJECT_IDS`). They MUST NOT be used as the
+// canonical source for production projects: production data must come
+// from the daemon's `/v1/projects/{id}/beads/graph` bv-source endpoint
+// (currently a Phase 6 stub per the hp-q0v inventory). Do not add
+// PageRank / betweenness / HITS / eigenvector / k-core /
+// articulation-point computation to this file — those metrics are
+// owned by `bv --robot-insights` and ingested via the daemon, never
+// recomputed in the renderer. dag-layout.test.ts boundary tests guard
+// that rule.
+
 import type { BeadStageItem, BeadDependency } from "../../data/stage-data.ts";
 
 export interface BeadDagLayoutOptions {

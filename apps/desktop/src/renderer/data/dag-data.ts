@@ -13,6 +13,13 @@ import {
 } from "../stages/Beads/dag-layout.ts";
 import type { BeadDependency, BeadStageItem, StageFixtureSource } from "./stage-data.ts";
 
+// hp-qpu source-of-truth boundary: this fixture-fallback renderer
+// path is gated to Mock-Flywheel project IDs only. Production project
+// IDs must source bead-graph intelligence (cycles / criticalPath /
+// readyFrontier / PageRank / betweenness) from the daemon's
+// `/v1/projects/{id}/beads/graph` endpoint backed by `bv --robot-*`,
+// not from the local computeCriticalPath / computeReadyFrontier
+// helpers below. dag-data.test.ts guards that gate.
 const MOCK_STAGE_PROJECT_IDS = new Set(["local-demo", "mock-flywheel-project"]);
 
 interface FixtureBead {
