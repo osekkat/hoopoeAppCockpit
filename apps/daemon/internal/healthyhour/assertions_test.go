@@ -152,6 +152,17 @@ func TestUnknownPreScriptOutcomeFailsLoudly(t *testing.T) {
 	}
 }
 
+func TestPreScriptErrorFailsHealthyHour(t *testing.T) {
+	t.Parallel()
+	m := tick("tend-swarm", PreScriptError)
+	metrics := []SchedulerMetric{m}
+	counters := ActivityCounters{}
+	result := CheckInvariants(metrics, counters, DefaultInvariants())
+	if !hasKind(result, ViolationPreScriptError) {
+		t.Errorf("expected pre_script_error for errored pre-script, got %+v", result.Violations)
+	}
+}
+
 func TestValidatorReportsAllViolationsNotJustFirst(t *testing.T) {
 	t.Parallel()
 	metrics := []SchedulerMetric{

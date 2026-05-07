@@ -48,16 +48,22 @@ const (
 	// validator refuses to silently accept new states — extending
 	// the enum requires a §10.3 schema-version event.
 	ViolationUnknownPreScriptOutcome ViolationKind = "unknown_pre_script_outcome"
+
+	// ViolationPreScriptError: a deterministic pre-script errored
+	// during a healthy-hour window. Audit still fires, but a
+	// pre-script crash is itself a regression in the no-detection
+	// shortcut path and must not pass as healthy.
+	ViolationPreScriptError ViolationKind = "pre_script_error"
 )
 
 // Violation is one breach of the §8.6 invariants the validator
 // found in the metric window.
 type Violation struct {
-	Kind        ViolationKind `json:"kind"`
-	Detail      string        `json:"detail,omitempty"`
-	JobID       string        `json:"jobId,omitempty"`
-	Observed    int           `json:"observed,omitempty"`
-	Threshold   int           `json:"threshold,omitempty"`
+	Kind      ViolationKind `json:"kind"`
+	Detail    string        `json:"detail,omitempty"`
+	JobID     string        `json:"jobId,omitempty"`
+	Observed  int           `json:"observed,omitempty"`
+	Threshold int           `json:"threshold,omitempty"`
 }
 
 // CheckResult is the validator's typed verdict over a 60-minute
@@ -69,11 +75,11 @@ type CheckResult struct {
 
 	// Counts the validator computed during inspection. Surfaced
 	// for log lines and test-evidence files even when OK is true.
-	AgentRunCount      int `json:"agentRunCount"`
-	AgentSpokeCount    int `json:"agentSpokeCount"`
-	TokensConsumed     int `json:"tokensConsumed"`
-	TickCount          int `json:"tickCount"`
-	AuditedTickCount   int `json:"auditedTickCount"`
+	AgentRunCount    int `json:"agentRunCount"`
+	AgentSpokeCount  int `json:"agentSpokeCount"`
+	TokensConsumed   int `json:"tokensConsumed"`
+	TickCount        int `json:"tickCount"`
+	AuditedTickCount int `json:"auditedTickCount"`
 }
 
 // CheckInvariants takes a 60-minute window of scheduler_metrics
@@ -109,6 +115,13 @@ func CheckInvariants(
 			result.Violations = append(result.Violations, Violation{
 				Kind:   ViolationUnknownPreScriptOutcome,
 				Detail: fmt.Sprintf("unknown PreScriptOutcome %q (extending enum requires schema-version event per §10.3)", row.PreScriptOutcome),
+				JobID:  row.JobID,
+			})
+		}
+		if row.PreScriptOutcome == PreScriptError {
+			result.Violations = append(result.Violations, Violation{
+				Kind:   ViolationPreScriptError,
+				Detail: "deterministic pre-script errored during a healthy-hour window",
 				JobID:  row.JobID,
 			})
 		}
