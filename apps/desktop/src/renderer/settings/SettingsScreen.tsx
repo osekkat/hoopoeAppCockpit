@@ -122,7 +122,7 @@ export function SettingsScreen(props: SettingsScreenProps): React.JSX.Element {
   };
 
   return (
-    <div className="hh-settings-screen" role="dialog" aria-label="Settings">
+    <div className="hh-settings-screen" role="dialog" aria-modal="true" aria-label="Settings">
       <aside className="hh-settings-rail" aria-label="Settings sections">
         {SECTION_ORDER.map((section) => {
           const count = grouped[section].length;

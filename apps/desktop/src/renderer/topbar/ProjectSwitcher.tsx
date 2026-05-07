@@ -212,7 +212,14 @@ export function ProjectSwitcher() {
         <div
           className="hh-project-switch-modal"
           role="dialog"
+          aria-modal="true"
           aria-label="Project switch confirmation"
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.stopPropagation();
+              cancelPendingProjectSwitch();
+            }
+          }}
         >
           <div className="hh-project-switch-modal-card">
             <div className="hh-project-switch-modal-title">
