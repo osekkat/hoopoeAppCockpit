@@ -17,12 +17,10 @@ import (
 	"net/http"
 	"net/url"
 	"os/exec"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/capabilities"
 	"nhooyr.io/websocket"
 )
 
@@ -550,98 +548,7 @@ func (a *Adapter) ReadWebSocket(ctx context.Context, path string, handle func(Ev
 	}
 }
 
-func (a *Adapter) Probe(ctx context.Context) (*capabilities.ToolReport, error) {
-	report := &capabilities.ToolReport{
-		Tool:          capabilities.ToolNTM,
-		Source:        "cli",
-		LastCheckedAt: a.now().UTC().Format(time.RFC3339),
-		Capabilities:  missingCapabilities("not probed"),
-	}
-	versionText, err := a.runText(ctx, VersionArgv())
-	if err != nil {
-		state := statusForError(err)
-		for capID, cap := range report.Capabilities {
-			cap.Status = state
-			cap.Notes = err.Error()
-			report.Capabilities[capID] = cap
-		}
-		blockPolicyCapabilities(report)
-		return report, nil
-	}
-	version := ParseVersion(string(versionText))
-	report.Version = version
-	report.Capabilities[CapabilityPresent] = capabilities.Capability{Status: capabilities.StatusOK}
-	if !versionAtLeast(version, 1, 5) {
-		note := fmt.Sprintf("%v: observed %q, min-compatible is 1.5", ErrUnsupportedVersion, version)
-		for capID, cap := range report.Capabilities {
-			cap.Status = capabilities.StatusMissing
-			cap.Notes = note
-			report.Capabilities[capID] = cap
-		}
-		blockPolicyCapabilities(report)
-		return report, nil
-	}
-	blockPolicyCapabilities(report)
-	report.Capabilities[CapabilityServeREST] = capabilities.Capability{Status: capabilities.StatusUntested, Transport: "http", Notes: "ntm serve not configured"}
-	report.Capabilities[CapabilityServeSSE] = capabilities.Capability{Status: capabilities.StatusUntested, Transport: "sse", Notes: "ntm serve not configured"}
-	report.Capabilities[CapabilityServeWS] = capabilities.Capability{Status: capabilities.StatusUntested, Transport: "ws", Notes: "ntm serve not configured"}
-	if a.LiveBaseURL != "" {
-		if err := a.probeLive(ctx); err == nil {
-			report.Capabilities[CapabilityServeREST] = capabilities.Capability{Status: capabilities.StatusOK, Transport: "http"}
-			report.Capabilities[CapabilityServeSSE] = capabilities.Capability{Status: capabilities.StatusUntested, Transport: "sse", Notes: "stream probe deferred until subscription"}
-			report.Capabilities[CapabilityServeWS] = capabilities.Capability{Status: capabilities.StatusUntested, Transport: "ws", Notes: "stream probe deferred until subscription"}
-			report.Capabilities[CapabilityPanesStream] = capabilities.Capability{Status: capabilities.StatusOK, Transport: "ws,sse", Notes: "ntm serve live stream available; websocket preferred"}
-		} else {
-			report.Capabilities[CapabilityServeREST] = capabilities.Capability{Status: capabilities.StatusDegraded, Transport: "http", Notes: err.Error()}
-		}
-	}
-
-	if _, err := a.SessionsList(ctx); err != nil {
-		report.Capabilities[CapabilitySessionsList] = capabilities.Capability{Status: statusForError(err), Notes: err.Error(), Transport: "stdio"}
-	} else {
-		report.Capabilities[CapabilitySessionsList] = capabilities.Capability{Status: capabilities.StatusOK, Transport: "stdio"}
-	}
-	snapshot, err := a.Snapshot(ctx)
-	if err != nil {
-		report.Capabilities[CapabilityRobotSnapshot] = capabilities.Capability{Status: statusForError(err), Notes: err.Error(), Transport: "stdio"}
-	} else {
-		report.Capabilities[CapabilityRobotSnapshot] = capabilities.Capability{Status: capabilities.StatusOK, Transport: "stdio"}
-		if len(snapshot.Sessions) > 0 {
-			tailCap := probeTail(ctx, a, snapshot.Sessions[0].SessionID())
-			report.Capabilities[CapabilityRobotTail] = tailCap
-			if tailCap.Status == capabilities.StatusOK && report.Capabilities[CapabilityPanesStream].Status != capabilities.StatusOK {
-				report.Capabilities[CapabilityPanesStream] = capabilities.Capability{
-					Status:    capabilities.StatusOK,
-					Transport: "poll",
-					Fallback:  CapabilityRobotTail,
-					Notes:     "live stream unavailable; using bounded ntm.robot.tail polling",
-				}
-			}
-		} else {
-			report.Capabilities[CapabilityRobotTail] = capabilities.Capability{Status: capabilities.StatusUntested, Transport: "stdio", Notes: "no active sessions to tail"}
-		}
-	}
-	if _, err := a.Status(ctx); err != nil {
-		report.Capabilities[CapabilityRobotStatus] = capabilities.Capability{Status: statusForError(err), Notes: err.Error(), Transport: "stdio"}
-	} else {
-		report.Capabilities[CapabilityRobotStatus] = capabilities.Capability{Status: capabilities.StatusOK, Transport: "stdio"}
-	}
-	if _, err := a.Triage(ctx); err != nil {
-		report.Capabilities[CapabilityRobotTriage] = capabilities.Capability{Status: statusForError(err), Notes: err.Error(), Transport: "stdio"}
-	} else {
-		report.Capabilities[CapabilityRobotTriage] = capabilities.Capability{Status: capabilities.StatusOK, Transport: "stdio"}
-	}
-	report.Capabilities[CapabilityRobotActivity] = capabilities.Capability{Status: capabilities.StatusUntested, Transport: "stdio", Notes: "requires active session"}
-	if raw, err := a.ApprovalsList(ctx); err != nil {
-		report.Capabilities[CapabilityApprovalsList] = capabilities.Capability{Status: statusForError(err), Notes: err.Error(), Transport: "stdio"}
-	} else if note, failed := rawReportsFailure(raw); failed {
-		report.Capabilities[CapabilityApprovalsList] = capabilities.Capability{Status: capabilities.StatusDegraded, Notes: note, Transport: "stdio"}
-	} else {
-		report.Capabilities[CapabilityApprovalsList] = capabilities.Capability{Status: capabilities.StatusOK, Transport: "stdio"}
-	}
-	return report, nil
-}
-
+// hp-h5yq: Probe + capability classification helpers moved to capabilities.go.
 // hp-h5yq: parsers + Session-method receivers + ParseVersion moved to parsers.go.
 
 func (a *Adapter) runRawJSON(ctx context.Context, argv []string) (json.RawMessage, error) {
@@ -734,22 +641,7 @@ func (a *Adapter) liveGETAny(ctx context.Context, paths ...string) (json.RawMess
 	return nil, lastErr
 }
 
-func (a *Adapter) probeLive(ctx context.Context) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, a.liveURL("/health"), nil)
-	if err != nil {
-		return err
-	}
-	a.addAuth(req)
-	resp, err := a.httpClient().Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return fmt.Errorf("health status %d", resp.StatusCode)
-	}
-	return nil
-}
+// hp-h5yq: probeLive moved to capabilities.go.
 
 func parseSSE(reader io.Reader, handle func(EventEnvelope) error) error {
 	scanner := bufio.NewScanner(reader)
@@ -814,123 +706,8 @@ func (e outputTooLargeError) Unwrap() error {
 	return ErrOutputTooLarge
 }
 
-func statusForError(err error) capabilities.CapabilityStatus {
-	var commandErr commandError
-	if errors.As(err, &commandErr) {
-		switch commandErr.result.ExitCode {
-		case 124:
-			return capabilities.StatusDegraded
-		case 127:
-			return capabilities.StatusMissing
-		default:
-			return capabilities.StatusDegraded
-		}
-	}
-	if errors.Is(err, ErrOutputTooLarge) || strings.Contains(err.Error(), "decode JSON") {
-		return capabilities.StatusDegraded
-	}
-	if errors.Is(err, exec.ErrNotFound) || strings.Contains(err.Error(), "executable file not found") || strings.Contains(err.Error(), "command not found") {
-		return capabilities.StatusMissing
-	}
-	return capabilities.StatusDegraded
-}
-
-func missingCapabilities(note string) map[string]capabilities.Capability {
-	caps := map[string]capabilities.Capability{}
-	for _, capID := range []string{
-		CapabilityPresent,
-		CapabilitySessionsList,
-		CapabilitySessionsSpawn,
-		CapabilitySessionsTerminate,
-		CapabilitySessionsAttach,
-		CapabilityPanesStream,
-		CapabilityServeREST,
-		CapabilityServeSSE,
-		CapabilityServeWS,
-		CapabilityRobotSnapshot,
-		CapabilityRobotStatus,
-		CapabilityRobotTail,
-		CapabilityRobotTriage,
-		CapabilityRobotActivity,
-		CapabilityApprovalsList,
-		CapabilityApprovalsApprove,
-		CapabilityApprovalsDeny,
-		CapabilitySwarmHalt,
-		CapabilitySpawn,
-		CapabilitySendMarchingOrders,
-		CapabilityPaneKill,
-	} {
-		caps[capID] = capabilities.Capability{Status: capabilities.StatusMissing, Notes: note}
-	}
-	return caps
-}
-
-func blockPolicyCapabilities(report *capabilities.ToolReport) {
-	for _, capID := range []string{
-		CapabilitySessionsSpawn,
-		CapabilitySessionsTerminate,
-		CapabilitySessionsAttach,
-		CapabilityApprovalsApprove,
-		CapabilityApprovalsDeny,
-		CapabilitySwarmHalt,
-		CapabilitySpawn,
-		CapabilitySendMarchingOrders,
-		CapabilityPaneKill,
-	} {
-		report.Capabilities[capID] = capabilities.Capability{
-			Status: capabilities.StatusBlockedByPolicy,
-			Notes:  "mutating NTM operation; executable only through daemon ActionPlan/job policy",
-		}
-	}
-}
-
-func probeTail(ctx context.Context, adapter *Adapter, session string) capabilities.Capability {
-	if strings.TrimSpace(session) == "" {
-		return capabilities.Capability{Status: capabilities.StatusUntested, Transport: "stdio", Notes: "no session id available"}
-	}
-	if _, err := adapter.Tail(ctx, TailRequest{Session: session, Lines: 1}); err != nil {
-		return capabilities.Capability{Status: statusForError(err), Notes: err.Error(), Transport: "stdio"}
-	}
-	return capabilities.Capability{Status: capabilities.StatusOK, Transport: "stdio"}
-}
-
-func rawReportsFailure(raw json.RawMessage) (string, bool) {
-	var response struct {
-		Success *bool  `json:"success"`
-		Error   string `json:"error"`
-	}
-	if err := json.Unmarshal(raw, &response); err != nil {
-		return "", false
-	}
-	if response.Success != nil && !*response.Success {
-		note := strings.TrimSpace(response.Error)
-		if note == "" {
-			note = "response reported success=false"
-		}
-		return note, true
-	}
-	if strings.TrimSpace(response.Error) != "" {
-		return strings.TrimSpace(response.Error), true
-	}
-	return "", false
-}
-
-func versionAtLeast(version string, major, minor int) bool {
-	parts := strings.Split(version, ".")
-	if len(parts) < 2 {
-		return false
-	}
-	gotMajor, err := strconv.Atoi(strings.TrimLeft(parts[0], "v"))
-	if err != nil {
-		return false
-	}
-	gotMinor, err := strconv.Atoi(parts[1])
-	if err != nil {
-		return false
-	}
-	return gotMajor > major || (gotMajor == major && gotMinor >= minor)
-}
-
+// hp-h5yq: statusForError + missingCapabilities + blockPolicyCapabilities +
+// probeTail + rawReportsFailure + versionAtLeast moved to capabilities.go.
 // hp-h5yq: looksLikeVersion moved to parsers.go.
 
 func trimNonEmpty(values []string) []string {
