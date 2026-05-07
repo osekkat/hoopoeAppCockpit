@@ -23,60 +23,25 @@
 //   - bead hp-ilt — Phase 4 project entry.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { components } from "@hoopoe/schemas";
 
-// ── Wire-shape inputs/outputs (mirror preload-api.yaml) ───────────────────
+// ── Wire-shape inputs/outputs ─────────────────────────────────────────────
+//
+// hp-da2: previously these were hand-mirrored interfaces that could silently
+// drift from preload-api.yaml. They are now type aliases over the generated
+// OpenAPI components — preload-api.yaml `$ref`s the same components and the
+// schemas codegen drift gate (validate-preload-codegen) refuses divergence.
+// The renderer's lifecycle calls are end-to-end typed against the YAML.
 
-export interface ProjectCreateInput {
-  readonly name: string;
-  readonly originRemote: string;
-  readonly slug?: string;
-}
-
-export interface ProjectCreateOutput {
-  readonly projectId: string;
-  readonly rootPath: string;
-}
-
-export interface ProjectImportInput {
-  readonly rootPath: string;
-  readonly name?: string;
-}
-
-export interface ProjectImportOutput {
-  readonly projectId: string;
-  readonly rootPath: string;
-  readonly readiness: ReadinessOutput;
-}
-
-export interface ProjectCloneInput {
-  readonly remoteUrl: string;
-  readonly name?: string;
-  readonly targetParentDir?: string;
-}
-
-export interface ProjectCloneOutput {
-  readonly projectId: string;
-  readonly rootPath: string;
-}
-
-export interface ReadinessRequirement {
-  readonly id: string;
-  readonly label: string;
-  readonly satisfied: boolean;
-  readonly note?: string;
-}
-
-export interface ReadinessOutput {
-  readonly gate: "imported";
-  readonly rootPath: string;
-  readonly satisfied: boolean;
-  readonly requirements: readonly ReadinessRequirement[];
-}
-
-export interface ReadinessInput {
-  readonly rootPath: string;
-  readonly allowNoLanguageManifest?: boolean;
-}
+export type ProjectCreateInput = components["schemas"]["ProjectsCreateInput"];
+export type ProjectCreateOutput = components["schemas"]["ProjectsCreateOutput"];
+export type ProjectImportInput = components["schemas"]["ProjectsImportInput"];
+export type ProjectImportOutput = components["schemas"]["ProjectsImportOutput"];
+export type ProjectCloneInput = components["schemas"]["ProjectsCloneInput"];
+export type ProjectCloneOutput = components["schemas"]["ProjectsCloneOutput"];
+export type ReadinessRequirement = components["schemas"]["ProjectsReadinessRequirement"];
+export type ReadinessInput = components["schemas"]["ProjectsReadinessInput"];
+export type ReadinessOutput = components["schemas"]["ProjectsReadinessOutput"];
 
 // ── Daemon RPC bridge resolution ──────────────────────────────────────────
 

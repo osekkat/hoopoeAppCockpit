@@ -1532,6 +1532,125 @@ components:
         checkedAt: { type: string, format: date-time }
 
     # ─────────────────────────────────────────────────────────────────────────
+    # Project lifecycle IPC shapes (§4.1, §4.2) — preload-api.yaml `projects.*`
+    #
+    # These are the renderer ↔ daemon-RPC shapes for the four project lifecycle
+    # methods exposed to the renderer through `window.hoopoe.daemon.request`.
+    # They differ from the HTTP REST `POST /v1/projects` shape (ProjectCreateRequest
+    # above): the IPC create is "new project from scratch" (origin remote +
+    # name), the HTTP POST is "import existing checkout at rootPath". Keeping
+    # them distinct prevents the renderer from accidentally invoking the
+    # wrong shape.
+    #
+    # hp-da2: previously these were hand-mirrored interfaces in
+    # apps/desktop/src/renderer/projects/data.ts. They now live here and the
+    # renderer imports them via openapi.ts so preload-api.yaml drift cannot
+    # silently desync the lifecycle calls.
+    # ─────────────────────────────────────────────────────────────────────────
+
+    ProjectsCreateInput:
+      type: object
+      description: |
+        Input for the `projects.create` IPC method — create a new project
+        from scratch under /data/projects/<slug>. Initializes git, .hoopoe/,
+        .beads/. Idempotent via Idempotency-Key per §4.1.
+      required: [name, originRemote]
+      properties:
+        name: { type: string }
+        originRemote:
+          type: string
+          description: 'Required per §1.1; v1 has no remoteless mode.'
+        slug: { type: string }
+
+    ProjectsCreateOutput:
+      type: object
+      required: [projectId, rootPath]
+      properties:
+        projectId: { type: string }
+        rootPath: { type: string }
+
+    ProjectsImportInput:
+      type: object
+      description: |
+        Input for the `projects.import` IPC method — import an existing
+        checkout at a VPS path. Validates origin remote, initializes
+        .hoopoe/, runs `br init` if .beads/ missing, registers project.
+        Idempotent via Idempotency-Key.
+      required: [rootPath]
+      properties:
+        rootPath:
+          type: string
+          description: 'Absolute VPS path to existing repo.'
+        name:
+          type: string
+          description: 'Override name (default: basename).'
+
+    ProjectsImportOutput:
+      type: object
+      required: [projectId, rootPath, readiness]
+      properties:
+        projectId: { type: string }
+        rootPath: { type: string }
+        readiness: { $ref: '#/components/schemas/ProjectsReadinessOutput' }
+
+    ProjectsCloneInput:
+      type: object
+      description: |
+        Input for the `projects.clone` IPC method — clone a remote URL onto
+        the VPS at /data/projects/<slug>, then run the same import steps.
+        Idempotent via Idempotency-Key.
+      required: [remoteUrl]
+      properties:
+        remoteUrl: { type: string }
+        name: { type: string }
+        targetParentDir:
+          type: string
+          description: 'Default: /data/projects'
+
+    ProjectsCloneOutput:
+      type: object
+      required: [projectId, rootPath]
+      properties:
+        projectId: { type: string }
+        rootPath: { type: string }
+
+    ProjectsReadinessRequirement:
+      type: object
+      description: |
+        Single requirement check inside a `projects.readiness` response —
+        e.g., `agents_md_present`, `git_initialized`, `language_manifest_present`.
+      required: [id, label, satisfied]
+      properties:
+        id: { type: string }
+        label: { type: string }
+        satisfied: { type: boolean }
+        note: { type: string }
+
+    ProjectsReadinessInput:
+      type: object
+      description: |
+        Input for the `projects.readiness` IPC method — evaluate the §4.2
+        'Project imported' gate invariant for a path. Read-only — reports
+        git/AGENTS.md/.hoopoe/manifest state without mutating anything.
+      required: [rootPath]
+      properties:
+        rootPath: { type: string }
+        allowNoLanguageManifest: { type: boolean }
+
+    ProjectsReadinessOutput:
+      type: object
+      required: [gate, satisfied, requirements]
+      properties:
+        gate:
+          type: string
+          enum: [imported]
+        rootPath: { type: string }
+        satisfied: { type: boolean }
+        requirements:
+          type: array
+          items: { $ref: '#/components/schemas/ProjectsReadinessRequirement' }
+
+    # ─────────────────────────────────────────────────────────────────────────
     # Plans (§7.1)
     # ─────────────────────────────────────────────────────────────────────────
 

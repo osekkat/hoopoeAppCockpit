@@ -133,84 +133,30 @@ daemonRequestMethods:
       Create a new project from scratch under /data/projects/<slug>. Initializes
       git, .hoopoe/, .beads/. Idempotent via Idempotency-Key per §4.1.
     bead: hp-ilt
-    input:
-      type: object
-      required: [name, originRemote]
-      properties:
-        name: { type: string }
-        originRemote: { type: string, description: "Required per §1.1; v1 has no remoteless mode" }
-        slug: { type: string }
-    output:
-      type: object
-      required: [projectId, rootPath]
-      properties:
-        projectId: { type: string }
-        rootPath: { type: string }
+    input: { $ref: ./openapi.yaml#/components/schemas/ProjectsCreateInput }
+    output: { $ref: ./openapi.yaml#/components/schemas/ProjectsCreateOutput }
   projects.import:
     description: |
       Import an existing checkout at a VPS path. Validates origin remote,
       initializes .hoopoe/, runs br init if .beads/ missing, registers project.
       Idempotent via Idempotency-Key.
     bead: hp-ilt
-    input:
-      type: object
-      required: [rootPath]
-      properties:
-        rootPath: { type: string, description: "Absolute VPS path to existing repo" }
-        name: { type: string, description: "Override name (default: basename)" }
-    output:
-      type: object
-      required: [projectId, rootPath, readiness]
-      properties:
-        projectId: { type: string }
-        rootPath: { type: string }
-        readiness: { type: object, additionalProperties: true }
+    input: { $ref: ./openapi.yaml#/components/schemas/ProjectsImportInput }
+    output: { $ref: ./openapi.yaml#/components/schemas/ProjectsImportOutput }
   projects.clone:
     description: |
       Clone a remote URL onto the VPS at /data/projects/<slug>, then run
       the same import steps. Idempotent via Idempotency-Key.
     bead: hp-ilt
-    input:
-      type: object
-      required: [remoteUrl]
-      properties:
-        remoteUrl: { type: string }
-        name: { type: string }
-        targetParentDir: { type: string, description: "Default: /data/projects" }
-    output:
-      type: object
-      required: [projectId, rootPath]
-      properties:
-        projectId: { type: string }
-        rootPath: { type: string }
+    input: { $ref: ./openapi.yaml#/components/schemas/ProjectsCloneInput }
+    output: { $ref: ./openapi.yaml#/components/schemas/ProjectsCloneOutput }
   projects.readiness:
     description: |
       Evaluate the §4.2 'Project imported' gate invariant for a path. Read-only —
       reports git/AGENTS.md/.hoopoe/manifest state without mutating anything.
     bead: hp-ilt
-    input:
-      type: object
-      required: [rootPath]
-      properties:
-        rootPath: { type: string }
-        allowNoLanguageManifest: { type: boolean }
-    output:
-      type: object
-      required: [gate, satisfied, requirements]
-      properties:
-        gate: { type: string, enum: [imported] }
-        rootPath: { type: string }
-        satisfied: { type: boolean }
-        requirements:
-          type: array
-          items:
-            type: object
-            required: [id, label, satisfied]
-            properties:
-              id: { type: string }
-              label: { type: string }
-              satisfied: { type: boolean }
-              note: { type: string }
+    input: { $ref: ./openapi.yaml#/components/schemas/ProjectsReadinessInput }
+    output: { $ref: ./openapi.yaml#/components/schemas/ProjectsReadinessOutput }
   beads.get:
     description: Fetch a single bead with edges.
     bead: hp-r3i

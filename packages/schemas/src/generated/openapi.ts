@@ -1199,6 +1199,79 @@ export interface components {
             /** Format: date-time */
             checkedAt: string;
         };
+        /**
+         * @description Input for the `projects.create` IPC method — create a new project
+         *     from scratch under /data/projects/<slug>. Initializes git, .hoopoe/,
+         *     .beads/. Idempotent via Idempotency-Key per §4.1.
+         */
+        ProjectsCreateInput: {
+            name: string;
+            /** @description Required per §1.1; v1 has no remoteless mode. */
+            originRemote: string;
+            slug?: string;
+        };
+        ProjectsCreateOutput: {
+            projectId: string;
+            rootPath: string;
+        };
+        /**
+         * @description Input for the `projects.import` IPC method — import an existing
+         *     checkout at a VPS path. Validates origin remote, initializes
+         *     .hoopoe/, runs `br init` if .beads/ missing, registers project.
+         *     Idempotent via Idempotency-Key.
+         */
+        ProjectsImportInput: {
+            /** @description Absolute VPS path to existing repo. */
+            rootPath: string;
+            /** @description Override name (default: basename). */
+            name?: string;
+        };
+        ProjectsImportOutput: {
+            projectId: string;
+            rootPath: string;
+            readiness: components["schemas"]["ProjectsReadinessOutput"];
+        };
+        /**
+         * @description Input for the `projects.clone` IPC method — clone a remote URL onto
+         *     the VPS at /data/projects/<slug>, then run the same import steps.
+         *     Idempotent via Idempotency-Key.
+         */
+        ProjectsCloneInput: {
+            remoteUrl: string;
+            name?: string;
+            /** @description Default: /data/projects */
+            targetParentDir?: string;
+        };
+        ProjectsCloneOutput: {
+            projectId: string;
+            rootPath: string;
+        };
+        /**
+         * @description Single requirement check inside a `projects.readiness` response —
+         *     e.g., `agents_md_present`, `git_initialized`, `language_manifest_present`.
+         */
+        ProjectsReadinessRequirement: {
+            id: string;
+            label: string;
+            satisfied: boolean;
+            note?: string;
+        };
+        /**
+         * @description Input for the `projects.readiness` IPC method — evaluate the §4.2
+         *     'Project imported' gate invariant for a path. Read-only — reports
+         *     git/AGENTS.md/.hoopoe/manifest state without mutating anything.
+         */
+        ProjectsReadinessInput: {
+            rootPath: string;
+            allowNoLanguageManifest?: boolean;
+        };
+        ProjectsReadinessOutput: {
+            /** @enum {string} */
+            gate: "imported";
+            rootPath?: string;
+            satisfied: boolean;
+            requirements: components["schemas"]["ProjectsReadinessRequirement"][];
+        };
         /** @enum {string} */
         PlanLifecycleState: "draft" | "refining" | "locked" | "archived";
         /**
