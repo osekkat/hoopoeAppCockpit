@@ -7,21 +7,16 @@
 package ntm
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
-	"net/url"
 	"os/exec"
 	"strings"
 	"sync"
 	"time"
-
-	"nhooyr.io/websocket"
 )
 
 const (
@@ -340,213 +335,10 @@ func (t *OffsetTracker) Record(paneID string, data []byte, seq int64, source str
 
 // hp-h5yq: ActionIntent type + intent constructors moved to intents.go.
 
-func (a *Adapter) SessionsList(ctx context.Context) (SessionsResponse, error) {
-	raw, err := a.runRawJSON(ctx, SessionsListArgv())
-	if err != nil {
-		return SessionsResponse{}, err
-	}
-	return ParseSessionsResponse(raw)
-}
+// hp-h5yq: CLI-transport Adapter methods moved to client_cli.go.
 
-func (a *Adapter) SessionDetails(ctx context.Context, session string) (json.RawMessage, error) {
-	argv, err := SessionDetailsArgv(session)
-	if err != nil {
-		return nil, err
-	}
-	return a.runRawJSON(ctx, argv)
-}
-
-func (a *Adapter) Snapshot(ctx context.Context) (Snapshot, error) {
-	raw, err := a.runRawJSON(ctx, SnapshotArgv())
-	if err != nil {
-		return Snapshot{}, err
-	}
-	return ParseSnapshot(raw)
-}
-
-func (a *Adapter) Status(ctx context.Context) (Snapshot, error) {
-	raw, err := a.runRawJSON(ctx, StatusArgv())
-	if err != nil {
-		return Snapshot{}, err
-	}
-	return ParseSnapshot(raw)
-}
-
-func (a *Adapter) Triage(ctx context.Context) (json.RawMessage, error) {
-	return a.runRawJSON(ctx, TriageArgv())
-}
-
-func (a *Adapter) Tail(ctx context.Context, req TailRequest) (TailResponse, error) {
-	argv, err := TailArgv(req)
-	if err != nil {
-		return TailResponse{}, err
-	}
-	raw, err := a.runRawJSON(ctx, argv)
-	if err != nil {
-		return TailResponse{}, err
-	}
-	return ParseTailResponse(raw)
-}
-
-func (a *Adapter) Activity(ctx context.Context, session string) (json.RawMessage, error) {
-	argv, err := ActivityArgv(session)
-	if err != nil {
-		return nil, err
-	}
-	return a.runRawJSON(ctx, argv)
-}
-
-func (a *Adapter) Spawn(ctx context.Context, req SpawnRequest) (json.RawMessage, error) {
-	argv, err := SpawnArgv(req)
-	if err != nil {
-		return nil, err
-	}
-	return a.runRawJSON(ctx, argv)
-}
-
-func (a *Adapter) Send(ctx context.Context, req SendRequest) (json.RawMessage, error) {
-	argv, err := SendArgv(req)
-	if err != nil {
-		return nil, err
-	}
-	return a.runRawJSON(ctx, argv)
-}
-
-func (a *Adapter) Wait(ctx context.Context, req WaitRequest) (json.RawMessage, error) {
-	argv, err := WaitArgv(req)
-	if err != nil {
-		return nil, err
-	}
-	return a.runRawJSON(ctx, argv)
-}
-
-func (a *Adapter) Interrupt(ctx context.Context, req InterruptRequest) (json.RawMessage, error) {
-	argv, err := InterruptArgv(req)
-	if err != nil {
-		return nil, err
-	}
-	return a.runRawJSON(ctx, argv)
-}
-
-func (a *Adapter) ApprovalsList(ctx context.Context) (json.RawMessage, error) {
-	return a.runRawJSON(ctx, ApprovalsListArgv())
-}
-
-func (a *Adapter) ApprovalShow(ctx context.Context, token string) (json.RawMessage, error) {
-	argv, err := ApprovalShowArgv(token)
-	if err != nil {
-		return nil, err
-	}
-	return a.runRawJSON(ctx, argv)
-}
-
-func (a *Adapter) Approve(ctx context.Context, req ApprovalRequest) (json.RawMessage, error) {
-	argv, err := ApproveArgv(req)
-	if err != nil {
-		return nil, err
-	}
-	return a.runRawJSON(ctx, argv)
-}
-
-func (a *Adapter) Deny(ctx context.Context, req ApprovalRequest) (json.RawMessage, error) {
-	argv, err := DenyArgv(req)
-	if err != nil {
-		return nil, err
-	}
-	return a.runRawJSON(ctx, argv)
-}
-
-func (a *Adapter) CapturePaneFallback(ctx context.Context, req TmuxCaptureRequest) (PaneChunk, error) {
-	argv, err := TmuxCaptureArgv(req)
-	if err != nil {
-		return PaneChunk{}, err
-	}
-	data, err := a.runText(ctx, argv)
-	if err != nil {
-		return PaneChunk{}, err
-	}
-	return PaneChunk{
-		PaneID:     strings.TrimSpace(req.TargetPane),
-		Offset:     0,
-		Bytes:      append([]byte(nil), data...),
-		Length:     len(data),
-		Source:     "tmux-capture-pane:fallback-mode",
-		CapturedAt: a.now().UTC().Format(time.RFC3339Nano),
-	}, nil
-}
-
-func (a *Adapter) LiveSessions(ctx context.Context) (json.RawMessage, error) {
-	return a.liveGETAny(ctx, "/v1/sessions", "/api/sessions")
-}
-
-func (a *Adapter) LiveSessionDetails(ctx context.Context, sessionID string) (json.RawMessage, error) {
-	sessionID = strings.TrimSpace(sessionID)
-	if sessionID == "" {
-		return nil, fmt.Errorf("%w: session id is required", ErrInvalidRequest)
-	}
-	escaped := url.PathEscape(sessionID)
-	return a.liveGETAny(ctx, "/v1/sessions/"+escaped, "/api/sessions/"+escaped)
-}
-
-func (a *Adapter) LivePaneState(ctx context.Context, paneID string) (json.RawMessage, error) {
-	paneID = strings.TrimSpace(paneID)
-	if paneID == "" {
-		return nil, fmt.Errorf("%w: pane id is required", ErrInvalidRequest)
-	}
-	escaped := url.PathEscape(paneID)
-	return a.liveGETAny(ctx, "/v1/panes/"+escaped+"/state", "/api/panes/"+escaped+"/state")
-}
-
-func (a *Adapter) ReadSSE(ctx context.Context, path string, handle func(EventEnvelope) error) error {
-	if handle == nil {
-		return fmt.Errorf("%w: event handler is required", ErrInvalidRequest)
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, a.liveURL(path), nil)
-	if err != nil {
-		return err
-	}
-	a.addAuth(req)
-	resp, err := a.httpClient().Do(req)
-	if err != nil {
-		return fmt.Errorf("%w: %s", ErrLiveUnavailable, err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return fmt.Errorf("%w: SSE status %d", ErrLiveUnavailable, resp.StatusCode)
-	}
-	return parseSSE(resp.Body, handle)
-}
-
-func (a *Adapter) ReadWebSocket(ctx context.Context, path string, handle func(EventEnvelope) error) error {
-	if handle == nil {
-		return fmt.Errorf("%w: event handler is required", ErrInvalidRequest)
-	}
-	header := http.Header{}
-	if a.LiveToken != "" {
-		header.Set("Authorization", "Bearer "+a.LiveToken)
-	}
-	conn, _, err := websocket.Dial(ctx, wsURL(a.liveURL(path)), &websocket.DialOptions{HTTPHeader: header})
-	if err != nil {
-		return fmt.Errorf("%w: websocket dial: %w", ErrLiveUnavailable, err)
-	}
-	defer conn.Close(websocket.StatusNormalClosure, "")
-	for {
-		_, data, err := conn.Read(ctx)
-		if err != nil {
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			return err
-		}
-		var event EventEnvelope
-		if err := json.Unmarshal(data, &event); err != nil {
-			return fmt.Errorf("ntm: decode websocket event: %w", err)
-		}
-		if err := handle(event); err != nil {
-			return err
-		}
-	}
-}
+// hp-h5yq: live-transport Adapter methods (LiveSessions, LiveSessionDetails,
+// LivePaneState, ReadSSE, ReadWebSocket) moved to client_live.go.
 
 // hp-h5yq: Probe + capability classification helpers moved to capabilities.go.
 // hp-h5yq: parsers + Session-method receivers + ParseVersion moved to parsers.go.
@@ -598,86 +390,10 @@ func (a *Adapter) run(ctx context.Context, argv []string) (CommandResult, error)
 	return result, nil
 }
 
-func (a *Adapter) liveGET(ctx context.Context, path string) (json.RawMessage, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, a.liveURL(path), nil)
-	if err != nil {
-		return nil, err
-	}
-	a.addAuth(req)
-	resp, err := a.httpClient().Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %s", ErrLiveUnavailable, err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil, fmt.Errorf("%w: GET %s status %d", ErrLiveUnavailable, path, resp.StatusCode)
-	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, int64(a.maxStdoutBytes()+1)))
-	if err != nil {
-		return nil, fmt.Errorf("ntm: read live response: %w", err)
-	}
-	if max := a.maxStdoutBytes(); max > 0 && len(data) > max {
-		return nil, outputTooLargeError{limit: max, got: len(data), argv: []string{"GET", path}}
-	}
-	var raw json.RawMessage
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return nil, fmt.Errorf("ntm: decode live JSON: %w", err)
-	}
-	return raw, nil
-}
-
-func (a *Adapter) liveGETAny(ctx context.Context, paths ...string) (json.RawMessage, error) {
-	var lastErr error
-	for _, path := range paths {
-		raw, err := a.liveGET(ctx, path)
-		if err == nil {
-			return raw, nil
-		}
-		lastErr = err
-	}
-	if lastErr == nil {
-		lastErr = fmt.Errorf("%w: no live paths configured", ErrLiveUnavailable)
-	}
-	return nil, lastErr
-}
-
-// hp-h5yq: probeLive moved to capabilities.go.
-
-func parseSSE(reader io.Reader, handle func(EventEnvelope) error) error {
-	scanner := bufio.NewScanner(reader)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-	var data strings.Builder
-	flush := func() error {
-		if data.Len() == 0 {
-			return nil
-		}
-		var event EventEnvelope
-		if err := json.Unmarshal([]byte(data.String()), &event); err != nil {
-			return fmt.Errorf("ntm: decode SSE event: %w", err)
-		}
-		data.Reset()
-		return handle(event)
-	}
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "" {
-			if err := flush(); err != nil {
-				return err
-			}
-			continue
-		}
-		if strings.HasPrefix(line, "data:") {
-			if data.Len() > 0 {
-				data.WriteByte('\n')
-			}
-			data.WriteString(strings.TrimSpace(strings.TrimPrefix(line, "data:")))
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		return err
-	}
-	return flush()
-}
+// hp-h5yq: liveGET / liveGETAny / probeLive / parseSSE moved to client_live.go
+// (probeLive now sits with the rest of the live transport in capabilities.go's
+// nearby relative — kept under capabilities.go because it's the live-probe
+// half of the capability detection).
 
 type commandError struct {
 	argv   []string
@@ -721,29 +437,7 @@ func trimNonEmpty(values []string) []string {
 	return out
 }
 
-func (a *Adapter) liveURL(path string) string {
-	base := strings.TrimRight(a.LiveBaseURL, "/")
-	if base == "" {
-		base = "http://127.0.0.1:7337"
-	}
-	if !strings.HasPrefix(path, "/") {
-		path = "/" + path
-	}
-	return base + path
-}
-
-func (a *Adapter) httpClient() HTTPDoer {
-	if a != nil && a.HTTPClient != nil {
-		return a.HTTPClient
-	}
-	return http.DefaultClient
-}
-
-func (a *Adapter) addAuth(req *http.Request) {
-	if a != nil && a.LiveToken != "" {
-		req.Header.Set("Authorization", "Bearer "+a.LiveToken)
-	}
-}
+// hp-h5yq: liveURL / httpClient / addAuth moved to client_live.go.
 
 func (a *Adapter) now() time.Time {
 	if a != nil && a.Now != nil {
@@ -762,12 +456,4 @@ func (a *Adapter) maxStdoutBytes() int {
 	return a.MaxStdoutBytes
 }
 
-func wsURL(httpURL string) string {
-	if strings.HasPrefix(httpURL, "https://") {
-		return "wss://" + strings.TrimPrefix(httpURL, "https://")
-	}
-	if strings.HasPrefix(httpURL, "http://") {
-		return "ws://" + strings.TrimPrefix(httpURL, "http://")
-	}
-	return httpURL
-}
+// hp-h5yq: wsURL moved to client_live.go.
