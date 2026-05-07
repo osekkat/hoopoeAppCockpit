@@ -7,6 +7,9 @@ import healthyHourPlanMeta from "../../../../../packages/fixtures/scenarios/heal
 };
 import {
   isPlanProjectId,
+  loadPlanStageData,
+  PLAN_STAGE_DAEMON_RPC_PENDING,
+  savePlanArtifact,
   type PlanArtifact,
   type PlanArtifactStatus,
   type PlanBundle,
@@ -81,4 +84,29 @@ test("isPlanProjectId gates the Mock Flywheel project ids the renderer wires up"
   expect(isPlanProjectId("local-demo")).toBe(true);
   expect(isPlanProjectId("mock-flywheel-project")).toBe(true);
   expect(isPlanProjectId("real-vps-project")).toBe(false);
+});
+
+test("hp-l5d — loadPlanStageData returns fixture-fallback for mock projects", () => {
+  const data = loadPlanStageData("local-demo");
+  expect(data.source.transport).toBe("fixture-fallback");
+  expect(data.source.scenarioId).toBe("healthy-hour");
+  expect(data.plans.length).toBeGreaterThan(0);
+  expect(Object.keys(data.bundles).length).toBeGreaterThan(0);
+});
+
+test("hp-l5d — loadPlanStageData refuses non-mock projects with explicit RPC-pending message", () => {
+  expect(() => loadPlanStageData("real-vps-project")).toThrow(/canonical .hoopoe\/plans/);
+  expect(() => loadPlanStageData("real-vps-project")).toThrow(PLAN_STAGE_DAEMON_RPC_PENDING);
+});
+
+test("hp-l5d — savePlanArtifact always throws (canonical plans.save RPC not wired yet)", () => {
+  const stub: PlanArtifact = {
+    path: "plan.md",
+    kind: "plan",
+    status: "completed",
+    label: "stub",
+    content: "stub",
+  };
+  expect(() => savePlanArtifact("local-demo", "plan-001", stub)).toThrow(/plans\.save/);
+  expect(() => savePlanArtifact("real-vps-project", "plan-001", stub)).toThrow(/plans\.save/);
 });

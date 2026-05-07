@@ -1,3 +1,25 @@
+// hp-l5d — Planning stage data loader.
+//
+// Plans are canonical markdown files under `.hoopoe/plans/<plan-id>/` per
+// plan.md §1.1 and AGENTS.md. The renderer must NOT treat fixture-bundled
+// plan content as canonical — that would make this module a parallel
+// source of truth for plans alongside the repo files. So:
+//
+//   1. Fixture content is wired in only for explicit Mock Flywheel
+//      projects (`local-demo`, `mock-flywheel-project`). The transport
+//      stamp is `fixture-fallback` so callers can show a fallback pill.
+//   2. Real projects throw `loadPlanStageData(...)` with a message
+//      pointing at the missing canonical-plans daemon RPC. Saves on
+//      real projects throw for the same reason — no silent local
+//      writes.
+//   3. The daemon-side `plans.list` / `plans.read` / `plans.save` RPCs
+//      that resolve `.hoopoe/plans/<plan-id>/` paths are not wired yet
+//      (tracked under hp-l5d residual + Phase 5 plan-API work).
+//
+// This is the same pattern stage-data.ts uses for hp-no7e: keep the
+// fixture-fallback path explicit and refuse to fabricate canonical data
+// for non-mock projects.
+
 import { useQuery } from "@tanstack/react-query";
 import healthyHourPlanMeta from "../../../../../packages/fixtures/scenarios/healthy-hour/plans/meta.json" with {
   type: "json",
@@ -11,6 +33,13 @@ import healthyHourPlan002 from "../../../../../packages/fixtures/scenarios/healt
 import type { StageFixtureSource } from "./stage-data.ts";
 
 const MOCK_STAGE_PROJECT_IDS = new Set(["local-demo", "mock-flywheel-project"]);
+
+const PLAN_STAGE_QUERY_STALE_MS = 30_000;
+
+// hp-l5d: error surface for non-mock projects. Stable string so callers
+// can pattern-match (e.g. error UX surfaces) and tests can pin it.
+export const PLAN_STAGE_DAEMON_RPC_PENDING =
+  "Hoopoe planning data is not available for this project: the canonical .hoopoe/plans/* daemon RPC family (plans.list / plans.read / plans.save) is not yet wired. Mock Flywheel mode is the only path that returns plan artifacts today.";
 
 export type PlanLockState = "draft" | "locked" | "archived";
 
@@ -127,12 +156,36 @@ function buildPlanStageData(projectId: string): PlanStageData {
   };
 }
 
+/** Resolve plan stage data for a given project. Throws for non-mock
+ *  projects — the canonical `.hoopoe/plans/*` daemon RPC family is not
+ *  wired yet (hp-l5d), and the renderer must not pretend fixture content
+ *  is canonical truth for real VPS projects (Guardrail 4 + plan.md
+ *  §1.1). Mock Flywheel projects return fixture-fallback data so the
+ *  Planning stage demo path still works. */
+export function loadPlanStageData(projectId: string): PlanStageData {
+  if (!isPlanProjectId(projectId)) {
+    throw new Error(PLAN_STAGE_DAEMON_RPC_PENDING);
+  }
+  return buildPlanStageData(projectId);
+}
+
+/** Save a plan artifact. Stub: throws for every project until the
+ *  canonical `plans.save` daemon RPC lands (hp-l5d). Saves must NOT
+ *  silently mutate fixture state — fixture bundles are imported as
+ *  read-only JSON modules, and a fake "save" path would mislead users
+ *  into thinking their edits persisted. */
+export function savePlanArtifact(_projectId: string, _planId: string, _artifact: PlanArtifact): never {
+  throw new Error(
+    `Hoopoe plan artifact save is not available: the canonical plans.save daemon RPC is not yet wired (hp-l5d).`,
+  );
+}
+
 export function usePlanStageQuery(projectId: string) {
   return useQuery<PlanStageData>({
     queryKey: ["plan-stage", projectId],
-    queryFn: () => buildPlanStageData(projectId),
+    queryFn: () => loadPlanStageData(projectId),
     enabled: isPlanProjectId(projectId),
-    staleTime: 5_000,
+    staleTime: PLAN_STAGE_QUERY_STALE_MS,
   });
 }
 
