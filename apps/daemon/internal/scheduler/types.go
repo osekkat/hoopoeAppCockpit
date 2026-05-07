@@ -384,4 +384,11 @@ type Metrics struct {
 	Ticks               uint64        `json:"ticks"`
 	AverageTickDuration time.Duration `json:"averageTickDuration"`
 	LongestQueuedDelay  time.Duration `json:"longestQueuedDelay"`
+	// hp-lsx: bumped (in-memory) when CompleteRun's persistLocked fails.
+	// The increment happens after the failed persist, so it is only
+	// flushed to disk by a subsequent successful save — but it is
+	// observable via Snapshot and is the durable "completion persist
+	// failed" counter that turns silent terminalization loss into a
+	// visible operational state.
+	CompletionPersistFailures uint64 `json:"completionPersistFailures"`
 }

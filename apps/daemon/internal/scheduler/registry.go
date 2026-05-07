@@ -478,6 +478,12 @@ func (r *Registry) CompleteRun(ctx context.Context, runID string, result RunResu
 	}
 	r.pruneTerminalRunsLocked()
 	if err := r.persistLocked(ctx); err != nil {
+		// hp-lsx: persist failure leaves memory and disk disagreeing —
+		// in-memory the run is terminal and the lease released, on disk
+		// the run still looks `running`. Bump CompletionPersistFailures
+		// so the divergence is observable via Snapshot/Metrics; the
+		// caller (Scheduler.completeRun) gets the error and can log it.
+		r.state.Metrics.CompletionPersistFailures++
 		return Run{}, err
 	}
 	return cloneRun(run), nil

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -15,6 +16,7 @@ type Scheduler struct {
 	runner            Runner
 	audit             AuditSink
 	redactor          *redaction.Redactor
+	logger            *slog.Logger
 	workers           chan struct{}
 	rootCtx           context.Context
 	stop              chan struct{}
@@ -41,6 +43,15 @@ type Config struct {
 	// known-clean panic values can opt out, but production wiring should
 	// always pass a non-nil redactor.
 	Redactor *redaction.Redactor
+	// hp-lsx: optional structured logger for completion-path failures.
+	// When `registry.CompleteRun` returns an error (typically
+	// Store.Save / persistLocked failures from disk pressure, fsync
+	// failure, rename failure, or context timeout), the scheduler
+	// emits an error-level log so the persist-failure is observable.
+	// Nil is permitted; tests and minimal fixtures can opt out, but
+	// production wiring should pass a non-nil logger so silent
+	// completion loss is impossible.
+	Logger *slog.Logger
 }
 
 func New(cfg Config) (*Scheduler, error) {
@@ -75,6 +86,7 @@ func New(cfg Config) (*Scheduler, error) {
 		runner:            runner,
 		audit:             cfg.AuditSink,
 		redactor:          cfg.Redactor,
+		logger:            cfg.Logger,
 		workers:           make(chan struct{}, workers),
 		rootCtx:           root,
 		stop:              make(chan struct{}),
@@ -375,7 +387,22 @@ func (s *Scheduler) completeRun(runID string, result RunResult, runErr error) {
 	// values; non-panic runner errors (e.g. ExecScriptInvoker wrapping
 	// up to 1 KiB of stderr per hp-ld2c) need the same defense-in-
 	// depth pass.
-	_, _ = s.registry.CompleteRun(ctx, runID, result, s.redactRunError(runErr))
+	// hp-lsx: completion-path Store.Save failures (disk pressure,
+	// fsync failure, rename failure, ctx timeout) used to be swallowed
+	// by `_, _ = ...`, leaving in-memory and on-disk scheduler state
+	// disagreeing without any operator-visible signal. Capture the
+	// error and log it at error level when a logger is configured.
+	// `Registry.CompleteRun` already bumps Metrics.CompletionPersistFailures
+	// (in-memory) so the divergence is observable via Snapshot too,
+	// even when no logger is wired.
+	_, err := s.registry.CompleteRun(ctx, runID, result, s.redactRunError(runErr))
+	if err != nil && s.logger != nil {
+		s.logger.Error(
+			"scheduler completion persistence failed",
+			slog.String("run_id", runID),
+			slog.String("error", err.Error()),
+		)
+	}
 }
 
 func (s *Scheduler) recordAudit(ctx context.Context, decision Decision) error {

@@ -1,9 +1,11 @@
 package scheduler
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -647,6 +649,180 @@ func TestSchedulerRecoversCompleteRunPanic(t *testing.T) {
 	}
 	waitForSignal(t, survivorDone, "after-panic run after recovered store-save panic")
 	scheduler.Wait()
+}
+
+// failingStore wraps a MemoryStore and returns an error from Save when armed.
+// Used to exercise hp-lsx: completion-time persist failures must bump
+// Metrics.CompletionPersistFailures and surface via the configured logger
+// instead of being silently swallowed by the legacy `_, _ = ...` swallow.
+type failingStore struct {
+	inner *MemoryStore
+	armed atomic.Bool
+}
+
+func newFailingStore() *failingStore {
+	return &failingStore{inner: NewMemoryStore()}
+}
+
+func (f *failingStore) Load(ctx context.Context) (State, error) {
+	return f.inner.Load(ctx)
+}
+
+func (f *failingStore) Save(ctx context.Context, state State) error {
+	if f.armed.Load() {
+		return errors.New("synthetic store save failure")
+	}
+	return f.inner.Save(ctx, state)
+}
+
+func (f *failingStore) arm()    { f.armed.Store(true) }
+func (f *failingStore) disarm() { f.armed.Store(false) }
+
+// TestSchedulerSurfacesCompletionPersistFailure pins hp-lsx: when
+// Registry.CompleteRun's persistLocked fails (Store.Save returning
+// disk-pressure / fsync / rename / ctx-timeout errors), the previous
+// `_, _ = ...` swallow left memory and disk disagreeing without any
+// operator-visible signal. The fix bumps Metrics.CompletionPersistFailures
+// in-memory and logs the failure via the configured slog.Logger so the
+// divergence is observable both via Snapshot and via the daemon log
+// stream.
+func TestSchedulerSurfacesCompletionPersistFailure(t *testing.T) {
+	ctx := context.Background()
+	clock := newTestClock(time.Date(2026, 5, 4, 19, 0, 0, 0, time.UTC))
+	store := newFailingStore()
+	registry, err := NewRegistry(ctx, RegistryConfig{
+		Store:       store,
+		Now:         clock.Now,
+		LeaseHolder: "test-daemon",
+		LeaseTTL:    time.Minute,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := registry.ImportDefinition(ctx, testDefinition("persist-failure", Schedule{Type: ScheduleOnDemand})); err != nil {
+		t.Fatal(err)
+	}
+
+	armNow := make(chan struct{})
+	releaseRunner := make(chan struct{})
+
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	scheduler, err := New(Config{
+		Registry: registry,
+		Runner: RunnerFunc(func(_ context.Context, _ Run) (RunResult, error) {
+			// Signal the test to arm the store, then wait for release so
+			// that the store is armed only at the moment completeRun's
+			// registry.CompleteRun → persistLocked → Save fires (the
+			// RunNow path's earlier Save has already succeeded).
+			close(armNow)
+			<-releaseRunner
+			return RunResult{WakeAgent: false}, nil
+		}),
+		Logger:     logger,
+		MaxWorkers: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	decision, err := scheduler.RunNow(ctx, "persist-failure")
+	if err != nil {
+		t.Fatalf("RunNow: %v", err)
+	}
+	if decision.Outcome != OutcomeStarted {
+		t.Fatalf("decision.Outcome = %s, want %s", decision.Outcome, OutcomeStarted)
+	}
+
+	// Wait for the runner to start, arm the failing store, then release.
+	waitForSignal(t, armNow, "runner reached arming barrier")
+	store.arm()
+	close(releaseRunner)
+
+	// Drain the dispatch goroutine. completeRun captures the persist
+	// error and logs it; the in-memory metric is bumped inside
+	// Registry.CompleteRun before it returns.
+	scheduler.Wait()
+
+	// Disarm so Snapshot's persist-on-no-op path (none today, but
+	// future-proofing) does not flake.
+	store.disarm()
+
+	snap, err := registry.Snapshot(ctx)
+	if err != nil {
+		t.Fatalf("snapshot: %v", err)
+	}
+	if got := snap.Metrics.CompletionPersistFailures; got != 1 {
+		t.Fatalf("Metrics.CompletionPersistFailures = %d, want 1", got)
+	}
+
+	logOut := logBuf.String()
+	if !strings.Contains(logOut, "scheduler completion persistence failed") {
+		t.Fatalf("expected 'scheduler completion persistence failed' in log output, got: %q", logOut)
+	}
+	if !strings.Contains(logOut, decision.RunID) {
+		t.Fatalf("expected run_id=%s in log output, got: %q", decision.RunID, logOut)
+	}
+	if !strings.Contains(logOut, "synthetic store save failure") {
+		t.Fatalf("expected underlying error in log output, got: %q", logOut)
+	}
+}
+
+// TestSchedulerCompletionPersistFailureWithoutLoggerStillBumpsMetric pins
+// hp-lsx's nil-logger path: production wiring should always pass a logger,
+// but tests and minimal fixtures legitimately omit one. The metric must
+// still increment so persist failures are observable via Snapshot even
+// when no logger is configured.
+func TestSchedulerCompletionPersistFailureWithoutLoggerStillBumpsMetric(t *testing.T) {
+	ctx := context.Background()
+	clock := newTestClock(time.Date(2026, 5, 4, 19, 30, 0, 0, time.UTC))
+	store := newFailingStore()
+	registry, err := NewRegistry(ctx, RegistryConfig{
+		Store:       store,
+		Now:         clock.Now,
+		LeaseHolder: "test-daemon",
+		LeaseTTL:    time.Minute,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := registry.ImportDefinition(ctx, testDefinition("nolog-persist-failure", Schedule{Type: ScheduleOnDemand})); err != nil {
+		t.Fatal(err)
+	}
+
+	armNow := make(chan struct{})
+	releaseRunner := make(chan struct{})
+
+	scheduler, err := New(Config{
+		Registry: registry,
+		Runner: RunnerFunc(func(_ context.Context, _ Run) (RunResult, error) {
+			close(armNow)
+			<-releaseRunner
+			return RunResult{WakeAgent: false}, nil
+		}),
+		MaxWorkers: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := scheduler.RunNow(ctx, "nolog-persist-failure"); err != nil {
+		t.Fatalf("RunNow: %v", err)
+	}
+	waitForSignal(t, armNow, "runner reached arming barrier")
+	store.arm()
+	close(releaseRunner)
+	scheduler.Wait()
+	store.disarm()
+
+	snap, err := registry.Snapshot(ctx)
+	if err != nil {
+		t.Fatalf("snapshot: %v", err)
+	}
+	if got := snap.Metrics.CompletionPersistFailures; got != 1 {
+		t.Fatalf("Metrics.CompletionPersistFailures = %d, want 1", got)
+	}
 }
 
 func TestSchedulerWaitContextDoesNotLeakWaitersOnCallerCancellation(t *testing.T) {
