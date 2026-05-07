@@ -7,23 +7,33 @@ interface ComparativeMatrixProps {
 }
 
 export function ComparativeMatrix({ candidates }: ComparativeMatrixProps) {
-  const columnRefs = useRef<HTMLDivElement[]>([]);
+  // Refs keyed by candidate path (the React key) so reorders/removals
+  // don't leave stale DOM nodes attached to old indexes. Detached nodes
+  // are explicitly removed in the ref callback when React passes null
+  // on unmount, preventing scroll listeners from binding to stale columns.
+  const columnRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const programmaticScrollRef = useRef(false);
   const [syncedScroll, setSyncedScroll] = useState(true);
   const [highlightDiff, setHighlightDiff] = useState(true);
 
+  const candidatePathsKey = candidates.map((c) => c.path).join("\x00");
+
   useEffect(() => {
     if (!syncedScroll) return;
 
-    const handlers = columnRefs.current.map((column, index) => {
+    const liveColumns: HTMLDivElement[] = [];
+    for (const candidate of candidates) {
+      const column = columnRefs.current.get(candidate.path);
+      if (column) liveColumns.push(column);
+    }
+
+    const handlers = liveColumns.map((column) => {
       const handler = () => {
         if (programmaticScrollRef.current) return;
         programmaticScrollRef.current = true;
-        for (let other = 0; other < columnRefs.current.length; other += 1) {
-          if (other === index) continue;
-          const otherColumn = columnRefs.current[other];
-          if (!otherColumn) continue;
-          otherColumn.scrollTop = column.scrollTop;
+        for (const other of liveColumns) {
+          if (other === column) continue;
+          other.scrollTop = column.scrollTop;
         }
         requestAnimationFrame(() => {
           programmaticScrollRef.current = false;
@@ -36,7 +46,7 @@ export function ComparativeMatrix({ candidates }: ComparativeMatrixProps) {
     return () => {
       for (const cleanup of handlers) cleanup();
     };
-  }, [syncedScroll, candidates.length]);
+  }, [syncedScroll, candidatePathsKey, candidates]);
 
   if (candidates.length < 2) {
     return (
@@ -121,7 +131,11 @@ export function ComparativeMatrix({ candidates }: ComparativeMatrixProps) {
                 highlightDiff ? " hh-plan-compare-highlight" : ""
               }`}
               ref={(node) => {
-                if (node) columnRefs.current[index] = node;
+                if (node) {
+                  columnRefs.current.set(candidate.path, node);
+                } else {
+                  columnRefs.current.delete(candidate.path);
+                }
               }}
             >
               <pre className="hh-plan-compare-column-content">{candidate.content}</pre>
