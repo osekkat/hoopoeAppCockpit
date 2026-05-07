@@ -344,6 +344,21 @@ func (e CapabilityStatus) Valid() bool {
 	}
 }
 
+// Defines values for ExistingCodebaseContextBundleSchemaVersion.
+const (
+	N1 ExistingCodebaseContextBundleSchemaVersion = 1
+)
+
+// Valid indicates whether the value is a known member of the ExistingCodebaseContextBundleSchemaVersion enum.
+func (e ExistingCodebaseContextBundleSchemaVersion) Valid() bool {
+	switch e {
+	case N1:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for HealthResponseAdapters.
 const (
 	HealthResponseAdaptersDegraded HealthResponseAdapters = "degraded"
@@ -434,6 +449,45 @@ func (e JobStatus) Valid() bool {
 	case JobStatusSucceeded:
 		return true
 	case JobStatusWaitingApproval:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ManifestSnapshotKind.
+const (
+	CargoToml     ManifestSnapshotKind = "cargo_toml"
+	ComposerJson  ManifestSnapshotKind = "composer_json"
+	Gemfile       ManifestSnapshotKind = "gemfile"
+	GoMod         ManifestSnapshotKind = "go_mod"
+	MixExs        ManifestSnapshotKind = "mix_exs"
+	Other         ManifestSnapshotKind = "other"
+	PackageJson   ManifestSnapshotKind = "package_json"
+	PomXml        ManifestSnapshotKind = "pom_xml"
+	PyprojectToml ManifestSnapshotKind = "pyproject_toml"
+)
+
+// Valid indicates whether the value is a known member of the ManifestSnapshotKind enum.
+func (e ManifestSnapshotKind) Valid() bool {
+	switch e {
+	case CargoToml:
+		return true
+	case ComposerJson:
+		return true
+	case Gemfile:
+		return true
+	case GoMod:
+		return true
+	case MixExs:
+		return true
+	case Other:
+		return true
+	case PackageJson:
+		return true
+	case PomXml:
+		return true
+	case PyprojectToml:
 		return true
 	default:
 		return false
@@ -1066,6 +1120,29 @@ type BeadPriority = int
 // BeadStatus defines model for BeadStatus.
 type BeadStatus string
 
+// BeadSummary Truncated bead summary surfaced to plan candidates so they
+// don't re-propose work the swarm has already started or
+// finished.
+type BeadSummary struct {
+	// DependencyCount Number of `blocks` + `soft` dependencies this bead has.
+	DependencyCount int `json:"dependencyCount"`
+
+	// Id Stable br bead identifier (e.g., `hp-abc1`).
+	Id string `json:"id"`
+
+	// IssueType br issue type (`task` / `bug` / `feature` / `epic` / `question` / `docs`).
+	IssueType string `json:"issueType"`
+
+	// Priority P0-P4 (numeric).
+	Priority int `json:"priority"`
+
+	// Status br status (`open` / `in_progress` / `closed` / etc.).
+	Status string `json:"status"`
+
+	// Title Bead title (truncated to 200 chars).
+	Title string `json:"title"`
+}
+
 // BootstrapBearerRequest defines model for BootstrapBearerRequest.
 type BootstrapBearerRequest struct {
 	// InstanceId Human-stable identifier for this client install (e.g.,
@@ -1220,6 +1297,112 @@ type EventReplayResponse struct {
 	Truncated *bool `json:"truncated,omitempty"`
 }
 
+// ExistingCodebaseContextBundle Existing-codebase context bundle injected into every
+// candidate-model prompt when the project's repo is non-empty
+// (plan.md §7.1). The shape stays here even before the daemon
+// assembly subsystem lands so dependent surfaces (UI artifact
+// rail, refinement-round prompts, plan-quality tracker) can
+// compile against the contract.
+//
+// Producer: `apps/daemon/internal/planning/bundle/` (hp-rsly
+// residual follow-ups). Consumers: planning pipeline candidate
+// prompts, refinement-round serializer, artifact-rail bundle
+// viewer.
+//
+// Cross-references: plan.md §7.1, §5.5, §7.4.1; bead hp-rsly
+// residuals.
+type ExistingCodebaseContextBundle struct {
+	// AgentsMd Single-file capture (README, AGENTS.md, an architecture-doc
+	// markdown, etc.). Truncation is explicit so the consumer can
+	// surface a user-visible "showing first N bytes" indicator
+	// instead of silently dropping content.
+	AgentsMd *FileSnapshot `json:"agentsMd,omitempty"`
+
+	// ArchitectureDocs `docs/architecture/*` + `ARCHITECTURE.md` snapshots, capped
+	// at 100 KB total per the discovery contract.
+	ArchitectureDocs []FileSnapshot `json:"architectureDocs"`
+
+	// CommitSha Git commit SHA (40-hex) the bundle was assembled against.
+	// Pinned at bundle-creation time so refinement-round prompts
+	// always reference the same source-of-truth even if the
+	// working tree advances.
+	CommitSha string `json:"commitSha"`
+
+	// ContentHash SHA-256 of the canonicalized bundle contents (lowercase
+	// hex). Used by the content-addressable cache so refinement
+	// rounds reuse the same bundle without re-assembly.
+	ContentHash string `json:"contentHash"`
+
+	// Excluded Project-root-relative paths excluded by size cap, model-
+	// context policy, or secret-scan match. Surfaced in the UI
+	// "manage what models see" link so the user can audit.
+	Excluded []string `json:"excluded"`
+
+	// ExistingBeads Truncated beads from `br list --json --limit 0`.
+	ExistingBeads []BeadSummary `json:"existingBeads"`
+
+	// GeneratedAt RFC-3339 timestamp the bundle was produced.
+	GeneratedAt time.Time `json:"generatedAt"`
+
+	// HealthHotspots Top 25 hotspots by composite score from the §7.4.1 health
+	// pipeline. Capped at 25 by the assembly contract.
+	HealthHotspots   []HotspotSummary   `json:"healthHotspots"`
+	PackageManifests []ManifestSnapshot `json:"packageManifests"`
+
+	// ProjectId Stable Hoopoe project identifier.
+	ProjectId string `json:"projectId"`
+
+	// Readme Single-file capture (README, AGENTS.md, an architecture-doc
+	// markdown, etc.). Truncation is explicit so the consumer can
+	// surface a user-visible "showing first N bytes" indicator
+	// instead of silently dropping content.
+	Readme     *FileSnapshot    `json:"readme,omitempty"`
+	Redactions []RedactionEntry `json:"redactions"`
+
+	// SchemaVersion Bundle schema version (currently 1).
+	SchemaVersion ExistingCodebaseContextBundleSchemaVersion `json:"schemaVersion"`
+
+	// TestLayout Detected test layout so plan candidates don't re-invent
+	// runner choice, fixture location, or mock conventions.
+	TestLayout *TestLayoutSummary `json:"testLayout,omitempty"`
+
+	// TokenBudget Configured per-prompt token budget. The assembly pipeline
+	// truncates lower-priority sections (existing beads → arch
+	// docs → manifests) when `tokenEstimate > tokenBudget`, and
+	// records every drop in `excluded`.
+	TokenBudget int `json:"tokenBudget"`
+
+	// TokenEstimate Estimated token count for the assembled bundle. Used by
+	// the truncation order when token budget is exceeded.
+	TokenEstimate int `json:"tokenEstimate"`
+}
+
+// ExistingCodebaseContextBundleSchemaVersion Bundle schema version (currently 1).
+type ExistingCodebaseContextBundleSchemaVersion int
+
+// FileSnapshot Single-file capture (README, AGENTS.md, an architecture-doc
+// markdown, etc.). Truncation is explicit so the consumer can
+// surface a user-visible "showing first N bytes" indicator
+// instead of silently dropping content.
+type FileSnapshot struct {
+	// ContentB64 Base64-encoded captured bytes.
+	ContentB64 string `json:"contentB64"`
+
+	// Path Project-root-relative POSIX path of the captured file.
+	Path string `json:"path"`
+
+	// Sha256 SHA-256 of the captured bytes (lowercase hex).
+	Sha256 string `json:"sha256"`
+
+	// SizeBytes Size of the (possibly-truncated) captured bytes.
+	SizeBytes int `json:"sizeBytes"`
+
+	// TruncatedFromBytes Original file size in bytes when the capture was truncated
+	// by the discovery cap. Absent when the file fit under the
+	// cap.
+	TruncatedFromBytes *int `json:"truncatedFromBytes,omitempty"`
+}
+
 // GateCheck One named precondition for a gate. `ok` when satisfied; otherwise
 // `detail` explains what's missing in human-readable form.
 type GateCheck struct {
@@ -1248,6 +1431,28 @@ type HealthResponseAdapters string
 
 // HealthResponseStatus defines model for HealthResponse.Status.
 type HealthResponseStatus string
+
+// HotspotSummary One health hotspot row. The bundle surfaces the top 25 so plan
+// candidates flag risk when their first beads land on the
+// worst-coverage / highest-complexity files.
+type HotspotSummary struct {
+	// ChurnScore Recent churn signal (e.g., commit count over the trailing window).
+	ChurnScore *float32 `json:"churnScore,omitempty"`
+
+	// ComplexityScore Cyclomatic complexity (or analogous per-language metric).
+	ComplexityScore *float32 `json:"complexityScore,omitempty"`
+
+	// CompositeScore Composite ranking that combines complexity, churn, and
+	// coverage gap per the §7.4.1 health pipeline. Top-25 ranking
+	// uses this field.
+	CompositeScore float32 `json:"compositeScore"`
+
+	// Language Detected language (e.g., `typescript`, `python`, `go`).
+	Language *string `json:"language,omitempty"`
+
+	// Path Project-root-relative POSIX path of the hotspot file.
+	Path string `json:"path"`
+}
 
 // IssuedBearer defines model for IssuedBearer.
 type IssuedBearer struct {
@@ -1325,6 +1530,30 @@ type JobListResponse struct {
 
 // JobStatus defines model for JobStatus.
 type JobStatus string
+
+// ManifestSnapshot One package manifest. The bundle assembles all detected
+// manifests so plan candidates respect peer-dep / Node-version /
+// OS-support constraints already encoded in the codebase.
+type ManifestSnapshot struct {
+	// Kind Stable manifest kind so the consumer can branch on
+	// ecosystem without re-detecting from the path.
+	Kind ManifestSnapshotKind `json:"kind"`
+
+	// Parsed Optional pre-parsed structured form. When present the
+	// consumer avoids re-parsing; when absent the consumer must
+	// parse `raw` itself per ecosystem rules.
+	Parsed *map[string]interface{} `json:"parsed,omitempty"`
+
+	// Path Project-root-relative POSIX path of the manifest.
+	Path string `json:"path"`
+
+	// Raw Raw manifest contents (as committed).
+	Raw string `json:"raw"`
+}
+
+// ManifestSnapshotKind Stable manifest kind so the consumer can branch on
+// ecosystem without re-detecting from the path.
+type ManifestSnapshotKind string
 
 // MigrationState Structured daemon-migration state (§10.3). The renderer can pick the
 // coarse `phase` enum for chrome state OR the detailed
@@ -1841,6 +2070,26 @@ type ProviderSizeTier string
 // ProviderStorageType defines model for ProviderStorageType.
 type ProviderStorageType string
 
+// RedactionEntry Per-file redaction record. Preserved in the bundle so the user
+// can audit "which secrets did the policy drop before models
+// saw the bundle".
+type RedactionEntry struct {
+	// Count Number of redactions applied at this path.
+	Count int `json:"count"`
+
+	// Kind Redaction class (e.g., `bearer_token`, `api_key`,
+	// `pairing_token`, `ssh_passphrase`, `provider_credential`).
+	// Mirrors the redaction-layer surface taxonomy.
+	Kind string `json:"kind"`
+
+	// Path Project-root-relative POSIX path where redaction was applied.
+	Path string `json:"path"`
+
+	// Surface Optional surface tag (`audit`, `logger`, `model_context`).
+	// Defaults to `model_context` for bundle-time redactions.
+	Surface *string `json:"surface,omitempty"`
+}
+
 // RotateSecretResponse defines model for RotateSecretResponse.
 type RotateSecretResponse struct {
 	// ReplacementPairingToken One-time replacement owner pairing token. Returned once;
@@ -1875,6 +2124,28 @@ type SessionRevokeResponse struct {
 	// handler is idempotent over `sid`.
 	Revoked bool   `json:"revoked"`
 	Sid     string `json:"sid"`
+}
+
+// TestLayoutSummary Detected test layout so plan candidates don't re-invent
+// runner choice, fixture location, or mock conventions.
+type TestLayoutSummary struct {
+	// CoverageConfig Path of the detected coverage config when present (e.g.,
+	// `vitest.config.ts`, `pyproject.toml`'s `[tool.coverage]`
+	// block, `.codecov.yml`).
+	CoverageConfig *string `json:"coverageConfig,omitempty"`
+
+	// FixtureConventions Detected fixture-data conventions (e.g., `__fixtures__/`,
+	// `testdata/`, `tests/fixtures/`).
+	FixtureConventions []string `json:"fixtureConventions"`
+
+	// Runner Detected primary test runner (e.g., `vitest`, `bun:test`,
+	// `pytest`, `go test`, `cargo test`). `unknown` when no
+	// runner could be detected with confidence.
+	Runner string `json:"runner"`
+
+	// TestFilePatterns Globs the runner picks up by convention (e.g.,
+	// `**/*.test.ts`, `tests/**/test_*.py`).
+	TestFilePatterns []string `json:"testFilePatterns"`
 }
 
 // ToolId Closed enum of tools the capability registry knows about. New

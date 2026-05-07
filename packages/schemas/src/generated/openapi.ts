@@ -776,6 +776,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/projects/{projectId}/planning/context-bundle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project identifier (slug or ULID). */
+                projectId: components["parameters"]["ProjectIdPath"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Read the existing-codebase context bundle assembled for plan
+         *     candidate prompts (plan.md §7.1, hp-rsly).
+         * @description Diagnostics/preview endpoint that surfaces the bundle the
+         *     daemon's planning pipeline injects into candidate-model
+         *     prompts when the project's repo is non-empty. The schema
+         *     ships ahead of the daemon assembly subsystem (hp-rsly
+         *     residual follow-ups: discovery walk, BrAdapter integration,
+         *     HealthAdapter integration, model-context policy enforcement,
+         *     token-budget cap, content-addressable cache); until those
+         *     land, the daemon may return 501 Problem.
+         *
+         *     Cross-references: plan.md §7.1, §5.5, §7.4.1; bead hp-rsly.
+         */
+        get: operations["getExistingCodebaseContextBundle"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2188,6 +2221,221 @@ export interface components {
             regionId: string;
             items: components["schemas"]["ProviderSize"][];
         };
+        /**
+         * @description Single-file capture (README, AGENTS.md, an architecture-doc
+         *     markdown, etc.). Truncation is explicit so the consumer can
+         *     surface a user-visible "showing first N bytes" indicator
+         *     instead of silently dropping content.
+         */
+        FileSnapshot: {
+            /** @description Project-root-relative POSIX path of the captured file. */
+            path: string;
+            /** @description SHA-256 of the captured bytes (lowercase hex). */
+            sha256: string;
+            /** @description Size of the (possibly-truncated) captured bytes. */
+            sizeBytes: number;
+            /** @description Base64-encoded captured bytes. */
+            contentB64: string;
+            /**
+             * @description Original file size in bytes when the capture was truncated
+             *     by the discovery cap. Absent when the file fit under the
+             *     cap.
+             */
+            truncatedFromBytes?: number;
+        };
+        /**
+         * @description One package manifest. The bundle assembles all detected
+         *     manifests so plan candidates respect peer-dep / Node-version /
+         *     OS-support constraints already encoded in the codebase.
+         */
+        ManifestSnapshot: {
+            /** @description Project-root-relative POSIX path of the manifest. */
+            path: string;
+            /**
+             * @description Stable manifest kind so the consumer can branch on
+             *     ecosystem without re-detecting from the path.
+             * @enum {string}
+             */
+            kind: "package_json" | "pyproject_toml" | "cargo_toml" | "go_mod" | "gemfile" | "composer_json" | "mix_exs" | "pom_xml" | "other";
+            /** @description Raw manifest contents (as committed). */
+            raw: string;
+            /**
+             * @description Optional pre-parsed structured form. When present the
+             *     consumer avoids re-parsing; when absent the consumer must
+             *     parse `raw` itself per ecosystem rules.
+             */
+            parsed?: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * @description Detected test layout so plan candidates don't re-invent
+         *     runner choice, fixture location, or mock conventions.
+         */
+        TestLayoutSummary: {
+            /**
+             * @description Detected primary test runner (e.g., `vitest`, `bun:test`,
+             *     `pytest`, `go test`, `cargo test`). `unknown` when no
+             *     runner could be detected with confidence.
+             */
+            runner: string;
+            /**
+             * @description Globs the runner picks up by convention (e.g.,
+             *     `**\/*.test.ts`, `tests/**\/test_*.py`).
+             */
+            testFilePatterns: string[];
+            /**
+             * @description Detected fixture-data conventions (e.g., `__fixtures__/`,
+             *     `testdata/`, `tests/fixtures/`).
+             */
+            fixtureConventions: string[];
+            /**
+             * @description Path of the detected coverage config when present (e.g.,
+             *     `vitest.config.ts`, `pyproject.toml`'s `[tool.coverage]`
+             *     block, `.codecov.yml`).
+             */
+            coverageConfig?: string;
+        };
+        /**
+         * @description Truncated bead summary surfaced to plan candidates so they
+         *     don't re-propose work the swarm has already started or
+         *     finished.
+         */
+        BeadSummary: {
+            /** @description Stable br bead identifier (e.g., `hp-abc1`). */
+            id: string;
+            /** @description Bead title (truncated to 200 chars). */
+            title: string;
+            /** @description br status (`open` / `in_progress` / `closed` / etc.). */
+            status: string;
+            /** @description P0-P4 (numeric). */
+            priority: number;
+            /** @description br issue type (`task` / `bug` / `feature` / `epic` / `question` / `docs`). */
+            issueType: string;
+            /** @description Number of `blocks` + `soft` dependencies this bead has. */
+            dependencyCount: number;
+        };
+        /**
+         * @description One health hotspot row. The bundle surfaces the top 25 so plan
+         *     candidates flag risk when their first beads land on the
+         *     worst-coverage / highest-complexity files.
+         */
+        HotspotSummary: {
+            /** @description Project-root-relative POSIX path of the hotspot file. */
+            path: string;
+            /** @description Cyclomatic complexity (or analogous per-language metric). */
+            complexityScore?: number;
+            /** @description Recent churn signal (e.g., commit count over the trailing window). */
+            churnScore?: number;
+            /**
+             * @description Composite ranking that combines complexity, churn, and
+             *     coverage gap per the §7.4.1 health pipeline. Top-25 ranking
+             *     uses this field.
+             */
+            compositeScore: number;
+            /** @description Detected language (e.g., `typescript`, `python`, `go`). */
+            language?: string;
+        };
+        /**
+         * @description Per-file redaction record. Preserved in the bundle so the user
+         *     can audit "which secrets did the policy drop before models
+         *     saw the bundle".
+         */
+        RedactionEntry: {
+            /** @description Project-root-relative POSIX path where redaction was applied. */
+            path: string;
+            /**
+             * @description Redaction class (e.g., `bearer_token`, `api_key`,
+             *     `pairing_token`, `ssh_passphrase`, `provider_credential`).
+             *     Mirrors the redaction-layer surface taxonomy.
+             */
+            kind: string;
+            /** @description Number of redactions applied at this path. */
+            count: number;
+            /**
+             * @description Optional surface tag (`audit`, `logger`, `model_context`).
+             *     Defaults to `model_context` for bundle-time redactions.
+             */
+            surface?: string;
+        };
+        /**
+         * @description Existing-codebase context bundle injected into every
+         *     candidate-model prompt when the project's repo is non-empty
+         *     (plan.md §7.1). The shape stays here even before the daemon
+         *     assembly subsystem lands so dependent surfaces (UI artifact
+         *     rail, refinement-round prompts, plan-quality tracker) can
+         *     compile against the contract.
+         *
+         *     Producer: `apps/daemon/internal/planning/bundle/` (hp-rsly
+         *     residual follow-ups). Consumers: planning pipeline candidate
+         *     prompts, refinement-round serializer, artifact-rail bundle
+         *     viewer.
+         *
+         *     Cross-references: plan.md §7.1, §5.5, §7.4.1; bead hp-rsly
+         *     residuals.
+         */
+        ExistingCodebaseContextBundle: {
+            /**
+             * @description Bundle schema version (currently 1).
+             * @enum {integer}
+             */
+            schemaVersion: 1;
+            /** @description Stable Hoopoe project identifier. */
+            projectId: string;
+            /**
+             * @description Git commit SHA (40-hex) the bundle was assembled against.
+             *     Pinned at bundle-creation time so refinement-round prompts
+             *     always reference the same source-of-truth even if the
+             *     working tree advances.
+             */
+            commitSha: string;
+            /**
+             * Format: date-time
+             * @description RFC-3339 timestamp the bundle was produced.
+             */
+            generatedAt: string;
+            /**
+             * @description SHA-256 of the canonicalized bundle contents (lowercase
+             *     hex). Used by the content-addressable cache so refinement
+             *     rounds reuse the same bundle without re-assembly.
+             */
+            contentHash: string;
+            readme?: components["schemas"]["FileSnapshot"];
+            agentsMd?: components["schemas"]["FileSnapshot"];
+            /**
+             * @description `docs/architecture/*` + `ARCHITECTURE.md` snapshots, capped
+             *     at 100 KB total per the discovery contract.
+             */
+            architectureDocs: components["schemas"]["FileSnapshot"][];
+            packageManifests: components["schemas"]["ManifestSnapshot"][];
+            testLayout?: components["schemas"]["TestLayoutSummary"];
+            /** @description Truncated beads from `br list --json --limit 0`. */
+            existingBeads: components["schemas"]["BeadSummary"][];
+            /**
+             * @description Top 25 hotspots by composite score from the §7.4.1 health
+             *     pipeline. Capped at 25 by the assembly contract.
+             */
+            healthHotspots: components["schemas"]["HotspotSummary"][];
+            /**
+             * @description Project-root-relative paths excluded by size cap, model-
+             *     context policy, or secret-scan match. Surfaced in the UI
+             *     "manage what models see" link so the user can audit.
+             */
+            excluded: string[];
+            redactions: components["schemas"]["RedactionEntry"][];
+            /**
+             * @description Estimated token count for the assembled bundle. Used by
+             *     the truncation order when token budget is exceeded.
+             */
+            tokenEstimate: number;
+            /**
+             * @description Configured per-prompt token budget. The assembly pipeline
+             *     truncates lower-priority sections (existing beads → arch
+             *     docs → manifests) when `tokenEstimate > tokenBudget`, and
+             *     records every drop in `excluded`.
+             */
+            tokenBudget: number;
+        };
     };
     responses: {
         /** @description RFC 7807 problem+json error envelope. */
@@ -3089,6 +3337,30 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Approval"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getExistingCodebaseContextBundle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project identifier (slug or ULID). */
+                projectId: components["parameters"]["ProjectIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Existing-codebase context bundle. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExistingCodebaseContextBundle"];
                 };
             };
             default: components["responses"]["Problem"];
