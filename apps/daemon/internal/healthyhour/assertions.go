@@ -111,6 +111,11 @@ func CheckInvariants(
 	}
 
 	for _, row := range metrics {
+		// Structural guardrails fire on EVERY row regardless of
+		// exclusion: Guardrail 10 (audit-on-every-tick), schema
+		// version (§10.3) on unknown outcomes, and pre-script
+		// error detection. Excluding orchestrator-chat from spoke
+		// counts must not let those guardrails relax.
 		if !knownOutcomes[row.PreScriptOutcome] {
 			result.Violations = append(result.Violations, Violation{
 				Kind:   ViolationUnknownPreScriptOutcome,
@@ -125,13 +130,6 @@ func CheckInvariants(
 				JobID:  row.JobID,
 			})
 		}
-		if row.AgentRunOutcome != "" {
-			result.AgentRunCount++
-			if row.AgentRunOutcome == AgentRunSpoke {
-				result.AgentSpokeCount++
-			}
-		}
-		result.TokensConsumed += row.TokensConsumed
 		if row.AuditEntryWritten {
 			result.AuditedTickCount++
 		} else if inv.AuditEntryPerTickRequired {
@@ -141,6 +139,21 @@ func CheckInvariants(
 				JobID:  row.JobID,
 			})
 		}
+
+		// Exclusion gate for spoke / run / token counts only.
+		// Event-driven user-facing jobs (orchestrator-chat) spoke
+		// ON PURPOSE in response to user messages, and the §8.6
+		// panel-noise floor is meant for background tending only.
+		if inv.ExcludedJobIDs[row.JobID] {
+			continue
+		}
+		if row.AgentRunOutcome != "" {
+			result.AgentRunCount++
+			if row.AgentRunOutcome == AgentRunSpoke {
+				result.AgentSpokeCount++
+			}
+		}
+		result.TokensConsumed += row.TokensConsumed
 	}
 
 	if result.AgentRunCount > inv.MaxAgentRuns {

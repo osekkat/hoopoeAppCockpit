@@ -137,6 +137,26 @@ type JobSpec struct {
 	// declare true.
 	AuditAlways bool `json:"auditAlways"`
 
+	// ExcludeFromHealthyHourInvariants marks this job as
+	// event-driven user-facing — its scheduler_metrics rows must
+	// not be counted by the §8.6 healthy-hour validator's
+	// spoke / run / token-budget checks. The integration contract
+	// healthyhour.Invariants.ExcludedJobIDs picks this up via
+	// HealthyHourExcludedJobIDs() at wire-up time.
+	//
+	// Default false: background tending jobs participate in the
+	// panel-noise floor. The exclusion exists because
+	// orchestrator-chat (the literal §7.5 user-can-chat-with-
+	// orchestrator agent) spokes by design when the user types
+	// in the Activity panel; counting that as a §8.6 violation
+	// would mark every interactive minute as unhealthy.
+	//
+	// Structural guardrails (audit-on-every-tick per Guardrail 10,
+	// unknown PreScriptOutcome per §10.3, pre-script errors)
+	// still apply to excluded jobs — exclusion is targeted, not
+	// blanket.
+	ExcludeFromHealthyHourInvariants bool `json:"excludeFromHealthyHourInvariants,omitempty"`
+
 	// SubstrateBeads point at the implementation-owner beads
 	// this job depends on so a dispatch failure routes triage.
 	SubstrateBeads []string `json:"substrateBeads,omitempty"`
@@ -232,10 +252,11 @@ func Catalog() []JobSpec {
 				ToolsetBR, ToolsetBV, ToolsetNTM, ToolsetAgentMail,
 				ToolsetGitRead, ToolsetHealthAdapter,
 			},
-			Skills:         []SkillID{SkillVibingWithNTM, SkillNTM},
-			Delivery:       DeliveryActivityPanel,
-			AuditAlways:    true,
-			SubstrateBeads: []string{"hp-tg6", "hp-v6n"},
+			Skills:                           []SkillID{SkillVibingWithNTM, SkillNTM},
+			Delivery:                         DeliveryActivityPanel,
+			AuditAlways:                      true,
+			ExcludeFromHealthyHourInvariants: true,
+			SubstrateBeads:                   []string{"hp-tg6", "hp-v6n"},
 		},
 	}
 }
@@ -276,6 +297,26 @@ func JobsWithSkill(skill SkillID) []JobSpec {
 				out = append(out, spec)
 				break
 			}
+		}
+	}
+	return out
+}
+
+// HealthyHourExcludedJobIDs returns the set of JobID strings
+// whose scheduler_metrics rows the §8.6 healthy-hour validator
+// must skip when counting spoke / run / token budgets. The set
+// is consumed by healthyhour.Invariants.ExcludedJobIDs at
+// wire-up time so the two packages share one source of truth.
+//
+// Returns string keys (not JobID) so the healthyhour package
+// stays decoupled from the tendingjobs JobID type — its
+// SchedulerMetric.JobID field is a plain string for the same
+// reason.
+func HealthyHourExcludedJobIDs() map[string]bool {
+	out := make(map[string]bool)
+	for _, spec := range Catalog() {
+		if spec.ExcludeFromHealthyHourInvariants {
+			out[string(spec.ID)] = true
 		}
 	}
 	return out

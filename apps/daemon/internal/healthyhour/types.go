@@ -135,11 +135,30 @@ type Invariants struct {
 	// AuditEntryPerTickRequired enforces Guardrail 10. Default
 	// true — every metric row must have AuditEntryWritten == true.
 	AuditEntryPerTickRequired bool `json:"auditEntryPerTickRequired"`
+
+	// ExcludedJobIDs lists JobID strings whose scheduler_metrics
+	// rows are excluded from spoke / run / token counting. The
+	// daemon's instrumentation pipeline populates this from
+	// tendingjobs.HealthyHourExcludedJobIDs() so event-driven
+	// user-facing jobs (orchestrator-chat) don't trip the §8.6
+	// panel-noise floor when the user types into the Activity
+	// panel during an observation window.
+	//
+	// Exclusion is targeted: spoke / run / token counts skip
+	// excluded rows. Structural guardrails (audit-on-every-tick,
+	// unknown PreScriptOutcome, pre-script error) still fire on
+	// excluded rows — Guardrail 10 + the §10.3 schema-version
+	// rule do not relax for excluded jobs.
+	//
+	// Nil or empty map = no exclusions, which is the
+	// DefaultInvariants() behavior; the wiring layer opts in.
+	ExcludedJobIDs map[string]bool `json:"excludedJobIds,omitempty"`
 }
 
 // DefaultInvariants returns the §8.6 thresholds as the validator
 // applies them by default. Override only for sensitivity / chaos
-// tests where the cap is intentionally relaxed.
+// tests where the cap is intentionally relaxed, or to inject
+// ExcludedJobIDs from the tendingjobs catalog at wire-up time.
 func DefaultInvariants() Invariants {
 	return Invariants{
 		MaxAgentRuns:              1,

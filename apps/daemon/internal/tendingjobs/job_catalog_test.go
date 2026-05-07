@@ -278,3 +278,58 @@ func containsString(haystack []string, needle string) bool {
 	}
 	return false
 }
+
+func TestOrchestratorChatExcludedFromHealthyHourInvariants(t *testing.T) {
+	t.Parallel()
+	// hp-2sds integration contract: orchestrator-chat spokes by
+	// design when the user types in the Activity panel; the §8.6
+	// healthy-hour validator must NOT count its rows in the
+	// spoke / run / token counts.
+	spec, ok := Lookup(JobOrchestratorChat)
+	if !ok {
+		t.Fatal("orchestrator-chat missing")
+	}
+	if !spec.ExcludeFromHealthyHourInvariants {
+		t.Errorf("orchestrator-chat must declare ExcludeFromHealthyHourInvariants=true (per §7.5 + §8.6 integration)")
+	}
+}
+
+func TestOnlyOrchestratorChatIsExcludedFromHealthyHourInvariants(t *testing.T) {
+	t.Parallel()
+	// Background tending jobs (tend-swarm, watch-safety-thresholds,
+	// push-stale-commits, snapshot-health, drift-check,
+	// review-readiness-check) DO participate in §8.6 panel-noise
+	// floor measurement. Only event-driven user-facing jobs are
+	// exempt.
+	for _, spec := range Catalog() {
+		if spec.ID == JobOrchestratorChat {
+			continue
+		}
+		if spec.ExcludeFromHealthyHourInvariants {
+			t.Errorf("%s: must NOT be excluded from healthy-hour invariants — only event-driven user-facing jobs are exempt", spec.ID)
+		}
+	}
+}
+
+func TestHealthyHourExcludedJobIDsReturnsOrchestratorChatOnly(t *testing.T) {
+	t.Parallel()
+	got := HealthyHourExcludedJobIDs()
+	if len(got) != 1 {
+		t.Fatalf("HealthyHourExcludedJobIDs len = %d, want 1 (only orchestrator-chat)", len(got))
+	}
+	if !got["orchestrator-chat"] {
+		t.Errorf("HealthyHourExcludedJobIDs must include orchestrator-chat: got %v", got)
+	}
+}
+
+func TestHealthyHourExcludedJobIDsReturnsFreshMapPerCall(t *testing.T) {
+	t.Parallel()
+	// Caller-mutation safety: returning the same map across calls
+	// would let one caller's mutation leak into the next.
+	a := HealthyHourExcludedJobIDs()
+	a["tend-swarm"] = true
+	b := HealthyHourExcludedJobIDs()
+	if b["tend-swarm"] {
+		t.Errorf("HealthyHourExcludedJobIDs must return a fresh map per call; mutation leaked: %v", b)
+	}
+}

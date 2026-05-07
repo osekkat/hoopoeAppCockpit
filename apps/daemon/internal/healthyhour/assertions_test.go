@@ -275,6 +275,83 @@ func TestDefaultInvariantsMatchSection86Table(t *testing.T) {
 	if !inv.AuditEntryPerTickRequired {
 		t.Error("AuditEntryPerTickRequired must default to true (Guardrail 10)")
 	}
+	if len(inv.ExcludedJobIDs) != 0 {
+		t.Errorf("ExcludedJobIDs must default to nil/empty (wire-up layer opts in), got %v", inv.ExcludedJobIDs)
+	}
+}
+
+func TestExcludedJobSpokeDoesNotViolatePanelNoiseFloor(t *testing.T) {
+	t.Parallel()
+	// The hp-2sds integration contract: orchestrator-chat spokes
+	// by design when the user types in the Activity panel.
+	// Counting that as a §8.6 violation would mark every
+	// interactive minute as unhealthy. With the orchestrator's
+	// JobID in ExcludedJobIDs, the spoke is skipped.
+	metrics := []SchedulerMetric{
+		wakeTick("orchestrator-chat", AgentRunSpoke, 1500),
+	}
+	counters := ActivityCounters{TotalEvents: 1}
+	inv := DefaultInvariants()
+	inv.ExcludedJobIDs = map[string]bool{"orchestrator-chat": true}
+	result := CheckInvariants(metrics, counters, inv)
+	if !result.OK {
+		t.Fatalf("excluded job spoke must not violate, got %+v", result.Violations)
+	}
+	if result.AgentSpokeCount != 0 {
+		t.Errorf("AgentSpokeCount = %d, want 0 (excluded row must not be counted)", result.AgentSpokeCount)
+	}
+	if result.AgentRunCount != 0 {
+		t.Errorf("AgentRunCount = %d, want 0 (excluded row must not be counted)", result.AgentRunCount)
+	}
+	if result.TokensConsumed != 0 {
+		t.Errorf("TokensConsumed = %d, want 0 (excluded row tokens must not be counted)", result.TokensConsumed)
+	}
+}
+
+func TestNonExcludedJobSpokeStillViolatesEvenWhenOtherJobsExcluded(t *testing.T) {
+	t.Parallel()
+	// Exclusion is per-JobID. tend-swarm spoke is still a §8.6
+	// violation even when orchestrator-chat is excluded.
+	metrics := []SchedulerMetric{
+		wakeTick("tend-swarm", AgentRunSpoke, 1500),
+	}
+	counters := ActivityCounters{}
+	inv := DefaultInvariants()
+	inv.ExcludedJobIDs = map[string]bool{"orchestrator-chat": true}
+	result := CheckInvariants(metrics, counters, inv)
+	if result.OK {
+		t.Fatal("tend-swarm spoke must still violate (it is not in ExcludedJobIDs)")
+	}
+	if !hasKind(result, ViolationAgentSpoke) {
+		t.Errorf("expected agent_spoke for tend-swarm, got %+v", result.Violations)
+	}
+}
+
+func TestExcludedJobStillSubjectToAuditAndSchemaGuardrails(t *testing.T) {
+	t.Parallel()
+	// Exclusion is targeted: spoke / run / token counts skip
+	// excluded rows. Guardrail 10 (audit-on-every-tick), §10.3
+	// schema versioning (unknown PreScriptOutcome), and
+	// pre-script error detection must still fire on excluded
+	// rows.
+	missingAudit := wakeTick("orchestrator-chat", AgentRunSpoke, 1000)
+	missingAudit.AuditEntryWritten = false
+	unknownOutcome := tick("orchestrator-chat", PreScriptOutcome("not-a-real-state"))
+	scriptError := tick("orchestrator-chat", PreScriptError)
+	metrics := []SchedulerMetric{missingAudit, unknownOutcome, scriptError}
+	counters := ActivityCounters{}
+	inv := DefaultInvariants()
+	inv.ExcludedJobIDs = map[string]bool{"orchestrator-chat": true}
+	result := CheckInvariants(metrics, counters, inv)
+	if !hasKind(result, ViolationAuditMissing) {
+		t.Errorf("audit-on-every-tick (Guardrail 10) must still fire on excluded jobs, got %+v", result.Violations)
+	}
+	if !hasKind(result, ViolationUnknownPreScriptOutcome) {
+		t.Errorf("schema-version guardrail (§10.3) must still fire on excluded jobs, got %+v", result.Violations)
+	}
+	if !hasKind(result, ViolationPreScriptError) {
+		t.Errorf("pre-script error must still fire on excluded jobs, got %+v", result.Violations)
+	}
 }
 
 func hasKind(result CheckResult, kind ViolationKind) bool {
