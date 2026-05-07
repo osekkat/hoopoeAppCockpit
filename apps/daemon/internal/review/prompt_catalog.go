@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -327,14 +328,34 @@ func PromptByRoundIndex(index int) (PromptTemplate, bool) {
 	return PromptTemplate{}, false
 }
 
+// placeholderRegex matches a `{{.Name}}` token where Name is an
+// identifier (letter or underscore, then letters/digits/underscore).
+// Used by RenderPrompt to do a single-pass substitution so values
+// never re-enter the substitution loop — guaranteeing determinism
+// + closing the chain-substitution injection vector hp-me5d
+// reported.
+var placeholderRegex = regexp.MustCompile(`\{\{\.([A-Za-z_][A-Za-z0-9_]*)\}\}`)
+
 // RenderPrompt substitutes variables in the template's Body and
 // returns the final string. Unknown variables in vars are
 // ignored; missing required variables fail loudly.
 //
-// The substitution is a deliberate plain-string replace
-// (`{{.Name}}` → vars[Name]) so the function has zero parsing
-// overhead and zero runtime template-engine surface; the catalog
-// is the security boundary.
+// The substitution is a deliberate single-pass regex-walk: each
+// `{{.Name}}` token is matched once against the original body and
+// replaced with vars[Name]. Values are emitted verbatim — they
+// never re-enter the substitution loop. This guarantees:
+//
+//   - DETERMINISM: same (template, vars) → byte-identical output;
+//     PromptDigest is stable across runs.
+//   - INJECTION SAFETY: a value that contains `{{.X}}` patterns
+//     (from agent-authored finding bodies, diff content, etc.)
+//     does NOT trigger another substitution pass.
+//
+// Unknown variables (a `{{.Name}}` token whose Name isn't in vars)
+// pass through unchanged. The caller's RequiredVars list catches
+// the typo case loudly; pass-through for genuinely-unknown names
+// preserves the body as-is for future templates that introduce
+// new variables before all callers update.
 func RenderPrompt(template PromptTemplate, vars map[PromptVariable]string) (string, error) {
 	for _, required := range template.RequiredVars {
 		val, ok := vars[required]
@@ -342,11 +363,20 @@ func RenderPrompt(template PromptTemplate, vars map[PromptVariable]string) (stri
 			return "", fmt.Errorf("%w: %s", ErrMissingPromptVariable, required)
 		}
 	}
-	rendered := template.Body
-	for name, value := range vars {
-		placeholder := "{{." + string(name) + "}}"
-		rendered = strings.ReplaceAll(rendered, placeholder, value)
-	}
+	rendered := placeholderRegex.ReplaceAllStringFunc(template.Body, func(match string) string {
+		// match is the full `{{.Name}}` token; the capture group is
+		// the identifier. Re-match to extract it (cheap; the regex
+		// already validated the shape).
+		groups := placeholderRegex.FindStringSubmatch(match)
+		if len(groups) < 2 {
+			return match
+		}
+		name := PromptVariable(groups[1])
+		if value, ok := vars[name]; ok {
+			return value
+		}
+		return match
+	})
 	return rendered, nil
 }
 

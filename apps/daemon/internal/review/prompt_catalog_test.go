@@ -141,6 +141,121 @@ func TestRenderPromptIgnoresUnknownVars(t *testing.T) {
 	}
 }
 
+func TestRenderPromptDoesNotChainSubstitute(t *testing.T) {
+	t.Parallel()
+	// hp-me5d regression: a value that contains `{{.X}}` must NOT
+	// trigger a second substitution pass. Single-pass regex
+	// guarantees the chain-substitution injection vector is closed.
+	template := PromptTemplate{
+		RoundID: "round-test",
+		Body:    "Subject: {{.PriorFindings}}\nAgentsMD: {{.AgentsMD}}",
+	}
+	vars := map[PromptVariable]string{
+		PromptVarPriorFindings: "{{.AgentsMD}}", // hostile value
+		PromptVarAgentsMD:      "REAL AGENTS BODY (must not leak via PriorFindings)",
+	}
+	got, err := RenderPrompt(template, vars)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// The PriorFindings slot should contain the LITERAL `{{.AgentsMD}}`
+	// string — proving the value didn't get re-substituted.
+	if !strings.Contains(got, "Subject: {{.AgentsMD}}\n") {
+		t.Errorf("PriorFindings value was chain-substituted; output = %q", got)
+	}
+	// The AgentsMD slot should contain the real value.
+	if !strings.Contains(got, "AgentsMD: REAL AGENTS BODY") {
+		t.Errorf("AgentsMD slot did not get its real value; output = %q", got)
+	}
+}
+
+func TestRenderPromptDeterministicAcrossRuns(t *testing.T) {
+	t.Parallel()
+	// hp-me5d regression: with hostile values that contain
+	// placeholder-shaped substrings, the output must be byte-
+	// identical across many runs. The pre-fix loop had random
+	// map-iteration order; this test would have failed
+	// intermittently on the old code.
+	template := PromptTemplate{
+		RoundID: "round-test",
+		Body:    "A={{.A}} B={{.B}} C={{.C}}",
+	}
+	vars := map[PromptVariable]string{
+		PromptVariable("A"): "{{.B}}",
+		PromptVariable("B"): "{{.C}}",
+		PromptVariable("C"): "real",
+	}
+	first, err := RenderPrompt(template, vars)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for i := 0; i < 100; i++ {
+		got, err := RenderPrompt(template, vars)
+		if err != nil {
+			t.Fatalf("iter %d: unexpected error: %v", i, err)
+		}
+		if got != first {
+			t.Fatalf("iter %d: drifted from first run\n  first: %q\n  got:   %q", i, first, got)
+		}
+	}
+	// Sanity: no chain-substitution. Every slot should contain the
+	// literal value (which itself contains placeholder text).
+	wantSubstrings := []string{"A={{.B}}", "B={{.C}}", "C=real"}
+	for _, want := range wantSubstrings {
+		if !strings.Contains(first, want) {
+			t.Errorf("missing literal slot %q in output %q", want, first)
+		}
+	}
+}
+
+func TestPromptDigestStableAcrossRunsWithHostileVars(t *testing.T) {
+	t.Parallel()
+	// hp-me5d regression: PromptDigest is the audit-log linkage
+	// hash. It must produce the same digest for the same
+	// (template, vars) pair regardless of map iteration order, even
+	// when values contain placeholder-shaped substrings.
+	template := PromptTemplate{
+		RoundID: "round-test",
+		Body:    "{{.X}} -- {{.Y}}",
+	}
+	vars := map[PromptVariable]string{
+		PromptVariable("X"): "{{.Y}}",
+		PromptVariable("Y"): "value-y",
+	}
+	rendered1, _ := RenderPrompt(template, vars)
+	digest1 := PromptDigest(rendered1)
+	for i := 0; i < 50; i++ {
+		rendered, _ := RenderPrompt(template, vars)
+		if PromptDigest(rendered) != digest1 {
+			t.Fatalf("iter %d: digest drifted (rendered=%q, digest=%q vs first=%q)", i, rendered, PromptDigest(rendered), digest1)
+		}
+	}
+}
+
+func TestRenderPromptUnknownPlaceholderPassesThrough(t *testing.T) {
+	t.Parallel()
+	// A `{{.UnknownVar}}` token whose name isn't in vars should
+	// pass through unchanged (the body keeps the literal token).
+	// Documents the post-fix behavior; pre-fix the unknown token
+	// also passed through, but only because of map-iteration luck.
+	template := PromptTemplate{
+		RoundID: "round-test",
+		Body:    "Known: {{.BeadID}} | Unknown: {{.NeverDefined}}",
+	}
+	got, err := RenderPrompt(template, map[PromptVariable]string{
+		PromptVarBeadID: "hp-test",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(got, "Known: hp-test") {
+		t.Errorf("BeadID not substituted: %q", got)
+	}
+	if !strings.Contains(got, "Unknown: {{.NeverDefined}}") {
+		t.Errorf("Unknown placeholder did not pass through: %q", got)
+	}
+}
+
 func TestRound0CallsForUBS(t *testing.T) {
 	t.Parallel()
 	template, ok := PromptByRoundID("round-0")
