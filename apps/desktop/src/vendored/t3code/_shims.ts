@@ -1,16 +1,28 @@
-// Originally Hoopoe-owned shim — NOT vendored from t3code.
+// Hoopoe-owned. NOT vendored from t3code; deliberate exception to the
+// MIT-notice rule for files under `apps/desktop/src/vendored/t3code/`.
 //
-// This file exists to make t3code's lifted lifecycle source files compile in
-// the Hoopoe tree without dragging in the Effect framework or t3code's
-// `@t3tools/contracts` / `@t3tools/shared` packages (Appendix B "Files we
-// explicitly do NOT lift"). Each lifted file gets its `@t3tools/...` import
-// paths mechanically rewritten to `./_shims.ts`; the symbols below mirror what
-// the lifted code reads from those packages.
+// This file is on the documented Hoopoe-owned exception list in
+// `docs/source-provenance.md` ("Hoopoe-owned files inside the vendored
+// tree" table) and `plan.md` Appendix B ("A small set of Hoopoe-owned
+// support files also lives there when it exists only to compile,
+// export, document, or test the lifted helpers; those files are
+// explicitly marked Hoopoe-owned and do not carry the upstream source
+// notice"). The audit `rg --files-without-match "Copyright.*T3 Tools|MIT"
+// apps/desktop/src/vendored/t3code/` will flag this file by design;
+// the matching exception entry in source-provenance.md is the answer.
 //
-// Adaptations (real validation, real net-bind probing, real login-shell env
-// scraping) live in `apps/desktop/src/main/*` and replace the stubs here.
-// Anything implemented as a `throw` here is a deliberate "wire up real impl
-// in hp-zir" marker.
+// Purpose: this file exists to make t3code's lifted lifecycle source
+// files compile in the Hoopoe tree without dragging in the Effect
+// framework or t3code's `@t3tools/contracts` / `@t3tools/shared`
+// packages (Appendix B "Files we explicitly do NOT lift"). Each lifted
+// file gets its `@t3tools/...` import paths mechanically rewritten to
+// `./_shims.ts`; the symbols below mirror what the lifted code reads
+// from those packages.
+//
+// Adaptations (real validation, real net-bind probing, real
+// login-shell env scraping) live in `apps/desktop/src/main/*` and
+// replace the stubs here. Anything implemented as a `throw` here is a
+// deliberate "wire up real impl in hp-zir" marker.
 
 import * as Net from "node:net";
 
