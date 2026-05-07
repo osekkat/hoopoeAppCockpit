@@ -84,7 +84,15 @@ test("renderToStaticMarkup: dev fallback shows error name + stack + reset button
 });
 
 test("renderToStaticMarkup: prod fallback omits stack details and the reset button", () => {
-  const err = new Error("boom");
+  // Use a unique sentinel string instead of "boom" so the no-leak
+  // assertion below cannot pass trivially: prior to hp-esu the seed
+  // was "boom", and `expect(html).not.toContain("boom")` would have
+  // succeeded even if a future regression rendered err.message
+  // verbatim, because "boom" is also a substring of unrelated copy.
+  // The sentinel makes a regression that puts err.message in prod
+  // HTML observably break this assertion.
+  const sentinel = "PROD_LEAK_SENTINEL_hp_esu_xyz";
+  const err = new Error(sentinel);
   const html = renderToStaticMarkup(
     <SeededErrorBoundary forceDev={false} seedError={err}>
       <span>hidden</span>
@@ -94,8 +102,11 @@ test("renderToStaticMarkup: prod fallback omits stack details and the reset butt
   expect(html).not.toContain('data-testid="error-boundary-detail"');
   expect(html).not.toContain('data-testid="error-boundary-reset"');
   expect(html).toContain('data-testid="error-boundary-reload"');
-  // The detail line that would carry the stack must not leak in prod.
-  expect(html).not.toContain("boom");
+  // The error message must not leak into prod HTML — neither verbatim
+  // nor wrapped in the dev branch's "Error: <msg>" prefix.
+  expect(html).not.toContain(sentinel);
+  expect(html).not.toContain(`Error: ${sentinel}`);
+  expect(html).not.toMatch(/<(pre|code)\b/);
 });
 
 test("componentDidCatch: publishes a renderer.boundary error to the supplied bus", () => {
