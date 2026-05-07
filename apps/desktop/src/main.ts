@@ -124,7 +124,16 @@ export function composeProductionAuthBridge(input: ComposedAuthBridgeInput): Aut
 export interface DesktopBootstrapInput {
   readonly homeDir: string;
   readonly currentAppVersion: string;
-  readonly daemonBinaryPath: string;
+  /** Path to the Hoopoe Go daemon binary. Optional so renderer-only
+   *  dev sessions (no built daemon yet) can still open a window —
+   *  hp-1loj follow-up to hp-27d3. When unset, empty, or whitespace,
+   *  bootstrapDesktop skips spawnBackend and notifies the user via
+   *  `notifyDaemonSpawnSkipped` (default: console.warn).
+   *  See {@link shouldSpawnBackend} for the exact trim/empty rule.
+   *  Explicit `| undefined` lets electron-entry pass
+   *  `process.env.HOOPOE_DAEMON_BIN` directly under
+   *  `exactOptionalPropertyTypes: true`. */
+  readonly daemonBinaryPath?: string | undefined;
   readonly secretStorage: DesktopSecretStorage;
   readonly relaunch?: (reason: string) => void;
   /** Optional active-project root for the project-tier settings file. */
@@ -139,6 +148,17 @@ export interface DesktopBootstrapInput {
    *  `electron.ipcMain` in production. Tests inject a stub to assert
    *  every registered command lands a `ipcMain.handle` binding. */
   readonly ipcMain?: IpcMainLike;
+  /** hp-1loj test seam: lets tests substitute a stub for the
+   *  daemon spawn. Defaults to the real `spawnBackend` from
+   *  BackendLifecycle. The injected function only runs when
+   *  `shouldSpawnBackend(daemonBinaryPath)` returns true; tests can
+   *  use it both to assert call counts and to return a synthetic
+   *  BackendHandle without a real subprocess. */
+  readonly spawnBackend?: typeof spawnBackend;
+  /** hp-1loj test seam: invoked once when bootstrapDesktop skips
+   *  spawning the daemon (renderer-only mode). Defaults to a
+   *  `console.warn` of {@link DAEMON_SPAWN_SKIPPED_MESSAGE}. */
+  readonly notifyDaemonSpawnSkipped?: () => void;
 }
 
 export interface DesktopBootstrapHandle {
@@ -146,9 +166,39 @@ export interface DesktopBootstrapHandle {
   readonly auth: AuthBridge;
   readonly ipc: IpcRegistry;
   readonly updates: UpdateMachine;
-  readonly backend: BackendHandle;
+  /** Null when bootstrapDesktop ran in renderer-only mode (no
+   *  daemon binary path set; see hp-1loj). Daemon-backed RPCs
+   *  return errors until the user re-runs with HOOPOE_DAEMON_BIN
+   *  pointing at a built binary. */
+  readonly backend: BackendHandle | null;
   readonly powerAssertions: PowerAssertionManager;
   readonly shutdown: () => Promise<void>;
+}
+
+/** hp-1loj: user-visible warning when bootstrapDesktop skips
+ *  spawning the daemon. Exported so test seams + UI surfaces can
+ *  match the exact phrasing without re-typing it. */
+export const DAEMON_SPAWN_SKIPPED_MESSAGE =
+  "[hoopoe] daemon spawn skipped — HOOPOE_DAEMON_BIN unset; running renderer-only dev mode. Daemon-backed features (project/health/swarm RPCs) will return errors until you set HOOPOE_DAEMON_BIN to a built daemon binary.";
+
+/** hp-1loj: returns true when `daemonBinaryPath` looks like a
+ *  real path bootstrapDesktop should pass to spawnBackend; false
+ *  (skip spawn) when undefined, null, empty, or whitespace-only.
+ *
+ *  Whitespace is normalised because env vars often carry trailing
+ *  spaces or empty values from shell substitution; treating them
+ *  as "set" would crash spawn() with ERR_INVALID_ARG_VALUE. The
+ *  spawnBackend contract itself stays unchanged — callers that
+ *  actually want to spawn must still pass a non-empty path; this
+ *  helper is the gate that decides whether to call spawnBackend
+ *  at all. */
+export function shouldSpawnBackend(
+  daemonBinaryPath: string | undefined | null,
+): boolean {
+  return (
+    typeof daemonBinaryPath === "string" &&
+    daemonBinaryPath.trim().length > 0
+  );
 }
 
 /** Compose the desktop main-process modules and start the daemon. The
@@ -206,11 +256,32 @@ export async function bootstrapDesktop(
     channel: resolveDefaultDesktopUpdateChannel(input.currentAppVersion),
   });
 
-  const backend = await spawnBackend({
-    daemonBinaryPath: input.daemonBinaryPath,
-    host: "127.0.0.1",
-  });
+  // hp-1loj: gate spawnBackend on a real-looking daemonBinaryPath.
+  // Empty / whitespace / undefined → skip spawn and notify the user
+  // that the cockpit is running renderer-only. The spawnBackend
+  // contract itself stays unchanged (empty path is still an error
+  // there); the gate is here so callers don't have to duplicate the
+  // trim/empty check at every call site.
+  let backend: BackendHandle | null = null;
+  if (shouldSpawnBackend(input.daemonBinaryPath)) {
+    const spawnImpl = input.spawnBackend ?? spawnBackend;
+    backend = await spawnImpl({
+      daemonBinaryPath: input.daemonBinaryPath!.trim(),
+      host: "127.0.0.1",
+    });
+  } else {
+    const notify =
+      input.notifyDaemonSpawnSkipped ??
+      (() => {
+        // eslint-disable-next-line no-console -- intentional user-facing
+        // diagnostic on the main-process console; routed through Electron
+        // logs in production.
+        console.warn(DAEMON_SPAWN_SKIPPED_MESSAGE);
+      });
+    notify();
+  }
 
+  let alreadyShutDown = false;
   return {
     settings,
     auth,
@@ -219,13 +290,24 @@ export async function bootstrapDesktop(
     backend,
     powerAssertions,
     shutdown: async () => {
+      // hp-1loj: shutdown is idempotent — the lifecycle wires this
+      // into `before-quit` which can fire more than once during a
+      // fast SIGTERM, and the renderer-only path still owns the
+      // bridges/IPC so we must run their teardown exactly once
+      // regardless of whether a backend was spawned.
+      if (alreadyShutDown) return;
+      alreadyShutDown = true;
       powerSettingsSubscription.unsubscribe();
       // hp-vd9: detach ipcMain.handle bindings before tearing down the
       // power assertions so a hot-reload or test re-bootstrap doesn't
       // leak stale handlers (Electron throws on duplicate handle()).
       ipcAttachment.detach();
       powerAssertions.shutdown();
-      await backend.stop();
+      if (backend !== null) {
+        const current = backend;
+        backend = null;
+        await current.stop();
+      }
     },
   };
 }

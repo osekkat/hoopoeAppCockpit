@@ -72,11 +72,14 @@ wireMainProcessLifecycle({
     bootstrapDesktop({
       homeDir: OS.homedir(),
       currentAppVersion: app.getVersion(),
-      // The daemon binary path is provisioned by hp-2eg6's verifier
-      // before v1; today the env override is the only knob, and an
-      // empty value falls through to spawnBackend's documented error
-      // path so the failure is visible rather than silent.
-      daemonBinaryPath: process.env.HOOPOE_DAEMON_BIN ?? "",
+      // hp-1loj: HOOPOE_DAEMON_BIN may be unset / empty / whitespace
+      // for renderer-only dev runs (Vite renderer + bridges, no
+      // built daemon yet). bootstrapDesktop's shouldSpawnBackend gate
+      // turns those values into a clean skip with a console.warn,
+      // instead of crashing spawn() with ERR_INVALID_ARG_VALUE.
+      // Leaving the property entirely undefined (vs. "") is the
+      // happiest path through the gate.
+      daemonBinaryPath: process.env.HOOPOE_DAEMON_BIN,
       secretStorage: productionSecretStorage,
     }),
   openMainWindow: (resolved) => {
