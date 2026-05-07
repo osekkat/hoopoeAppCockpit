@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": "1.0.0",
+  "source": "agent-flywheel.com cost-breakdown table mirrored into Hoopoe per plan.md §13",
+  "rows": [
+    {
+      "product": "vps",
+      "displayName": "Cloud VPS (64 GB Ubuntu, Contabo or OVH)",
+      "monthlyUsdMin": 40,
+      "monthlyUsdMax": 56,
+      "providerUrl": "https://contabo.com/en/vps/",
+      "requiredFor": ["planning", "swarm", "tending"],
+      "tier": "core",
+      "notes": "VPS hosts the Flywheel toolchain; Hoopoe daemon runs here."
+    },
+    {
+      "product": "claude-max",
+      "displayName": "Claude Max",
+      "monthlyUsdMin": 200,
+      "monthlyUsdMax": 400,
+      "providerUrl": "https://www.claude.com/max",
+      "requiredFor": ["planning", "swarm", "tending"],
+      "tier": "core",
+      "notes": "$200 standard / $400 power tier. Drives Claude Code (Opus, Sonnet)."
+    },
+    {
+      "product": "chatgpt-pro",
+      "displayName": "ChatGPT Pro",
+      "monthlyUsdMin": 200,
+      "monthlyUsdMax": 200,
+      "providerUrl": "https://chatgpt.com/pro",
+      "requiredFor": ["planning"],
+      "tier": "recommended",
+      "notes": "Drives Oracle for the planning pipeline (only path to ChatGPT Pro web)."
+    },
+    {
+      "product": "gemini-ultra",
+      "displayName": "Gemini Ultra",
+      "monthlyUsdMin": 0,
+      "monthlyUsdMax": 0,
+      "providerUrl": "https://gemini.google.com/advanced",
+      "requiredFor": ["planning"],
+      "tier": "optional",
+      "notes": "Variable pricing; drives Gemini CLI (Gemini 3 Pro with Deep Think). Cost set to 0 when unmeasured per §1.4 inspectability."
+    }
+  ],
+  "allInMonthlyUsdMin": 440,
+  "allInMonthlyUsdMax": 656,
+  "comparison": "For comparison, a junior developer is $5,000+/month; under $700 buys a 10+-agent swarm running 24/7."
+}
