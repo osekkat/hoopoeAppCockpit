@@ -5,7 +5,7 @@
   "type": "module",
   "main": "dist-electron/electron-entry.js",
   "scripts": {
-    "build": "vite build && tsdown src/main.ts src/electron-entry.ts --format esm --platform node --external electron --out-dir dist-electron --no-clean && tsdown electron/preload.ts --format esm --platform node --external electron --out-dir dist-electron --no-clean && cp dist-electron/main.mjs dist-electron/main.js && cp dist-electron/electron-entry.mjs dist-electron/electron-entry.js && cp dist-electron/preload.mjs dist-electron/preload.js",
+    "build": "vite build && tsdown src/main.ts src/electron-entry.ts --format esm --platform node --external electron --out-dir dist-electron --no-clean && tsdown electron/preload.ts --format cjs --platform node --external electron --out-dir dist-electron --no-clean && cp dist-electron/main.mjs dist-electron/main.js && cp dist-electron/electron-entry.mjs dist-electron/electron-entry.js && cp dist-electron/preload.cjs dist-electron/preload.js && bun scripts/assert-preload-cjs.ts",
     "dev": "vite --host 127.0.0.1",
     "e2e": "playwright test -c ../../playwright.config.ts",
     "e2e:phase1": "playwright test -c tests/e2e/hp-j30.playwright.config.ts",
@@ -16,7 +16,7 @@
     "test:integration": "bun test tests/integration/**/*.test.ts",
     "e2e:replay": "bun test tests/replay/*.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "bun test src tests/smoke/*.test.ts tests/unit/*.test.ts tests/replay/*.test.ts tests/integration/**/*.test.ts electron/*.test.ts electron/**/*.test.ts"
+    "test": "bun test src tests/smoke/*.test.ts tests/unit/*.test.ts tests/replay/*.test.ts tests/integration/**/*.test.ts electron/*.test.ts electron/**/*.test.ts scripts/*.test.ts"
   },
   "dependencies": {
     "@codemirror/commands": "^6.7.1",
