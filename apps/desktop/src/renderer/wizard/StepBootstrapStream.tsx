@@ -10,7 +10,7 @@
 // wiring is intentionally behind `window.hoopoe.bootstrap` — preload
 // registers handlers once the daemon endpoints land.
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Activity,
   CheckCircle2,
@@ -162,6 +162,28 @@ export function StepBootstrapStream({
   const summary = summarizeBootstrapEvents(events);
   const Icon = config.Icon;
 
+  // hp-8zw5: bridge invocations stream asynchronously. If the wizard step
+  // unmounts mid-stream (Skip / Back / route change / wizard close), the
+  // bridge keeps invoking the sink and the awaited promise's continuation
+  // still runs on a stale closure. Without this guard, React 18 emits
+  // "Can't perform a React state update on an unmounted component" and
+  // — more importantly — the parent receives a phantom onComplete /
+  // onFailed for a step the user has already abandoned.
+  //
+  // BootstrapStepRunInput does not yet carry an AbortSignal (would
+  // require a contract change in shared/bootstrap-bridge.ts and the
+  // preload bridge), so the stopgap is an isMounted ref guarding every
+  // post-await setState + parent callback. The bridge keeps streaming
+  // in the background but its writes are dropped on the floor; the
+  // backing run finishes and is GCed normally.
+  const isMounted = useRef(true);
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
+
   async function handleRun(): Promise<void> {
     setRunning(true);
     setError(null);
@@ -173,9 +195,11 @@ export function StepBootstrapStream({
         { runId, stepId },
         (event) => {
           collected.push(event);
+          if (!isMounted.current) return;
           setEvents([...collected]);
         },
       );
+      if (!isMounted.current) return;
       const phases = result.events.length > 0 ? result.events : collected;
       setEvents(phases);
       if (result.outcome === "failed") {
@@ -193,11 +217,14 @@ export function StepBootstrapStream({
         ...(result.resumeHint ? { resumeHint: result.resumeHint } : {}),
       });
     } catch (err) {
+      if (!isMounted.current) return;
       const failure = buildBootstrapFailure(stepId, (err as Error).message, collected);
       setError(failure.message);
       onFailed(failure);
     } finally {
-      setRunning(false);
+      if (isMounted.current) {
+        setRunning(false);
+      }
     }
   }
 
