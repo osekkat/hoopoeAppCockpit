@@ -300,71 +300,12 @@ test("AuthBridge: captures pairing token from bootstrap stdout without returning
   ).toBeNull();
 });
 
-test("AuthBridge: bearer refresh is skipped until the 24h refresh window", async () => {
-  // hp-q1a8: pin `now` so the 24h-window assertion does not depend on
-  // the wall clock relative to the fixture's expiresAt. Without the
-  // injected clock, real-time drift past 2026-05-05T00:00:00Z would
-  // push the seeded session into the refresh window and fail the
-  // "fetchImpl should not be called" stub.
-  const auth = new AuthBridge({
-    registryPath,
-    secretStorage: new InMemorySecretStorage(),
-    fetchImpl: (() => {
-      throw new Error("refresh should not be called");
-    }) as unknown as typeof fetch,
-    now: () => new Date("2026-05-04T00:00:00Z"),
-  });
-  const session = bearerSession({ expiresAt: "2026-05-06T00:00:00Z" });
-  await expect(
-    auth.ensureFreshBearer({
-      daemonBaseUrl: "http://127.0.0.1:3779",
-      session,
-    }),
-  ).resolves.toBe(session);
-  expect(
-    auth.shouldRefreshBearer("2026-05-04T23:59:00Z", new Date("2026-05-04T00:00:00Z")),
-  ).toBe(true);
-  expect(auth.shouldRefreshBearer("not-a-date", new Date("2026-05-04T00:00:00Z"))).toBe(true);
-});
-
-test("AuthBridge: refreshBearer posts bearer auth and parses the renewed session", async () => {
-  const recordedHeaders: Record<string, string>[] = [];
-  const tokenField = "to" + "ken";
-  const renewedValue = ["fixture", "session", "renewed"].join("-");
-  const fetchImpl = ((input: string | URL, init?: RequestInit) => {
-    recordedHeaders.push({ ...((init?.headers ?? {}) as Record<string, string>) });
-    expect(String(input)).toBe("http://127.0.0.1:3779/v1/auth/bearer/refresh");
-    return Promise.resolve(
-      new Response(
-        JSON.stringify({
-          [tokenField]: renewedValue,
-          sid: "sid-owner-1",
-          role: "owner",
-          issuedAt: "2026-05-04T23:30:00Z",
-          expiresAt: "2026-06-03T23:30:00Z",
-        }),
-        { status: 200 },
-      ),
-    );
-  }) as unknown as typeof fetch;
-  const auth = new AuthBridge({
-    registryPath,
-    secretStorage: new InMemorySecretStorage(),
-    fetchImpl,
-  });
-
-  const renewed = await auth.refreshBearer({
-    daemonBaseUrl: "http://127.0.0.1:3779",
-    bearerToken: "fixture-session-old",
-  });
-
-  expect(renewed).toMatchObject({
-    bearerToken: renewedValue,
-    sessionId: "sid-owner-1",
-    expiresAt: "2026-06-03T23:30:00Z",
-  });
-  expect(recordedHeaders[0]?.authorization).toBe("Bearer fixture-session-old");
-});
+// hp-mwf: bearer-refresh tests removed alongside the renderer-side
+// methods. The daemon never exposed /v1/auth/bearer/refresh
+// (apps/daemon/internal/api/auth.go mounts only /bootstrap/bearer,
+// /ws-token, /session/revoke, /rotate-secret), so the helpers were
+// dead code under unit-test cover only. Reintroduce paired tests
+// when the daemon endpoint + OpenAPI schema land.
 
 test("AuthBridge: secret-rotation auth failure clears bearer and records recovery trace", () => {
   const auth = new AuthBridge({

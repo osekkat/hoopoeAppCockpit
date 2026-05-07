@@ -46,7 +46,6 @@ export interface AuthBridgeOptions {
 }
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
-const DEFAULT_BEARER_REFRESH_WINDOW_MS = 24 * 60 * 60 * 1_000;
 const PAIRING_TOKEN_RE = /^[1-9A-HJKMNPQRSTVWXYZ]{12}$/u;
 
 export interface CapturedPairingToken {
@@ -81,16 +80,6 @@ export interface ExchangePairingForBearerInput {
 export interface IssueWsTokenInput {
   readonly daemonBaseUrl: string;
   readonly bearerToken: string;
-}
-
-export interface RefreshBearerInput {
-  readonly daemonBaseUrl: string;
-  readonly bearerToken: string;
-}
-
-export interface EnsureFreshBearerInput {
-  readonly daemonBaseUrl: string;
-  readonly session: BearerSession;
 }
 
 export type SecretRotationRecoveryState =
@@ -173,7 +162,6 @@ export class AuthBridge {
   private readonly fetchImpl: typeof fetch;
   private readonly options: AuthBridgeOptions;
   private readonly requestTimeoutMs: number;
-  private readonly refreshWindowMs: number;
   private readonly nowProvider: () => Date;
   private readonly auditSink: AuthBridgeAuditSink | undefined;
   private secretRotationState: SecretRotationRecoveryState = "normal";
@@ -182,7 +170,6 @@ export class AuthBridge {
     this.options = options;
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
-    this.refreshWindowMs = DEFAULT_BEARER_REFRESH_WINDOW_MS;
     this.nowProvider = options.now ?? (() => new Date());
     this.auditSink = options.audit;
   }
@@ -205,42 +192,20 @@ export class AuthBridge {
     return parseBearerSession(await parseJsonPayload(response, "Bootstrap"), "Bootstrap");
   }
 
-  async refreshBearer(input: RefreshBearerInput): Promise<BearerSession> {
-    const response = await this.fetchWithTimeout(
-      new URL("/v1/auth/bearer/refresh", input.daemonBaseUrl).toString(),
-      {
-        method: "POST",
-        headers: {
-          ...writeHeaders(),
-          authorization: `Bearer ${input.bearerToken}`,
-        },
-        body: "{}",
-      },
-      "bearer-refresh",
-    );
-    if (!response.ok) {
-      throw new AuthBridgeRedactedError(
-        `Bearer refresh request rejected (status ${response.status}).`,
-      );
-    }
-    return parseBearerSession(await parseJsonPayload(response, "Bearer refresh"), "Bearer refresh");
-  }
-
-  async ensureFreshBearer(input: EnsureFreshBearerInput): Promise<BearerSession> {
-    if (!this.shouldRefreshBearer(input.session.expiresAt)) {
-      return input.session;
-    }
-    return await this.refreshBearer({
-      daemonBaseUrl: input.daemonBaseUrl,
-      bearerToken: input.session.bearerToken,
-    });
-  }
-
-  shouldRefreshBearer(expiresAt: string, now: Date = this.nowProvider()): boolean {
-    const expiresAtMs = Date.parse(expiresAt);
-    if (!Number.isFinite(expiresAtMs)) return true;
-    return expiresAtMs - now.getTime() <= this.refreshWindowMs;
-  }
+  // hp-mwf: refreshBearer / ensureFreshBearer / shouldRefreshBearer
+  // were removed because the daemon does not expose
+  // /v1/auth/bearer/refresh — none of /v1/auth/bootstrap/bearer,
+  // /v1/auth/ws-token, /v1/auth/session/revoke, /v1/auth/rotate-secret
+  // (the only auth routes mounted by apps/daemon/internal/api/auth.go)
+  // accept a bearer-refresh POST. Calling these renderer-side helpers
+  // would always 404 against the real daemon. They had no production
+  // callers (only their own tests), so removal is the cleanest of
+  // the bead's two acceptance options ("remove/replace AuthBridge
+  // bearer refresh logic so desktop never calls an undefined Phase 2
+  // endpoint"). When daemon implements the refresh route + OpenAPI
+  // schema, reintroduce the helpers paired with the matching
+  // adapter — don't restore a dead path that only the desktop knew
+  // about.
 
   getSecretRotationRecoveryState(): SecretRotationRecoveryState {
     return this.secretRotationState;
