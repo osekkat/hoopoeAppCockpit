@@ -114,6 +114,8 @@ The conventional shape for this kind of daemon — the one kubelet, containerd, 
 
 Skills are the spec; jobs are the substrate that loads them. See §8 for the full job format, the initial job set, the four-layer separation between scheduler / pre-script / agent runtime / skills, and the tradeoffs this architecture deliberately accepts.
 
+The three-mode review (symbolic / empirical / dialectical) of this decision lives at [`docs/architecture/skill-attached-tending-three-mode-review.md`](docs/architecture/skill-attached-tending-three-mode-review.md). It records the contracts the four-layer separation owes the codebase, the gap between substrate (in place today) and production behavioral confidence (still pending Phase 0 capture + Phase 10 integration), and the seam-hardening obligations the synthesis accepted (deterministic safety actions stay pre-script-only; judgment-class actions produce typed ActionPlans with postcondition evidence; every job has a §8.8 fixture with skill-digest + advisory-version metadata; a Phase 10 audit checkpoint catches Go that has quietly become a hidden operator loop).
+
 ---
 
 ## 2. System architecture
