@@ -278,6 +278,90 @@ func TestRunOnHighVolumeGoldenFixtureMarksOutputTruncated(t *testing.T) {
 	}
 }
 
+// TestRunOnMalformedJSONGoldenFixturePinsCapturePassthrough loads
+// packages/fixtures/golden-outputs/rch/malformed-json.json and pins
+// the rch adapter contract from plan.md §18.3 for the
+// "malformed-json" state.
+//
+// Unlike br/agent-mail/bv/ntm, the rch Go adapter does NOT parse stdout
+// as a JSON envelope — Run() captures bytes, runs ParseSummary on the
+// `[RCH]` summary line, and surfaces the captured bytes verbatim
+// through `RunResult.Stdout`. The fixture's `rch.run: degraded` marker
+// documents the contract that *downstream consumers* of this output
+// (scheduler, build-log surface) must treat truncated/non-JSON
+// `rch status --json` output as a degraded signal — not a hard failure
+// that drops the result.
+//
+// Pinned here:
+//
+//  1. Fixture self-consistency (state, exit=0, non-empty stdoutText
+//     that fails JSON parse, _highVolume marker absent — this is the
+//     malformed-not-truncated state).
+//  2. The fixture's stdoutText *does not* parse as valid JSON
+//     (sanity guard against a future fixture edit that drifts off the
+//     "malformed payload" intent).
+//  3. Run() captures the malformed bytes verbatim into RunResult.Stdout
+//     without panicking, OutputTruncated stays false (the fixture's
+//     truncated=false flag), and the result still carries the project
+//     metadata callers serialize across the daemon API surface.
+func TestRunOnMalformedJSONGoldenFixturePinsCapturePassthrough(t *testing.T) {
+	fixture := loadRCHGoldenFixture(t, "malformed-json.json")
+	if fixture.Meta.State != "malformed-json" {
+		t.Fatalf("fixture state = %q, want malformed-json", fixture.Meta.State)
+	}
+	if fixture.Exit != 0 {
+		t.Fatalf("fixture exit = %d, want 0 (rch CLI exited cleanly; only the JSON envelope is malformed)", fixture.Exit)
+	}
+	if fixture.Truncated {
+		t.Fatalf("fixture truncated = true, want false (malformed-json is distinct from high-volume)")
+	}
+	cap, ok := fixture.Capabilities["rch.run"]
+	if !ok || cap.Status != "degraded" {
+		t.Fatalf("fixture must declare rch.run=degraded, got %+v", fixture.Capabilities)
+	}
+	if fixture.StdoutText == "" {
+		t.Fatalf("fixture stdoutText is empty; expected truncated JSON sample")
+	}
+
+	// Sanity: the fixture's stdoutText must NOT be valid JSON.
+	var parsed any
+	if err := json.Unmarshal([]byte(fixture.StdoutText), &parsed); err == nil {
+		t.Fatalf("fixture stdoutText parses as valid JSON; the malformed-json contract requires a non-JSON sample")
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("Run panicked on malformed JSON fixture stdout: %v", r)
+		}
+	}()
+	adapter := New(&fakeRunner{responses: map[string]CommandResult{
+		"/repo\x00rch exec -- go test ./...": {
+			ExitCode: fixture.Exit,
+			Stdout:   []byte(fixture.StdoutText),
+		},
+	}})
+	adapter.Now = fixedNow
+	got, err := adapter.Run(context.Background(), RunRequest{
+		WorktreePath: "/repo",
+		Command:      []string{"go", "test", "./..."},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got.Stdout != fixture.StdoutText {
+		t.Fatalf("RunResult.Stdout = %q, want fixture verbatim %q", got.Stdout, fixture.StdoutText)
+	}
+	if got.OutputTruncated {
+		t.Fatalf("OutputTruncated = true, want false (fixture truncated=false)")
+	}
+	if got.ExitCode != 0 {
+		t.Fatalf("ExitCode = %d, want 0 (fixture exit field)", got.ExitCode)
+	}
+	if got.WorktreePath != "/repo" {
+		t.Fatalf("WorktreePath = %q, want /repo (project metadata must survive malformed-stdout pass-through)", got.WorktreePath)
+	}
+}
+
 type rchGoldenFixture struct {
 	Meta struct {
 		Adapter string `json:"adapter"`
