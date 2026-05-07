@@ -1160,6 +1160,89 @@ func TestCronDayFieldRestrictionAxes(t *testing.T) {
 	}
 }
 
+// TestCronUnionSemanticsAllowDOWReachableImpossibleDOMMonth guards
+// hp-kxy0: when day-of-week is RESTRICTED, the UNION semantics
+// (every Monday OR the 31st) make a DOM × month infeasibility on
+// the second axis irrelevant — the expression matches via the DOW
+// axis. parseCron must NOT reject these.
+//
+// Pre-fix, validateDayMonthCombination ignored the DOW restriction
+// and rejected '* * 31 2 1' at parse time even though "every Monday
+// in February" is a perfectly reachable schedule.
+//
+// Regression guards (DOM × month infeasible AND DOW unrestricted —
+// the only matching axis is the impossible one, so cronExpr.Next
+// would walk the full 5-year window): those still get rejected;
+// the existing TestCronDayMonthInfeasibleRejectedAtParse already
+// pins that direction. This test adds the inverse direction.
+func TestCronUnionSemanticsAllowDOWReachableImpossibleDOMMonth(t *testing.T) {
+	t.Parallel()
+	// DOW-restricted, DOM×month infeasible-on-its-own — must parse OK
+	// because the DOW axis can supply matching days.
+	dowReachable := []struct {
+		expr string
+		why  string
+	}{
+		{"* * 31 2 1", "every Monday in Feb OR Feb 31 — Monday axis matches"},
+		{"* * 31 4 1", "every Monday in April OR April 31 — Monday axis matches"},
+		{"* * 31 4,6,9,11 1-5", "every weekday in 30-day months OR the 31st — weekday axis matches"},
+		{"0 12 30 2 0", "every Sunday in Feb OR Feb 30 — Sunday axis matches"},
+	}
+	for _, tc := range dowReachable {
+		if _, err := parseCron(tc.expr); err != nil {
+			t.Errorf("parseCron(%q) rejected DOW-reachable expression (%s): %v", tc.expr, tc.why, err)
+		}
+	}
+
+	// Confirm parseCron is fast on the DOW-restricted path (parse-time
+	// rejection short-circuit is no longer engaged for these, but the
+	// validation must still complete in microseconds — no walking).
+	t0 := time.Now()
+	if _, err := parseCron("* * 31 2 1"); err != nil {
+		t.Fatalf("parseCron(\"* * 31 2 1\") rejected DOW-reachable: %v", err)
+	}
+	if elapsed := time.Since(t0); elapsed > 10*time.Millisecond {
+		t.Errorf("parseCron took %v, expected <10ms — DOW-restricted path is walking", elapsed)
+	}
+
+	// Inverse-direction sanity: when DOW is UNRESTRICTED, the DOM ×
+	// month infeasibility still rejects (the existing guard).
+	if _, err := parseCron("* * 31 2 *"); err == nil {
+		t.Fatalf("parseCron(\"* * 31 2 *\") accepted DOM×month-only-infeasible expression — guard regressed")
+	}
+
+	// And: '* * 31 2 1' must not just parse, it must actually fire on
+	// Mondays in Feb. Pin one calendar window so a future regression
+	// that accepts the expression but breaks Next() is caught here.
+	c, err := parseCron("0 12 31 2 1")
+	if err != nil {
+		t.Fatalf("parseCron(0 12 31 2 1): %v", err)
+	}
+	// 2026 February: Mondays = 2, 9, 16, 23. Feb has no 31st, so DOM
+	// axis contributes nothing; DOW axis must fire 4 times.
+	feb := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
+	mar := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	hits := []time.Time{}
+	cursor := feb.Add(-time.Minute)
+	for {
+		next := c.Next(cursor)
+		if next.IsZero() || !next.Before(mar) {
+			break
+		}
+		hits = append(hits, next)
+		cursor = next
+	}
+	if len(hits) != 4 {
+		t.Fatalf("got %d hits in Feb 2026, want 4 (Mondays Feb 2/9/16/23): %v", len(hits), hits)
+	}
+	wantDays := []int{2, 9, 16, 23}
+	for i, h := range hits {
+		if h.Day() != wantDays[i] || h.Hour() != 12 {
+			t.Errorf("hit %d = %s, want Feb %d at 12:00", i, h.Format(time.RFC3339), wantDays[i])
+		}
+	}
+}
+
 // TestRegistryPrunesTerminalRunsBeyondRetention guards hp-dqm8: with
 // TerminalRunRetention set, every CompleteRun must keep the in-memory
 // state.Runs population at the configured cap by evicting the oldest

@@ -57,7 +57,9 @@ func parseCron(expr string) (cronExpr, error) {
 	if err != nil {
 		return cronExpr{}, fmt.Errorf("%w: day-of-week: %v", ErrInvalidDefinition, err)
 	}
-	if err := validateDayMonthCombination(dom, month); err != nil {
+	dayOfMonthRestricted := strings.TrimSpace(parts[2]) != "*"
+	dayOfWeekRestricted := strings.TrimSpace(parts[4]) != "*"
+	if err := validateDayMonthCombination(dom, month, dayOfWeekRestricted); err != nil {
 		return cronExpr{}, fmt.Errorf("%w: %v", ErrInvalidDefinition, err)
 	}
 	return cronExpr{
@@ -66,8 +68,8 @@ func parseCron(expr string) (cronExpr, error) {
 		dayOfMonth:           dom,
 		month:                month,
 		dayOfWeek:            dow,
-		dayOfMonthRestricted: strings.TrimSpace(parts[2]) != "*",
-		dayOfWeekRestricted:  strings.TrimSpace(parts[4]) != "*",
+		dayOfMonthRestricted: dayOfMonthRestricted,
+		dayOfWeekRestricted:  dayOfWeekRestricted,
 	}, nil
 }
 
@@ -77,7 +79,20 @@ func parseCron(expr string) (cronExpr, error) {
 // full 5-year deadline (~2.6M minute steps) on every recompute,
 // holding r.mu and spiking CPU. Day-of-month and month are validated
 // together because each is structurally valid in isolation.
-func validateDayMonthCombination(dom, month cronField) error {
+//
+// hp-kxy0: when day-of-week is restricted, POSIX/Vixie cron UNION
+// semantics let the DOW axis supply matching days regardless of
+// whether DOM × month is feasible on its own. e.g. '* * 31 2 1'
+// matches every Monday in Feb (DOW axis) even though "Feb 31"
+// (DOM × month axis) never matches. Skip the DOM × month
+// infeasibility rejection in that case — the expression is
+// reachable via the DOW axis. Only reject when DOW is unrestricted
+// and DOM × month is the only matching axis; that's the case where
+// cronExpr.Next would otherwise spin to the 5-year deadline.
+func validateDayMonthCombination(dom, month cronField, dayOfWeekRestricted bool) error {
+	if dayOfWeekRestricted {
+		return nil
+	}
 	daysInMonth := []int{31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31}
 	for m := range month.allowed {
 		if m < 1 || m > 12 {
