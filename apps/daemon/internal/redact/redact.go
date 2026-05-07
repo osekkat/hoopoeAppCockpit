@@ -1,3 +1,36 @@
+//go:build hoopoe_legacy_redact
+
+// hp-mdex: this package was DISCARDED in favor of
+// apps/daemon/internal/redaction/ (see commit babd8e1) but
+// re-introduced as untracked files later and preserved in commit
+// 2081595 pending hp-mdex resolution. Its API
+// (`Redact(text) (string, []Event)`, `New()` with no Config) is
+// incompatible with the canonical `redaction.Redactor`
+// (`RedactText(surface, context, text) (string, []TraceEvent)`,
+// `New(Config)` constructor), so a thin re-export shim is not
+// viable.
+//
+// hp-mdex resolution: instead of deleting the files (RULE 1 forbids
+// deletion without express user permission) the build tag above
+// excludes both files from the default `go build` / `go test ./...`
+// surface — this matches the bead's option (c) "vendor a renamed
+// copy" interpreted as "preserve under a non-default build tag." The
+// package no longer participates in production builds and stops
+// being a parallel mutation surface beside
+// apps/daemon/internal/redaction/. It is also no longer imported by
+// any code in apps/daemon/ (verified via grep — only doc-comment
+// references survive in audit/writer.go and audit/writer_test.go).
+//
+// To resurface (e.g., for archeology against the babd8e1 deletion):
+//   go build -tags hoopoe_legacy_redact ./...
+//   go test  -tags hoopoe_legacy_redact ./internal/redact/...
+//
+// If you need a redactor in production, import
+// `github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/redaction`
+// instead — the canonical surface lives there.
+//
+// Original (now-historical) docblock:
+//
 // Package redact is the daemon-side redaction layer. It runs before any
 // persistence or streaming on the daemon — bearer tokens, pairing tokens,
 // model API keys, SSH passphrases, browser cookies, provider credentials,

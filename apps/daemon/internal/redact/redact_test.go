@@ -1,3 +1,9 @@
+//go:build hoopoe_legacy_redact
+
+// hp-mdex: see redact.go header — these tests only build under the
+// `hoopoe_legacy_redact` tag. Default `go test ./...` skips them so
+// the legacy package does not participate in production builds.
+
 package redact
 
 import (
