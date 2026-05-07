@@ -8,6 +8,7 @@ import {
   TOPBAR_SLO_PREFIX,
   elementsForTrigger,
   lookupTopbarElement,
+  urlMatchesForbiddenPattern,
   type TopbarElementID,
   type TopbarTriggerEvent,
 } from "./topbar-contract.ts";
@@ -156,5 +157,95 @@ test("forbidden patterns are unique strings", () => {
   for (const pattern of TOPBAR_FORBIDDEN_POLL_PATTERNS) {
     expect(seen.has(pattern)).toBe(false);
     seen.add(pattern);
+  }
+});
+
+test("urlMatchesForbiddenPattern: literal prefix uses string-startswith", () => {
+  expect(urlMatchesForbiddenPattern("/v1/projects/abc", "/v1/projects/")).toBe(true);
+  expect(urlMatchesForbiddenPattern("/v1/health", "/v1/health")).toBe(true);
+  expect(urlMatchesForbiddenPattern("/v1/health/foo", "/v1/health")).toBe(true);
+  expect(urlMatchesForbiddenPattern("/v1/healthy", "/v1/health")).toBe(true);
+  expect(urlMatchesForbiddenPattern("/something-else", "/v1/health")).toBe(false);
+});
+
+test("urlMatchesForbiddenPattern: {id} placeholder matches one path segment", () => {
+  expect(
+    urlMatchesForbiddenPattern(
+      "/v1/projects/demo/health/summary",
+      "/v1/projects/{id}/health/summary",
+    ),
+  ).toBe(true);
+  expect(
+    urlMatchesForbiddenPattern(
+      "/v1/projects/abc-def-123/git/status",
+      "/v1/projects/{id}/git/status",
+    ),
+  ).toBe(true);
+});
+
+test("urlMatchesForbiddenPattern: {id} placeholder does NOT match across slashes", () => {
+  // Placeholders match exactly one URL segment; multi-segment IDs
+  // must not be silently accepted.
+  expect(
+    urlMatchesForbiddenPattern(
+      "/v1/projects/foo/bar/health/summary",
+      "/v1/projects/{id}/health/summary",
+    ),
+  ).toBe(false);
+});
+
+test("urlMatchesForbiddenPattern: template patterns reject unrelated URLs", () => {
+  expect(
+    urlMatchesForbiddenPattern(
+      "/v1/health",
+      "/v1/projects/{id}/health/summary",
+    ),
+  ).toBe(false);
+  expect(
+    urlMatchesForbiddenPattern(
+      "/v1/projects/demo",
+      "/v1/projects/{id}/health/summary",
+    ),
+  ).toBe(false);
+});
+
+test("urlMatchesForbiddenPattern: anchored at start (literal `/v1/projects/` does not match `/api/v1/projects/`)", () => {
+  expect(
+    urlMatchesForbiddenPattern("/api/v1/projects/abc", "/v1/projects/"),
+  ).toBe(false);
+});
+
+test("every template entry has at least one matching real URL (no dead-code patterns)", () => {
+  // Regression-test the hp-39ua finding: every template entry in
+  // TOPBAR_FORBIDDEN_POLL_PATTERNS must match a realistic URL
+  // shape. If a pattern is silently dead (unmatchable because of
+  // a `{id}` typo or path drift), this test surfaces it.
+  const fixtureURLForTemplate: Record<string, string> = {
+    "/v1/projects/{id}/health/summary": "/v1/projects/demo/health/summary",
+    "/v1/projects/{id}/git/status": "/v1/projects/demo/git/status",
+    "/v1/projects/{id}/beads": "/v1/projects/demo/beads",
+    "/v1/projects/{id}/agents": "/v1/projects/demo/agents",
+    "/v1/projects/{id}/swarm": "/v1/projects/demo/swarm",
+    "/v1/projects/{id}/activity": "/v1/projects/demo/activity",
+  };
+  for (const pattern of TOPBAR_FORBIDDEN_POLL_PATTERNS) {
+    if (!pattern.includes("{")) continue;
+    const fixture = fixtureURLForTemplate[pattern];
+    expect(fixture, `template ${pattern} needs a fixture URL in this test`).toBeDefined();
+    expect(
+      urlMatchesForbiddenPattern(fixture!, pattern),
+      `template ${pattern} must match its fixture ${fixture}`,
+    ).toBe(true);
+  }
+});
+
+test("the literal `/v1/projects/` covers every project-scoped template (subsumption documentation)", () => {
+  // Reviewers should see explicitly that the literal prefix and
+  // the templates BOTH document the same forbidden surface; the
+  // templates remain useful as endpoint-by-endpoint inventory.
+  for (const pattern of TOPBAR_FORBIDDEN_POLL_PATTERNS) {
+    if (!pattern.startsWith("/v1/projects/{")) continue;
+    const fixture = pattern.replace(/\{[^}]+\}/g, "demo");
+    expect(urlMatchesForbiddenPattern(fixture, "/v1/projects/")).toBe(true);
   }
 });

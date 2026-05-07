@@ -137,9 +137,19 @@ export const TOPBAR_ELEMENTS: readonly TopbarElementContract[] = [
  * If any of these are hit during the 120-second window with no
  * user interaction, the cockpit is polling — fail the test.
  *
- * Patterns are URL prefixes (string-starts-with). Initial subscribe-
- * phase fetches are allowed and counted separately by the test
- * harness.
+ * Two pattern shapes coexist:
+ * - Plain URL prefixes (e.g. `/v1/projects/`) match via
+ *   string-starts-with.
+ * - Path templates with `{name}` placeholders (e.g.
+ *   `/v1/projects/{id}/health/summary`) match a single URL path
+ *   segment per placeholder.
+ *
+ * Use {@link urlMatchesForbiddenPattern} to test a URL against a
+ * pattern; the test harness must call it instead of comparing
+ * URLs directly so template entries are not silently dead code.
+ *
+ * Initial subscribe-phase fetches are allowed and counted
+ * separately by the test harness.
  */
 export const TOPBAR_FORBIDDEN_POLL_PATTERNS: readonly string[] = [
   "/v1/projects/",
@@ -153,6 +163,33 @@ export const TOPBAR_FORBIDDEN_POLL_PATTERNS: readonly string[] = [
   "/v1/caut",
   "/v1/capabilities",
 ];
+
+/**
+ * Returns true when the URL is forbidden under the given pattern.
+ *
+ * Patterns containing `{name}` placeholders are treated as path
+ * templates: each placeholder matches exactly one URL path
+ * segment (no `/`). Patterns without placeholders are string-
+ * startswith.
+ *
+ * The harness iterates every observed URL against every pattern
+ * in {@link TOPBAR_FORBIDDEN_POLL_PATTERNS}; a single match
+ * fails the test. Template patterns let the contract document
+ * specific endpoints (`/v1/projects/{id}/health/summary`)
+ * separately from the coarse-grained literal (`/v1/projects/`)
+ * so reviewers see both the surface inventory and the catch-all.
+ */
+export function urlMatchesForbiddenPattern(url: string, pattern: string): boolean {
+  if (!pattern.includes("{")) {
+    return url.startsWith(pattern);
+  }
+  const literalSegments = pattern.split(/\{[^}]+\}/);
+  const escaped = literalSegments.map((segment) =>
+    segment.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+  );
+  const regexSrc = "^" + escaped.join("[^/]+");
+  return new RegExp(regexSrc).test(url);
+}
 
 /**
  * URL patterns the structural-assertion test must EXCLUDE from
