@@ -13,6 +13,20 @@
 //
 // All file IO uses `node:fs`; all subprocess invocations go through a
 // caller-supplied `runCommand` so tests can inject a fake.
+//
+// hp-qk8 source-of-truth boundary: the canonical project-import +
+// readiness owner is the Go daemon at apps/daemon/internal/projects/
+// (Service.Import + Service.Readiness, see plan.md §1.1 / §5.3). These
+// helpers exist as a pure-TS reference implementation that runs in the
+// Electron main-process integration tests and backs early bootstrap
+// diagnostics; they MUST NOT be imported from apps/desktop/src/
+// (renderer + IPC bridge). The renderer flow for project import +
+// readiness is: user click -> IPC -> daemon RPC (POST /v1/projects
+// ImportRequest, GET /v1/projects/{id}/readiness). lifecycle.test.ts
+// has a regression test that walks apps/desktop/src/** and fails if
+// any production import resolves into this directory; do not relax
+// that check without first replacing the helpers behind a daemon RPC
+// the renderer can call.
 
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";

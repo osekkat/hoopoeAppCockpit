@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, extname, join, resolve } from "node:path";
 import {
   ProjectLifecycleError,
   detectToolEnvironment,
@@ -195,5 +195,107 @@ describe("hp-ilt :: initializeBeadsIfMissing", () => {
     expect(capturedCmd).toBe("br");
     expect(capturedArgs).toEqual(["init"]);
     expect(result.exitCode).toBe(0);
+  });
+});
+
+// hp-qk8: lock in the source-of-truth boundary documented in plan.md
+// §1.1 / §5.3. The Phase 4 lifecycle helpers in this directory mutate
+// repo state on disk (run `git`, write `.hoopoe/project.json`, run
+// `br init`) and intentionally duplicate the canonical daemon-side
+// implementation in apps/daemon/internal/projects/. To keep them from
+// becoming a parallel mutation surface, the renderer (where the user
+// triggers project import) must NEVER reach in directly — every
+// project mutation goes through a typed daemon RPC. These tests
+// regression-guard that boundary by walking every TS/TSX file under
+// apps/desktop/src/ (renderer + main IPC bridge code that the renderer
+// can reach via preload) and asserting no production import resolves
+// into apps/desktop/electron/projects/. Doc references in comments are
+// allowed; only `import` / `require` / dynamic-import statements fail.
+describe("hp-qk8 :: production-bundle boundary", () => {
+  const repoRoot = resolve(__dirname, "..", "..", "..", "..");
+  const desktopSrc = resolve(repoRoot, "apps", "desktop", "src");
+  const electronProjectsRel = "apps/desktop/electron/projects";
+
+  function walkTsFiles(root: string): string[] {
+    const out: string[] = [];
+    const stack = [root];
+    while (stack.length > 0) {
+      const dir = stack.pop()!;
+      let entries: ReturnType<typeof readdirSync>;
+      try {
+        entries = readdirSync(dir, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      for (const entry of entries) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (entry.name === "node_modules" || entry.name === "dist" || entry.name === "dist-electron") continue;
+          stack.push(full);
+          continue;
+        }
+        const ext = extname(entry.name);
+        if (ext !== ".ts" && ext !== ".tsx" && ext !== ".mts" && ext !== ".cts") continue;
+        out.push(full);
+      }
+    }
+    return out;
+  }
+
+  function isImportLine(line: string): boolean {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")) return false;
+    return (
+      /^\s*import\b/.test(trimmed) ||
+      /^\s*export\s+\*\s+from\b/.test(trimmed) ||
+      /^\s*export\s+\{[^}]*\}\s+from\b/.test(trimmed) ||
+      /\brequire\(/.test(trimmed) ||
+      /\bimport\s*\(/.test(trimmed)
+    );
+  }
+
+  function resolveImportTarget(fromFile: string, spec: string): string | null {
+    if (!spec.startsWith(".") && !spec.startsWith("/")) return null;
+    const base = spec.startsWith("/") ? spec : resolve(dirname(fromFile), spec);
+    return base;
+  }
+
+  test("no apps/desktop/src/** TS/TSX file imports from apps/desktop/electron/projects/", () => {
+    const offenders: { file: string; line: number; spec: string }[] = [];
+    for (const file of walkTsFiles(desktopSrc)) {
+      const source = readFileSync(file, "utf8");
+      const lines = source.split("\n");
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (!isImportLine(line)) continue;
+        const match = line.match(/(?:from|require\(|import\(|require\s*\(\s*)\s*["'`]([^"'`]+)["'`]/);
+        if (!match) continue;
+        const spec = match[1];
+        const resolved = resolveImportTarget(file, spec);
+        if (resolved === null) continue;
+        const electronProjectsAbs = resolve(repoRoot, electronProjectsRel);
+        if (!resolved.startsWith(electronProjectsAbs)) continue;
+        offenders.push({ file: file.slice(repoRoot.length + 1), line: i + 1, spec });
+      }
+    }
+    if (offenders.length > 0) {
+      const list = offenders.map((o) => `  ${o.file}:${o.line}  ${o.spec}`).join("\n");
+      throw new Error(
+        "hp-qk8 boundary violation: apps/desktop/src/ must request project import/readiness through the daemon RPC, not import the local lifecycle helpers directly. Offenders:\n" +
+          list,
+      );
+    }
+  });
+
+  test("apps/desktop/electron/projects/ exists and exports the lifecycle helpers it claims to (anchor for the boundary)", () => {
+    // Sanity anchor: if someone deletes/renames lifecycle.ts the boundary
+    // test above could pass vacuously (no offenders because the target
+    // moved). Pin the on-disk path so the boundary test stays meaningful.
+    const lifecyclePath = resolve(repoRoot, electronProjectsRel, "lifecycle.ts");
+    expect(existsSync(lifecyclePath)).toBe(true);
+    const source = readFileSync(lifecyclePath, "utf8");
+    expect(source.includes("export function initializeHoopoeDir")).toBe(true);
+    expect(source.includes("export function initializeBeadsIfMissing")).toBe(true);
+    expect(source.includes("export function readGitRepoInfo")).toBe(true);
   });
 });
