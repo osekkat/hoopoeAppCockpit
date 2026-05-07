@@ -27,7 +27,7 @@ import { createPhase1TestLogger } from "../../../src/test-utils/structured-test-
 
 const REPO_ROOT = resolve(__dirname, "..", "..", "..", "..", "..");
 
-describe("hp-ngq :: idempotency contract surface", () => {
+describe("hp-ngq :: idempotency contract surface (scaffolding)", () => {
   test("the canonical write-endpoint table covers §2.6 retryable writes", () => {
     expect(IDEMPOTENT_WRITE_ENDPOINTS.length).toBeGreaterThan(10);
     const paths = IDEMPOTENT_WRITE_ENDPOINTS.map((e) => `${e.method} ${e.path}`);
@@ -54,6 +54,20 @@ describe("hp-ngq :: idempotency contract surface", () => {
     const allowed = new Set(["required", "honored"]);
     for (const entry of IDEMPOTENT_WRITE_ENDPOINTS) {
       expect(allowed.has(entry.enforcement)).toBe(true);
+    }
+  });
+
+  // hp-jsi: every retryable endpoint must declare whether it's
+  // currently deferred (route returns 404/405/501) or actually
+  // wired. The flag is a compile-time-checked boolean; this test
+  // is the runtime tripwire that catches a typo'd flag value or
+  // a future contributor who adds an entry without thinking about
+  // its wiring status.
+  test("every entry's deferred field is either undefined or literal `true`", () => {
+    for (const entry of IDEMPOTENT_WRITE_ENDPOINTS) {
+      if (entry.deferred !== undefined) {
+        expect(entry.deferred).toBe(true);
+      }
     }
   });
 });
@@ -111,60 +125,97 @@ async function probeEndpoint(
   };
 }
 
-describe("hp-ngq :: idempotency end-to-end (skips when daemon binary missing)", () => {
-  test("same key twice → same response shape (or skip on unrouted endpoints)", async () => {
-    const logger = createPhase1TestLogger({
-      suite: "hp-ngq.contract",
-      testName: "same-key-twice",
-    });
-    logger.start();
+// hp-jsi: enforcement lane. Pre-fix this test passed green when a
+// declared retryable endpoint returned 404/405/501 — the bead's
+// "lying about idempotency" symptom. Now every endpoint that is NOT
+// marked `deferred: true` in the contract table must be reachable and
+// must return a non-{404,405,501} status. Marking an endpoint
+// deferred is the explicit signal that it's NOT yet wired; flipping
+// the flag off when an adapter lands is what drives the enforcement
+// lane to start exercising it.
+//
+// The previous "skips when daemon binary missing" test pretended
+// every unrouted endpoint was a benign skip. That semantic now lives
+// in the contract table itself (the `deferred` field) instead of
+// being silently inferred from the daemon's response.
+const DAEMON_BINARY_MISSING = (() => {
+  const path = resolve(REPO_ROOT, "apps", "daemon", "bin", "hoopoed");
+  try {
+    // Synchronous existence check at module load — bun:test cannot
+    // skip dynamically mid-test, so this drives test.skipIf below.
+    return !require("node:fs").existsSync(path);
+  } catch {
+    return true;
+  }
+})();
 
-    logger.phase("setup");
-    const start = await tryStartDaemon({ repoRoot: REPO_ROOT, mode: "mock" });
-    if (!start.ok) {
-      logger.snapshot("contract.skipped", { reason: start.reason });
-      // Skip cleanly when the daemon isn't built. The contract table
-      // assertions above still pass; this end-to-end path is opt-in.
-      return;
-    }
-    const daemon = start.handle;
-    try {
-      logger.phase("act");
-      // Probe a small subset (full sweep is wasteful when middleware
-      // hasn't landed). Once the daemon enforces idempotency for these,
-      // the slice expands.
-      const subset = IDEMPOTENT_WRITE_ENDPOINTS.filter((e) =>
-        ["POST /v1/projects", "POST /v1/auth/bootstrap/bearer"].includes(`${e.method} ${e.path}`),
-      );
-      const results: EndpointProbeResult[] = [];
-      for (const endpoint of subset) {
-        const result = await probeEndpoint(daemon.baseUrl, daemon.authToken, endpoint);
-        results.push(result);
-        logger.snapshot(`contract.probe.${endpoint.method}.${endpoint.path}`, {
-          firstStatus: result.firstStatus,
-          secondStatus: result.secondStatus,
-          bodiesMatch: result.bodiesMatch,
-          routed: result.routed,
-        });
+describe("hp-ngq :: idempotency enforcement lane (hp-jsi)", () => {
+  test.skipIf(DAEMON_BINARY_MISSING)(
+    "every non-deferred endpoint routes; second call converges on status",
+    async () => {
+      const logger = createPhase1TestLogger({
+        suite: "hp-ngq.contract",
+        testName: "enforcement",
+      });
+      logger.start();
+
+      logger.phase("setup");
+      const start = await tryStartDaemon({ repoRoot: REPO_ROOT, mode: "mock" });
+      if (!start.ok) {
+        // skipIf above guaranteed binary exists — a failure here is
+        // a real harness problem, not a "no binary" skip.
+        throw new Error(`daemon harness failed despite binary present: ${start.reason}`);
       }
-
-      logger.phase("assert");
-      for (const result of results) {
-        if (!result.routed) {
-          // Endpoint not yet routed — the assertion is "the daemon
-          // doesn't lie about idempotency for routes it doesn't have."
-          expect([404, 405, 501]).toContain(result.firstStatus);
-          continue;
+      const daemon = start.handle;
+      try {
+        logger.phase("act");
+        const results: EndpointProbeResult[] = [];
+        for (const endpoint of IDEMPOTENT_WRITE_ENDPOINTS) {
+          const result = await probeEndpoint(daemon.baseUrl, daemon.authToken, endpoint);
+          results.push(result);
+          logger.snapshot(`contract.probe.${endpoint.method}.${endpoint.path}`, {
+            firstStatus: result.firstStatus,
+            secondStatus: result.secondStatus,
+            bodiesMatch: result.bodiesMatch,
+            routed: result.routed,
+            deferred: endpoint.deferred === true,
+          });
         }
-        // Routed endpoint: a second call with the same key must NOT
-        // produce a divergent status. The body match is ideal but the
-        // daemon may legitimately add per-call timestamps; for now we
-        // only assert status convergence.
-        expect(result.firstStatus).toBe(result.secondStatus);
+
+        logger.phase("assert");
+        for (const result of results) {
+          const id = `${result.endpoint.method} ${result.endpoint.path}`;
+          if (result.endpoint.deferred === true) {
+            // Deferred endpoints are EXPECTED to return 404/405/501.
+            // If they start returning something else, the deferred
+            // flag is stale and the contract should drop it so the
+            // enforcement lane starts exercising the route. Pin the
+            // direction so the staleness is loud.
+            expect([404, 405, 501]).toContain(result.firstStatus);
+            continue;
+          }
+          // Non-deferred endpoint: it MUST be wired. Any 404/405/501
+          // response means the endpoint was declared in the contract
+          // but isn't actually reachable — the exact "lying about
+          // idempotency for routes it doesn't have" symptom hp-jsi
+          // was filed to surface.
+          if ([404, 405, 501].includes(result.firstStatus)) {
+            throw new Error(
+              `[hp-jsi] retryable endpoint ${id} returned ${result.firstStatus} but is not marked deferred. ` +
+                `Either implement the route or add \`deferred: true\` to its contract entry.`,
+            );
+          }
+          // Routed endpoint: second call with the same key must NOT
+          // produce a divergent status. Body match is ideal but the
+          // daemon may legitimately add per-call timestamps; for now
+          // only status convergence is enforced.
+          expect(result.firstStatus).toBe(result.secondStatus);
+        }
+      } finally {
+        logger.phase("teardown");
+        await daemon.kill();
       }
-    } finally {
-      logger.phase("teardown");
-      await daemon.kill();
-    }
-  }, 30_000);
+    },
+    30_000,
+  );
 });
