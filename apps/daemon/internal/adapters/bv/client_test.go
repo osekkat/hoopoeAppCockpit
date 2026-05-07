@@ -442,6 +442,7 @@ type bvGoldenFixture struct {
 	Exit         int    `json:"exit"`
 	StdoutText   string `json:"stdoutText"`
 	StderrText   string `json:"stderrText"`
+	Truncated    bool   `json:"truncated"`
 	Capabilities map[string]struct {
 		Status string `json:"status"`
 		Notes  string `json:"notes"`
@@ -571,6 +572,87 @@ func TestProbeOnTimeoutGoldenFixtureDegradesAllCapabilities(t *testing.T) {
 		}
 		if !strings.Contains(report.Notes, "TERM") {
 			t.Fatalf("%s notes = %q; want fixture stderr signal trace surfaced", capID, report.Notes)
+		}
+	}
+}
+
+// TestProbeOnHighVolumeGoldenFixtureDegradesAllCapabilities loads
+// packages/fixtures/golden-outputs/bv/high-volume.json and pins the
+// adapter contract from plan.md §18.3 for the "high-volume" state.
+//
+// Fixture mimics ENVELOPE_MAX_BYTES truncation: stdoutBytes=1048576
+// (1MiB), truncated=true, synthetic bv._highVolume=degraded with the
+// note "stdout exceeded ENVELOPE_MAX_BYTES; pagination required".
+//
+// The bv adapter does not enforce its own output cap (no MaxBytes in
+// client.go) — the truncation contract documents that *upstream* (the
+// envelope harness running bv) enforces a cap, and when the resulting
+// stdout is a truncated/non-parseable JSON envelope, the typed parsers
+// (Triage, Plan, Insights, Diff, Next) must surface StatusDegraded
+// rather than crashing or accepting a zero value as success.
+//
+// Pinned here:
+//
+//  1. Fixture self-consistency (state, exit=0, truncated=true,
+//     _highVolume=degraded).
+//  2. The fixture's stdoutText placeholder does NOT parse as valid
+//     JSON (sanity guard against drift).
+//  3. Probe drives through the truncated envelope: every probed
+//     capability degrades with parser-error notes, distinct from the
+//     timeout (exit=124) and missing-tool (exit=127) error classes.
+func TestProbeOnHighVolumeGoldenFixtureDegradesAllCapabilities(t *testing.T) {
+	t.Parallel()
+	fixture := loadBVGoldenFixture(t, "high-volume.json")
+	if fixture.Meta.State != "high-volume" {
+		t.Fatalf("fixture state = %q, want high-volume", fixture.Meta.State)
+	}
+	if !fixture.Truncated {
+		t.Fatalf("fixture truncated = false, want true (envelope-truncation is the high-volume contract)")
+	}
+	if fixture.Exit != 0 {
+		t.Fatalf("fixture exit = %d, want 0 (high-volume is envelope-size, not failure)", fixture.Exit)
+	}
+	cap, ok := fixture.Capabilities["bv._highVolume"]
+	if !ok || cap.Status != "degraded" {
+		t.Fatalf("fixture must declare bv._highVolume=degraded, got %+v", fixture.Capabilities)
+	}
+
+	// Sanity: the fixture's stdoutText placeholder must NOT be valid JSON.
+	var parsed any
+	if err := json.Unmarshal([]byte(fixture.StdoutText), &parsed); err == nil {
+		t.Fatalf("fixture stdoutText parses as valid JSON; the high-volume contract requires a non-parseable truncated sample")
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("Probe panicked on high-volume fixture: %v", r)
+		}
+	}()
+
+	fake := newFakeExecutor()
+	for _, robotFlag := range []string{
+		"--robot-triage",
+		"--robot-plan",
+		"--robot-insights",
+		"--robot-next",
+		"--robot-diff --diff-since HEAD",
+	} {
+		fake.Stdouts[robotFlag] = []byte(fixture.StdoutText)
+	}
+
+	c := NewWithExecutor(fake)
+	res := Probe(context.Background(), c, func() time.Time { return time.Date(2026, 5, 7, 0, 0, 0, 0, time.UTC) })
+
+	for _, capID := range []string{CapTriage, CapPlan, CapInsights, CapDiff, CapNext} {
+		report, ok := res.Reports[capID]
+		if !ok {
+			t.Fatalf("%s missing from probe report", capID)
+		}
+		if report.Status != StatusDegraded {
+			t.Fatalf("%s status = %q, want degraded (fixture state=high-volume; truncated envelope must not parse as success)", capID, report.Status)
+		}
+		if !strings.Contains(strings.ToLower(report.Notes), "decode") {
+			t.Fatalf("%s notes = %q; want parser decode-error wrapping for truncated envelope", capID, report.Notes)
 		}
 	}
 }
