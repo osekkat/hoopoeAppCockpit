@@ -485,6 +485,100 @@ func TestProbeOnNormalGoldenFixtureMatchesHealthyContract(t *testing.T) {
 	}
 }
 
+// TestProbeOnMissingToolGoldenFixtureMarksAllReadCapabilitiesMissing
+// loads packages/fixtures/golden-outputs/git/missing-tool.json and
+// pins the adapter contract from plan.md §18.3 for the missing-tool
+// state.
+//
+// The fixture authoritatively declares:
+//   - meta.state == "missing-tool"
+//   - exit == 127 with stderrText "git: command not found\n"
+//   - capabilities["git._present"] == {status: "missing"}
+//
+// `git._present` is the fixture's contract key. The adapter exposes
+// per-surface capabilities (CapStatusRead, CapDiffRead, CapLog,
+// CapShow, CapBlame, CapRemoteRead, CapBranchRead, CapUnpushedList,
+// CapPush). What the fixture pins is the contract that when the
+// `git` binary is unreachable, every read-only capability is
+// classified missing — driven by the `errors.Is(err,
+// ErrMissingBinary)` branch in probeOne (capabilities.go:152-158).
+//
+// Drives the adapter via a fakeExecutor that returns
+// ErrMissingBinary for every read-only argv probeOne touches,
+// matching the production OSExecutor wrap of the
+// "executable file not found" error class (client.go:116-118).
+//
+// CapPush is exempt: it is always StatusUntested by design
+// (capabilities.go:132-137 — push is side-effecting; probing would
+// write).
+func TestProbeOnMissingToolGoldenFixtureMarksAllReadCapabilitiesMissing(t *testing.T) {
+	t.Parallel()
+	fixture := loadGitGoldenFixture(t, "missing-tool.json")
+	if fixture.Meta.State != "missing-tool" {
+		t.Fatalf("fixture state = %q, want missing-tool", fixture.Meta.State)
+	}
+	if fixture.Exit != 127 {
+		t.Fatalf("fixture exit = %d, want 127", fixture.Exit)
+	}
+	cap, ok := fixture.Capabilities["git._present"]
+	if !ok || cap.Status != "missing" {
+		t.Fatalf("fixture must declare git._present=missing, got %+v", fixture.Capabilities)
+	}
+
+	// Drive every executor invocation through a single
+	// always-missing-binary stub. This mirrors the production
+	// OSExecutor behavior at client.go:116-118: when the underlying
+	// `exec.Cmd.Run` returns an "executable file not found" error,
+	// the executor wraps it as ErrMissingBinary. Listing every
+	// argv individually here would be brittle — Probe touches 9
+	// distinct argv shapes spread across multiple Client methods,
+	// each with optional flags. The all-routes stub catches them
+	// all and pins the contract: when `git` is missing, every
+	// call fails with ErrMissingBinary.
+	c := NewWithExecutor("/repo", &alwaysMissingBinaryExecutor{})
+	res := Probe(context.Background(), c, func() time.Time {
+		return time.Date(2026, 5, 7, 0, 0, 0, 0, time.UTC)
+	})
+
+	// Every read-only capability must be Missing.
+	for _, capID := range []string{
+		CapStatusRead, CapDiffRead, CapLog, CapShow,
+		CapBlame, CapRemoteRead, CapBranchRead, CapUnpushedList,
+	} {
+		report, ok := res.Reports[capID]
+		if !ok {
+			t.Fatalf("missing report for %s", capID)
+		}
+		if report.Status != StatusMissing {
+			t.Fatalf("%s status = %q, want missing (fixture state=missing-tool, ErrMissingBinary path)", capID, report.Status)
+		}
+	}
+	// Push is intentionally untested by the adapter regardless of
+	// binary presence (capabilities.go:132-137).
+	if got := res.Reports[CapPush].Status; got != StatusUntested {
+		t.Fatalf("%s status = %q, want untested (push is side-effecting; probe is always deferred)", CapPush, got)
+	}
+	// Tool/Source identity should still be set even when the binary
+	// is missing — the daemon needs that envelope to mark the
+	// capability registry entry "Source: cli, Status: missing".
+	if res.Tool != "git" {
+		t.Fatalf("Tool = %q, want git", res.Tool)
+	}
+	if res.Source != "CLI" {
+		t.Fatalf("Source = %q, want CLI", res.Source)
+	}
+}
+
+// alwaysMissingBinaryExecutor returns ErrMissingBinary for every
+// invocation. Mirrors what OSExecutor produces at client.go:116-118
+// when the underlying exec.Cmd.Run reports
+// "executable file not found".
+type alwaysMissingBinaryExecutor struct{}
+
+func (alwaysMissingBinaryExecutor) Run(_ context.Context, _ string, _ []string) ([]byte, []byte, int, error) {
+	return nil, nil, -1, ErrMissingBinary
+}
+
 type gitGoldenFixture struct {
 	Meta struct {
 		Adapter string `json:"adapter"`
