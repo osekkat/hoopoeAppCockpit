@@ -119,54 +119,65 @@ func TestNeedsHumanEscalatesToUserInboxAndPostsMail(t *testing.T) {
 	}
 }
 
-func TestActionsForCurrentStatusOnNewReturnsFourTerminalActions(t *testing.T) {
+func TestActionsForCurrentStatusOnNewReturnsZero(t *testing.T) {
 	t.Parallel()
+	// `new` findings must transition to `triaged` first
+	// (validateTransition rule). No catalog entry terminates at
+	// FindingTriaged, so the renderer shows zero triage buttons
+	// while the daemon promotes new → triaged.
 	got := ActionsForCurrentStatus(FindingNew)
-	wantTerminals := map[FindingStatus]bool{
-		FindingFixNow:        false,
-		FindingNewBead:       false,
-		FindingFalsePositive: false,
-		FindingNeedsHuman:    false,
-	}
-	for _, action := range got {
-		wantTerminals[action.TerminalStatus] = true
-	}
-	for status, found := range wantTerminals {
-		if !found {
-			t.Errorf("ActionsForCurrentStatus(new) missing action terminating at %s", status)
-		}
-	}
-	// attach_blocker shares terminal status with new_bead so
-	// the count of returned actions should be 5 (every entry).
-	if len(got) != len(TriageCatalog()) {
-		t.Errorf("ActionsForCurrentStatus(new) returned %d actions; expected all %d (every action is valid from `new`)",
-			len(got), len(TriageCatalog()))
+	if len(got) != 0 {
+		t.Errorf("ActionsForCurrentStatus(new) returned %d actions; want 0 (new must auto-triage before any action)", len(got))
 	}
 }
 
-func TestActionsForCurrentStatusOnTriagedReturnsFourTerminals(t *testing.T) {
+func TestActionsForCurrentStatusOnTriagedReturnsAllFiveCatalogEntries(t *testing.T) {
 	t.Parallel()
-	// `triaged` has the same forward set as `new`.
+	// All 5 catalog entries are valid from `triaged`: fix_now,
+	// new_bead, attach_blocker (shares new_bead terminal),
+	// false_positive, needs_human — the four allowed forward
+	// targets per validateTransition.
 	got := ActionsForCurrentStatus(FindingTriaged)
 	if len(got) != len(TriageCatalog()) {
 		t.Errorf("ActionsForCurrentStatus(triaged) returned %d, want %d", len(got), len(TriageCatalog()))
 	}
 }
 
-func TestActionsForCurrentStatusOnNeedsHumanReturnsThreeFollowups(t *testing.T) {
+func TestActionsForCurrentStatusOnNeedsHumanReturnsZero(t *testing.T) {
 	t.Parallel()
+	// Per validateTransition, needs_human findings can only
+	// transition to closed. No catalog entry terminates at
+	// closed (closing a finding is not a triage action — it's a
+	// separate `close` RPC), so the renderer shows zero triage
+	// buttons. The user resolves the finding via close, not
+	// triage.
 	got := ActionsForCurrentStatus(FindingNeedsHuman)
-	// After human review, escalation can land at fix_now /
-	// new_bead / false_positive only — needs_human itself is no
-	// longer a forward target.
-	allowedTerminals := map[FindingStatus]bool{
-		FindingFixNow:        true,
-		FindingNewBead:       true,
-		FindingFalsePositive: true,
+	if len(got) != 0 {
+		t.Errorf("ActionsForCurrentStatus(needs_human) returned %d actions; want 0 (only `close` is allowed, not a triage action)", len(got))
 	}
-	for _, action := range got {
-		if !allowedTerminals[action.TerminalStatus] {
-			t.Errorf("ActionsForCurrentStatus(needs_human) returned action with disallowed TerminalStatus: %s", action.TerminalStatus)
+}
+
+func TestIsTransitionAllowedMatchesValidateTransition(t *testing.T) {
+	t.Parallel()
+	// The catalog's isTransitionAllowed must exactly mirror
+	// validateTransition's accept/reject decision for every
+	// (from, to) FindingStatus pair. Side-condition fields
+	// (disposition / beadID / reason) are populated with
+	// non-empty placeholders so validateTransition's content
+	// checks pass; only the structural transition rule is
+	// compared.
+	allStatuses := []FindingStatus{
+		FindingNew, FindingTriaged, FindingFixNow, FindingNewBead,
+		FindingFalsePositive, FindingNeedsHuman, FindingClosed,
+	}
+	for _, from := range allStatuses {
+		for _, to := range allStatuses {
+			catalogAllows := isTransitionAllowed(from, to)
+			validateAllows := validateTransition(from, to, "", "dummy-bead", "dummy-reason") == nil
+			if catalogAllows != validateAllows {
+				t.Errorf("transition (%s → %s): catalog=%v validateTransition=%v (must agree)",
+					from, to, catalogAllows, validateAllows)
+			}
 		}
 	}
 }

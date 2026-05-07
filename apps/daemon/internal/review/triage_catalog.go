@@ -208,9 +208,11 @@ func LookupTriageAction(id TriageActionID) (TriageAction, bool) {
 // FindingStatus. This narrows the renderer's button list to only
 // actions whose underlying state-machine transition is valid.
 //
-// The state machine (validateTransition) remains the authority on
-// what's allowed; this helper pre-filters to give the user a
-// clean palette and avoid dead-end clicks.
+// The state machine (validateTransition in review.go) remains the
+// authority on what's allowed; this helper pre-filters so the
+// renderer can paint only valid buttons without round-tripping the
+// daemon. The two functions MUST agree on every (from, to) pair —
+// the cross-check test in triage_catalog_test.go enforces parity.
 func ActionsForCurrentStatus(status FindingStatus) []TriageAction {
 	out := make([]TriageAction, 0, 5)
 	for _, action := range TriageCatalog() {
@@ -221,25 +223,31 @@ func ActionsForCurrentStatus(status FindingStatus) []TriageAction {
 	return out
 }
 
-// isTransitionAllowed encodes the §9.3 lifecycle map at the
-// triage layer. The Ledger state machine repeats this check via
-// validateTransition; the duplication is deliberate — the renderer
-// must filter without round-tripping the daemon to test each
-// candidate action.
+// isTransitionAllowed mirrors review.go validateTransition's
+// accept/reject decision for a (from, to) FindingStatus pair,
+// ignoring the side-condition arguments (disposition / beadID /
+// reason) that validateTransition checks separately.
+//
+// Because validateTransition is the single source of truth, this
+// function intentionally duplicates its case structure verbatim;
+// the cross-check test asserts the two never drift.
+//
+// State machine (per §9.3 lifecycle):
+//   new            → triaged ONLY
+//   triaged        → fix_now / new_bead / false_positive / needs_human
+//   {fix_now / new_bead / false_positive / needs_human} → closed ONLY
+//   closed         → (terminal — no transitions)
 func isTransitionAllowed(from, to FindingStatus) bool {
 	switch from {
-	case FindingNew, FindingTriaged:
+	case FindingNew:
+		return to == FindingTriaged
+	case FindingTriaged:
 		switch to {
 		case FindingFixNow, FindingNewBead, FindingFalsePositive, FindingNeedsHuman:
 			return true
 		}
-	case FindingNeedsHuman:
-		// After human review, escalation lands at fix_now /
-		// new_bead / false_positive only.
-		switch to {
-		case FindingFixNow, FindingNewBead, FindingFalsePositive:
-			return true
-		}
+	case FindingFixNow, FindingNewBead, FindingFalsePositive, FindingNeedsHuman:
+		return to == FindingClosed
 	}
 	return false
 }
