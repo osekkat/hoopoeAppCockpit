@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/audit"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/scheduler"
 )
 
@@ -160,14 +161,87 @@ func TestTendingRunRemoveAndAudit(t *testing.T) {
 		t.Fatalf("expected removed job to be absent from runtime list, got %#v", jobs)
 	}
 
-	audit, err := os.ReadFile(io.AuditPath)
+	auditBytes, err := os.ReadFile(io.AuditPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{"tending.job.created", "tending.job.run_now", "tending.job.removed"} {
-		if !strings.Contains(string(audit), want) {
-			t.Fatalf("audit log missing %s: %s", want, audit)
+		if !strings.Contains(string(auditBytes), want) {
+			t.Fatalf("audit log missing %s: %s", want, auditBytes)
 		}
+	}
+}
+
+// TestTendingCLIWritesAuditViaCanonicalWriter verifies that hp-v6b8's fix
+// landed: audit entries written by `hoopoe tending create` are decodable
+// via audit.DecodeEntry (canonical SchemaVersion=2 schema), not the legacy
+// {ts,kind,actor,payload} shape the daemon's read API cannot parse.
+func TestTendingCLIWritesAuditViaCanonicalWriter(t *testing.T) {
+	io := newTestTendingIO(t)
+	ctx := context.Background()
+	if err := runTending(ctx, []string{"create", "audit-canonical", "--schedule", "on demand"}, io); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(io.AuditPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bytes.TrimSpace(raw)) == 0 {
+		t.Fatal("audit log is empty")
+	}
+	var found bool
+	for _, line := range bytes.Split(bytes.TrimSpace(raw), []byte("\n")) {
+		if !bytes.Contains(line, []byte(`"action":"tending.job.created"`)) {
+			continue
+		}
+		entry, err := audit.DecodeEntry(line)
+		if err != nil {
+			t.Fatalf("decode CLI audit entry: %v\nline=%q", err, line)
+		}
+		if entry.SchemaVersion != audit.SchemaVersion {
+			t.Fatalf("schemaVersion=%d, want %d", entry.SchemaVersion, audit.SchemaVersion)
+		}
+		if entry.Action != "tending.job.created" {
+			t.Fatalf("action=%q", entry.Action)
+		}
+		if entry.Actor.Kind != audit.ActorTendingJob {
+			t.Fatalf("actor.kind=%q, want %q", entry.Actor.Kind, audit.ActorTendingJob)
+		}
+		jobID, ok := entry.Data["jobId"].(string)
+		if !ok || jobID != "audit-canonical" {
+			t.Fatalf("data.jobId=%v", entry.Data["jobId"])
+		}
+		found = true
+		break
+	}
+	if !found {
+		t.Fatalf("no canonical-schema tending.job.created entry found in:\n%s", raw)
+	}
+}
+
+// TestTendingCLIRedactsAuditPayload verifies hp-v6b8's redaction wiring:
+// a payload field carrying a provider-key-shaped string is scrubbed before
+// it lands in audit.jsonl. Pre-fix the CLI bypassed audit.Writer entirely
+// and would have dumped this raw.
+func TestTendingCLIRedactsAuditPayload(t *testing.T) {
+	io := newTestTendingIO(t)
+	ctx := context.Background()
+	// pause/resume audit entries pass --actor verbatim into the payload;
+	// route a provider-key-shaped string through that path.
+	if err := runTending(ctx, []string{"create", "audit-redact", "--schedule", "on demand"}, io); err != nil {
+		t.Fatal(err)
+	}
+	resetTendingStdout(io)
+	leakyActor := "sk-ant-api03-DEADBEEFCAFEBABE0123456789ABCDEFAA"
+	if err := runTending(ctx, []string{"pause", "audit-redact", "--actor", leakyActor}, io); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(io.AuditPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(raw, []byte(leakyActor)) {
+		t.Fatalf("audit log contains raw provider-key-shaped actor; expected redaction:\n%s", raw)
 	}
 }
 

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -14,6 +13,7 @@ import (
 	"time"
 
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/agent"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/audit"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/redaction"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/scheduler"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/tending/prescript"
@@ -204,7 +204,12 @@ func runTendingCreate(ctx context.Context, args []string, io *tendingIO) error {
 	if err != nil {
 		return err
 	}
-	if err := appendTendingAudit(io, "tending.job.created", map[string]any{"jobId": jobID}); err != nil {
+	writer, err := openTendingAuditWriter(io)
+	if err != nil {
+		return fmt.Errorf("hoopoe tending create: open audit writer: %w", err)
+	}
+	defer writer.Close()
+	if err := appendTendingAudit(writer, "tending.job.created", audit.Actor{}, map[string]any{"jobId": jobID}); err != nil {
 		fmt.Fprintf(io.Stderr, "warn: audit write failed: %v\n", err)
 	}
 	if *asJSON {
@@ -254,7 +259,12 @@ func runTendingEdit(ctx context.Context, args []string, io *tendingIO) error {
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("hoopoe tending edit: %w", err)
 	}
-	return appendTendingAudit(io, "tending.job.edited", map[string]any{"jobId": jobID, "path": path})
+	writer, err := openTendingAuditWriter(io)
+	if err != nil {
+		return fmt.Errorf("hoopoe tending edit: open audit writer: %w", err)
+	}
+	defer writer.Close()
+	return appendTendingAudit(writer, "tending.job.edited", audit.Actor{}, map[string]any{"jobId": jobID, "path": path})
 }
 
 func runTendingPause(ctx context.Context, args []string, io *tendingIO) error {
@@ -289,7 +299,12 @@ func runTendingStateChange(ctx context.Context, args []string, io *tendingIO, ve
 	if err != nil {
 		return err
 	}
-	if err := appendTendingAudit(io, "tending.job."+verb+"d", map[string]any{"jobId": jobID, "actor": *actor}); err != nil {
+	writer, err := openTendingAuditWriter(io)
+	if err != nil {
+		return fmt.Errorf("hoopoe tending %s: open audit writer: %w", verb, err)
+	}
+	defer writer.Close()
+	if err := appendTendingAudit(writer, "tending.job."+verb+"d", audit.Actor{ID: *actor}, map[string]any{"jobId": jobID, "actor": *actor}); err != nil {
 		fmt.Fprintf(io.Stderr, "warn: audit write failed: %v\n", err)
 	}
 	if *asJSON {
@@ -314,7 +329,12 @@ func runTendingRun(ctx context.Context, args []string, io *tendingIO) error {
 	if err != nil {
 		return err
 	}
-	sched, err := newTendingScheduler(ctx, io, registry)
+	writer, err := openTendingAuditWriter(io)
+	if err != nil {
+		return fmt.Errorf("hoopoe tending run: open audit writer: %w", err)
+	}
+	defer writer.Close()
+	sched, err := newTendingScheduler(ctx, io, registry, writer)
 	if err != nil {
 		return err
 	}
@@ -325,7 +345,7 @@ func runTendingRun(ctx context.Context, args []string, io *tendingIO) error {
 	if err := sched.WaitContext(ctx); err != nil {
 		return err
 	}
-	if err := appendTendingAudit(io, "tending.job.run_now", map[string]any{"jobId": jobID, "outcome": decision.Outcome}); err != nil {
+	if err := appendTendingAudit(writer, "tending.job.run_now", audit.Actor{}, map[string]any{"jobId": jobID, "outcome": decision.Outcome}); err != nil {
 		fmt.Fprintf(io.Stderr, "warn: audit write failed: %v\n", err)
 	}
 	if *asJSON {
@@ -360,7 +380,12 @@ func runTendingRemove(ctx context.Context, args []string, io *tendingIO) error {
 	if err != nil {
 		return err
 	}
-	if err := appendTendingAudit(io, "tending.job.removed", map[string]any{"jobId": jobID, "actor": *actor}); err != nil {
+	writer, err := openTendingAuditWriter(io)
+	if err != nil {
+		return fmt.Errorf("hoopoe tending remove: open audit writer: %w", err)
+	}
+	defer writer.Close()
+	if err := appendTendingAudit(writer, "tending.job.removed", audit.Actor{ID: *actor}, map[string]any{"jobId": jobID, "actor": *actor}); err != nil {
 		fmt.Fprintf(io.Stderr, "warn: audit write failed: %v\n", err)
 	}
 	if *asJSON {
@@ -424,7 +449,12 @@ func runTendingTick(ctx context.Context, args []string, io *tendingIO) error {
 	if err != nil {
 		return err
 	}
-	sched, err := newTendingScheduler(ctx, io, registry)
+	writer, err := openTendingAuditWriter(io)
+	if err != nil {
+		return fmt.Errorf("hoopoe tending tick: open audit writer: %w", err)
+	}
+	defer writer.Close()
+	sched, err := newTendingScheduler(ctx, io, registry, writer)
 	if err != nil {
 		return err
 	}
@@ -435,7 +465,7 @@ func runTendingTick(ctx context.Context, args []string, io *tendingIO) error {
 	if err := sched.WaitContext(ctx); err != nil {
 		return err
 	}
-	if err := appendTendingAudit(io, "tending.scheduler.tick", map[string]any{"decisions": len(decisions)}); err != nil {
+	if err := appendTendingAudit(writer, "tending.scheduler.tick", audit.Actor{}, map[string]any{"decisions": len(decisions)}); err != nil {
 		fmt.Fprintf(io.Stderr, "warn: audit write failed: %v\n", err)
 	}
 	if *asJSON {
@@ -470,8 +500,8 @@ func openTendingRegistry(ctx context.Context, io *tendingIO) (*scheduler.Registr
 	})
 }
 
-func newTendingScheduler(ctx context.Context, io *tendingIO, registry *scheduler.Registry) (*scheduler.Scheduler, error) {
-	runner, err := newTendingPrescriptRunner(io, registry)
+func newTendingScheduler(ctx context.Context, io *tendingIO, registry *scheduler.Registry, writer *audit.Writer) (*scheduler.Scheduler, error) {
+	runner, err := newTendingPrescriptRunner(io, registry, writer)
 	if err != nil {
 		return nil, err
 	}
@@ -487,10 +517,10 @@ func newTendingScheduler(ctx context.Context, io *tendingIO, registry *scheduler
 	})
 }
 
-func newTendingPrescriptRunner(io *tendingIO, registry *scheduler.Registry) (*prescript.Runner, error) {
+func newTendingPrescriptRunner(io *tendingIO, registry *scheduler.Registry, writer *audit.Writer) (*prescript.Runner, error) {
 	executor := agent.NewExecutor()
 	executor.Now = io.Now
-	executor.Audit = tendingAgentAuditSink{io: io}
+	executor.Audit = tendingAgentAuditSink{writer: writer}
 	// hp-cjmc: swap the default in-memory idempotency store for the
 	// file-backed one so action-level idempotency survives daemon
 	// restart. Without this, an ActionPlan that crashes mid-tick
@@ -505,7 +535,7 @@ func newTendingPrescriptRunner(io *tendingIO, registry *scheduler.Registry) (*pr
 	runtime := &agent.Runtime{
 		Runner:   tendingAgentRunner{},
 		Executor: executor,
-		Audit:    tendingAgentAuditSink{io: io},
+		Audit:    tendingAgentAuditSink{writer: writer},
 		Now:      io.Now,
 	}
 	return prescript.New(prescript.Config{
@@ -549,14 +579,18 @@ func (tendingAgentRunner) RunAgent(context.Context, agent.AgentInvocation) (agen
 }
 
 type tendingAgentAuditSink struct {
-	io *tendingIO
+	writer *audit.Writer
 }
 
 func (s tendingAgentAuditSink) RecordAuditEvent(ctx context.Context, event agent.AuditEvent) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return appendTendingAudit(s.io, "tending.agent."+event.Action, map[string]any{
+	return appendTendingAudit(s.writer, "tending.agent."+event.Action, audit.Actor{
+		Kind:  audit.ActorAgent,
+		ID:    event.JobID,
+		RunID: event.RunID,
+	}, map[string]any{
 		"jobId":          event.JobID,
 		"runId":          event.RunID,
 		"action":         event.Action,
@@ -621,27 +655,41 @@ func displayJobStatus(job scheduler.Job) string {
 	return string(job.Status)
 }
 
-func appendTendingAudit(io *tendingIO, kind string, payload map[string]any) error {
-	if err := os.MkdirAll(filepath.Dir(io.AuditPath), 0o700); err != nil {
-		return err
+// openTendingAuditWriter opens the canonical audit writer for the CLI.
+// hp-v6b8: tending CLI used to roll its own audit-write code that bypassed
+// the redactor and emitted a non-canonical schema (ts/kind/payload),
+// dual-writing into the same audit.jsonl the daemon canonicalizes. Routing
+// every CLI audit append through audit.Writer aligns schema (SchemaVersion,
+// eventId, seq, projectId, actor.kind/id, action, data) and redaction (the
+// writer scrubs Entry.Data + traces redaction events) so daemon-side
+// /v1/audit/query + RecentAuditEvents can decode CLI records and so secrets
+// in tending payloads (paths, idempotency keys, agent action data) cannot
+// land raw on disk.
+func openTendingAuditWriter(io *tendingIO) (*audit.Writer, error) {
+	return audit.NewWriter(audit.Config{Path: io.AuditPath, Now: io.Now})
+}
+
+// appendTendingAudit writes a tending CLI audit entry through the canonical
+// audit.Writer. hp-v6b8: replaces the prior roll-your-own bypass that landed
+// raw payloads in audit.jsonl with a non-canonical {ts,kind,payload} shape
+// the daemon's DecodeEntry could not parse. A nil actor.Kind defaults to
+// ActorTendingJob (CLI subcommand entries); callers that capture the
+// originating agent identity can override Kind/ID/RunID directly.
+func appendTendingAudit(writer *audit.Writer, kind string, actor audit.Actor, payload map[string]any) error {
+	if writer == nil {
+		return fmt.Errorf("tending audit: writer is nil")
 	}
-	entry := map[string]any{
-		"ts":      io.Now().UTC().Format(time.RFC3339),
-		"kind":    kind,
-		"actor":   defaultTendingActor(),
-		"payload": payload,
+	if actor.Kind == "" {
+		actor.Kind = audit.ActorTendingJob
 	}
-	data, err := json.Marshal(entry)
-	if err != nil {
-		return err
+	if actor.ID == "" {
+		actor.ID = defaultTendingActor()
 	}
-	data = append(data, '\n')
-	f, err := os.OpenFile(io.AuditPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	_, err = f.Write(data)
+	_, _, err := writer.Append(audit.Entry{
+		Action: kind,
+		Actor:  actor,
+		Data:   payload,
+	})
 	return err
 }
 
