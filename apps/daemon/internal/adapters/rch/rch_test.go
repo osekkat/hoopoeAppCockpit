@@ -522,6 +522,68 @@ func TestProbeOnNormalGoldenFixtureMatchesHealthyContract(t *testing.T) {
 	}
 }
 
+// TestProbeOnMissingToolGoldenFixtureMarksRunMissing loads
+// packages/fixtures/golden-outputs/rch/missing-tool.json and pins the
+// adapter contract from plan.md §18.3 for the missing-tool state.
+//
+// The fixture authoritatively declares:
+//   - meta.state == "missing-tool"
+//   - exit == 127, stderrText "rch: command not found"
+//   - capabilities["rch.run"] == {status: "missing"}
+//
+// The adapter's missing-binary path is not driven by exit-127 — that is
+// the *shell's* not-found exit, observed when an interactive operator
+// runs `rch --version` against an empty PATH. The Go runtime's os/exec
+// surfaces the ENOENT case as a wrapped error which `isExecNotFoundErr`
+// (rch.go:89) converts to ErrMissingBinary; statusForError (rch.go:452)
+// then maps that to StatusMissing. The existing
+// TestProbeClassifiesMissingMalformedAndTimeout already exercises that
+// runtime path; this test is the fixture-anchored variant, so a future
+// fixture edit that flips capabilities.rch.run away from "missing" is
+// caught even if the underlying adapter behavior keeps working.
+func TestProbeOnMissingToolGoldenFixtureMarksRunMissing(t *testing.T) {
+	fixture := loadRCHGoldenFixture(t, "missing-tool.json")
+	if fixture.Meta.State != "missing-tool" {
+		t.Fatalf("fixture state = %q, want missing-tool", fixture.Meta.State)
+	}
+	if fixture.Exit != 127 {
+		t.Fatalf("fixture exit = %d, want 127 (shell command-not-found)", fixture.Exit)
+	}
+	if !strings.Contains(fixture.StderrText, "command not found") {
+		t.Fatalf("fixture stderrText = %q, want a 'command not found' marker", fixture.StderrText)
+	}
+	cap, ok := fixture.Capabilities["rch.run"]
+	if !ok || cap.Status != "missing" {
+		t.Fatalf("fixture must declare rch.run=missing, got %+v", fixture.Capabilities)
+	}
+
+	adapter := New(&fakeRunner{err: ErrMissingBinary})
+	adapter.Now = fixedNow
+	report, err := adapter.Probe(context.Background())
+	if err != nil {
+		t.Fatalf("Probe: %v", err)
+	}
+	if report.Tool != capabilities.ToolRCH {
+		t.Fatalf("report tool = %q, want %s", report.Tool, capabilities.ToolRCH)
+	}
+	if report.Version != "" {
+		t.Fatalf("report.Version = %q, want empty (Probe must not record a version when binary is missing)", report.Version)
+	}
+	got := report.Capabilities[CapabilityRun]
+	if got.Status != capabilities.StatusMissing {
+		t.Fatalf("%s status = %q, want missing (fixture state=missing-tool)", CapabilityRun, got.Status)
+	}
+	if got.Notes == "" {
+		t.Fatalf("%s notes are empty; expected ErrMissingBinary surfaced", CapabilityRun)
+	}
+	if !strings.Contains(got.Notes, "binary not found") {
+		t.Fatalf("%s notes = %q; expected ErrMissingBinary text surfaced", CapabilityRun, got.Notes)
+	}
+	if err := report.Validate(); err != nil {
+		t.Fatalf("report validation: %v", err)
+	}
+}
+
 type rchGoldenFixture struct {
 	Meta struct {
 		Adapter string `json:"adapter"`
