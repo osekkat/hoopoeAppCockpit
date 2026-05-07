@@ -10,6 +10,7 @@ import (
 
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/adapters/agentmail"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/api"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/redaction"
 )
 
 func TestAgentMailMessagesPublishActivityEvents(t *testing.T) {
@@ -413,6 +414,109 @@ func TestReservationOverlapDetection(t *testing.T) {
 	})
 	if len(conflicts) != 3 {
 		t.Fatalf("conflicts = %+v, want 3", conflicts)
+	}
+}
+
+// TestProducerRedactsMailBodyBeforeInlinePreviewTruncation pins the
+// hp-t35g defense-in-depth contract: when Config.Redactor is wired,
+// a `sk-…`-shaped substring in the first 240 chars of msg.BodyMD
+// must NOT reach ActivityData.InlinePreview verbatim.
+//
+// Pre-fix this leaked because:
+//  1. preview() collapsed whitespace + truncated to 240 chars but
+//     did no secret scrubbing.
+//  2. ActivityData is a typed struct, so pre-hp-cy4 EventHub redaction
+//     left it unchanged on the way out (typed-switch fast-path
+//     returned the struct as-is).
+//
+// Producer-side redaction means the inline preview is safe regardless
+// of EventHub wiring drift downstream.
+func TestProducerRedactsMailBodyBeforeInlinePreviewTruncation(t *testing.T) {
+	t.Parallel()
+	const secret = "sk-abcdef0123456789ABCDEF0123456789"
+	body := "the new key is " + secret + " — please rotate"
+
+	withRedactor, err := NewAgentMailIngestor(Config{
+		ProjectID:  "proj_01",
+		ProjectKey: "/repo",
+		AgentName:  "WhiteStream",
+		Mail:       &fakeAgentMail{},
+		Events: api.NewEventHub(api.EventHubConfig{
+			Now: func() time.Time { return time.Date(2026, 5, 4, 0, 0, 0, 0, time.UTC) },
+		}),
+		Redactor: redaction.NewDefault(),
+		Now: func() time.Time {
+			return time.Date(2026, 5, 4, 0, 0, 0, 0, time.UTC)
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewAgentMailIngestor with Redactor: %v", err)
+	}
+
+	events := withRedactor.IngestMessages([]agentmail.Message{
+		{
+			ID:        20,
+			ThreadID:  "br-hp-t35g",
+			Subject:   "key rotation",
+			BodyMD:    body,
+			CreatedTS: "2026-05-04T00:00:00Z",
+			From:      "TealPond",
+			To:        []string{"WhiteStream"},
+		},
+	})
+	if len(events) != 1 {
+		t.Fatalf("events len = %d, want 1", len(events))
+	}
+	data, ok := events[0].Data.(ActivityData)
+	if !ok {
+		t.Fatalf("event Data is not ActivityData: %T", events[0].Data)
+	}
+	if data.InlinePreview == "" {
+		t.Fatalf("InlinePreview is empty; preview pipeline broke")
+	}
+	if strings.Contains(data.InlinePreview, secret) {
+		t.Fatalf("InlinePreview leaked sk-…: %q", data.InlinePreview)
+	}
+	// Sanity: surrounding non-secret prose must still survive — a
+	// regression that over-redacts (e.g., the entire body collapses
+	// to a sentinel) would pass the leak assertion above trivially.
+	if !strings.Contains(data.InlinePreview, "rotate") {
+		t.Fatalf("InlinePreview lost surrounding prose: %q", data.InlinePreview)
+	}
+
+	// Inverse direction: nil Redactor preserves prior unscrubbed
+	// behavior so existing tests asserting exact preview bytes
+	// don't break. The bead is defense-in-depth opt-in.
+	withoutRedactor, err := NewAgentMailIngestor(Config{
+		ProjectID:  "proj_01",
+		ProjectKey: "/repo",
+		AgentName:  "WhiteStream",
+		Mail:       &fakeAgentMail{},
+		Events: api.NewEventHubWithoutRedactor(api.EventHubConfig{
+			Now: func() time.Time { return time.Date(2026, 5, 4, 0, 0, 0, 0, time.UTC) },
+		}),
+		Now: func() time.Time {
+			return time.Date(2026, 5, 4, 0, 0, 0, 0, time.UTC)
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewAgentMailIngestor without Redactor: %v", err)
+	}
+	rawEvents := withoutRedactor.IngestMessages([]agentmail.Message{
+		{
+			ID:        21,
+			BodyMD:    body,
+			CreatedTS: "2026-05-04T00:00:00Z",
+			From:      "TealPond",
+			To:        []string{"WhiteStream"},
+		},
+	})
+	if len(rawEvents) != 1 {
+		t.Fatalf("raw events len = %d, want 1", len(rawEvents))
+	}
+	rawData := rawEvents[0].Data.(ActivityData)
+	if !strings.Contains(rawData.InlinePreview, secret) {
+		t.Fatalf("nil-Redactor producer must preserve raw body for opt-in semantics; got %q", rawData.InlinePreview)
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/adapters/agentmail"
 	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/api"
+	"github.com/hoopoe-cockpit/hoopoe/apps/daemon/internal/redaction"
 )
 
 const (
@@ -47,6 +48,15 @@ type Config struct {
 	Now           func() time.Time
 	PollInterval  time.Duration
 	IncludeBodies bool
+	// Redactor scrubs mail body text BEFORE the inline preview is
+	// truncated to 240 chars. hp-t35g: defense-in-depth pairs with
+	// the EventHub redactor wired in hp-cy4 — even if the streaming
+	// surface ever re-introduces a struct/typed-redaction blind spot,
+	// any `sk-…` / `Bearer …` substring in the first 240 chars of a
+	// mail body must not reach ActivityData.InlinePreview verbatim.
+	// nil leaves the producer unscrubbed (preserves prior behavior
+	// for tests that assert exact preview bytes).
+	Redactor *redaction.Redactor
 }
 
 type Ingestor struct {
@@ -61,6 +71,7 @@ type Ingestor struct {
 	now           func() time.Time
 	pollInterval  time.Duration
 	includeBodies bool
+	redactor      *redaction.Redactor
 
 	seenMessages map[int]struct{}
 	reservations map[int]reservationState
@@ -178,6 +189,7 @@ func NewAgentMailIngestor(cfg Config) (*Ingestor, error) {
 		now:           now,
 		pollInterval:  pollInterval,
 		includeBodies: cfg.IncludeBodies,
+		redactor:      cfg.Redactor,
 		seenMessages:  make(map[int]struct{}),
 		reservations:  make(map[int]reservationState),
 		conflicts:     make(map[string]struct{}),
@@ -391,7 +403,7 @@ func (i *Ingestor) messagePublishInput(msg agentmail.Message) api.PublishInput {
 		Summary:       messageSummary(kind, msg),
 		Timestamp:     firstNonEmpty(msg.CreatedTS, i.now().UTC().Format(time.RFC3339Nano)),
 		Actor:         actor(msg.From),
-		InlinePreview: preview(msg.BodyMD),
+		InlinePreview: preview(i.redactBody(msg.BodyMD)),
 		Source:        "agent_mail",
 		ProjectID:     i.projectID,
 		BeadID:        beadID,
@@ -707,6 +719,26 @@ func cloneStrings(values []string) []string {
 	out := make([]string, len(values))
 	copy(out, values)
 	return out
+}
+
+// redactBody runs mail body text through the configured redactor
+// before the preview pass collapses whitespace + truncates to 240
+// chars. Without this, a `sk-…` / `Bearer …` substring in the first
+// 240 chars of the body lands in ActivityData.InlinePreview verbatim
+// and ships to every WS subscriber via the activity channel.
+//
+// hp-t35g: defense-in-depth — pairs with the EventHub redactor wired
+// in hp-cy4. Producer-side redaction means the preview is also safe
+// to log via standard structured logging without depending on
+// ad-hoc redaction at every log boundary. nil redactor preserves
+// prior unscrubbed behavior (the constructor default; caller opts
+// in by wiring Config.Redactor).
+func (i *Ingestor) redactBody(body string) string {
+	if i.redactor == nil || body == "" {
+		return body
+	}
+	redacted, _ := i.redactor.RedactText(redaction.SurfaceLogger, "mail.body", body)
+	return redacted
 }
 
 func preview(value string) string {
