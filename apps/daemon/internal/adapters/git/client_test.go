@@ -569,6 +569,99 @@ func TestProbeOnMissingToolGoldenFixtureMarksAllReadCapabilitiesMissing(t *testi
 	}
 }
 
+// TestProbeOnMalformedJSONGoldenFixtureDegradesLogCapability loads
+// packages/fixtures/golden-outputs/git/malformed-json.json and pins
+// the adapter contract from plan.md §18.3 for the malformed-json
+// state.
+//
+// The fixture authoritatively declares:
+//   - meta.state == "malformed-json"
+//   - exit == 0 (the bytes came back; the parser must reject them)
+//   - capabilities["git._parse"] == {status: "degraded",
+//     notes: "stdout was non-JSON; adapter must NOT panic"}
+//
+// `git._parse` is the fixture's contract key. The git adapter doesn't
+// have a `--json` mode (the placeholder argv `git --json list`
+// is per the README's argv-semantics convention). What the fixture
+// pins is the contract that when a parser sees malformed bytes:
+//
+//  1. It does not panic.
+//  2. It returns an error.
+//  3. The corresponding capability surfaces StatusDegraded — driven
+//     by the default branch in probeOne (capabilities.go:165-171)
+//     after the ErrMissingBinary / ErrEmptyRepoPath fast-paths
+//     don't match.
+//
+// Drives the contract two ways:
+//
+//   - parseLog directly against the fixture bytes (parser-level
+//     graceful-degradation pin).
+//   - Probe via a fakeExecutor that returns the malformed bytes
+//     on the log argv (capability-level Degraded pin).
+func TestProbeOnMalformedJSONGoldenFixtureDegradesLogCapability(t *testing.T) {
+	t.Parallel()
+	fixture := loadGitGoldenFixture(t, "malformed-json.json")
+	if fixture.Meta.State != "malformed-json" {
+		t.Fatalf("fixture state = %q, want malformed-json", fixture.Meta.State)
+	}
+	if fixture.Exit != 0 {
+		t.Fatalf("fixture exit = %d, want 0 (malformed-json: the bytes came back; parser must reject)", fixture.Exit)
+	}
+	cap, ok := fixture.Capabilities["git._parse"]
+	if !ok || cap.Status != "degraded" {
+		t.Fatalf("fixture must declare git._parse=degraded, got %+v", fixture.Capabilities)
+	}
+	if fixture.StdoutText == "" {
+		t.Fatalf("fixture stdoutText is empty")
+	}
+
+	// Parser-level contract: parseLog must not panic and must
+	// return an error on malformed bytes. Pre-fix, a future
+	// regression that introduced a panic on truncated input would
+	// take the daemon down on the first probe of a corrupted log.
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("parseLog panicked on malformed-json fixture: %v", r)
+		}
+	}()
+	if _, err := parseLog([]byte(fixture.StdoutText)); err == nil {
+		t.Fatalf("parseLog accepted malformed-json bytes without error")
+	}
+
+	// Capability-level contract: Probe surfaces StatusDegraded.
+	// The git log argv shape mirrors what client.Log builds with
+	// LogOpts{Limit: 1} (capabilities.go:99-102 → client.go:190+).
+	fake := newFakeExecutor()
+	logKey := "log --no-color -n 1 --pretty=format:%H%x00%h%x00%an%x00%ae%x00%aI%x00%cn%x00%ce%x00%cI%x00%P%x00%s%x00%b%x1e"
+	fake.Stdouts[logKey] = []byte(fixture.StdoutText)
+	// Satisfy the other read-only probe argvs so only the log
+	// path goes degraded — pinning the per-capability contract.
+	fake.Stdouts["status --porcelain=v1 --branch"] = []byte("## main\n")
+	fake.Stdouts["diff --no-color"] = []byte("")
+	fake.Stdouts["show --no-color HEAD"] = []byte("commit abc123\n")
+	fake.Stdouts["remote -v"] = []byte("")
+	fake.Stdouts["branch -v --no-abbrev"] = []byte("* main abcdef0 hello\n")
+	fake.Stdouts["blame --porcelain -- README.md"] = []byte("")
+	fake.Stdouts["rev-list origin/HEAD..HEAD"] = []byte("")
+	fake.Stdouts["--version"] = []byte("git version 2.43.0\n")
+
+	c := NewWithExecutor("/repo", fake)
+	res := Probe(context.Background(), c, func() time.Time {
+		return time.Date(2026, 5, 7, 0, 0, 0, 0, time.UTC)
+	})
+
+	logReport, ok := res.Reports[CapLog]
+	if !ok {
+		t.Fatalf("missing report for %s", CapLog)
+	}
+	if logReport.Status != StatusDegraded {
+		t.Fatalf("%s status = %q, want degraded (fixture state=malformed-json, parser rejected bytes)", CapLog, logReport.Status)
+	}
+	if logReport.Notes == "" {
+		t.Fatalf("%s notes are empty; expected parser error trace", CapLog)
+	}
+}
+
 // alwaysMissingBinaryExecutor returns ErrMissingBinary for every
 // invocation. Mirrors what OSExecutor produces at client.go:116-118
 // when the underlying exec.Cmd.Run reports
