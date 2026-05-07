@@ -517,6 +517,99 @@ func TestProbeOnMissingToolGoldenFixtureMarksAllCapabilitiesMissing(t *testing.T
 	}
 }
 
+// TestProbeOnUnsupportedVersionGoldenFixturePinsCorpusContract loads
+// packages/fixtures/golden-outputs/br/unsupported-version.json and pins
+// the br adapter contract from plan.md §18.3 for the
+// "unsupported-version" state.
+//
+// Today the br adapter records `report.Version` from the version probe
+// (br.go:847) but does not gate any capability on a minimum version.
+// The fixture documents the contract that future version-gating logic
+// must honor: report `br._minVersion` as `missing` when the observed
+// version is below the integration-contract minimum.
+//
+// Pinned here:
+//
+//  1. Fixture self-consistency (state, exit, version="br 0.0.1",
+//     _minVersion=missing).
+//  2. The synthetic `br._minVersion` capability is *not* a real
+//     adapter capability constant — fixture-corpus marker only.
+//  3. Probe drives through the unsupported version: report.Version
+//     captures "br 0.0.1" verbatim; every real capability is still
+//     reported as Healthy. A future commit that introduces version
+//     gating must promote _minVersion to a real capability and
+//     downgrade gated capabilities here intentionally.
+func TestProbeOnUnsupportedVersionGoldenFixturePinsCorpusContract(t *testing.T) {
+	fixture := loadBRGoldenFixture(t, "unsupported-version.json")
+
+	if fixture.Meta.State != "unsupported-version" {
+		t.Fatalf("fixture state = %q, want unsupported-version", fixture.Meta.State)
+	}
+	if fixture.Exit != 0 {
+		t.Fatalf("fixture exit = %d, want 0 (binary executed and printed version)", fixture.Exit)
+	}
+	if !strings.Contains(fixture.StdoutText, "0.0.1") {
+		t.Fatalf("fixture stdoutText = %q, want '0.0.1' marker", fixture.StdoutText)
+	}
+	versionCap, ok := fixture.Capabilities["br._minVersion"]
+	if !ok || versionCap.Status != "missing" {
+		t.Fatalf("fixture must declare br._minVersion=missing, got %+v", fixture.Capabilities)
+	}
+
+	realIDs := []string{
+		CapabilityPresent,
+		CapabilityIssuesRead,
+		CapabilityIssuesUpdate,
+		CapabilityReady,
+		CapabilityCreate,
+		CapabilityClose,
+		CapabilityDepAdd,
+		CapabilityDepRemove,
+		CapabilityDepCycles,
+		CapabilitySyncFlushOnly,
+		CapabilitySyncFlush,
+		CapabilityDoctor,
+		CapabilitySchema,
+		CapabilityTUI,
+	}
+	for _, id := range realIDs {
+		if id == "br._minVersion" {
+			t.Fatalf("br._minVersion is now a real adapter capability — update the fixture/test contract intentionally")
+		}
+	}
+
+	adapter := New(&fakeRunner{responses: map[string]CommandResult{
+		"br version --short":       {Stdout: []byte(fixture.StdoutText)},
+		"br list --json --limit 1": {Stdout: []byte(`{"issues":[],"total":0,"limit":1,"offset":0,"has_more":false}`)},
+		"br dep cycles --json":     {Stdout: []byte(`{"cycles":[],"count":0}`)},
+	}})
+	adapter.Now = fixedNow
+	report, err := adapter.Probe(context.Background())
+	if err != nil {
+		t.Fatalf("Probe: %v", err)
+	}
+	if report.Tool != capabilities.ToolBR {
+		t.Fatalf("tool = %s", report.Tool)
+	}
+	if !strings.Contains(report.Version, "0.0.1") {
+		t.Fatalf("report.Version = %q, want it to capture the unsupported '0.0.1' verbatim", report.Version)
+	}
+	if got := report.Capabilities[CapabilityPresent].Status; got != capabilities.StatusOK {
+		t.Fatalf("br._present = %s, want ok (no version gating today)", got)
+	}
+	for _, capID := range []string{
+		CapabilityIssuesRead,
+		CapabilityIssuesUpdate,
+		CapabilityDepCycles,
+		CapabilitySyncFlushOnly,
+		CapabilitySyncFlush,
+	} {
+		if got := report.Capabilities[capID].Status; got != capabilities.StatusOK {
+			t.Fatalf("%s = %s, want ok (no version gating today; future version-gating must promote _minVersion)", capID, got)
+		}
+	}
+}
+
 type brGoldenFixture struct {
 	Meta struct {
 		Adapter string `json:"adapter"`
