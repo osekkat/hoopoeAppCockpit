@@ -362,6 +362,101 @@ func TestRunOnMalformedJSONGoldenFixturePinsCapturePassthrough(t *testing.T) {
 	}
 }
 
+// TestProbeOnTimeoutGoldenFixtureDegradesRunCapability loads
+// packages/fixtures/golden-outputs/rch/timeout.json and pins the
+// adapter contract from plan.md §18.3 for the timeout state.
+//
+// The fixture authoritatively declares:
+//   - meta.state == "timeout"
+//   - exit == 124 (standard `timeout(1)` exit code)
+//   - stderrText carries "rch status timed out"
+//   - capabilities["rch.run"] == {status: "degraded",
+//     notes: "status probe timeout"}
+//
+// The discriminant: a `commandError` from Version() with ExitCode!=0
+// (rch.go:233-234) bubbles up to Probe (rch.go:252-258) and
+// `statusForError` (rch.go:450-457). statusForError returns
+// StatusMissing only for ErrMissingBinary; everything else
+// (including a 124-exit commandError) maps to StatusDegraded —
+// matching the fixture's contract.
+//
+// Pins the "timeout surfaces, no silent retry" property by counting
+// per-argv invocations: a regression that introduced an unbacked-off
+// retry loop on timeout would call `rch --version` more than once
+// and fail the assertion below.
+func TestProbeOnTimeoutGoldenFixtureDegradesRunCapability(t *testing.T) {
+	fixture := loadRCHGoldenFixture(t, "timeout.json")
+	if fixture.Meta.State != "timeout" {
+		t.Fatalf("fixture state = %q, want timeout", fixture.Meta.State)
+	}
+	if fixture.Exit != 124 {
+		t.Fatalf("fixture exit = %d, want 124", fixture.Exit)
+	}
+	cap, ok := fixture.Capabilities["rch.run"]
+	if !ok || cap.Status != "degraded" {
+		t.Fatalf("fixture must declare rch.run=degraded, got %+v", fixture.Capabilities)
+	}
+	if !strings.Contains(fixture.StderrText, "timed out") {
+		t.Fatalf("fixture stderrText = %q, want a 'timed out' marker", fixture.StderrText)
+	}
+
+	inner := &fakeRunner{responses: map[string]CommandResult{
+		"\x00rch --version": {
+			ExitCode: fixture.Exit,
+			Stderr:   []byte(fixture.StderrText),
+		},
+	}}
+	counter := &countingRCHRunner{inner: inner}
+	adapter := New(counter)
+	adapter.Now = fixedNow
+	report, err := adapter.Probe(context.Background())
+	if err != nil {
+		t.Fatalf("Probe: %v", err)
+	}
+
+	got := report.Capabilities[CapabilityRun]
+	if got.Status != capabilities.StatusDegraded {
+		t.Fatalf("%s status = %q, want degraded (fixture state=timeout, exit=124)", CapabilityRun, got.Status)
+	}
+	if got.Notes == "" {
+		t.Fatalf("%s notes are empty; expected commandError detail", CapabilityRun)
+	}
+	if !strings.Contains(got.Notes, "exited 124") {
+		t.Fatalf("%s notes = %q; expected mention of exit 124", CapabilityRun, got.Notes)
+	}
+
+	// "No silent retry" contract: Probe runs `rch --version` exactly
+	// once on the failure path. A regression that added an
+	// unbacked-off retry loop would push the call count above 1.
+	if c := counter.calls("\x00rch --version"); c != 1 {
+		t.Fatalf("rch --version invocation count = %d, want 1 (timeout fixture pins no-retry-without-backoff)", c)
+	}
+}
+
+// countingRCHRunner wraps a Runner and tracks per-key invocation
+// counts. The key is the same `dir + "\x00" + argv` shape rch's
+// fakeRunner uses internally so tests can pin retry-loop contracts.
+type countingRCHRunner struct {
+	inner    Runner
+	keyCalls map[string]int
+}
+
+func (c *countingRCHRunner) Run(ctx context.Context, invocation Invocation) (CommandResult, error) {
+	if c.keyCalls == nil {
+		c.keyCalls = map[string]int{}
+	}
+	key := invocation.Dir + "\x00" + strings.Join(invocation.Argv, " ")
+	c.keyCalls[key]++
+	return c.inner.Run(ctx, invocation)
+}
+
+func (c *countingRCHRunner) calls(key string) int {
+	if c.keyCalls == nil {
+		return 0
+	}
+	return c.keyCalls[key]
+}
+
 type rchGoldenFixture struct {
 	Meta struct {
 		Adapter string `json:"adapter"`
