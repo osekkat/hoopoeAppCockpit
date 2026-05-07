@@ -610,6 +610,68 @@ func TestProbeOnUnsupportedVersionGoldenFixturePinsCorpusContract(t *testing.T) 
 	}
 }
 
+// TestProbeOnMalformedJSONGoldenFixtureDegradesIssuesRead loads
+// packages/fixtures/golden-outputs/br/malformed-json.json and pins the
+// br adapter contract from plan.md §18.3 for the "malformed-json" state:
+// when `br list --json` returns a truncated/non-JSON envelope, the
+// adapter must wrap (not panic) and surface br.issues.read as Degraded
+// with the parser error preserved in notes.
+//
+// Distinct from the inline-malformed assertion in
+// TestProbeReportsCapabilitiesAcrossErrorPaths — that test uses a
+// hand-rolled `{"issues":[` truncation. This one consumes the
+// committed Phase 0 fixture verbatim, so a future fixture edit that
+// drifts off the "non-JSON, must not panic" intent fails this test
+// rather than silently passing.
+func TestProbeOnMalformedJSONGoldenFixtureDegradesIssuesRead(t *testing.T) {
+	fixture := loadBRGoldenFixture(t, "malformed-json.json")
+
+	if fixture.Meta.State != "malformed-json" {
+		t.Fatalf("fixture state = %q, want malformed-json", fixture.Meta.State)
+	}
+	if cap, ok := fixture.Capabilities["br._parse"]; !ok || cap.Status != "degraded" {
+		t.Fatalf("fixture must declare br._parse=degraded, got %+v", fixture.Capabilities)
+	}
+	if fixture.StdoutText == "" {
+		t.Fatalf("fixture stdoutText is empty; expected truncated JSON sample")
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("ParseListResponse panicked on malformed JSON fixture: %v", r)
+		}
+	}()
+	if _, err := ParseListResponse([]byte(fixture.StdoutText)); err == nil {
+		t.Fatalf("ParseListResponse accepted truncated JSON without error")
+	}
+
+	adapter := New(&fakeRunner{responses: map[string]CommandResult{
+		"br version --short":       {Stdout: []byte("1.2.3\n")},
+		"br list --json --limit 1": {Stdout: []byte(fixture.StdoutText)},
+	}})
+	adapter.Now = fixedNow
+	report, err := adapter.Probe(context.Background())
+	if err != nil {
+		t.Fatalf("Probe: %v", err)
+	}
+	if report.Tool != capabilities.ToolBR {
+		t.Fatalf("tool = %s", report.Tool)
+	}
+	if got := report.Capabilities[CapabilityPresent].Status; got != capabilities.StatusOK {
+		t.Fatalf("br._present = %s, want ok (binary present, only list output is malformed)", got)
+	}
+	got, ok := report.Capabilities[CapabilityIssuesRead]
+	if !ok {
+		t.Fatalf("report missing %s", CapabilityIssuesRead)
+	}
+	if got.Status != capabilities.StatusDegraded {
+		t.Fatalf("%s status = %s, want degraded (fixture state=malformed-json)", CapabilityIssuesRead, got.Status)
+	}
+	if got.Notes == "" {
+		t.Fatalf("%s notes are empty; expected parser error preserved", CapabilityIssuesRead)
+	}
+}
+
 type brGoldenFixture struct {
 	Meta struct {
 		Adapter string `json:"adapter"`
