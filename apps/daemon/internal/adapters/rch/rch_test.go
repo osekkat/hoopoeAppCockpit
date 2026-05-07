@@ -2,10 +2,12 @@ package rch
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -198,6 +200,114 @@ func TestMissingBinaryDetectionDoesNotHideBadWorkdir(t *testing.T) {
 	if isExecNotFoundErr(&os.PathError{Op: "chdir", Path: "/missing", Err: fs.ErrNotExist}) {
 		t.Fatalf("bad worktree must not classify as missing binary")
 	}
+}
+
+// TestRunOnHighVolumeGoldenFixtureMarksOutputTruncated loads
+// packages/fixtures/golden-outputs/rch/high-volume.json and pins the
+// adapter contract from plan.md §18.3 for the high-volume state.
+//
+// The fixture (added in commit 53e5ba9 [hp-ngfc]) declares the
+// authoritative high-volume contract:
+//
+//   - meta.state == "high-volume"
+//   - truncated == true
+//   - capabilities["rch.run"].status == "degraded"
+//
+// Per packages/fixtures/golden-outputs/README.md, `argv` and the
+// fixture's `stdoutText` line are placeholders — the byte-level
+// payload must be supplied by the test, but the adapter's observable
+// outcome (output truncated, capability surfaces the truncation) is
+// what the fixture pins.
+//
+// The existing TestRunTruncatesHighVolumeOutputWithoutDroppingResult
+// test exercises the same MaxOutputBytes path but without a
+// fixture-loaded contract. This test wraps that path so a future
+// fixture edit that drops `truncated: true` or flips
+// `capabilities.rch.run` away from `degraded` is caught even if the
+// underlying behavior happens to keep working.
+//
+// Specifically pins:
+//   - RunResult.OutputTruncated fires when stdout > MaxOutputBytes
+//   - The truncation flag survives all the way to the result struct
+//     callers serialize across the daemon API surface (the field is
+//     `OutputTruncated` on RunResult; rch.go:215)
+func TestRunOnHighVolumeGoldenFixtureMarksOutputTruncated(t *testing.T) {
+	fixture := loadRCHGoldenFixture(t, "high-volume.json")
+	if fixture.Meta.State != "high-volume" {
+		t.Fatalf("fixture state = %q, want high-volume", fixture.Meta.State)
+	}
+	if !fixture.Truncated {
+		t.Fatalf("fixture truncated = false, want true (envelope-truncation is the high-volume contract)")
+	}
+	cap, ok := fixture.Capabilities["rch.run"]
+	if !ok || cap.Status != "degraded" {
+		t.Fatalf("fixture must declare rch.run=degraded, got %+v", fixture.Capabilities)
+	}
+
+	// Drive Run() with a stdout payload that exceeds MaxOutputBytes,
+	// preserving the local-disabled summary line so ParseSummary
+	// hits a non-failure path. Use a 16-byte cap with 64 bytes of
+	// padding past the summary marker — the same pattern as the
+	// existing TestRunTruncatesHighVolumeOutputWithoutDroppingResult
+	// test, but driven by the fixture's truncation contract.
+	const cap16 = 16
+	stdout := []byte("[RCH] local (disabled)\n" + strings.Repeat("x", 64))
+	adapter := New(&fakeRunner{responses: map[string]CommandResult{
+		"/repo\x00rch exec -- go test ./...": {Stdout: stdout},
+	}})
+	adapter.Now = fixedNow
+	adapter.MaxOutputBytes = cap16
+	got, err := adapter.Run(context.Background(), RunRequest{
+		WorktreePath: "/repo",
+		Command:      []string{"go", "test", "./..."},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !got.OutputTruncated {
+		t.Fatalf("OutputTruncated = false, want true (high-volume contract: stdout > MaxOutputBytes must surface truncation)")
+	}
+	if len(got.Stdout) != cap16 {
+		t.Fatalf("stdout len = %d, want %d (must be capped at MaxOutputBytes)", len(got.Stdout), cap16)
+	}
+	if got.ExitCode != 0 {
+		// The fixture has exit=0 — high-volume is about envelope size,
+		// not failure. Pin that the adapter doesn't synthesize a
+		// non-zero exit just because output was truncated.
+		t.Fatalf("ExitCode = %d, want 0 (high-volume fixture's exit field)", got.ExitCode)
+	}
+}
+
+type rchGoldenFixture struct {
+	Meta struct {
+		Adapter string `json:"adapter"`
+		State   string `json:"state"`
+	} `json:"meta"`
+	Exit         int    `json:"exit"`
+	StdoutText   string `json:"stdoutText"`
+	StderrText   string `json:"stderrText"`
+	Truncated    bool   `json:"truncated"`
+	Capabilities map[string]struct {
+		Status string `json:"status"`
+		Notes  string `json:"notes"`
+	} `json:"capabilities"`
+}
+
+func loadRCHGoldenFixture(t *testing.T, name string) rchGoldenFixture {
+	t.Helper()
+	path := filepath.Join(findRCHConformanceRepoRoot(t), "packages", "fixtures", "golden-outputs", "rch", name)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read fixture %s: %v", path, err)
+	}
+	var fixture rchGoldenFixture
+	if err := json.Unmarshal(data, &fixture); err != nil {
+		t.Fatalf("parse fixture %s: %v", path, err)
+	}
+	if fixture.Meta.Adapter != "rch" {
+		t.Fatalf("fixture %s adapter = %q, want rch", path, fixture.Meta.Adapter)
+	}
+	return fixture
 }
 
 func assertNoShell(t *testing.T, argv []string) {
