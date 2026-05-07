@@ -3,8 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "main": "dist-electron/electron-entry.js",
   "scripts": {
-    "build": "vite build && tsdown src/main.ts --format esm --platform node --external electron --out-dir dist-electron --no-clean && cp dist-electron/main.mjs dist-electron/main.js",
+    "build": "vite build && tsdown src/main.ts src/electron-entry.ts --format esm --platform node --external electron --out-dir dist-electron --no-clean && tsdown electron/preload.ts --format esm --platform node --external electron --out-dir dist-electron --no-clean && cp dist-electron/main.mjs dist-electron/main.js && cp dist-electron/electron-entry.mjs dist-electron/electron-entry.js && cp dist-electron/preload.mjs dist-electron/preload.js",
     "dev": "vite --host 127.0.0.1",
     "e2e": "playwright test -c ../../playwright.config.ts",
     "e2e:phase1": "playwright test -c tests/e2e/hp-j30.playwright.config.ts",
