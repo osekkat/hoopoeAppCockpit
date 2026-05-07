@@ -20,7 +20,13 @@
 // `window.hoopoe`. Skipping any step fails the renderer-isolation lint
 // (`scripts/rendererlint/check-renderer-isolation.ts`).
 
-import { randomUUID } from "node:crypto";
+// hp-r1tk: Web Crypto, NOT node:crypto. Sandboxed preloads can
+// only require `electron` and Web Platform globals; any node:
+// import here crashes the preload at load time and silently kills
+// the entire `window.hoopoe` IPC bridge. The helper is a separate
+// module so its v4-UUID-shape unit test can import it without
+// triggering preload.ts's top-level contextBridge call.
+import { randomUUID } from "./preloadRandomUUID.ts";
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 import {
   PRELOAD_IPC_CHANNELS,
