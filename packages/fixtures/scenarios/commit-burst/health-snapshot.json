@@ -1,0 +1,19 @@
+{
+  "meta": {
+    "kind": "synthetic",
+    "scenario": "commit-burst",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-07T00:00:00Z",
+    "source": "hand-written for hp-k3u",
+    "notes": "Commit-burst doesn't directly impact health — most commits are tightly-scoped follow-ups."
+  },
+  "verdict": "healthy",
+  "coveragePercent": 87.0,
+  "avgComplexity": 4.2,
+  "hotspotCount": 0,
+  "lastSnapshotAgeMinutes": 9,
+  "perLanguage": [
+    { "language": "typescript", "coveragePercent": 87.7, "avgComplexity": 3.9 },
+    { "language": "go", "coveragePercent": 85.6, "avgComplexity": 4.6 }
+  ]
+}

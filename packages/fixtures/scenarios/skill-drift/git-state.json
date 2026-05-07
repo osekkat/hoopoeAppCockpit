@@ -1,0 +1,17 @@
+{
+  "meta": {
+    "kind": "synthetic",
+    "scenario": "skill-drift",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-07T00:00:00Z",
+    "source": "hand-written for hp-k3u",
+    "notes": "Skill drift — git unaffected; the drift is in the loaded skill digest."
+  },
+  "head": "345678901234567890abcdef0123456789abcdef",
+  "branch": "main",
+  "ahead": 0,
+  "behind": 0,
+  "dirty": false,
+  "uncommittedFiles": [],
+  "stalePushes": []
+}

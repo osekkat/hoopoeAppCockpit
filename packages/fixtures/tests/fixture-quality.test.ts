@@ -23,6 +23,8 @@
 // - plan.md §16 Phase 0 acceptance
 
 import { describe, expect, test } from "bun:test";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { formatResult, validateCorpus } from "../src/validate.ts";
 import {
   ADAPTER_SLUGS,
@@ -30,8 +32,10 @@ import {
   TENDING_SCENARIOS,
   PHASE0_SCENARIOS,
 } from "../src/kinds.ts";
+import { fixturesRoot } from "../src/loader.ts";
 
 const result = validateCorpus();
+const FIXTURES_ROOT = fixturesRoot();
 
 describe("fixture corpus quality (hp-pl5o)", () => {
   test("validator reaches ok=true with no error-severity findings", () => {
@@ -113,5 +117,112 @@ describe("fixture corpus quality (hp-pl5o)", () => {
 
   test("all 18 adapter slugs appear in the kinds taxonomy", () => {
     expect(ADAPTER_SLUGS.length).toBe(18);
+  });
+});
+
+// hp-k3u: every §8.8 scenario must carry a Git state, health snapshot,
+// and build-queue state fixture. Without these the §8 tending decisions
+// (stale-commit push, budget gating, code-health-driven review flips,
+// build-queue contention warnings) can pass replay without exercising
+// the canonical inputs plan.md §8.8 requires.
+describe("§8.8 canonical-state snapshot fixtures (hp-k3u)", () => {
+  const REQUIRED_SNAPSHOT_FILES = [
+    "git-state.json",
+    "health-snapshot.json",
+    "build-queue-state.json",
+  ] as const;
+
+  for (const scenarioId of TENDING_SCENARIOS) {
+    test(`${scenarioId}: has git/health/build-queue snapshots`, () => {
+      for (const filename of REQUIRED_SNAPSHOT_FILES) {
+        const path = join(FIXTURES_ROOT, "scenarios", scenarioId, filename);
+        expect(existsSync(path)).toBe(true);
+        const raw = readFileSync(path, "utf8");
+        const parsed = JSON.parse(raw) as { meta?: { scenario?: string; kind?: string } };
+        expect(parsed.meta?.scenario).toBe(scenarioId);
+        expect(parsed.meta?.kind).toMatch(/^(synthetic|realistic|stub)$/);
+      }
+    });
+  }
+
+  test("git-state.json shape: every scenario reports head + branch + ahead/behind/dirty", () => {
+    for (const scenarioId of TENDING_SCENARIOS) {
+      const path = join(FIXTURES_ROOT, "scenarios", scenarioId, "git-state.json");
+      const parsed = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+      expect(typeof parsed.head).toBe("string");
+      expect((parsed.head as string).length).toBeGreaterThanOrEqual(7);
+      expect(typeof parsed.branch).toBe("string");
+      expect(typeof parsed.ahead).toBe("number");
+      expect(typeof parsed.behind).toBe("number");
+      expect(typeof parsed.dirty).toBe("boolean");
+      expect(Array.isArray(parsed.uncommittedFiles)).toBe(true);
+      expect(Array.isArray(parsed.stalePushes)).toBe(true);
+    }
+  });
+
+  test("health-snapshot.json shape: verdict ∈ healthy|warning|critical|unknown", () => {
+    const validVerdicts = new Set(["healthy", "warning", "critical", "unknown"]);
+    for (const scenarioId of TENDING_SCENARIOS) {
+      const path = join(FIXTURES_ROOT, "scenarios", scenarioId, "health-snapshot.json");
+      const parsed = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+      expect(validVerdicts.has(parsed.verdict as string)).toBe(true);
+      expect(parsed.coveragePercent === null || typeof parsed.coveragePercent === "number").toBe(true);
+      expect(parsed.avgComplexity === null || typeof parsed.avgComplexity === "number").toBe(true);
+      expect(typeof parsed.hotspotCount).toBe("number");
+      expect(Array.isArray(parsed.perLanguage)).toBe(true);
+    }
+  });
+
+  test("build-queue-state.json shape: queueDepth + running[] + queued[] arrays", () => {
+    for (const scenarioId of TENDING_SCENARIOS) {
+      const path = join(FIXTURES_ROOT, "scenarios", scenarioId, "build-queue-state.json");
+      const parsed = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+      expect(typeof parsed.queueDepth).toBe("number");
+      expect(Array.isArray(parsed.running)).toBe(true);
+      expect(Array.isArray(parsed.queued)).toBe(true);
+    }
+  });
+
+  test("scenario-flavor: budget-breach has running jobs (drives swarm.halt)", () => {
+    const path = join(FIXTURES_ROOT, "scenarios", "budget-breach", "build-queue-state.json");
+    const parsed = JSON.parse(readFileSync(path, "utf8")) as { running: unknown[] };
+    expect(parsed.running.length).toBeGreaterThan(0);
+  });
+
+  test("scenario-flavor: commit-burst has queued runs (drives test-run collapse)", () => {
+    const path = join(FIXTURES_ROOT, "scenarios", "commit-burst", "build-queue-state.json");
+    const parsed = JSON.parse(readFileSync(path, "utf8")) as { queued: unknown[] };
+    expect(parsed.queued.length).toBeGreaterThan(0);
+  });
+
+  test("scenario-flavor: wedged-pane has a long-elapsed running job (drives kill_wedged_process)", () => {
+    const path = join(FIXTURES_ROOT, "scenarios", "wedged-pane", "build-queue-state.json");
+    const parsed = JSON.parse(readFileSync(path, "utf8")) as {
+      running: { elapsedMinutes: number }[];
+    };
+    expect(parsed.running.length).toBe(1);
+    expect(parsed.running[0]!.elapsedMinutes).toBeGreaterThanOrEqual(30);
+  });
+
+  test("scenario-flavor: missing-tool reports verdict=unknown (snapshot can't run)", () => {
+    const path = join(FIXTURES_ROOT, "scenarios", "missing-tool", "health-snapshot.json");
+    const parsed = JSON.parse(readFileSync(path, "utf8")) as { verdict: string };
+    expect(parsed.verdict).toBe("unknown");
+  });
+
+  test("scenario-flavor: commit-burst has 15 unpushed commits (drives stale-commit push)", () => {
+    const path = join(FIXTURES_ROOT, "scenarios", "commit-burst", "git-state.json");
+    const parsed = JSON.parse(readFileSync(path, "utf8")) as { ahead: number };
+    expect(parsed.ahead).toBe(15);
+  });
+
+  test("scenario-flavor: postcondition-failure has dirty working tree (rollback in flight)", () => {
+    const path = join(FIXTURES_ROOT, "scenarios", "postcondition-failure", "git-state.json");
+    const parsed = JSON.parse(readFileSync(path, "utf8")) as {
+      dirty: boolean;
+      uncommittedFiles: string[];
+    };
+    expect(parsed.dirty).toBe(true);
+    expect(parsed.uncommittedFiles.length).toBeGreaterThan(0);
   });
 });

@@ -1,0 +1,20 @@
+{
+  "meta": {
+    "kind": "synthetic",
+    "scenario": "wedged-pane",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-07T00:00:00Z",
+    "source": "hand-written for hp-k3u",
+    "notes": "Wedged-pane: a single test job has been running 47 minutes — drives kill_wedged_process action."
+  },
+  "queueDepth": 1,
+  "running": [
+    {
+      "id": "build-job-wedge-001",
+      "kind": "test",
+      "startedAt": "2026-05-06T23:13:00Z",
+      "elapsedMinutes": 47
+    }
+  ],
+  "queued": []
+}

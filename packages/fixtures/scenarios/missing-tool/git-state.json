@@ -1,0 +1,17 @@
+{
+  "meta": {
+    "kind": "synthetic",
+    "scenario": "missing-tool",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-07T00:00:00Z",
+    "source": "hand-written for hp-k3u",
+    "notes": "Missing tool — git itself is fine; the missing tool is a downstream check (e.g. ubs)."
+  },
+  "head": "45678901234567890abcdef0123456789abcdef0",
+  "branch": "main",
+  "ahead": 0,
+  "behind": 0,
+  "dirty": false,
+  "uncommittedFiles": [],
+  "stalePushes": []
+}

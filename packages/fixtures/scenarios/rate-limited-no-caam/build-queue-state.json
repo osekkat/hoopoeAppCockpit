@@ -1,0 +1,13 @@
+{
+  "meta": {
+    "kind": "synthetic",
+    "scenario": "rate-limited-no-caam",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-07T00:00:00Z",
+    "source": "hand-written for hp-k3u",
+    "notes": "Rate-limit doesn't itself enqueue work — queue empty."
+  },
+  "queueDepth": 0,
+  "running": [],
+  "queued": []
+}

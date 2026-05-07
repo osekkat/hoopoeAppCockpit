@@ -1,0 +1,23 @@
+{
+  "meta": {
+    "kind": "synthetic",
+    "scenario": "action-arbitration",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-07T00:00:00Z",
+    "source": "hand-written for hp-k3u",
+    "notes": "Action arbitration — recovery + safety plans collide. Git on a bead branch with two unpushed commits."
+  },
+  "head": "678901234567890abcdef0123456789abcdef012",
+  "branch": "bead/hp-arb",
+  "ahead": 2,
+  "behind": 0,
+  "dirty": false,
+  "uncommittedFiles": [],
+  "stalePushes": [
+    {
+      "sha": "678901234567890abcdef0123456789abcdef012",
+      "subject": "[hp-arb] propose recovery action",
+      "ageMinutes": 7
+    }
+  ]
+}

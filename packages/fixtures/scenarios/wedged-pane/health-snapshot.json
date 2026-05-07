@@ -1,0 +1,19 @@
+{
+  "meta": {
+    "kind": "synthetic",
+    "scenario": "wedged-pane",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-07T00:00:00Z",
+    "source": "hand-written for hp-k3u",
+    "notes": "Wedged pane prevents test runs — snapshot is stale, verdict warning."
+  },
+  "verdict": "warning",
+  "coveragePercent": 85.6,
+  "avgComplexity": 4.4,
+  "hotspotCount": 1,
+  "lastSnapshotAgeMinutes": 124,
+  "perLanguage": [
+    { "language": "typescript", "coveragePercent": 86.4, "avgComplexity": 4.1 },
+    { "language": "go", "coveragePercent": 84.7, "avgComplexity": 4.7 }
+  ]
+}

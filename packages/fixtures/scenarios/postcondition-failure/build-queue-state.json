@@ -1,0 +1,13 @@
+{
+  "meta": {
+    "kind": "synthetic",
+    "scenario": "postcondition-failure",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-07T00:00:00Z",
+    "source": "hand-written for hp-k3u",
+    "notes": "Postcondition failure aborted the running test; rollback in progress, no new job queued."
+  },
+  "queueDepth": 0,
+  "running": [],
+  "queued": []
+}

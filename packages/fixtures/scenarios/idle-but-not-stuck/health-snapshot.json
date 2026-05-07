@@ -1,0 +1,19 @@
+{
+  "meta": {
+    "kind": "synthetic",
+    "scenario": "idle-but-not-stuck",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-07T00:00:00Z",
+    "source": "hand-written for hp-k3u",
+    "notes": "Idle agents but recent green snapshot — verdict stays healthy."
+  },
+  "verdict": "healthy",
+  "coveragePercent": 87.4,
+  "avgComplexity": 4.2,
+  "hotspotCount": 0,
+  "lastSnapshotAgeMinutes": 22,
+  "perLanguage": [
+    { "language": "typescript", "coveragePercent": 88.1, "avgComplexity": 3.9 },
+    { "language": "go", "coveragePercent": 86.0, "avgComplexity": 4.6 }
+  ]
+}

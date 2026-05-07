@@ -1,0 +1,20 @@
+{
+  "meta": {
+    "kind": "synthetic",
+    "scenario": "budget-breach",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-07T00:00:00Z",
+    "source": "hand-written for hp-k3u",
+    "notes": "Budget breach — 6 jobs running concurrently consumes the daily budget; daemon must halt new work until reset."
+  },
+  "queueDepth": 6,
+  "running": [
+    { "id": "build-bdg-1", "kind": "test", "startedAt": "2026-05-06T23:30:00Z", "elapsedMinutes": 30 },
+    { "id": "build-bdg-2", "kind": "test", "startedAt": "2026-05-06T23:32:00Z", "elapsedMinutes": 28 },
+    { "id": "build-bdg-3", "kind": "build", "startedAt": "2026-05-06T23:35:00Z", "elapsedMinutes": 25 },
+    { "id": "build-bdg-4", "kind": "build", "startedAt": "2026-05-06T23:40:00Z", "elapsedMinutes": 20 },
+    { "id": "build-bdg-5", "kind": "lint", "startedAt": "2026-05-06T23:50:00Z", "elapsedMinutes": 10 },
+    { "id": "build-bdg-6", "kind": "typecheck", "startedAt": "2026-05-06T23:55:00Z", "elapsedMinutes": 5 }
+  ],
+  "queued": []
+}

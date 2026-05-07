@@ -1,0 +1,19 @@
+{
+  "meta": {
+    "kind": "synthetic",
+    "scenario": "stale-reservation",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-07T00:00:00Z",
+    "source": "hand-written for hp-k3u",
+    "notes": "Stale reservation doesn't itself impact code-health — snapshot stays healthy."
+  },
+  "verdict": "healthy",
+  "coveragePercent": 86.8,
+  "avgComplexity": 4.3,
+  "hotspotCount": 0,
+  "lastSnapshotAgeMinutes": 41,
+  "perLanguage": [
+    { "language": "typescript", "coveragePercent": 87.4, "avgComplexity": 4.0 },
+    { "language": "go", "coveragePercent": 85.2, "avgComplexity": 4.6 }
+  ]
+}

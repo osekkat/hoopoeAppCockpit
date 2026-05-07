@@ -1,0 +1,19 @@
+{
+  "meta": {
+    "kind": "synthetic",
+    "scenario": "budget-breach",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-07T00:00:00Z",
+    "source": "hand-written for hp-k3u",
+    "notes": "Budget breach causes test queueing → snapshot stale, verdict warning."
+  },
+  "verdict": "warning",
+  "coveragePercent": 86.0,
+  "avgComplexity": 4.5,
+  "hotspotCount": 2,
+  "lastSnapshotAgeMinutes": 95,
+  "perLanguage": [
+    { "language": "typescript", "coveragePercent": 86.9, "avgComplexity": 4.1 },
+    { "language": "go", "coveragePercent": 84.8, "avgComplexity": 4.8 }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "meta": {
+    "kind": "synthetic",
+    "scenario": "action-arbitration",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-07T00:00:00Z",
+    "source": "hand-written for hp-k3u",
+    "notes": "Action-arbitration is a control-plane scenario; underlying code-health stays in warning while the safety plan resolves."
+  },
+  "verdict": "warning",
+  "coveragePercent": 86.1,
+  "avgComplexity": 4.3,
+  "hotspotCount": 1,
+  "lastSnapshotAgeMinutes": 47,
+  "perLanguage": [
+    { "language": "typescript", "coveragePercent": 86.8, "avgComplexity": 4.0 },
+    { "language": "go", "coveragePercent": 84.9, "avgComplexity": 4.6 }
+  ]
+}

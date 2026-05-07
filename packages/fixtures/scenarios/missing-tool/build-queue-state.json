@@ -1,0 +1,13 @@
+{
+  "meta": {
+    "kind": "synthetic",
+    "scenario": "missing-tool",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-07T00:00:00Z",
+    "source": "hand-written for hp-k3u",
+    "notes": "Missing tool prevents the affected job kind, but other jobs may still run — queue empty for clarity."
+  },
+  "queueDepth": 0,
+  "running": [],
+  "queued": []
+}

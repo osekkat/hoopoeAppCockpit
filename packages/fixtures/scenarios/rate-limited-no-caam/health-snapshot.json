@@ -1,0 +1,19 @@
+{
+  "meta": {
+    "kind": "synthetic",
+    "scenario": "rate-limited-no-caam",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-07T00:00:00Z",
+    "source": "hand-written for hp-k3u",
+    "notes": "Rate-limit doesn't affect code-health directly — recent green snapshot."
+  },
+  "verdict": "healthy",
+  "coveragePercent": 87.0,
+  "avgComplexity": 4.2,
+  "hotspotCount": 0,
+  "lastSnapshotAgeMinutes": 35,
+  "perLanguage": [
+    { "language": "typescript", "coveragePercent": 87.6, "avgComplexity": 3.9 },
+    { "language": "go", "coveragePercent": 85.5, "avgComplexity": 4.6 }
+  ]
+}

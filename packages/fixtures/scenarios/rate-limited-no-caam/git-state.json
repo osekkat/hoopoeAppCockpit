@@ -1,0 +1,17 @@
+{
+  "meta": {
+    "kind": "synthetic",
+    "scenario": "rate-limited-no-caam",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-07T00:00:00Z",
+    "source": "hand-written for hp-k3u",
+    "notes": "Rate-limit hit, no CAAM alternative — git unaffected; clean main."
+  },
+  "head": "e5f6789012345678901234567890abcdef012345",
+  "branch": "main",
+  "ahead": 0,
+  "behind": 0,
+  "dirty": false,
+  "uncommittedFiles": [],
+  "stalePushes": []
+}

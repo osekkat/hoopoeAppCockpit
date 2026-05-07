@@ -1,0 +1,33 @@
+{
+  "meta": {
+    "kind": "synthetic",
+    "scenario": "commit-burst",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-07T00:00:00Z",
+    "source": "hand-written for hp-k3u",
+    "notes": "Commit-burst: 15 unpushed commits on a bead branch over 12 minutes — drives the stale-commit-push tend job."
+  },
+  "head": "9012345678901234567890abcdef0123456789ab",
+  "branch": "bead/hp-burst",
+  "ahead": 15,
+  "behind": 0,
+  "dirty": false,
+  "uncommittedFiles": [],
+  "stalePushes": [
+    {
+      "sha": "9012345678901234567890abcdef0123456789ab",
+      "subject": "[hp-burst] tighten loop closures",
+      "ageMinutes": 1
+    },
+    {
+      "sha": "012345678901234567890abcdef0123456789abc",
+      "subject": "[hp-burst] strip dead branches",
+      "ageMinutes": 3
+    },
+    {
+      "sha": "12345678901234567890abcdef0123456789abcd",
+      "subject": "[hp-burst] add idempotency guard",
+      "ageMinutes": 12
+    }
+  ]
+}

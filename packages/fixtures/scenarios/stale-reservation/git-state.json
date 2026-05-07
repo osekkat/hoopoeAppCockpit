@@ -1,0 +1,17 @@
+{
+  "meta": {
+    "kind": "synthetic",
+    "scenario": "stale-reservation",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-07T00:00:00Z",
+    "source": "hand-written for hp-k3u",
+    "notes": "Stale reservation — agent left the swarm without releasing files. Git on main, clean."
+  },
+  "head": "789012345678901234567890abcdef0123456789",
+  "branch": "main",
+  "ahead": 0,
+  "behind": 0,
+  "dirty": false,
+  "uncommittedFiles": [],
+  "stalePushes": []
+}

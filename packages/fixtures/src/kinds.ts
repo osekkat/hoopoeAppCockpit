@@ -145,6 +145,14 @@ export const FIXTURE_KINDS = [
   "capabilities_snapshot",
   "tools_degraded",
   "expected_outcome",
+  // hp-k3u: per-scenario canonical-state snapshots that §8 tending
+  // decisions read (stale commits, budget gating, code-health flips,
+  // build-queue contention). Without these, fixture replay can pass
+  // without exercising the canonical Git / health / build-queue inputs
+  // plan.md §8.8 requires.
+  "git_state",
+  "health_snapshot",
+  "build_queue_state",
 ] as const;
 
 export type FixtureKind = (typeof FIXTURE_KINDS)[number];
@@ -198,6 +206,77 @@ export interface GoldenOutputFixture extends InvocationEnvelope {
   /** Capabilities the adapter is expected to report after consuming this fixture
    *  (per `plan.md` §2.8). Adapter contract tests assert this — not just parser success. */
   capabilities?: Record<string, { status: "ok" | "degraded" | "missing" | "blocked-by-policy" | "untested" }>;
+}
+
+/** Top-level shape of `scenarios/<id>/git-state.json` (hp-k3u). Captures
+ *  the canonical Git working-state inputs §8 tending jobs read when
+ *  deciding stale-commit pushes, push-policy enforcement, and review
+ *  flips. Synthetic — real Phase 0 captures replace this once the real
+ *  ACFS VPS pack lands. */
+export interface GitStateSnapshot {
+  meta: FixtureMeta;
+  /** Current HEAD commit SHA (40-char synthetic). */
+  head: string;
+  /** Branch name HEAD is pointing at. */
+  branch: string;
+  /** Commits HEAD is ahead of `origin/<branch>`. */
+  ahead: number;
+  /** Commits `origin/<branch>` is ahead of HEAD. */
+  behind: number;
+  /** True iff working tree has uncommitted modifications. */
+  dirty: boolean;
+  /** Files modified relative to HEAD when `dirty` is true. */
+  uncommittedFiles: readonly string[];
+  /** Local commits that have not been pushed (drives the stale-commit-push tend job). */
+  stalePushes: readonly { sha: string; subject: string; ageMinutes: number }[];
+}
+
+/** Top-level shape of `scenarios/<id>/health-snapshot.json` (hp-k3u).
+ *  Captures the latest cross-language code-health snapshot the
+ *  snapshot-health tending job reads. */
+export interface HealthSnapshotFixture {
+  meta: FixtureMeta;
+  /** `healthy` / `warning` / `critical` / `unknown` — drives the topbar
+   *  pill color and the Hardening review-mode flip threshold. */
+  verdict: "healthy" | "warning" | "critical" | "unknown";
+  /** Aggregate test coverage 0-100, or null when no run yet. */
+  coveragePercent: number | null;
+  /** Aggregate cyclomatic complexity, or null when no run yet. */
+  avgComplexity: number | null;
+  /** Count of hotspot files above the project's threshold. */
+  hotspotCount: number;
+  /** Minutes since the last snapshot landed (null = never). */
+  lastSnapshotAgeMinutes: number | null;
+  /** Optional per-language metrics. */
+  perLanguage: readonly {
+    language: string;
+    coveragePercent: number | null;
+    avgComplexity: number | null;
+  }[];
+}
+
+/** Top-level shape of `scenarios/<id>/build-queue-state.json` (hp-k3u).
+ *  Captures the daemon build queue snapshot §8 tending jobs read when
+ *  deciding rate-limit/budget arbitration and showing build-contention
+ *  warnings on swarm launch. */
+export interface BuildQueueStateSnapshot {
+  meta: FixtureMeta;
+  /** Total queued + running. */
+  queueDepth: number;
+  /** Currently-running build/test jobs. */
+  running: readonly {
+    id: string;
+    kind: "build" | "test" | "lint" | "typecheck";
+    startedAt: string;
+    elapsedMinutes: number;
+  }[];
+  /** Queued (not yet running) build/test jobs. */
+  queued: readonly {
+    id: string;
+    kind: "build" | "test" | "lint" | "typecheck";
+    enqueuedAt: string;
+    waitingMinutes: number;
+  }[];
 }
 
 /** Top-level shape of `scenarios/<id>/expected-outcome.json` (sketched here; refined in hp-dr8). */

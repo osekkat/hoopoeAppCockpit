@@ -1,0 +1,25 @@
+{
+  "meta": {
+    "kind": "synthetic",
+    "scenario": "postcondition-failure",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-07T00:00:00Z",
+    "source": "hand-written for hp-k3u",
+    "notes": "Postcondition failure — the action partially mutated the working tree before the postcondition check failed; rollback is in flight."
+  },
+  "head": "5678901234567890abcdef0123456789abcdef01",
+  "branch": "bead/hp-pcf",
+  "ahead": 1,
+  "behind": 0,
+  "dirty": true,
+  "uncommittedFiles": [
+    "apps/daemon/internal/scheduler/tend.go"
+  ],
+  "stalePushes": [
+    {
+      "sha": "5678901234567890abcdef0123456789abcdef01",
+      "subject": "[hp-pcf] half-applied tend tweak (rollback pending)",
+      "ageMinutes": 4
+    }
+  ]
+}

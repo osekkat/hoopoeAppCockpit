@@ -10,6 +10,32 @@ Closure audit `hp-7we`: the canonical no-CAAM rate-limit scenario ID is `rate-li
 - `event-stream.ndjson` records the instant replay order plus final cursor maps from `startReplay()`.
 - `mock-daemon.responses.json` records a fixed set of `MockDaemonClient` responses (`br.list`, `bv.triage`, `ntm.snapshot`, Agent Mail, reservations, logs, auth, and subscribe cursors).
 
+## Canonical-state snapshots (hp-k3u)
+
+Each scenario also carries three canonical-state snapshot fixtures that
+back the §8 tending decisions plan.md §8.8 requires (stale-commit
+push, budget gating, code-health-driven review flips, build-queue
+contention warnings):
+
+- `git-state.json` — HEAD sha + branch + ahead/behind/dirty + uncommitted
+  files + stale-push list. Drives push-policy enforcement and the
+  stale-commit-push tend job.
+- `health-snapshot.json` — verdict + coverage + complexity + hotspot
+  count + per-language metrics. Drives the topbar pill and the Hardening
+  review-mode flip threshold.
+- `build-queue-state.json` — queueDepth + running/queued jobs. Drives
+  rate-limit/budget arbitration and swarm-launch build-contention
+  warnings.
+
+Shapes are pinned in `packages/fixtures/src/kinds.ts`
+(`GitStateSnapshot`, `HealthSnapshotFixture`, `BuildQueueStateSnapshot`).
+Per-scenario flavor is asserted in
+`packages/fixtures/tests/fixture-quality.test.ts` (e.g., `commit-burst`
+must report ≥15 ahead commits; `wedged-pane` must show a long-elapsed
+running job; `budget-breach` must show concurrent running jobs).
+These fixtures are synthetic — Phase 0 real-VPS captures replace them
+once the real ACFS pack lands.
+
 `packages/fixtures/test/golden-replay.test.ts` regenerates the same outputs during test runs, canonicalizes them, and compares bytes against the committed files. Any mismatch means either the scenario pipeline regressed or the scenario contract changed intentionally.
 
 ## Canonicalization

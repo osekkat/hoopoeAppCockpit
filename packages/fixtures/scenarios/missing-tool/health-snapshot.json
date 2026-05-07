@@ -1,0 +1,16 @@
+{
+  "meta": {
+    "kind": "synthetic",
+    "scenario": "missing-tool",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-07T00:00:00Z",
+    "source": "hand-written for hp-k3u",
+    "notes": "Missing tool means we can't run the snapshot at all — verdict unknown until the tool is installed."
+  },
+  "verdict": "unknown",
+  "coveragePercent": null,
+  "avgComplexity": null,
+  "hotspotCount": 0,
+  "lastSnapshotAgeMinutes": null,
+  "perLanguage": []
+}

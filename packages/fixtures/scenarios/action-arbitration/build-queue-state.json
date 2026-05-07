@@ -1,0 +1,16 @@
+{
+  "meta": {
+    "kind": "synthetic",
+    "scenario": "action-arbitration",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-07T00:00:00Z",
+    "source": "hand-written for hp-k3u",
+    "notes": "Action arbitration — two jobs running, but a swarm.halt is en route to interrupt one of them."
+  },
+  "queueDepth": 2,
+  "running": [
+    { "id": "build-arb-1", "kind": "test", "startedAt": "2026-05-06T23:50:00Z", "elapsedMinutes": 10 },
+    { "id": "build-arb-2", "kind": "build", "startedAt": "2026-05-06T23:55:00Z", "elapsedMinutes": 5 }
+  ],
+  "queued": []
+}

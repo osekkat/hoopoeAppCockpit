@@ -1,0 +1,17 @@
+{
+  "meta": {
+    "kind": "synthetic",
+    "scenario": "healthy-hour",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-07T00:00:00Z",
+    "source": "hand-written for hp-k3u",
+    "notes": "Healthy hour: clean working tree on main, all commits pushed."
+  },
+  "head": "a1b2c3d4e5f6789012345678901234567890abcd",
+  "branch": "main",
+  "ahead": 0,
+  "behind": 0,
+  "dirty": false,
+  "uncommittedFiles": [],
+  "stalePushes": []
+}

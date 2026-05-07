@@ -1,0 +1,19 @@
+{
+  "meta": {
+    "kind": "synthetic",
+    "scenario": "commit-burst",
+    "fixturesVersion": "phase0-2026-05-02",
+    "capturedAt": "2026-05-07T00:00:00Z",
+    "source": "hand-written for hp-k3u",
+    "notes": "Commit-burst — 5 queued test runs from per-commit hooks; arbitration must collapse to 1 actual run + 4 cache hits."
+  },
+  "queueDepth": 5,
+  "running": [],
+  "queued": [
+    { "id": "test-burst-1", "kind": "test", "enqueuedAt": "2026-05-06T23:48:00Z", "waitingMinutes": 12 },
+    { "id": "test-burst-2", "kind": "test", "enqueuedAt": "2026-05-06T23:50:00Z", "waitingMinutes": 10 },
+    { "id": "test-burst-3", "kind": "test", "enqueuedAt": "2026-05-06T23:53:00Z", "waitingMinutes": 7 },
+    { "id": "test-burst-4", "kind": "test", "enqueuedAt": "2026-05-06T23:56:00Z", "waitingMinutes": 4 },
+    { "id": "test-burst-5", "kind": "test", "enqueuedAt": "2026-05-06T23:59:00Z", "waitingMinutes": 1 }
+  ]
+}
